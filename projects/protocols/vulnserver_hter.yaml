@@ -1,0 +1,11 @@
+name: vulnserver-hter
+description: Vulnserver HTER command — static prefix + mutable payload
+blocks:
+  - type: static
+    value: "HTER /.:/"
+  - type: bytes
+    name: payload
+    mutable: true
+    minSize: 4
+    maxSize: 8192
+    seedFile: seeds/vulnserver_hter.txt

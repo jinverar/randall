@@ -18,16 +18,13 @@ sessionCommands:
     model: protocols/vulnserver_gmon.yaml
     readBanner: true
   - name: GTER
-    prefix: "GTER "
-    seed: seeds/vulnserver_gter.txt
+    model: protocols/vulnserver_gter.yaml
     readBanner: true
   - name: KSTET
-    prefix: "KSTET /.:/"
-    seed: seeds/vulnserver_kstet.txt
+    model: protocols/vulnserver_kstet.yaml
     readBanner: true
   - name: HTER
-    prefix: "HTER /.:/"
-    seed: seeds/vulnserver_hter.txt
+    model: protocols/vulnserver_hter.yaml
     readBanner: true
   - name: STAT_TRUN
     model: protocols/vulnserver_trun.yaml

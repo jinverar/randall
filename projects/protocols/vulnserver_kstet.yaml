@@ -1,0 +1,11 @@
+name: vulnserver-kstet
+description: Vulnserver KSTET command — static prefix + mutable payload
+blocks:
+  - type: static
+    value: "KSTET /.:/"
+  - type: bytes
+    name: payload
+    mutable: true
+    minSize: 4
+    maxSize: 8192
+    seedFile: seeds/vulnserver_kstet.txt

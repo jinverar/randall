@@ -1,0 +1,11 @@
+name: vulnserver-gter
+description: Vulnserver GTER command — prefix + mutable payload
+blocks:
+  - type: static
+    value: "GTER "
+  - type: bytes
+    name: payload
+    mutable: true
+    minSize: 4
+    maxSize: 8192
+    seedFile: seeds/vulnserver_gter.txt
