@@ -22,7 +22,8 @@ Thumbs.db
 data/
 logs/
 tools/dynamorio/
-targets/vulnserver/vulnserver.exe
+targets/vulnserver/*
+!targets/vulnserver/.gitkeep
 targets/local/
 *.db
 *.dmp

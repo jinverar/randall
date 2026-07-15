@@ -1,14 +1,19 @@
 using System.Security.Cryptography;
 using System.Text;
+using Randall.Contracts;
 using Randall.Core;
 
 namespace Randall.Infrastructure.Mutators;
 
 public static class BuiltInMutators
 {
-    public static IReadOnlyList<IMutator> Create(IEnumerable<string> names, int? seed = null)
+    public static IReadOnlyList<IMutator> Create(
+        IEnumerable<string> names,
+        int? seed = null,
+        MutationContext? context = null)
     {
         var rng = seed.HasValue ? new Random(seed.Value) : Random.Shared;
+        context ??= new MutationContext();
         var list = new List<IMutator>();
         foreach (var name in names)
         {
@@ -20,6 +25,12 @@ public static class BuiltInMutators
                 "truncate" => new TruncateMutator(rng),
                 "boundary" => new BoundaryMutator(rng),
                 "insert" => new InsertBlobMutator(rng),
+                "havoc" => new HavocMutator(rng, context.HavocDepth),
+                "interesting" or "ints" => new InterestingMutator(rng),
+                "dictionary" or "dict" => new DictionaryMutator(rng, context.DictionaryTokens),
+                "arith" => new ArithMutator(rng),
+                "splice" when context.PickAlternateSeed is not null =>
+                    new SpliceMutator(rng, context.PickAlternateSeed),
                 _ => null,
             };
             if (m is not null)
@@ -28,6 +39,53 @@ public static class BuiltInMutators
         if (list.Count == 0)
             list.Add(new BitFlipMutator(rng));
         return list;
+    }
+
+    public static IReadOnlyList<byte[]> BuildDictionaryTokens(
+        ProjectConfig project,
+        string yamlPath)
+    {
+        var tokens = new List<byte[]>();
+        foreach (var entry in project.Dictionary)
+        {
+            if (string.IsNullOrWhiteSpace(entry))
+                continue;
+            tokens.Add(DecodeDictionaryEntry(entry));
+        }
+
+        if (!string.IsNullOrWhiteSpace(project.DictionaryFile))
+        {
+            try
+            {
+                var path = ProjectLoader.ResolvePath(yamlPath, project.DictionaryFile);
+                foreach (var line in File.ReadLines(path))
+                {
+                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
+                        continue;
+                    tokens.Add(DecodeDictionaryEntry(line));
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Warning: dictionary file skipped: {ex.Message}");
+            }
+        }
+
+        return tokens;
+    }
+
+    private static byte[] DecodeDictionaryEntry(string entry)
+    {
+        if (entry.StartsWith("hex:", StringComparison.OrdinalIgnoreCase))
+        {
+            var hex = entry[4..].Replace(" ", "").Replace("-", "");
+            return Convert.FromHexString(hex);
+        }
+        return System.Text.Encoding.UTF8.GetBytes(entry
+            .Replace("\\r", "\r", StringComparison.Ordinal)
+            .Replace("\\n", "\n", StringComparison.Ordinal)
+            .Replace("\\t", "\t", StringComparison.Ordinal)
+            .Replace("\\0", "\0", StringComparison.Ordinal));
     }
 }
 

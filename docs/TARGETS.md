@@ -33,6 +33,13 @@ dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml
 | `truncate` | Cut mid-record — parser state confusion |
 | `boundary` | 0, 1, 0x7F, 0x80, 0xFF at random offset |
 | `insert` | Random blob appended — strange tail parsing |
+| `havoc` | Stacked random mutations (AFL-style) |
+| `interesting` | Known-bad integers at aligned offsets |
+| `dictionary` | Inject project tokens / format strings |
+| `splice` | Crossover two corpus inputs |
+| `arith` | Small integer delta on one byte |
+
+See [FUZZING.md](FUZZING.md) for technique details and research references.
 
 ## Private targets
 
@@ -44,7 +51,8 @@ randall fuzz -c projects/local/my-target.yaml
 
 ## vulnserver notes
 
-- Port **9999**, session graph (TRUN, GMON, GTER, …)
+- Build: `.\scripts\build-vulnserver.ps1` → `targets/vulnserver/randall-vulnserver.exe`
+- Port **9999**, session graph (TRUN, GMON, GTER, RAND, …)
 - Randall restarts vulnserver after each crash when `long_lived: true`
 - Known crash: TRUN with ~2000+ byte payload (iteration count may vary)
 

@@ -1,0 +1,14 @@
+name: udp-datagram
+description: Mutable UDP payload with optional 2-byte length prefix
+blocks:
+  - type: sized
+    lengthName: dgram_len
+    lengthBytes: 2
+    littleEndian: true
+    child:
+      type: bytes
+      name: payload
+      mutable: true
+      minSize: 4
+      maxSize: 1400
+      seedFile: seeds/udp_datagram.bin

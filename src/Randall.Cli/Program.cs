@@ -14,6 +14,7 @@ return args[0].ToLowerInvariant() switch
     "version" => PrintVersion(),
     "targets" => ListTargets(args.Skip(1).ToArray()),
     "serve" => RunServe(args.Skip(1).ToArray()),
+    "agent" => RunAgent(args.Skip(1).ToArray()),
     "fuzz" => await RunFuzzAsync(args.Skip(1).ToArray()),
     "crashes" => ListCrashes(args.Skip(1).ToArray()),
     "replay" => await ReplayCrashAsync(args.Skip(1).ToArray()),
@@ -22,6 +23,7 @@ return args[0].ToLowerInvariant() switch
     "pack" => await RunPackAsync(args.Skip(1).ToArray()),
     "bundle" => RunBundle(args.Skip(1).ToArray()),
     "export" => RunExport(args.Skip(1).ToArray()),
+    "doctor" => RunDoctor(args.Skip(1).ToArray()),
     _ => Unknown(args[0]),
 };
 
@@ -41,8 +43,10 @@ static void PrintHelp()
           randall pack -o publish/standalone
           randall bundle export -c projects/vulnserver.yaml -o bundles/vulnserver.zip
           randall bundle import -i bundles/vulnserver.zip -o projects/imported
+          randall doctor -c <project>     Preflight lab checks before fuzzing
           randall export -i <crash-guid>
-          randall serve [--port N]     Web UI + API
+          randall serve [--port N] [--bind host]   Web UI + API (localhost)
+          randall agent [--port N] [--bind host]   Lab agent (all interfaces)
           randall legs                 Eight legs feature map
           randall version
 
@@ -51,6 +55,13 @@ static void PrintHelp()
           file-text    Generic structured text / XML file template
           file-framed  Generic length-prefixed binary file template
           local/*      Private profiles (gitignored — projects/local/)
+
+        Advanced mutators (see docs/FUZZING.md):
+          havoc        AFL-style stacked mutations
+          interesting  libFuzzer-style integer injection
+          dictionary   Token / format-string injection
+          splice       Corpus crossover
+          arith        Single-byte arithmetic delta
 
         Docs: https://github.com/jinverar/randall/blob/main/docs/TARGETS.md
         """);
@@ -65,7 +76,7 @@ static int PrintLegs()
 
 static int PrintVersion()
 {
-    Console.WriteLine("Randall 0.7.0-alpha (Leg 1 — block models + bundles)");
+    Console.WriteLine("Randall 0.10.0-alpha (Phase 9 — doctor, UDP, checksums)");
     return 0;
 }
 
@@ -353,13 +364,59 @@ static int RunExport(string[] args)
     return 0;
 }
 
-static int RunServe(string[] args)
+static int RunDoctor(string[] args)
+{
+    string? config = null;
+    var strict = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-c" or "--config" && i + 1 < args.Length)
+            config = args[++i];
+        else if (args[i] is "--strict")
+            strict = true;
+    }
+
+    if (config is null)
+    {
+        Console.Error.WriteLine("Usage: randall doctor -c projects/vulnserver.yaml [--strict]");
+        return 1;
+    }
+
+    var report = LabDoctor.Examine(Path.GetFullPath(config), requireTarget: strict);
+    foreach (var check in report.Checks)
+    {
+        var icon = check.Status switch { "ok" => "✓", "warn" => "!", _ => "✗" };
+        Console.WriteLine($"  [{icon}] {check.Id,-24} {check.Message}");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine(report.Ready
+        ? $"Ready to fuzz {report.Project}."
+        : $"Not ready — fix failures above, then: randall fuzz -c {config} --dry-run");
+
+    return report.Ready ? 0 : 1;
+}
+
+static int RunServe(string[] args) => RunWebHost(args, defaultBind: "127.0.0.1", label: "web UI");
+
+static int RunAgent(string[] args) => RunWebHost(args, defaultBind: "0.0.0.0", label: "lab agent");
+
+static int RunWebHost(string[] args, string defaultBind, string label)
 {
     var port = 5000;
-    for (var i = 0; i < args.Length - 1; i++)
+    var bind = defaultBind;
+    for (var i = 0; i < args.Length; i++)
     {
-        if (args[i] is "--port" or "-p" && int.TryParse(args[i + 1], out var p))
+        if (args[i] is "--port" or "-p" && i + 1 < args.Length && int.TryParse(args[i + 1], out var p))
+        {
             port = p;
+            i++;
+        }
+        else if (args[i] is "--bind" or "-b" && i + 1 < args.Length)
+        {
+            bind = args[i + 1];
+            i++;
+        }
     }
 
     var serverProject = FindServerProjectPath();
@@ -369,11 +426,15 @@ static int RunServe(string[] args)
         return 1;
     }
 
-    Console.WriteLine($"Starting Randall web UI at http://localhost:{port}");
+    var urls = $"http://{bind}:{port}";
+    Console.WriteLine($"Starting Randall {label} at {urls}");
+    if (bind is "0.0.0.0" or "*")
+        Console.WriteLine($"LAN clients: http://<this-machine-ip>:{port}");
+
     var psi = new ProcessStartInfo
     {
         FileName = "dotnet",
-        Arguments = $"run --project \"{serverProject}\" --urls http://localhost:{port}",
+        Arguments = $"run --project \"{serverProject}\" --urls {urls}",
         UseShellExecute = false,
     };
     using var process = Process.Start(psi);

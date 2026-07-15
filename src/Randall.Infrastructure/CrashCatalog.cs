@@ -54,6 +54,21 @@ public static class CrashCatalog
         return results.OrderByDescending(c => c.ObservedAt).ToList();
     }
 
+    public static IReadOnlyList<CrashClusterDto> ListClusters(string? repoRoot = null, string? projectFilter = null)
+    {
+        var crashes = ListAll(repoRoot, projectFilter);
+        return CrashCluster.Build(crashes)
+            .Select(c => new CrashClusterDto(
+                c.ClusterId,
+                c.Project,
+                c.Count,
+                c.RepresentativeId,
+                c.RepresentativeHash,
+                c.RepresentativeMutator,
+                c.LengthBucket))
+            .ToList();
+    }
+
     public static CrashDetailDto? GetDetail(Guid id, string? repoRoot = null)
     {
         foreach (var summary in ListAll(repoRoot))
@@ -81,7 +96,7 @@ public static class CrashCatalog
 
         var projectsDir = Path.Combine(repoRoot, "projects");
         var list = new List<TargetProfileDto>();
-        foreach (var path in ProjectLoader.DiscoverProjects(projectsDir))
+        foreach (var path in DiscoverAllProjects(projectsDir))
         {
             try
             {
@@ -91,6 +106,16 @@ public static class CrashCatalog
             catch { /* skip invalid project */ }
         }
         return list;
+    }
+
+    private static IEnumerable<string> DiscoverAllProjects(string projectsDir)
+    {
+        foreach (var path in ProjectLoader.DiscoverProjects(projectsDir))
+            yield return path;
+
+        var localDir = Path.Combine(projectsDir, "local");
+        foreach (var path in ProjectLoader.DiscoverProjects(localDir))
+            yield return path;
     }
 }
 

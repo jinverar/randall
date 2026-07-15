@@ -40,6 +40,7 @@ Classic **length + payload** layout — mutate the length field separately from 
 | `static` | Fixed bytes (command prefix, headers) |
 | `bytes` | Mutable payload region with optional seed file |
 | `sized` | Length prefix + nested payload (field-aware) |
+| `checksum` | CRC32 over preceding bytes (auto-resync after mutation) |
 | `group` | Nested children |
 
 ## Use in projects

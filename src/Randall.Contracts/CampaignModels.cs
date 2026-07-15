@@ -66,3 +66,7 @@ public sealed record PackResultDto(
     string[] Included);
 
 public sealed record BundleResultDto(string Path, string Action, long? SizeBytes);
+
+public sealed record BundleExportRequest(string ConfigPath, string? OutputPath);
+
+public sealed record BundleImportRequest(string ZipPath, string? OutputDir);

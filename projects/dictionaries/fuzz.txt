@@ -1,0 +1,13 @@
+# Common fuzz tokens — format strings, overflow patterns, nulls
+%s%s%s%s
+%n%n%n%n
+AAAA
+\x00\x00\x00\x00
+hex:41414141
+hex:00000000
+hex:FFFFFFFF
+../../../../
+%x%x%x%x
+\r\n\r\n
+<![CDATA[
+${jndi:ldap://127.0.0.1/a}

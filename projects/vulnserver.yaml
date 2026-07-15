@@ -1,8 +1,8 @@
 name: vulnserver
-description: Classic Vulnserver TCP lab target — session graph + block models
+description: Randall custom vulnserver — TCP lab target (build with scripts/build-vulnserver.ps1)
 kind: tcp
 target:
-  executable: ../targets/vulnserver/vulnserver.exe
+  executable: ../targets/vulnserver/randall-vulnserver.exe
   longLived: true
   timeoutMs: 5000
 transport:
@@ -30,14 +30,37 @@ sessionCommands:
     model: protocols/vulnserver_trun.yaml
     preamble: "STAT\r\n"
     readBanner: true
+  - name: RAND
+    model: protocols/vulnserver_rand.yaml
+    readBanner: true
 fuzz:
   maxIterations: 1000
+  powerSchedule: true
+  havocDepth: 8
+  sessionFlowBias: 0.25
   corpusDir: ../data/corpus/vulnserver
   crashesDir: ../data/crashes/vulnserver
+dictionaryFile: dictionaries/fuzz.txt
+dictionary:
+  - "TRUN /.:/"
+  - "%s%s%s%s"
+sessionFlows:
+  - name: stat_trun
+    steps:
+      - STAT_TRUN
+      - TRUN
+  - name: gmon_probe
+    steps:
+      - GMON
 seeds:
   - seeds/vulnserver_trun.txt
 mutators:
   - bitflip
+  - havoc
+  - interesting
+  - dictionary
+  - splice
+  - arith
   - expand
   - boundary
   - insert

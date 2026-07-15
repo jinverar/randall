@@ -51,5 +51,30 @@ public static class RandallRoadmap
             new("p6-import", "bundle import command", true, "randall bundle import"),
             new("p6-dedup", "Crash hash dedup", true, null),
         ]),
+        new(7, "Lab agent + mobility", "complete",
+        [
+            new("p7-agent", "randall agent — bind all interfaces", true, "randall agent"),
+            new("p7-bundles-ui", "Web bundle export/import", true, null),
+            new("p7-vuln-models", "Full vulnserver block models", true, null),
+            new("p7-local", "Discover gitignored local projects", true, "projects/local/"),
+            new("p7-autopilot", "Cursor Automations nightly template", true, "docs/AUTOPILOT.md"),
+        ]),
+        new(8, "Advanced techniques", "complete",
+        [
+            new("p8-havoc", "AFL-style stacked havoc mutator", true, "docs/FUZZING.md"),
+            new("p8-interesting", "LibFuzzer interesting integers", true, null),
+            new("p8-dictionary", "Dictionary / token injection", true, null),
+            new("p8-splice", "Corpus crossover (splice)", true, null),
+            new("p8-power", "Corpus energy power schedule", true, null),
+            new("p8-flows", "Stateful TCP session flows", true, null),
+            new("p8-clusters", "Crash clustering for triage", true, "/api/crashes/clusters"),
+        ]),
+        new(9, "Lab readiness", "complete",
+        [
+            new("p9-doctor", "randall doctor preflight checks", true, "randall doctor"),
+            new("p9-udp", "UDP datagram transport", true, null),
+            new("p9-crc", "CRC32 checksum block + resync", true, "docs/MODEL.md"),
+            new("p9-havoc-model", "Field-level havoc in model fuzzer", true, null),
+        ]),
     ];
 }

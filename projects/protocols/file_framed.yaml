@@ -1,14 +1,21 @@
 name: file-framed
-description: Length-prefixed record — 4-byte LE length + mutable payload
+description: Length-prefixed record + trailing CRC32 — length, payload, checksum fields
 blocks:
-  - type: sized
-    lengthName: record_len
-    lengthBytes: 4
-    littleEndian: true
-    child:
-      type: bytes
-      name: record
-      mutable: true
-      minSize: 8
-      maxSize: 4096
-      seedFile: seeds/file_framed_record.bin
+  - type: group
+    children:
+      - type: sized
+        lengthName: record_len
+        lengthBytes: 4
+        littleEndian: true
+        child:
+          type: bytes
+          name: record
+          mutable: true
+          minSize: 8
+          maxSize: 4096
+          seedFile: seeds/file_framed_record.bin
+      - type: checksum
+        name: frame_crc
+        lengthBytes: 4
+        littleEndian: true
+        mutable: true

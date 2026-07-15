@@ -25,7 +25,6 @@ public sealed class FuzzEngine
         var coverageGuided = options.CoverageGuided || project.Fuzz.CoverageGuided;
         var maxIterations = options.MaxIterations ?? project.Fuzz.MaxIterations;
 
-        var mutators = LoadMutators(project, yamlPath);
         var seeds = LoadAllSeeds(project, yamlPath);
         if (seeds.Count == 0)
             seeds.Add(Array.Empty<byte>());
@@ -37,6 +36,8 @@ public sealed class FuzzEngine
 
         var corpus = new CorpusTracker(corpusDir);
         corpus.Load();
+
+        var mutators = LoadMutators(project, yamlPath, corpus, seeds);
 
         var coveragePath = Path.Combine(corpusDir, "edges.txt");
         var coverage = new CoverageSet(coveragePath);
@@ -62,6 +63,9 @@ public sealed class FuzzEngine
         var rng = Random.Shared;
 
         var sessionCommands = SessionGraph.LoadCommands(project, yamlPath);
+        var sessionFlows = SessionGraph.LoadFlows(project, yamlPath, sessionCommands);
+        var powerSchedule = project.Fuzz.PowerSchedule;
+        var flowBias = project.Fuzz.SessionFlowBias;
 
         try
         {
@@ -72,37 +76,53 @@ public sealed class FuzzEngine
                 TargetRunner.TcpSendOptions? tcpOptions = null;
                 string commandName = "default";
                 byte[] payload;
+                IReadOnlyList<TargetRunner.TcpStep>? tcpSequence = null;
 
-                if (sessionCommands.Count > 0)
+                if (sessionCommands.Count > 0 &&
+                    sessionFlows.Count > 0 &&
+                    rng.NextDouble() < flowBias)
+                {
+                    var flow = sessionFlows[rng.Next(sessionFlows.Count)];
+                    var steps = new List<TargetRunner.TcpStep>();
+                    for (var si = 0; si < flow.Steps.Count; si++)
+                    {
+                        var cmd = flow.Steps[si];
+                        var mutate = si == flow.Steps.Count - 1;
+                        var stepPayload = BuildCommandPayload(cmd, yamlPath, mutator, rng, mutate, project);
+                        steps.Add(new TargetRunner.TcpStep(
+                            stepPayload,
+                            new TargetRunner.TcpSendOptions(cmd.Preamble, cmd.ReadBanner && si == 0)));
+                    }
+                    tcpSequence = steps;
+                    payload = steps[^1].Payload;
+                    commandName = $"flow/{flow.Name}";
+                }
+                else if (sessionCommands.Count > 0)
                 {
                     var cmd = sessionCommands[rng.Next(sessionCommands.Count)];
                     commandName = cmd.Name;
                     tcpOptions = new TargetRunner.TcpSendOptions(cmd.Preamble, cmd.ReadBanner);
+                    payload = BuildCommandPayload(cmd, yamlPath, mutator, rng, mutate: true, project);
                     if (!string.IsNullOrWhiteSpace(cmd.ModelPath))
                     {
                         var model = ProtocolLoader.Load(yamlPath, cmd.ModelPath);
-                        var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, cmd.ModelPath);
-                        payload = ModelFuzzer.BuildPayload(model, protoSeeds, mutator, rng);
                         var mutableFields = model.GetMutableFields();
                         if (mutableFields.Count > 0)
                             commandName = $"{cmd.Name}/{mutableFields[rng.Next(mutableFields.Count)].Name}";
-                    }
-                    else
-                    {
-                        var mutated = mutator.Mutate(cmd.Seed).ToArray();
-                        payload = SessionGraph.BuildPayload(cmd, mutated);
                     }
                 }
                 else if (!string.IsNullOrWhiteSpace(project.Model))
                 {
                     var model = ProtocolLoader.Load(yamlPath, project.Model);
                     var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, project.Model);
-                    payload = ModelFuzzer.BuildPayload(model, protoSeeds, mutator, rng);
+                    payload = ModelFuzzer.BuildPayload(
+                        model, protoSeeds, mutator, rng,
+                        project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth);
                     commandName = $"model/{model.Name}";
                 }
                 else
                 {
-                    var seed = corpus.PickSeed(seeds, rng);
+                    var seed = corpus.PickSeed(seeds, rng, powerSchedule);
                     payload = mutator.Mutate(seed).ToArray();
                     if (project.Transport.Prefix.Length > 0)
                     {
@@ -119,8 +139,11 @@ public sealed class FuzzEngine
                     continue;
                 }
 
-                var result = await TargetRunner.RunPayloadAsync(
-                    project, yamlPath, payload, longLived, cancellationToken, tcpOptions);
+                var result = tcpSequence is not null
+                    ? await TargetRunner.RunTcpSequenceAsync(
+                        project, longLived, tcpSequence, cancellationToken)
+                    : await TargetRunner.RunPayloadAsync(
+                        project, yamlPath, payload, longLived, cancellationToken, tcpOptions);
 
                 var newEdges = 0;
                 var newCoverage = false;
@@ -202,9 +225,21 @@ public sealed class FuzzEngine
         return runResult;
     }
 
-    private static List<IMutator> LoadMutators(ProjectConfig project, string yamlPath)
+    private static List<IMutator> LoadMutators(
+        ProjectConfig project,
+        string yamlPath,
+        CorpusTracker corpus,
+        IReadOnlyList<byte[]> seeds)
     {
-        var mutators = BuiltInMutators.Create(project.Mutators).ToList();
+        var rng = Random.Shared;
+        var tokens = BuiltInMutators.BuildDictionaryTokens(project, yamlPath);
+        var context = new MutationContext
+        {
+            DictionaryTokens = tokens,
+            HavocDepth = project.Fuzz.HavocDepth,
+            PickAlternateSeed = () => corpus.PickAny(seeds, rng, project.Fuzz.PowerSchedule),
+        };
+        var mutators = BuiltInMutators.Create(project.Mutators, context: context).ToList();
         foreach (var pluginRef in project.Plugins)
         {
             if (!pluginRef.Hook.Equals("mutate", StringComparison.OrdinalIgnoreCase))
@@ -216,6 +251,29 @@ public sealed class FuzzEngine
             mutators.Add(new RppMutator(new RppPluginHost(pluginDir), manifest));
         }
         return mutators;
+    }
+
+    private static byte[] BuildCommandPayload(
+        SessionGraph.PreparedCommand cmd,
+        string yamlPath,
+        IMutator mutator,
+        Random rng,
+        bool mutate,
+        ProjectConfig project)
+    {
+        if (!string.IsNullOrWhiteSpace(cmd.ModelPath))
+        {
+            var model = ProtocolLoader.Load(yamlPath, cmd.ModelPath);
+            var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, cmd.ModelPath);
+            if (mutate)
+                return ModelFuzzer.BuildPayload(
+                    model, protoSeeds, mutator, rng,
+                    project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth);
+            return model.FinalizeMessage(model.Render(protoSeeds), project.Fuzz.SyncLengthFields);
+        }
+
+        var body = mutate ? mutator.Mutate(cmd.Seed).ToArray() : cmd.Seed;
+        return SessionGraph.BuildPayload(cmd, body);
     }
 
     private static List<byte[]> LoadAllSeeds(ProjectConfig project, string yamlPath)

@@ -146,19 +146,147 @@ public sealed class GroupBlock(IReadOnlyList<IBlockNode> children) : IBlockNode
     }
 }
 
+public sealed class ChecksumBlock : IBlockNode
+{
+    public required string Name { get; init; }
+    public int LengthBytes { get; init; } = 4;
+    public bool LittleEndian { get; init; } = true;
+    public bool Mutable { get; init; } = true;
+
+    public int Render(Span<byte> buffer, int offset, RenderContext ctx)
+    {
+        if (offset <= 0)
+        {
+            buffer[offset..(offset + LengthBytes)].Clear();
+            return LengthBytes;
+        }
+        var crc = Crc32.Compute(buffer[..offset]);
+        WriteChecksum(buffer[offset..], crc);
+        return LengthBytes;
+    }
+
+    public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx)
+    {
+        fields.Add(new FieldRegion(Name, baseOffset, LengthBytes, Mutable, "checksum", LittleEndian));
+    }
+
+    private void WriteChecksum(Span<byte> dest, uint crc)
+    {
+        if (LengthBytes == 4)
+            Crc32.Write(dest, crc, LittleEndian);
+        else if (LengthBytes == 2)
+        {
+            var v = (ushort)crc;
+            if (LittleEndian) { dest[0] = (byte)v; dest[1] = (byte)(v >> 8); }
+            else { dest[0] = (byte)(v >> 8); dest[1] = (byte)v; }
+        }
+    }
+}
+
+public sealed record DerivedFieldSpec(
+    string Name,
+    string Kind,
+    int Offset,
+    int Length,
+    bool LittleEndian,
+    bool Trailing);
+
 public sealed class BlockModel : IProtocolModel
 {
     private readonly IBlockNode _root;
     private readonly int _bufferSize;
+    private readonly List<DerivedFieldSpec> _derived = [];
+    private readonly bool _trailingCrc32;
 
-    public BlockModel(string name, IBlockNode root, int bufferSize = 65536)
+    public BlockModel(string name, IBlockNode root, int bufferSize = 65536, bool trailingCrc32 = false)
     {
         Name = name;
         _root = root;
         _bufferSize = bufferSize;
+        _trailingCrc32 = trailingCrc32;
     }
 
     public string Name { get; }
+
+    public void RegisterDerivedFields(IReadOnlyDictionary<string, byte[]> seeds)
+    {
+        _derived.Clear();
+        var msg = Render(seeds);
+        foreach (var f in GetFields())
+        {
+            if (f.Kind is "checksum" or "length")
+            {
+                _derived.Add(new DerivedFieldSpec(
+                    f.Name, f.Kind, f.Offset, f.Length, f.LittleEndian,
+                    Trailing: f.Kind == "checksum" && f.Offset + f.Length == msg.Length));
+            }
+        }
+        if (_trailingCrc32 && msg.Length >= 4 &&
+            !_derived.Any(d => d.Trailing && d.Kind == "checksum"))
+        {
+            _derived.Add(new DerivedFieldSpec(
+                "trailing_crc32", "checksum", msg.Length - 4, 4, true, Trailing: true));
+        }
+    }
+
+    public byte[] FinalizeMessage(byte[] message, bool syncLengthFields = false)
+    {
+        var result = message;
+        foreach (var spec in _derived.Where(d => d.Kind == "length").OrderBy(d => d.Offset))
+        {
+            if (!syncLengthFields)
+                continue;
+            var payloadLen = result.Length - (spec.Offset + spec.Length);
+            WriteLengthAt(result, spec.Offset, spec.Length, spec.LittleEndian, (uint)Math.Max(0, payloadLen));
+        }
+
+        foreach (var spec in _derived.Where(d => d.Kind == "checksum"))
+        {
+            var coverLen = spec.Trailing
+                ? Math.Max(0, result.Length - spec.Length)
+                : Math.Max(0, spec.Offset);
+            if (coverLen <= 0 || spec.Offset + spec.Length > result.Length)
+                continue;
+            var crc = Crc32.Compute(result.AsSpan(0, coverLen));
+            WriteChecksumAt(result, spec.Offset, spec.Length, spec.LittleEndian, crc);
+        }
+        return result;
+    }
+
+    private static void WriteLengthAt(byte[] buf, int offset, int width, bool le, uint value)
+    {
+        if (width == 2)
+        {
+            var v = (ushort)value;
+            if (le) { buf[offset] = (byte)v; buf[offset + 1] = (byte)(v >> 8); }
+            else { buf[offset] = (byte)(v >> 8); buf[offset + 1] = (byte)v; }
+        }
+        else if (width >= 4)
+        {
+            if (le)
+            {
+                buf[offset] = (byte)value; buf[offset + 1] = (byte)(value >> 8);
+                buf[offset + 2] = (byte)(value >> 16); buf[offset + 3] = (byte)(value >> 24);
+            }
+            else
+            {
+                buf[offset] = (byte)(value >> 24); buf[offset + 1] = (byte)(value >> 16);
+                buf[offset + 2] = (byte)(value >> 8); buf[offset + 3] = (byte)value;
+            }
+        }
+    }
+
+    private static void WriteChecksumAt(byte[] buf, int offset, int length, bool le, uint crc)
+    {
+        if (length == 4)
+            Crc32.Write(buf.AsSpan(offset, 4), crc, le);
+        else if (length == 2)
+        {
+            var v = (ushort)crc;
+            if (le) { buf[offset] = (byte)v; buf[offset + 1] = (byte)(v >> 8); }
+            else { buf[offset] = (byte)(v >> 8); buf[offset + 1] = (byte)v; }
+        }
+    }
 
     public byte[] Render() => Render(new Dictionary<string, byte[]>());
 

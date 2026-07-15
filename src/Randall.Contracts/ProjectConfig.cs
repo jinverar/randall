@@ -17,6 +17,18 @@ public sealed class ProjectConfig
     public List<PluginRefConfig> Plugins { get; set; } = [];
     /// <summary>Default block model for file targets (Leg 1).</summary>
     public string? Model { get; set; }
+    /// <summary>Inline tokens for dictionary mutator — strings or hex:DEADBEEF.</summary>
+    public List<string> Dictionary { get; set; } = [];
+    /// <summary>Path to newline-delimited dictionary file (relative to project YAML).</summary>
+    public string? DictionaryFile { get; set; }
+    /// <summary>Stateful TCP sequences — probe then fuzz (e.g. STAT → TRUN).</summary>
+    public List<SessionFlowConfig> SessionFlows { get; set; } = [];
+}
+
+public sealed class SessionFlowConfig
+{
+    public string Name { get; set; } = "";
+    public List<string> Steps { get; set; } = [];
 }
 
 public sealed class SessionCommandConfig
@@ -60,4 +72,12 @@ public sealed class FuzzConfig
     public string CrashesDir { get; set; } = "./data/crashes";
     /// <summary>When true and DynamoRIO is available, prioritize inputs that hit new edges.</summary>
     public bool CoverageGuided { get; set; }
+    /// <summary>AFL-style energy: favor corpus entries that found new coverage.</summary>
+    public bool PowerSchedule { get; set; } = true;
+    /// <summary>Max stacked mutation rounds for havoc mutator.</summary>
+    public int HavocDepth { get; set; } = 6;
+    /// <summary>Probability [0-1] of using a session flow instead of random command.</summary>
+    public double SessionFlowBias { get; set; } = 0.25;
+    /// <summary>Re-sync length fields after model patch (default: keep mutated length).</summary>
+    public bool SyncLengthFields { get; set; }
 }

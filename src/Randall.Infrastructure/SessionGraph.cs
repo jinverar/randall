@@ -46,4 +46,45 @@ public static class SessionGraph
 
     public static byte[] BuildPayload(PreparedCommand command, byte[] mutatedBody) =>
         command.Prefix.Concat(mutatedBody).ToArray();
+
+    public sealed record PreparedFlow(string Name, IReadOnlyList<PreparedCommand> Steps);
+
+    public static IReadOnlyList<PreparedFlow> LoadFlows(
+        ProjectConfig project,
+        string yamlPath,
+        IReadOnlyList<PreparedCommand> commands)
+    {
+        if (project.SessionFlows.Count == 0)
+            return [];
+
+        var byName = commands.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
+        var flows = new List<PreparedFlow>();
+        foreach (var flow in project.SessionFlows)
+        {
+            if (flow.Steps.Count == 0)
+                continue;
+            var steps = new List<PreparedCommand>();
+            foreach (var step in flow.Steps)
+            {
+                if (byName.TryGetValue(step, out var cmd))
+                    steps.Add(cmd);
+            }
+            if (steps.Count > 0)
+                flows.Add(new PreparedFlow(
+                    string.IsNullOrWhiteSpace(flow.Name) ? string.Join("→", flow.Steps) : flow.Name,
+                    steps));
+        }
+        return flows;
+    }
+
+    public static byte[] BuildBaseline(PreparedCommand command, string yamlPath)
+    {
+        if (!string.IsNullOrWhiteSpace(command.ModelPath))
+        {
+            var model = ProtocolLoader.Load(yamlPath, command.ModelPath);
+            var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, command.ModelPath);
+            return model.Render(protoSeeds);
+        }
+        return BuildPayload(command, command.Seed);
+    }
 }

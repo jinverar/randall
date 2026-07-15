@@ -1,0 +1,11 @@
+name: vulnserver-rand
+description: Randall RAND command — custom easter-egg overflow path
+blocks:
+  - type: static
+    value: "RAND "
+  - type: bytes
+    name: payload
+    mutable: true
+    minSize: 4
+    maxSize: 8192
+    seedFile: seeds/vulnserver_rand.txt

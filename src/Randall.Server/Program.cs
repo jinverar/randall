@@ -28,7 +28,20 @@ app.MapGet("/randall.png", () =>
     return Results.NotFound();
 });
 
-app.MapGet("/api/health", () => new HealthDto("Randall", "0.7.0-alpha", "leg1-models"));
+app.MapGet("/api/health", () => new HealthDto("Randall", "0.10.0-alpha", "phase9-doctor"));
+app.MapGet("/api/doctor", (string configPath) =>
+{
+    if (string.IsNullOrWhiteSpace(configPath))
+        return Results.BadRequest(new { error = "configPath required" });
+    try
+    {
+        return Results.Ok(LabDoctor.Examine(Path.GetFullPath(configPath)));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 app.MapGet("/api/plugins", () => PluginCatalog.ListAll());
 app.MapGet("/api/protocols", () => ProtocolCatalog.ListAll());
 app.MapGet("/api/campaigns", () => PluginCatalog.ListCampaigns());
@@ -36,6 +49,7 @@ app.MapGet("/api/legs", () => RandallLegs.All.Select(l => new LegInfoDto(l.Id, l
 app.MapGet("/api/roadmap", () => RandallRoadmap.Phases);
 app.MapGet("/api/targets", () => CrashCatalog.ListTargets());
 app.MapGet("/api/crashes", (string? project) => CrashCatalog.ListAll(projectFilter: project));
+app.MapGet("/api/crashes/clusters", (string? project) => CrashCatalog.ListClusters(projectFilter: project));
 app.MapGet("/api/crashes/{id:guid}", (Guid id) =>
 {
     var detail = CrashCatalog.GetDetail(id);
@@ -129,6 +143,37 @@ app.MapPost("/api/campaign/stop", (CampaignSessionManager campaigns) =>
 {
     campaigns.Stop();
     return Results.Ok(campaigns.Status);
+});
+
+app.MapPost("/api/bundle/export", (BundleExportRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.ConfigPath))
+        return Results.BadRequest(new { error = "configPath required" });
+    try
+    {
+        var path = ProjectBundle.Export(Path.GetFullPath(request.ConfigPath), request.OutputPath);
+        var size = new FileInfo(path).Length;
+        return Results.Ok(new BundleResultDto(path, "export", size));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/bundle/import", (BundleImportRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.ZipPath))
+        return Results.BadRequest(new { error = "zipPath required" });
+    try
+    {
+        var path = ProjectBundle.Import(Path.GetFullPath(request.ZipPath), request.OutputDir);
+        return Results.Ok(new BundleResultDto(path, "import", null));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 app.MapHub<FuzzHub>("/hubs/fuzz");

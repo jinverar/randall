@@ -13,7 +13,7 @@
       <img src="/randall.png" alt="Randall" class="brand-img" />
       <div>
         <strong>Randall</strong>
-        <span>Stalk · Scream</span>
+        <span>Camouflage · Stalk · Scream</span>
       </div>
     </div>
     <nav class="nav">
@@ -23,6 +23,7 @@
       <button type="button" class="nav-btn" data-view="campaign">Campaign</button>
       <button type="button" class="nav-btn" data-view="crashes">Crashes</button>
       <button type="button" class="nav-btn" data-view="models">Models</button>
+      <button type="button" class="nav-btn" data-view="bundles">Bundles</button>
       <button type="button" class="nav-btn" data-view="roadmap">Roadmap</button>
       <button type="button" class="nav-btn" data-view="legs">Eight legs</button>
     </nav>
@@ -70,7 +71,9 @@
           <div class="btn-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>
             <button type="button" class="btn" id="fuzz-stop">Stop</button>
+            <button type="button" class="btn" id="fuzz-doctor">Doctor</button>
           </div>
+          <div id="fuzz-doctor-result" class="status-box hidden"></div>
           <div id="fuzz-status" class="status-box">Idle</div>
         </form>
         <div class="panel fuzz-log-panel">
@@ -143,6 +146,11 @@
           <select id="crash-filter"><option value="">All</option></select>
         </label>
         <div id="crashes-table" class="table-wrap"></div>
+        <div class="panel" style="margin-top:1rem">
+          <h2>Crash clusters</h2>
+          <p class="hex">Grouped by input hash prefix + length — triage duplicates first.</p>
+          <div id="crash-clusters" class="table-wrap"></div>
+        </div>
         <div id="crash-detail" class="crash-detail hidden"></div>
       </div>
     </section>
@@ -153,6 +161,41 @@
         <p>Leg 1 — Sulley-style block protocols with field-aware mutation.</p>
       </header>
       <div id="models-list" class="panel"></div>
+    </section>
+
+    <section id="view-bundles" class="view">
+      <header class="page-header">
+        <h1>Bundles</h1>
+        <p>Export or import portable project zips — protocols, seeds, and YAML.</p>
+      </header>
+      <div class="fuzz-layout">
+        <form id="bundle-export-form" class="panel fuzz-controls">
+          <h2>Export</h2>
+          <label>
+            Project YAML
+            <select id="bundle-export-target" required></select>
+          </label>
+          <label>
+            Output zip (optional)
+            <input type="text" id="bundle-export-path" placeholder="bundles/my-target.zip" />
+          </label>
+          <button type="submit" class="btn primary">Export bundle</button>
+          <p id="bundle-export-result" class="status-box">—</p>
+        </form>
+        <form id="bundle-import-form" class="panel fuzz-controls">
+          <h2>Import</h2>
+          <label>
+            Zip path
+            <input type="text" id="bundle-import-path" placeholder="bundles/vulnserver.zip" required />
+          </label>
+          <label>
+            Output folder (optional)
+            <input type="text" id="bundle-import-out" placeholder="bundles/imported" />
+          </label>
+          <button type="submit" class="btn primary">Import bundle</button>
+          <p id="bundle-import-result" class="status-box">—</p>
+        </form>
+      </div>
     </section>
 
     <section id="view-roadmap" class="view">

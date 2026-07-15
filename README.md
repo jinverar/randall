@@ -10,7 +10,17 @@
 
 **Generation + coverage-guided fuzzing for Windows** — a spiritual successor to Sulley/Boofuzz, CANAPE, and PaiMei Process Stalker, built in C#/.NET.
 
-Named after Randall Boggs (*Monsters, Inc.*): he **stalks** targets, finds **unexpected paths**, and blends into the environment — like good fuzzing should.
+Named after **Randall Boggs** (*Monsters, Inc.*) — master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. For fuzzing that's a feature:
+
+| Randall | Fuzzer |
+|---------|--------|
+| 🦎 Camouflages — evades detection | Valid-looking shells, MITM blend-in |
+| 🐛 Beats Sulley | Coverage-guided inputs that hit **new** paths |
+| 🧪 Sneaks the factory | Stalk unexplored code with DynamoRIO |
+| 💥 Scream Extractor energy | Scream on crash — dumps, dedup, Ghidra |
+| 🕵️ Another trick up his sleeve | Havoc, dictionaries, session flows, plugins |
+
+Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
 > *Stalk code paths. Scream on crash.*
 
@@ -78,14 +88,14 @@ dotnet run --project src/Randall.Server
 
 | Mode | Command | Use case |
 |------|---------|----------|
+| **Lab agent** | `randall agent [--bind 0.0.0.0]` | Fuzz box on LAN — web UI + API |
 | **Web + local** | `randall serve` | Browser UI on localhost |
-| **Lab agent** | `randall agent --bind 0.0.0.0` | Fuzz box on LAN |
 | **Headless** | `randall fuzz -c project.yaml` | Scripts, CI |
 | **Standalone** | Self-contained publish → zip folder | Air-gapped / offline VM |
 
 ## Status
 
-**Phases 1–6 complete** — block models, coverage, proxy, triage export, RPP plugins, campaigns, portable pack, full web UI. See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Phases 1–9 complete** — doctor preflight, UDP, checksums, advanced mutators. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## License
 

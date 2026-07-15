@@ -1,6 +1,8 @@
 # Randall's Eight Legs — Learning the Fuzzer
 
-Randall Boggs has many legs. Each leg is a **feature area** and a **lesson** in vulnerability research. Work through them in order when learning the tool, or jump to the leg you need.
+Randall Boggs has **eight legs** — and a chameleon's patience for hiding in plain sight until something breaks. Each leg is a **feature area** and a **lesson** in vulnerability research. Work through them in order when learning the tool, or jump to the leg you need.
+
+Character lore & fuzzing parody: [LORE.md](LORE.md)
 
 ```
         ┌── Model

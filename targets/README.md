@@ -1,23 +1,23 @@
 # Lab targets
 
-Copy binaries here before fuzzing. Randall project YAMLs reference these paths.
+## Randall Vulnserver (included)
 
-## vulnserver
+Build the custom lab server from source:
 
-1. Download [Vulnserver](https://github.com/stephenbradshaw/vulnserver) or use your existing lab copy.
-2. Place `vulnserver.exe` at:
+```powershell
+.\scripts\build-vulnserver.ps1
+```
 
-   ```
-   targets/vulnserver/vulnserver.exe
-   ```
+This produces `targets/vulnserver/randall-vulnserver.exe` — compatible with `projects/vulnserver.yaml` (TRUN, GMON, GTER, KSTET, HTER, STAT, RAND).
 
-3. Fuzz:
+```powershell
+randall doctor -c projects/vulnserver.yaml
+dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml
+```
 
-   ```powershell
-   dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml
-   ```
+Randall starts the server, connects to `127.0.0.1:9999`, and detects when the process crashes.
 
-   Randall starts vulnserver, sends mutated payloads to `127.0.0.1:9999`, detects when the process dies.
+Source: [Randall.Vulnserver/README.md](Randall.Vulnserver/README.md)
 
 ## Generic file templates
 

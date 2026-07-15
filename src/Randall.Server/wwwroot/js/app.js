@@ -37,6 +37,7 @@ function switchView(name) {
   if (name === 'proxy') loadProxy().catch(() => {});
   if (name === 'campaign') loadCampaignView().catch(() => {});
   if (name === 'models') loadModels().catch(() => {});
+  if (name === 'bundles') loadBundlesView().catch(() => {});
 }
 
 document.querySelectorAll('.nav-btn').forEach((btn) => {
@@ -116,8 +117,42 @@ async function loadLegs() {
 
 async function loadCrashes(project = '') {
   const url = project ? `/api/crashes?project=${encodeURIComponent(project)}` : '/api/crashes';
-  const crashes = await api.get(url);
+  const clusterUrl = project ? `/api/crashes/clusters?project=${encodeURIComponent(project)}` : '/api/crashes/clusters';
+  const [crashes, clusters] = await Promise.all([
+    api.get(url),
+    api.get(clusterUrl).catch(() => []),
+  ]);
   const el = document.getElementById('crashes-table');
+  const clusterEl = document.getElementById('crash-clusters');
+  if (clusterEl) {
+    if (!clusters.length) {
+      clusterEl.innerHTML = '<p class="empty">No crash clusters yet.</p>';
+    } else {
+      clusterEl.innerHTML = `<table><thead><tr><th>Cluster</th><th>Project</th><th>Count</th><th>Rep. mutator</th></tr></thead>
+        <tbody>${clusters.map((c) => `<tr class="clickable" data-id="${c.representativeId}">
+          <td><code>${c.clusterId.split(':').slice(1).join(':') || c.clusterId}</code></td>
+          <td>${c.project}</td><td><strong>${c.count}</strong></td>
+          <td><code>${c.representativeMutator}</code></td></tr>`).join('')}
+        </tbody></table>`;
+      clusterEl.querySelectorAll('tr.clickable').forEach((row) => {
+        row.addEventListener('click', async () => {
+          const detail = await api.get(`/api/crashes/${row.dataset.id}`);
+          const box = document.getElementById('crash-detail');
+          box.classList.remove('hidden');
+          box.innerHTML = `
+            <h3>Cluster representative — ${detail.summary.project}</h3>
+            <p>Mutator: <code>${detail.summary.mutator}</code> · Hash: <code>${detail.summary.inputHash}</code></p>
+            <p class="hex-preview">${detail.hexPreview}</p>
+            <button type="button" class="btn primary" id="export-crash-btn">Export triage bundle</button>
+            <p id="export-result" class="empty"></p>`;
+          document.getElementById('export-crash-btn')?.addEventListener('click', async () => {
+            const bundle = await api.post(`/api/crashes/${detail.summary.id}/export`, {});
+            document.getElementById('export-result').textContent = `Exported to ${bundle.exportPath}`;
+          });
+        });
+      });
+    }
+  }
   if (!crashes.length) {
     el.innerHTML = '<p class="empty">No crashes yet — start a fuzz run from the Fuzz tab.</p>';
     return;
@@ -223,6 +258,22 @@ stopBtn.addEventListener('click', async () => {
   }
 });
 
+document.getElementById('fuzz-doctor').addEventListener('click', async () => {
+  const box = document.getElementById('fuzz-doctor-result');
+  box.classList.remove('hidden');
+  box.textContent = 'Running preflight…';
+  try {
+    const configPath = document.getElementById('fuzz-target').value;
+    const report = await api.get(`/api/doctor?configPath=${encodeURIComponent(configPath)}`);
+    box.innerHTML = report.checks.map((c) => {
+      const cls = c.status === 'ok' ? 'cov' : c.status === 'warn' ? '' : 'crash';
+      return `<div class="${cls}">[${c.status}] ${c.id}: ${c.message}</div>`;
+    }).join('') + `<div style="margin-top:0.5rem"><strong>${report.ready ? 'Ready' : 'Not ready'}</strong></div>`;
+  } catch (err) {
+    box.textContent = err.message;
+  }
+});
+
 let selectedProxyMessage = null;
 
 async function loadModels() {
@@ -236,13 +287,52 @@ async function loadModels() {
     <div class="phase">
       <h3>${m.name}</h3>
       <p class="hex">${m.description || m.path}</p>
-      <table><thead><tr><th>Field</th><th>Offset</th><th>Len</th><th>Mutable</th></tr></thead>
+      <table><thead><tr><th>Field</th><th>Offset</th><th>Len</th><th>Type</th><th>Mutable</th></tr></thead>
         <tbody>${(m.fields || []).map((f) => `<tr>
           <td><code>${f.name}</code></td><td>${f.offset}</td><td>${f.length}</td>
+          <td><code>${f.type || 'bytes'}</code></td>
           <td>${f.mutable ? '✓' : '—'}</td></tr>`).join('')}
         </tbody></table>
     </div>`).join('');
 }
+
+async function loadBundlesView() {
+  const targets = await api.get('/api/targets');
+  const sel = document.getElementById('bundle-export-target');
+  sel.innerHTML = targets.map((t) => `<option value="${t.configPath}">${t.name}</option>`).join('');
+}
+
+document.getElementById('bundle-export-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const out = document.getElementById('bundle-export-result');
+  try {
+    const body = {
+      configPath: document.getElementById('bundle-export-target').value,
+    };
+    const customOut = document.getElementById('bundle-export-path').value.trim();
+    if (customOut) body.outputPath = customOut;
+    const result = await api.post('/api/bundle/export', body);
+    out.textContent = `Exported ${Math.round((result.sizeBytes || 0) / 1024)} KB → ${result.path}`;
+  } catch (err) {
+    out.textContent = err.message;
+  }
+});
+
+document.getElementById('bundle-import-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const out = document.getElementById('bundle-import-result');
+  try {
+    const body = { zipPath: document.getElementById('bundle-import-path').value.trim() };
+    const dest = document.getElementById('bundle-import-out').value.trim();
+    if (dest) body.outputDir = dest;
+    const result = await api.post('/api/bundle/import', body);
+    out.textContent = `Imported → ${result.path}`;
+    await loadTargets();
+    await loadBundlesView();
+  } catch (err) {
+    out.textContent = err.message;
+  }
+});
 
 async function loadCampaignView() {
   const campaigns = await api.get('/api/campaigns');
@@ -361,6 +451,7 @@ async function init() {
   await loadRoadmap();
   await loadLegs();
   await loadModels();
+  await loadBundlesView();
   await loadCrashes();
   await connectHub();
   setInterval(pollStatus, 3000);

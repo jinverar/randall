@@ -4,6 +4,7 @@ public sealed class ProtocolDefinition
 {
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
+    public bool TrailingCrc32 { get; set; }
     public List<ProtocolBlockDefinition> Blocks { get; set; } = [];
 }
 
@@ -22,6 +23,8 @@ public sealed class ProtocolBlockDefinition
     public int LengthBytes { get; set; } = 4;
     public bool LittleEndian { get; set; } = true;
     public bool LengthMutable { get; set; } = true;
+    public string? Algorithm { get; set; }
+    public bool SyncLength { get; set; }
 }
 
 public sealed record ProtocolSummaryDto(

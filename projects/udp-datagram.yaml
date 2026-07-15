@@ -1,0 +1,23 @@
+name: udp-datagram
+description: Generic UDP datagram fuzz target — point at your listener
+kind: udp
+model: protocols/udp_datagram.yaml
+target:
+  executable: ""
+  timeoutMs: 3000
+transport:
+  type: udp
+  host: 127.0.0.1
+  port: 9998
+  receiveTimeoutMs: 500
+fuzz:
+  maxIterations: 500
+  corpusDir: ../data/corpus/udp-datagram
+  crashesDir: ../data/crashes/udp-datagram
+seeds:
+  - seeds/udp_datagram.bin
+mutators:
+  - havoc
+  - interesting
+  - bitflip
+  - splice

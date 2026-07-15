@@ -24,6 +24,8 @@ public static class TargetRunner
     {
         if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase))
             return await RunTcpAsync(project, longLivedServer, payload, tcpOptions, cancellationToken);
+        if (project.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase))
+            return await RunUdpAsync(project, payload, cancellationToken);
         return await RunFileAsync(project, yamlPath, payload, cancellationToken);
     }
 
@@ -143,6 +145,105 @@ public static class TargetRunner
 
             try { _ = await stream.ReadAsync(buf, cancellationToken); }
             catch { /* optional */ }
+        }
+        catch (Exception ex)
+        {
+            if (server is null)
+                return new TargetRunResult(false, null, null, ex.Message);
+        }
+
+        if (server is null)
+            return new TargetRunResult(false, null, null, "no server process");
+
+        await Task.Delay(150, cancellationToken);
+        if (server.HasExited)
+            return new TargetRunResult(true, server.ExitCode, null, "server exited");
+
+        return new TargetRunResult(false, null, null, "ok");
+    }
+
+    private static async Task<TargetRunResult> RunUdpAsync(
+        ProjectConfig project,
+        byte[] payload,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var client = new UdpClient();
+            client.Connect(project.Transport.Host, project.Transport.Port);
+            await client.SendAsync(payload, cancellationToken);
+
+            if (project.Transport.ReceiveTimeoutMs > 0)
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(project.Transport.ReceiveTimeoutMs);
+                try
+                {
+                    _ = await client.ReceiveAsync(cts.Token);
+                }
+                catch (OperationCanceledException) { /* no response ok */ }
+            }
+        }
+        catch (Exception ex)
+        {
+            return new TargetRunResult(false, null, null, ex.Message);
+        }
+
+        return new TargetRunResult(false, null, null, "ok");
+    }
+
+    public sealed record TcpStep(byte[] Payload, TcpSendOptions Options);
+
+    public static async Task<TargetRunResult> RunTcpSequenceAsync(
+        ProjectConfig project,
+        Process? server,
+        IReadOnlyList<TcpStep> steps,
+        CancellationToken cancellationToken = default)
+    {
+        if (steps.Count == 0)
+            return new TargetRunResult(false, null, null, "empty sequence");
+
+        try
+        {
+            using var client = new TcpClient();
+            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            connectCts.CancelAfter(2000);
+            try
+            {
+                await client.ConnectAsync(project.Transport.Host, project.Transport.Port, connectCts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                return new TargetRunResult(false, null, null, "connect timeout");
+            }
+
+            await using var stream = client.GetStream();
+            var buf = new byte[4096];
+            stream.ReadTimeout = project.Transport.ReceiveTimeoutMs;
+
+            for (var i = 0; i < steps.Count; i++)
+            {
+                var step = steps[i];
+                if (i == 0 && step.Options.ReadBanner)
+                {
+                    try { _ = await stream.ReadAsync(buf, cancellationToken); }
+                    catch { /* banner optional */ }
+                }
+
+                if (step.Options.Preamble is { Length: > 0 })
+                {
+                    await stream.WriteAsync(step.Options.Preamble, cancellationToken);
+                    await stream.FlushAsync(cancellationToken);
+                    try { _ = await stream.ReadAsync(buf, cancellationToken); }
+                    catch { /* response optional */ }
+                }
+
+                await stream.WriteAsync(step.Payload, cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+
+                try { _ = await stream.ReadAsync(buf, cancellationToken); }
+                catch { /* optional */ }
+            }
         }
         catch (Exception ex)
         {

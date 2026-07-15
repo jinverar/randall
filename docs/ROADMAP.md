@@ -122,3 +122,56 @@ randall fuzz -c projects/file-framed.yaml --dry-run
 ```
 
 Drop binaries into `targets/` per [TARGETS.md](TARGETS.md), then fuzz. Private profiles go in gitignored `projects/local/`.
+
+---
+
+## Phase 7 — Lab agent + mobility 🔄 active
+
+| Item | Status |
+|------|--------|
+| **`randall agent`** — bind `0.0.0.0` for LAN lab boxes | ✅ |
+| Web **Bundles** tab — export/import project zips | ✅ |
+| Full vulnserver block models (GTER, KSTET, HTER) | ✅ |
+| Discover `projects/local/` in targets API (gitignored) | ✅ |
+| Cursor Automations nightly template | ✅ [docs/AUTOPILOT.md](AUTOPILOT.md) |
+
+```powershell
+randall agent --port 5000          # LAN: http://<ip>:5000
+randall serve --bind 127.0.0.1     # localhost only
+```
+
+---
+
+## Phase 8 — Advanced techniques ✅
+
+| Item | Status |
+|------|--------|
+| **Havoc** — AFL-style stacked mutations | ✅ |
+| **Interesting integers** — libFuzzer-style aligned values | ✅ |
+| **Dictionary** — token injection from YAML/file | ✅ |
+| **Splice** — corpus crossover | ✅ |
+| **Power schedule** — energy-weighted corpus picks | ✅ |
+| **Session flows** — multi-step TCP state (STAT→TRUN) | ✅ |
+| **Crash clusters** — triage grouping API + web UI | ✅ |
+
+**Techniques guide:** [docs/FUZZING.md](FUZZING.md)
+
+---
+
+## Phase 9 — Lab readiness ✅
+
+| Item | Status |
+|------|--------|
+| **`randall doctor`** — seeds, target, DynamoRIO, TCP/UDP, plugins | ✅ |
+| Web **Doctor** button on Fuzz tab | ✅ |
+| **UDP** datagram transport (`kind: udp`) | ✅ |
+| **CRC32 checksum** block + post-mutation resync | ✅ |
+| Field-level **havoc** in model fuzzer (~15% on payload fields) | ✅ |
+
+**Before tonight's run:**
+```powershell
+randall doctor -c projects/vulnserver.yaml
+randall doctor -c projects/local/notepadpp.yaml   # private targets
+randall fuzz -c projects/vulnserver.yaml --dry-run
+randall serve
+```

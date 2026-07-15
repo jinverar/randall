@@ -29,3 +29,19 @@ public sealed record CrashDetailDto(
     CrashSummaryDto Summary,
     int InputLength,
     string HexPreview);
+
+public sealed record CrashClusterDto(
+    string ClusterId,
+    string Project,
+    int Count,
+    Guid RepresentativeId,
+    string RepresentativeHash,
+    string RepresentativeMutator,
+    int LengthBucket);
+
+public sealed record DoctorCheckDto(string Id, string Status, string Message);
+
+public sealed record DoctorReportDto(
+    string Project,
+    bool Ready,
+    IReadOnlyList<DoctorCheckDto> Checks);

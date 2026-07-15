@@ -3,6 +3,7 @@ using System.Text;
 using Randall.Contracts;
 using Randall.Core;
 using Randall.Core.Model;
+using Randall.Infrastructure.Mutators;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -26,7 +27,14 @@ public static class ProtocolLoader
             ? Path.GetFileNameWithoutExtension(full)
             : def.Name;
         var root = BuildNode(def.Blocks);
-        return new BlockModel(def.Name, root);
+        var model = new BlockModel(def.Name, root, trailingCrc32: def.TrailingCrc32);
+        try
+        {
+            var seeds = LoadProtocolSeeds(projectYamlPath, protocolRelativePath);
+            model.RegisterDerivedFields(seeds);
+        }
+        catch { model.RegisterDerivedFields(new Dictionary<string, byte[]>()); }
+        return model;
     }
 
     public static IEnumerable<string> Discover(string protocolsDir)
@@ -116,6 +124,13 @@ public static class ProtocolLoader
                 LengthMutable = def.LengthMutable,
                 Payload = BuildSizedPayload(def),
             },
+            "checksum" or "crc" or "crc32" => new ChecksumBlock
+            {
+                Name = def.Name ?? "checksum",
+                LengthBytes = def.LengthBytes is 2 or 4 ? def.LengthBytes : 4,
+                LittleEndian = def.LittleEndian,
+                Mutable = def.Mutable,
+            },
             _ => new StaticBlock(def.Value ?? ""),
         };
 
@@ -135,12 +150,14 @@ public static class ModelFuzzer
         BlockModel model,
         IReadOnlyDictionary<string, byte[]> seeds,
         IMutator mutator,
-        Random rng)
+        Random rng,
+        bool syncLengthFields = false,
+        int havocDepth = 6)
     {
         var baseline = model.Render(seeds);
         var mutable = model.GetMutableFields();
         if (mutable.Count == 0)
-            return baseline;
+            return model.FinalizeMessage(baseline, syncLengthFields);
 
         var lengthFields = mutable.Where(f => f.Kind == "length").ToList();
         IReadOnlyList<FieldRegion> pool = lengthFields.Count > 0 && rng.NextDouble() < 0.25
@@ -149,13 +166,19 @@ public static class ModelFuzzer
 
         var field = pool[rng.Next(pool.Count)];
         if (field.Offset + field.Length > baseline.Length)
-            return baseline;
+            return model.FinalizeMessage(baseline, syncLengthFields);
 
         var slice = baseline.AsSpan(field.Offset, field.Length).ToArray();
-        var mutated = field.Kind == "length"
-            ? MutateLengthField(slice, field, baseline, rng)
-            : mutator.Mutate(slice).ToArray();
-        return model.PatchField(baseline, field.Name, mutated);
+        byte[] mutated;
+        if (field.Kind == "length")
+            mutated = MutateLengthField(slice, field, baseline, rng);
+        else if (mutator.Name == "havoc" || (field.Kind == "bytes" && rng.NextDouble() < 0.15))
+            mutated = MutationOps.Havoc(slice, rng, havocDepth);
+        else
+            mutated = mutator.Mutate(slice).ToArray();
+
+        var patched = model.PatchField(baseline, field.Name, mutated);
+        return model.FinalizeMessage(patched, syncLengthFields);
     }
 
     private static byte[] MutateLengthField(
