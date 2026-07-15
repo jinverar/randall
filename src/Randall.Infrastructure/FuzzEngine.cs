@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Net.Sockets;
 using System.Text;
 using Randall.Contracts;
 using Randall.Core;
@@ -27,7 +26,7 @@ public sealed class FuzzEngine
         var crashes = new List<CrashRecord>();
         Process? longLived = null;
         if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) && project.Target.LongLived)
-            longLived = StartTarget(project, yamlPath, null);
+            longLived = TargetRunner.StartTarget(project, yamlPath, null);
 
         var iterations = 0;
         var crashCount = 0;
@@ -53,24 +52,25 @@ public sealed class FuzzEngine
                     continue;
                 }
 
-                TargetRunResult result;
-                if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase))
-                    result = await RunTcpIterationAsync(project, longLived, payload, cancellationToken);
-                else
-                    result = await RunFileIterationAsync(project, yamlPath, payload, cancellationToken);
+                var result = await TargetRunner.RunPayloadAsync(
+                    project, yamlPath, payload, longLived, cancellationToken);
 
                 if (result.Crashed)
                 {
                     crashCount++;
-                    var saved = crashStore.Save(project.Name, iterations, mutator.Name, payload, result.ExitCode);
-                    Console.WriteLine($"CRASH #{crashCount} iter={iterations} mutator={mutator.Name} saved={saved.InputPath}");
+                    var saved = crashStore.Save(
+                        project.Name, iterations, mutator.Name, payload, result.ExitCode, result.MiniDumpPath);
+                    Console.WriteLine(
+                        $"CRASH #{crashCount} iter={iterations} mutator={mutator.Name} " +
+                        $"detail={result.Detail} saved={saved.InputPath}" +
+                        (saved.MiniDumpPath is not null ? $" dump={saved.MiniDumpPath}" : ""));
                     crashes.Add(new CrashRecord(
                         saved.Id,
                         payload,
                         saved.InputHash,
-                        result.ExitCode?.ToString() ?? "unknown",
+                        result.ExitCode?.ToString() ?? result.Detail,
                         null,
-                        null,
+                        saved.MiniDumpPath,
                         0));
 
                     if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) && project.Target.LongLived)
@@ -78,7 +78,7 @@ public sealed class FuzzEngine
                         longLived?.Kill(entireProcessTree: true);
                         longLived?.Dispose();
                         await Task.Delay(300, cancellationToken);
-                        longLived = StartTarget(project, yamlPath, null);
+                        longLived = TargetRunner.StartTarget(project, yamlPath, null);
                     }
                 }
                 else if (iterations % 50 == 0)
@@ -115,140 +115,4 @@ public sealed class FuzzEngine
         }
         return list;
     }
-
-    private static async Task<TargetRunResult> RunFileIterationAsync(
-        ProjectConfig project,
-        string yamlPath,
-        byte[] payload,
-        CancellationToken cancellationToken)
-    {
-        var ext = project.Transport.Extension;
-        if (!ext.StartsWith('.'))
-            ext = "." + ext;
-        var tempDir = Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CorpusDir), "_tmp");
-        Directory.CreateDirectory(tempDir);
-        var tempFile = Path.Combine(tempDir, $"fuzz_{Guid.NewGuid():N}{ext}");
-        await File.WriteAllBytesAsync(tempFile, payload, cancellationToken);
-
-        using var process = StartTarget(project, yamlPath, tempFile);
-        if (process is null)
-            return new TargetRunResult(false, null);
-
-        var exited = await WaitForExitAsync(process, project.Target.TimeoutMs, cancellationToken);
-        try { File.Delete(tempFile); } catch { /* ignore */ }
-
-        if (!exited)
-        {
-            process.Kill(entireProcessTree: true);
-            return new TargetRunResult(true, null);
-        }
-
-        var code = process.ExitCode;
-        // Access violation / stack buffer overrun on Windows
-        var crashed = code is unchecked((int)0xC0000005) or unchecked((int)0xC0000409)
-            or < 0 and not -1;
-        return new TargetRunResult(crashed, code);
-    }
-
-    private static async Task<TargetRunResult> RunTcpIterationAsync(
-        ProjectConfig project,
-        Process? server,
-        byte[] payload,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            using var client = new TcpClient();
-            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            connectCts.CancelAfter(2000);
-            try
-            {
-                await client.ConnectAsync(project.Transport.Host, project.Transport.Port, connectCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                return new TargetRunResult(false, null);
-            }
-
-            await using var stream = client.GetStream();
-            await stream.WriteAsync(payload, cancellationToken);
-            await stream.FlushAsync(cancellationToken);
-
-            var buf = new byte[4096];
-            stream.ReadTimeout = project.Transport.ReceiveTimeoutMs;
-            try
-            {
-                _ = await stream.ReadAsync(buf, cancellationToken);
-            }
-            catch { /* banner optional */ }
-        }
-        catch
-        {
-            // connection failure may mean server crashed
-        }
-
-        if (server is null)
-            return new TargetRunResult(false, null);
-
-        await Task.Delay(100, cancellationToken);
-        if (server.HasExited)
-            return new TargetRunResult(true, server.ExitCode);
-
-        return new TargetRunResult(false, null);
-    }
-
-    private static Process? StartTarget(ProjectConfig project, string yamlPath, string? filePath)
-    {
-        var exe = project.Target.Executable;
-        if (string.IsNullOrWhiteSpace(exe))
-            return null;
-
-        exe = ProjectLoader.ResolvePath(yamlPath, exe);
-        if (!File.Exists(exe))
-        {
-            Console.Error.WriteLine($"Target not found: {exe}");
-            return null;
-        }
-
-        var args = project.Target.Args.Select(a =>
-            a.Replace("{file}", filePath ?? "", StringComparison.OrdinalIgnoreCase)).ToList();
-
-        var workDir = string.IsNullOrWhiteSpace(project.Target.WorkingDirectory)
-            ? Path.GetDirectoryName(exe) ?? ProjectLoader.ResolveProjectRoot(yamlPath)
-            : ProjectLoader.ResolvePath(yamlPath, project.Target.WorkingDirectory);
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = exe,
-            Arguments = string.Join(' ', args.Select(EscapeArg)),
-            UseShellExecute = false,
-            WorkingDirectory = workDir,
-        };
-
-        return Process.Start(psi);
-    }
-
-    private static string EscapeArg(string arg)
-    {
-        if (arg.Contains(' ') || arg.Contains('"'))
-            return $"\"{arg.Replace("\"", "\\\"")}\"";
-        return arg;
-    }
-
-    private static async Task<bool> WaitForExitAsync(Process process, int timeoutMs, CancellationToken ct)
-    {
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(timeoutMs);
-        try
-        {
-            await process.WaitForExitAsync(cts.Token);
-            return true;
-        }
-        catch (OperationCanceledException)
-        {
-            return false;
-        }
-    }
-
-    private sealed record TargetRunResult(bool Crashed, int? ExitCode);
 }

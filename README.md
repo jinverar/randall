@@ -1,5 +1,9 @@
 # Randall
 
+<p align="center">
+  <img src="randall.png" alt="Randall — master of mayhem, fuzzing at the console" width="640" />
+</p>
+
 **Generation + coverage-guided fuzzing for Windows** — a spiritual successor to Sulley/Boofuzz, CANAPE, and PaiMei Process Stalker, built in C#/.NET.
 
 Named after Randall Boggs (*Monsters, Inc.*): he **stalks** targets, finds **unexpected paths**, and blends into the environment — like good fuzzing should.
@@ -77,7 +81,7 @@ dotnet run --project src/Randall.Server
 
 ## Status
 
-**Early scaffolding** — API and interfaces are being defined. PRs and design discussion welcome.
+**Phase 1 complete** — lab targets, crash loop, replay, minidump, web UI. See [docs/ROADMAP.md](docs/ROADMAP.md) for live progress.
 
 ## License
 

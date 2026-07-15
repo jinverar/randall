@@ -27,5 +27,3 @@ public static class RandallLegs
 public sealed record LegInfoDto(string Id, string Title, string Summary);
 
 public sealed record HealthDto(string Name, string Version, string Status);
-
-public sealed record CrashSummaryDto(Guid Id, string StackHash, string ExceptionCode, DateTimeOffset ObservedAt);

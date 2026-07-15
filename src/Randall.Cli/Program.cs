@@ -16,7 +16,7 @@ return args[0].ToLowerInvariant() switch
     "serve" => RunServe(args.Skip(1).ToArray()),
     "fuzz" => await RunFuzzAsync(args.Skip(1).ToArray()),
     "crashes" => ListCrashes(args.Skip(1).ToArray()),
-    "replay" => ReplayCrash(args.Skip(1).ToArray()),
+    "replay" => await ReplayCrashAsync(args.Skip(1).ToArray()),
     "export" => NotImplemented("export"),
     _ => Unknown(args[0]),
 };
@@ -31,7 +31,7 @@ static void PrintHelp()
           randall fuzz -c <project>    Fuzz vulnserver, notepad++, or cfpass
           randall fuzz -c <project> --dry-run
           randall crashes [-p name]    List saved crashes
-          randall replay <crash.bin>   Re-send TCP payload or re-open file target
+          randall replay -c <project> -i <crash.bin>
           randall serve [--port N]     Web UI + API
           randall legs                 Eight legs feature map
           randall version
@@ -54,26 +54,16 @@ static int PrintLegs()
 
 static int PrintVersion()
 {
-    Console.WriteLine("Randall 0.2.0-alpha (lab targets)");
+    Console.WriteLine("Randall 0.3.0-alpha (Phase 1 complete)");
     return 0;
 }
 
 static int ListTargets(string[] args)
 {
-    var root = FindRepoRoot() ?? Directory.GetCurrentDirectory();
-    var projectsDir = Path.Combine(root, "projects");
-    foreach (var path in ProjectLoader.DiscoverProjects(projectsDir))
+    foreach (var t in CrashCatalog.ListTargets())
     {
-        try
-        {
-            var p = ProjectLoader.Load(path);
-            Console.WriteLine($"{p.Name,-12} [{p.Kind}] {p.Description}");
-            Console.WriteLine($"             {path}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"{path} — error: {ex.Message}");
-        }
+        Console.WriteLine($"{t.Name,-12} [{t.Kind}] {t.Description}");
+        Console.WriteLine($"             {t.ConfigPath}");
     }
     return 0;
 }
@@ -117,29 +107,55 @@ static int ListCrashes(string[] args)
             projectFilter = args[++i];
     }
 
-    var root = FindRepoRoot() ?? Directory.GetCurrentDirectory();
-    var store = new CrashStore(Path.Combine(root, "data", "crashes"));
-    foreach (var c in store.List(projectFilter))
-        Console.WriteLine($"{c.At:u} {c.Project} iter={c.Iteration} {c.Mutator} {c.InputPath}");
+    foreach (var c in CrashCatalog.ListAll(projectFilter: projectFilter))
+    {
+        var dump = c.MiniDumpPath is not null ? $" dump={c.MiniDumpPath}" : "";
+        Console.WriteLine(
+            $"{c.ObservedAt:u} {c.Project} iter={c.Iteration} {c.Mutator} exit={c.TargetExitCode}{dump}");
+        Console.WriteLine($"             {c.InputPath}");
+    }
     return 0;
 }
 
-static int ReplayCrash(string[] args)
+static async Task<int> ReplayCrashAsync(string[] args)
 {
-    if (args.Length == 0)
+    string? config = null;
+    string? input = null;
+    for (var i = 0; i < args.Length; i++)
     {
-        Console.Error.WriteLine("Usage: randall replay <path-to-crash.bin>");
+        if (args[i] is "-c" or "--config" && i + 1 < args.Length)
+            config = args[++i];
+        else if (args[i] is "-i" or "--input" && i + 1 < args.Length)
+            input = args[++i];
+    }
+
+    if (config is null || input is null)
+    {
+        Console.Error.WriteLine("Usage: randall replay -c projects/vulnserver.yaml -i path/to/crash.bin");
         return 1;
     }
-    var path = Path.GetFullPath(args[0]);
-    if (!File.Exists(path))
+
+    var yamlPath = Path.GetFullPath(config);
+    var inputPath = Path.GetFullPath(input);
+    if (!File.Exists(inputPath))
     {
-        Console.Error.WriteLine($"File not found: {path}");
+        Console.Error.WriteLine($"File not found: {inputPath}");
         return 1;
     }
-    Console.WriteLine($"Replay not fully wired — crash input saved at: {path}");
-    Console.WriteLine("Re-run: randall fuzz -c projects/<target>.yaml and compare crash hash");
-    return 0;
+
+    var project = ProjectLoader.Load(yamlPath);
+    var payload = await File.ReadAllBytesAsync(inputPath);
+    Console.WriteLine($"Replaying {payload.Length} bytes against {project.Name} ({project.Kind})");
+
+    var engine = new ReplayEngine();
+    var result = await engine.ReplayAsync(project, yamlPath, payload);
+    Console.WriteLine(
+        result.Crashed
+            ? $"CRASH reproduced — {result.Detail} exit={result.ExitCode}"
+            : $"No crash — {result.Detail}");
+    if (result.MiniDumpPath is not null)
+        Console.WriteLine($"Minidump: {result.MiniDumpPath}");
+    return result.Crashed ? 0 : 2;
 }
 
 static int RunServe(string[] args)
@@ -180,18 +196,6 @@ static string? FindServerProjectPath()
         var candidate = Path.Combine(dir.FullName, "src", "Randall.Server", "Randall.Server.csproj");
         if (File.Exists(candidate))
             return candidate;
-        dir = dir.Parent;
-    }
-    return null;
-}
-
-static string? FindRepoRoot()
-{
-    var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
-    while (dir is not null)
-    {
-        if (File.Exists(Path.Combine(dir.FullName, "Randall.sln")))
-            return dir.FullName;
         dir = dir.Parent;
     }
     return null;

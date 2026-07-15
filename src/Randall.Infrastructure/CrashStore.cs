@@ -11,6 +11,7 @@ public sealed record SavedCrash(
     string InputHash,
     string InputPath,
     string? TargetExitCode,
+    string? MiniDumpPath,
     DateTimeOffset At);
 
 public sealed class CrashStore(string crashesDir)
@@ -22,7 +23,13 @@ public sealed class CrashStore(string crashesDir)
         Directory.CreateDirectory(crashesDir);
     }
 
-    public SavedCrash Save(string project, int iteration, string mutator, byte[] input, int? exitCode)
+    public SavedCrash Save(
+        string project,
+        int iteration,
+        string mutator,
+        byte[] input,
+        int? exitCode,
+        string? miniDumpPath = null)
     {
         Ensure();
         var id = Guid.NewGuid();
@@ -38,6 +45,7 @@ public sealed class CrashStore(string crashesDir)
             hash,
             inputPath,
             exitCode?.ToString(),
+            miniDumpPath,
             DateTimeOffset.UtcNow);
         File.AppendAllText(_indexPath, JsonSerializer.Serialize(record) + Environment.NewLine);
         return record;

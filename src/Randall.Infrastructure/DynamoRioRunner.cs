@@ -1,0 +1,95 @@
+using System.Diagnostics;
+using Randall.Contracts;
+
+namespace Randall.Infrastructure;
+
+/// <summary>Leg 4 — Stalk: DynamoRIO drrun + drcov wrapper (Phase 2 scaffold).</summary>
+public sealed class DynamoRioRunner
+{
+    public string? DrrunPath { get; init; }
+    public string? DrCovClientPath { get; init; }
+
+    public static DynamoRioRunner Discover()
+    {
+        var env = Environment.GetEnvironmentVariable("DYNAMORIO_HOME");
+        if (!string.IsNullOrWhiteSpace(env))
+        {
+            var drrun = Path.Combine(env, "bin64", "drrun.exe");
+            if (File.Exists(drrun))
+                return new DynamoRioRunner { DrrunPath = drrun };
+        }
+
+        foreach (var candidate in new[]
+        {
+            @"C:\DynamoRIO\bin64\drrun.exe",
+            @"C:\tools\dynamorio\bin64\drrun.exe",
+        })
+        {
+            if (File.Exists(candidate))
+                return new DynamoRioRunner { DrrunPath = candidate };
+        }
+
+        return new DynamoRioRunner();
+    }
+
+    public bool IsAvailable => !string.IsNullOrWhiteSpace(DrrunPath) && File.Exists(DrrunPath);
+
+    public async Task<DrcovRunResult> RunWithCoverageAsync(
+        ProjectConfig project,
+        string yamlPath,
+        byte[] input,
+        string traceDir,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsAvailable)
+        {
+            return new DrcovRunResult(
+                false,
+                null,
+                null,
+                "DynamoRIO not found — set DYNAMORIO_HOME or install to C:\\DynamoRIO");
+        }
+
+        Directory.CreateDirectory(traceDir);
+        var targetExe = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
+        if (!File.Exists(targetExe))
+            return new DrcovRunResult(false, null, null, $"Target not found: {targetExe}");
+
+        var inputFile = Path.Combine(traceDir, $"input_{Guid.NewGuid():N}.bin");
+        await File.WriteAllBytesAsync(inputFile, input, cancellationToken);
+
+        var args = project.Target.Args.Select(a =>
+            a.Replace("{file}", inputFile, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = DrrunPath,
+            Arguments = $"-t drcov -dump_text -- \"{targetExe}\" {string.Join(' ', args)}",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            WorkingDirectory = Path.GetDirectoryName(targetExe) ?? traceDir,
+        };
+
+        using var process = Process.Start(psi);
+        if (process is null)
+            return new DrcovRunResult(false, null, null, "Failed to start drrun");
+
+        await process.WaitForExitAsync(cancellationToken);
+        var logPath = Directory.EnumerateFiles(traceDir, "*.log")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+
+        return new DrcovRunResult(
+            process.ExitCode == 0,
+            logPath,
+            process.ExitCode,
+            process.ExitCode == 0 ? "ok" : $"exit {process.ExitCode}");
+    }
+}
+
+public sealed record DrcovRunResult(
+    bool Success,
+    string? TracePath,
+    int? ExitCode,
+    string Detail);
