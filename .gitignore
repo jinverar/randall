@@ -1,0 +1,32 @@
+# Build
+bin/
+obj/
+out/
+publish/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE
+.vs/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Randall runtime data (local lab)
+data/
+logs/
+tools/dynamorio/
+*.db
+*.dmp
+*.drcov
+
+# Secrets
+.env
+appsettings.Development.json
+*.pfx

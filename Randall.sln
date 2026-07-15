@@ -1,0 +1,55 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{F91F3A44-A9D6-4176-8BCB-BB5A85601BE5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Randall.Core", "src\Randall.Core\Randall.Core.csproj", "{E4E082FB-1222-4FC7-9107-0585FC91D30B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Randall.Contracts", "src\Randall.Contracts\Randall.Contracts.csproj", "{F61555B0-669C-46BF-9AC1-8FB3315DD008}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Randall.Infrastructure", "src\Randall.Infrastructure\Randall.Infrastructure.csproj", "{338298DB-115B-408F-A691-8FB1B2C2B245}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Randall.Server", "src\Randall.Server\Randall.Server.csproj", "{3367B9EE-4F38-4BC5-9B16-9034307E2F15}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Randall.Cli", "src\Randall.Cli\Randall.Cli.csproj", "{1DA78EF7-ECF5-483C-9240-9AB4947BF2A4}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E4E082FB-1222-4FC7-9107-0585FC91D30B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E4E082FB-1222-4FC7-9107-0585FC91D30B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E4E082FB-1222-4FC7-9107-0585FC91D30B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E4E082FB-1222-4FC7-9107-0585FC91D30B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F61555B0-669C-46BF-9AC1-8FB3315DD008}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F61555B0-669C-46BF-9AC1-8FB3315DD008}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F61555B0-669C-46BF-9AC1-8FB3315DD008}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F61555B0-669C-46BF-9AC1-8FB3315DD008}.Release|Any CPU.Build.0 = Release|Any CPU
+		{338298DB-115B-408F-A691-8FB1B2C2B245}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{338298DB-115B-408F-A691-8FB1B2C2B245}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{338298DB-115B-408F-A691-8FB1B2C2B245}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{338298DB-115B-408F-A691-8FB1B2C2B245}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3367B9EE-4F38-4BC5-9B16-9034307E2F15}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3367B9EE-4F38-4BC5-9B16-9034307E2F15}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3367B9EE-4F38-4BC5-9B16-9034307E2F15}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3367B9EE-4F38-4BC5-9B16-9034307E2F15}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1DA78EF7-ECF5-483C-9240-9AB4947BF2A4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1DA78EF7-ECF5-483C-9240-9AB4947BF2A4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1DA78EF7-ECF5-483C-9240-9AB4947BF2A4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1DA78EF7-ECF5-483C-9240-9AB4947BF2A4}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{E4E082FB-1222-4FC7-9107-0585FC91D30B} = {F91F3A44-A9D6-4176-8BCB-BB5A85601BE5}
+		{F61555B0-669C-46BF-9AC1-8FB3315DD008} = {F91F3A44-A9D6-4176-8BCB-BB5A85601BE5}
+		{338298DB-115B-408F-A691-8FB1B2C2B245} = {F91F3A44-A9D6-4176-8BCB-BB5A85601BE5}
+		{3367B9EE-4F38-4BC5-9B16-9034307E2F15} = {F91F3A44-A9D6-4176-8BCB-BB5A85601BE5}
+		{1DA78EF7-ECF5-483C-9240-9AB4947BF2A4} = {F91F3A44-A9D6-4176-8BCB-BB5A85601BE5}
+	EndGlobalSection
+EndGlobal
