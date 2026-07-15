@@ -1,10 +1,10 @@
 # Randall roadmap
 
-<p align="center">
-  <img src="../randall.png" alt="Randall — master of mayhem, fuzzing at the console" width="560" />
-</p>
-
-<p align="center"><em>Stalk code paths. Scream on crash.</em></p>
+<div align="center">
+  <img alt="Randall fuzzer mascot" src="assets/randall.png" width="560" />
+  <br />
+  <em>Stalk code paths. Scream on crash.</em>
+</div>
 
 **Mission:** Intelligent, tricky fuzzing — not raw exec/s speed.
 

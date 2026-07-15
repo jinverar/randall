@@ -1,8 +1,12 @@
 # Randall
 
-<p align="center">
-  <img src="randall.png" alt="Randall — master of mayhem, fuzzing at the console" width="640" />
-</p>
+<div align="center">
+  <a href="docs/assets/randall.png">
+    <img alt="Randall fuzzer mascot" src="docs/assets/randall.png" width="640" />
+  </a>
+  <br />
+  <em>Stalk code paths. Scream on crash.</em>
+</div>
 
 **Generation + coverage-guided fuzzing for Windows** — a spiritual successor to Sulley/Boofuzz, CANAPE, and PaiMei Process Stalker, built in C#/.NET.
 

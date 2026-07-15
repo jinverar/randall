@@ -127,8 +127,13 @@ app.MapGet("/randall.png", () =>
     var repoRoot = CrashCatalog.FindRepoRoot();
     if (repoRoot is null)
         return Results.NotFound();
-    var path = Path.Combine(repoRoot, "randall.png");
-    return File.Exists(path) ? Results.File(path, "image/png") : Results.NotFound();
+    foreach (var relative in new[] { "docs/assets/randall.png", "randall.png" })
+    {
+        var path = Path.Combine(repoRoot, relative);
+        if (File.Exists(path))
+            return Results.File(path, "image/png");
+    }
+    return Results.NotFound();
 });
 
 app.MapGet("/api/health", () => new HealthDto("Randall", "0.3.0-alpha", "phase-1-complete"));
