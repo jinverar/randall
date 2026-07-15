@@ -8,7 +8,7 @@
 
 **Mission:** Intelligent, tricky fuzzing — not raw exec/s speed.
 
-**Lab targets:** [vulnserver](TARGETS.md#vulnserver) · [Notepad++](TARGETS.md#notepadpp) · [cfpass](TARGETS.md#cfpass) (strange file formats)
+**Lab targets:** [vulnserver](TARGETS.md#vulnserver) · generic [file templates](TARGETS.md) · private configs in `projects/local/`
 
 View live status: `randall serve` → http://localhost:5000 → **Roadmap** tab, or `GET /api/roadmap`.
 
@@ -20,9 +20,9 @@ View live status: `randall serve` → http://localhost:5000 → **Roadmap** tab,
 |------|--------|
 | Project YAML loader (`projects/*.yaml`) | ✅ |
 | Built-in tricky mutators (bitflip, expand, truncate, boundary, insert) | ✅ |
-| **vulnserver** TCP fuzz (`TRUN /.:/` prefix) | ✅ |
-| **notepadpp** file fuzz (XML + weird text seeds) | ✅ |
-| **cfpass** file fuzz (placeholder binary seeds — replace with real format) | ✅ |
+| **vulnserver** TCP fuzz (session graph) | ✅ |
+| **file-text** template (structured text / XML) | ✅ |
+| **file-framed** template (length-prefixed binary) | ✅ |
 | Crash save + `index.jsonl` per target under `data/crashes/<name>/` | ✅ |
 | CLI: `targets`, `fuzz`, `crashes`, `--dry-run` | ✅ |
 | Full `replay` — `randall replay -c projects/x.yaml -i crash.bin` | ✅ |
@@ -39,43 +39,86 @@ dotnet run --project src/Randall.Cli -- replay -c projects/vulnserver.yaml -i da
 
 ---
 
-## Phase 2 — Stalk (DynamoRIO) 🔄 scaffold
+## Phase 2 — Stalk (DynamoRIO) ✅
 
 | Item | Status |
 |------|--------|
-| `DynamoRioRunner` — discover `drrun.exe`, run with `-t drcov` | ✅ scaffold |
-| `CorpusTracker` — dedupe inputs by hash, save interesting corpus | ✅ scaffold |
-| Wire coverage into fuzz loop (prioritize new edges) | ⬜ |
-| GUI coverage for notepad++ / cfpass | ⬜ |
+| `DrcovParser` + `CoverageSet` — parse drcov text traces | ✅ |
+| `DynamoRioRunner` — discover `drrun.exe`, run with `-t drcov` | ✅ |
+| `CorpusTracker` — priority queue for new-edge inputs | ✅ |
+| Wire coverage into `FuzzEngine` | ✅ |
+| Web UI — dashboard, fuzz control, live SignalR log | ✅ |
+| API — `POST /api/fuzz/start`, `/api/fuzz/stop`, `/api/corpus/{project}` | ✅ |
+| Coverage-guided file fuzz | ✅ (`coverageGuided: true` in YAML) |
 
-Set `DYNAMORIO_HOME` to your DynamoRIO install. Check `/api/coverage/status` in the web UI.
+**Web UI:** `randall serve` → http://localhost:5000
 
----
-
-## Phase 3 — Network + proxy
-
-- [ ] More vulnserver commands (session graph beyond TRUN)
-- [ ] CANAPE-style MITM for future services
-- [ ] Live edit / replay in proxy
+Set `DYNAMORIO_HOME` for coverage-guided file fuzzing.
 
 ---
 
-## Phase 4 — Crash stalking + Ghidra
+## Phase 3 — Network + proxy ✅
 
-- [ ] Path dedup + first-diverge from drcov traces
-- [ ] Export to Dragon Dance / Ghidra triage bundle
-- [ ] PaiMei-style crash stalking hooks
+| Item | Status |
+|------|--------|
+| Vulnserver **session graph** — TRUN, GMON, GTER, KSTET, HTER, STAT→TRUN | ✅ |
+| `SessionGraph` — random command pick per iteration | ✅ |
+| **TcpMitmProxy** — CANAPE-style TCP MITM | ✅ |
+| Web **Proxy** tab — capture, hex edit, replay | ✅ |
+| CLI — `randall proxy --listen 9998 --target 127.0.0.1:9999` | ✅ |
 
----
-
-## Phase 5 — Polyglot plugins + autopilot
-
-- [ ] RPP process plugins (Python / Node / Rust)
-- [ ] Standalone `dotnet publish` portable bundle
-- [ ] Campaign scheduler + Cursor Automations integration
+Point your fuzz client at `127.0.0.1:9998` while proxy forwards to vulnserver on 9999.
 
 ---
 
-**Current focus:** Phase 2 — install DynamoRIO, run drcov on vulnserver, hook `CorpusTracker` into the fuzz loop.
+## Phase 4 — Crash stalking + Ghidra ✅
 
-Drop binaries into `targets/` per [TARGETS.md](TARGETS.md), then fuzz.
+| Item | Status |
+|------|--------|
+| `CrashStalker.FindFirstDiverge` | ✅ |
+| Triage bundle export | ✅ |
+| `GhidraExporter` — `ghidra_import.py`, `DRAGON_DANCE.txt`, `coverage_edges.txt` | ✅ |
+
+---
+
+## Phase 5 — Polyglot plugins + autopilot ✅
+
+| Item | Status |
+|------|--------|
+| **RPP** — Python/Node plugins over JSON stdin/stdout | ✅ |
+| Example plugin `plugins/xor-silly` | ✅ |
+| **Campaign scheduler** — `campaigns/lab-smoke.yaml`, `nightly-lab.yaml` | ✅ |
+| CLI — `randall campaign`, `randall pack` | ✅ |
+| Web **Campaign** tab + `/api/campaign/*` | ✅ |
+| Portable pack — self-contained win-x64 folder | ✅ |
+| Cursor Automations autopilot | 📋 see README / prior chat |
+
+**Pack for lab VM:**
+```powershell
+dotnet run --project src/Randall.Cli -- pack -o publish/standalone
+# or: .\scripts\publish-standalone.ps1
+```
+
+**Plugins:** [docs/RPP.md](RPP.md)
+
+---
+
+## Phase 6 — Intelligence + polish ✅
+
+| Item | Status |
+|------|--------|
+| **Length-prefixed `sized` blocks** — off-by-one / overflow length mutation (~25% bias) | ✅ |
+| **file-framed** block model — `protocols/file_framed.yaml` | ✅ |
+| **`randall bundle import`** — unpack project zip to `bundles/imported/` | ✅ |
+| **Bundle export** — includes protocols, seeds, plugins | ✅ |
+| **Crash hash dedup** — skip duplicate inputs in `CrashStore` | ✅ |
+
+**Leg 1 models:** [docs/MODEL.md](MODEL.md) · `projects/protocols/`
+
+```powershell
+randall bundle export -c projects/vulnserver.yaml -o bundles/vulnserver.zip
+randall bundle import -i bundles/vulnserver.zip -o projects/imported
+randall fuzz -c projects/file-framed.yaml --dry-run
+```
+
+Drop binaries into `targets/` per [TARGETS.md](TARGETS.md), then fuzz. Private profiles go in gitignored `projects/local/`.

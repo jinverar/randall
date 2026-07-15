@@ -11,11 +11,29 @@ public sealed class ProjectConfig
     public FuzzConfig Fuzz { get; set; } = new();
     public List<string> Seeds { get; set; } = [];
     public List<string> Mutators { get; set; } = ["bitflip", "expand", "truncate"];
+    /// <summary>TCP session commands (vulnserver TRUN, GMON, etc.) — random pick per iteration.</summary>
+    public List<SessionCommandConfig> SessionCommands { get; set; } = [];
+    /// <summary>RPP process plugins (Python/Node/Rust) — see docs/RPP.md.</summary>
+    public List<PluginRefConfig> Plugins { get; set; } = [];
+    /// <summary>Default block model for file targets (Leg 1).</summary>
+    public string? Model { get; set; }
+}
+
+public sealed class SessionCommandConfig
+{
+    public string Name { get; set; } = "";
+    public string Prefix { get; set; } = "";
+    public string? Seed { get; set; }
+    /// <summary>Block model protocol (Leg 1) — replaces prefix+seed when set.</summary>
+    public string? Model { get; set; }
+    public bool ReadBanner { get; set; } = true;
+    /// <summary>Optional fixed bytes sent before the mutated payload (e.g. STAT probe).</summary>
+    public string? Preamble { get; set; }
 }
 
 public sealed class TargetConfig
 {
-    /// <summary>Path to vulnserver.exe, notepad++.exe, cfpass.exe, etc.</summary>
+    /// <summary>Path to target executable (vulnserver, local lab binary, etc.).</summary>
     public string Executable { get; set; } = "";
     public List<string> Args { get; set; } = [];
     public int TimeoutMs { get; set; } = 8000;
@@ -40,4 +58,6 @@ public sealed class FuzzConfig
     public int MaxIterations { get; set; } = 500;
     public string CorpusDir { get; set; } = "./data/corpus";
     public string CrashesDir { get; set; } = "./data/crashes";
+    /// <summary>When true and DynamoRIO is available, prioritize inputs that hit new edges.</summary>
+    public bool CoverageGuided { get; set; }
 }

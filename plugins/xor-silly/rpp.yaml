@@ -1,0 +1,5 @@
+name: xor-silly
+runtime: python
+entry: mutator.py
+hook: mutate
+description: Example RPP mutator — xor, format-string insert, run-length expand

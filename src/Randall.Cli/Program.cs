@@ -17,7 +17,11 @@ return args[0].ToLowerInvariant() switch
     "fuzz" => await RunFuzzAsync(args.Skip(1).ToArray()),
     "crashes" => ListCrashes(args.Skip(1).ToArray()),
     "replay" => await ReplayCrashAsync(args.Skip(1).ToArray()),
-    "export" => NotImplemented("export"),
+    "proxy" => await RunProxyAsync(args.Skip(1).ToArray()),
+    "campaign" => await RunCampaignAsync(args.Skip(1).ToArray()),
+    "pack" => await RunPackAsync(args.Skip(1).ToArray()),
+    "bundle" => RunBundle(args.Skip(1).ToArray()),
+    "export" => RunExport(args.Skip(1).ToArray()),
     _ => Unknown(args[0]),
 };
 
@@ -28,18 +32,25 @@ static void PrintHelp()
 
         Usage:
           randall targets              List lab project profiles
-          randall fuzz -c <project>    Fuzz vulnserver, notepad++, or cfpass
+          randall fuzz -c <project>    Fuzz a project profile (see targets)
           randall fuzz -c <project> --dry-run
           randall crashes [-p name]    List saved crashes
           randall replay -c <project> -i <crash.bin>
+          randall proxy [--listen N] [--target host:port]
+          randall campaign -c campaigns/lab-smoke.yaml
+          randall pack -o publish/standalone
+          randall bundle export -c projects/vulnserver.yaml -o bundles/vulnserver.zip
+          randall bundle import -i bundles/vulnserver.zip -o projects/imported
+          randall export -i <crash-guid>
           randall serve [--port N]     Web UI + API
           randall legs                 Eight legs feature map
           randall version
 
         Lab projects (projects/*.yaml):
-          vulnserver   TCP TRUN-style (classic vuln lab server)
-          notepadpp    XML / text file parser (GUI)
-          cfpass       Custom / strange binary formats
+          vulnserver   TCP multi-command session graph (TRUN, GMON, …)
+          file-text    Generic structured text / XML file template
+          file-framed  Generic length-prefixed binary file template
+          local/*      Private profiles (gitignored — projects/local/)
 
         Docs: https://github.com/jinverar/randall/blob/main/docs/TARGETS.md
         """);
@@ -54,7 +65,7 @@ static int PrintLegs()
 
 static int PrintVersion()
 {
-    Console.WriteLine("Randall 0.3.0-alpha (Phase 1 complete)");
+    Console.WriteLine("Randall 0.7.0-alpha (Leg 1 — block models + bundles)");
     return 0;
 }
 
@@ -158,6 +169,190 @@ static async Task<int> ReplayCrashAsync(string[] args)
     return result.Crashed ? 0 : 2;
 }
 
+static async Task<int> RunProxyAsync(string[] args)
+{
+    var listen = 9998;
+    var targetHost = "127.0.0.1";
+    var targetPort = 9999;
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] is "--listen" or "-l" && int.TryParse(args[i + 1], out var lp))
+            listen = lp;
+        else if (args[i] is "--target" or "-t")
+        {
+            var parts = args[++i].Split(':');
+            targetHost = parts[0];
+            if (parts.Length > 1)
+                int.TryParse(parts[1], out targetPort);
+        }
+    }
+
+    var proxy = new ProxyManager();
+    if (!proxy.Start(new ProxyStartRequest(targetHost, targetPort, listen, "cli")))
+    {
+        Console.Error.WriteLine("Proxy already running.");
+        return 1;
+    }
+
+    Console.WriteLine($"MITM proxy: 127.0.0.1:{listen} → {targetHost}:{targetPort}");
+    Console.WriteLine("Point your client at the listen port. Press Ctrl+C to stop.");
+
+    var tcs = new TaskCompletionSource();
+    Console.CancelKeyPress += (_, e) =>
+    {
+        e.Cancel = true;
+        tcs.TrySetResult();
+    };
+    await tcs.Task;
+    await proxy.StopAsync();
+    Console.WriteLine($"Captured {proxy.Messages().Count} messages.");
+    return 0;
+}
+
+static async Task<int> RunCampaignAsync(string[] args)
+{
+    string? config = null;
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] is "-c" or "--config")
+            config = args[++i];
+    }
+    if (config is null)
+    {
+        Console.Error.WriteLine("Usage: randall campaign -c campaigns/lab-smoke.yaml");
+        Console.WriteLine("Campaigns:");
+        foreach (var c in PluginCatalog.ListCampaigns())
+            Console.WriteLine($"  {c}");
+        return 1;
+    }
+
+    var yamlPath = Path.GetFullPath(config);
+    var campaign = CampaignLoader.Load(yamlPath);
+    Console.WriteLine($"Campaign: {campaign.Name} — {campaign.Description}");
+    Console.WriteLine($"Runs: {campaign.Runs.Count}");
+
+    var runner = new CampaignRunner();
+    var result = await runner.RunAsync(campaign, yamlPath);
+    foreach (var run in result.Runs)
+    {
+        var status = run.Success ? "ok" : $"FAIL {run.Error}";
+        Console.WriteLine($"  {run.Project,-12} iter={run.Iterations} crashes={run.Crashes} [{status}]");
+    }
+    Console.WriteLine($"Total crashes: {result.TotalCrashes}");
+    return result.Success ? 0 : 2;
+}
+
+static async Task<int> RunPackAsync(string[] args)
+{
+    var output = "publish/standalone";
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] is "-o" or "--output")
+            output = args[++i];
+    }
+
+    var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    Console.WriteLine($"Packing portable Randall → {output}");
+    var result = await PortablePacker.PackAsync(root, output);
+    Console.WriteLine($"Done: {result.OutputPath} ({result.SizeBytes / 1024 / 1024} MB)");
+    Console.WriteLine($"Included: {result.Included.Length} paths");
+    return 0;
+}
+
+static int RunBundle(string[] args)
+{
+    if (args.Length == 0)
+    {
+        PrintBundleUsage();
+        return 1;
+    }
+
+    return args[0].ToLowerInvariant() switch
+    {
+        "export" => BundleExport(args.Skip(1).ToArray()),
+        "import" => BundleImport(args.Skip(1).ToArray()),
+        _ => BundleExport(args),
+    };
+}
+
+static void PrintBundleUsage()
+{
+    Console.Error.WriteLine("Usage:");
+    Console.Error.WriteLine("  randall bundle export -c projects/vulnserver.yaml [-o bundles/out.zip]");
+    Console.Error.WriteLine("  randall bundle import -i bundles/vulnserver.zip [-o projects/imported]");
+    Console.Error.WriteLine("  randall bundle -c projects/vulnserver.yaml   (export shorthand)");
+}
+
+static int BundleExport(string[] args)
+{
+    string? config = null;
+    string? output = null;
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] is "-c" or "--config")
+            config = args[++i];
+        else if (args[i] is "-o" or "--output")
+            output = args[++i];
+    }
+    if (config is null)
+    {
+        PrintBundleUsage();
+        return 1;
+    }
+    var path = ProjectBundle.Export(Path.GetFullPath(config), output);
+    var size = new FileInfo(path).Length;
+    Console.WriteLine($"Project bundle exported: {path} ({size / 1024} KB)");
+    return 0;
+}
+
+static int BundleImport(string[] args)
+{
+    string? input = null;
+    string? output = null;
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] is "-i" or "--input")
+            input = args[++i];
+        else if (args[i] is "-o" or "--output")
+            output = args[++i];
+    }
+    if (input is null)
+    {
+        PrintBundleUsage();
+        return 1;
+    }
+    var path = ProjectBundle.Import(Path.GetFullPath(input), output);
+    Console.WriteLine($"Project bundle imported: {path}");
+    return 0;
+}
+
+static int RunExport(string[] args)
+{
+    Guid? id = null;
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] is "-i" or "--id" && Guid.TryParse(args[++i], out var g))
+            id = g;
+    }
+
+    if (id is null)
+    {
+        Console.Error.WriteLine("Usage: randall export -i <crash-guid>");
+        Console.Error.WriteLine("Tip: randall crashes — copy Id from index or web UI.");
+        return 1;
+    }
+
+    var bundle = CrashStalker.ExportBundle(id.Value);
+    if (bundle is null)
+    {
+        Console.Error.WriteLine($"Crash not found: {id}");
+        return 1;
+    }
+
+    Console.WriteLine($"Triage bundle exported to:\n  {bundle.ExportPath}");
+    return 0;
+}
+
 static int RunServe(string[] args)
 {
     var port = 5000;
@@ -199,12 +394,6 @@ static string? FindServerProjectPath()
         dir = dir.Parent;
     }
     return null;
-}
-
-static int NotImplemented(string command)
-{
-    Console.Error.WriteLine($"{command} is not implemented yet — see docs/ARCHITECTURE.md");
-    return 2;
 }
 
 static int Unknown(string command)

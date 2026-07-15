@@ -23,10 +23,14 @@ data/
 logs/
 tools/dynamorio/
 targets/vulnserver/vulnserver.exe
-targets/cfpass/cfpass.exe
+targets/local/
 *.db
 *.dmp
 *.drcov
+
+# Private lab profiles (keep real targets/seeds here — not committed)
+projects/local/*
+!projects/local/.gitkeep
 
 # Secrets
 .env

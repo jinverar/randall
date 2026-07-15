@@ -1,0 +1,12 @@
+name: lab-smoke
+description: Quick smoke campaign across public profiles (short iteration counts)
+runs:
+  - project: projects/vulnserver.yaml
+    maxIterations: 100
+    dryRun: true
+  - project: projects/file-text.yaml
+    maxIterations: 50
+    dryRun: true
+  - project: projects/file-framed.yaml
+    maxIterations: 50
+    dryRun: true

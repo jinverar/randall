@@ -1,0 +1,5 @@
+name: nightly-lab
+description: Nightly campaign — vulnserver live run when binary is installed
+runs:
+  - project: projects/vulnserver.yaml
+    maxIterations: 500

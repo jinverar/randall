@@ -12,15 +12,18 @@ public sealed record TargetRunResult(
 
 public static class TargetRunner
 {
+    public sealed record TcpSendOptions(byte[]? Preamble = null, bool ReadBanner = true);
+
     public static async Task<TargetRunResult> RunPayloadAsync(
         ProjectConfig project,
         string yamlPath,
         byte[] payload,
         Process? longLivedServer,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        TcpSendOptions? tcpOptions = null)
     {
         if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase))
-            return await RunTcpAsync(project, longLivedServer, payload, cancellationToken);
+            return await RunTcpAsync(project, longLivedServer, payload, tcpOptions, cancellationToken);
         return await RunFileAsync(project, yamlPath, payload, cancellationToken);
     }
 
@@ -99,8 +102,10 @@ public static class TargetRunner
         ProjectConfig project,
         Process? server,
         byte[] payload,
+        TcpSendOptions? tcpOptions,
         CancellationToken cancellationToken)
     {
+        tcpOptions ??= new TcpSendOptions();
         try
         {
             using var client = new TcpClient();
@@ -116,13 +121,28 @@ public static class TargetRunner
             }
 
             await using var stream = client.GetStream();
+            var buf = new byte[4096];
+            stream.ReadTimeout = project.Transport.ReceiveTimeoutMs;
+
+            if (tcpOptions.ReadBanner)
+            {
+                try { _ = await stream.ReadAsync(buf, cancellationToken); }
+                catch { /* banner optional */ }
+            }
+
+            if (tcpOptions.Preamble is { Length: > 0 })
+            {
+                await stream.WriteAsync(tcpOptions.Preamble, cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+                try { _ = await stream.ReadAsync(buf, cancellationToken); }
+                catch { /* response optional */ }
+            }
+
             await stream.WriteAsync(payload, cancellationToken);
             await stream.FlushAsync(cancellationToken);
 
-            var buf = new byte[4096];
-            stream.ReadTimeout = project.Transport.ReceiveTimeoutMs;
             try { _ = await stream.ReadAsync(buf, cancellationToken); }
-            catch { /* optional banner */ }
+            catch { /* optional */ }
         }
         catch (Exception ex)
         {

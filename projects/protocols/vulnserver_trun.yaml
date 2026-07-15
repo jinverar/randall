@@ -1,0 +1,11 @@
+name: vulnserver-trun
+description: Vulnserver TRUN command — static prefix + mutable payload field
+blocks:
+  - type: static
+    value: "TRUN /.:/"
+  - type: bytes
+    name: payload
+    mutable: true
+    minSize: 4
+    maxSize: 8192
+    seedFile: seeds/vulnserver_trun.txt

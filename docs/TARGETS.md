@@ -1,24 +1,24 @@
 # Randall lab targets
 
-Three default profiles for learning **tricky** fuzzing — not raw speed.
+Public examples ship with **vulnserver** (TCP) plus generic **file** templates. Real binaries and private profiles stay local — see [targets/README.md](../targets/README.md) and `projects/local/` (gitignored).
 
 | Project | Kind | What you learn |
 |---------|------|----------------|
-| **vulnserver** | TCP | Network generation, classic overflow path (TRUN), server crash detection |
-| **notepadpp** | File | GUI parser, XML/text edge cases, file-open fuzzing |
-| **cfpass** | File | Proprietary / strange binary formats — valid shell, corrupt internals |
+| **vulnserver** | TCP | Network generation, session graph, classic overflow path |
+| **file-text** | File | Structured text / XML shell + mutable body |
+| **file-framed** | File | Length-prefixed binary records (off-by-one length fields) |
 
 ## Quick start
 
 ```powershell
-cd C:\Users\007\Projects\randall
 dotnet build
 
 # List profiles
 dotnet run --project src/Randall.Cli -- targets
 
-# Dry-run (no target required)
+# Dry-run (no target binary required)
 dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml --dry-run
+dotnet run --project src/Randall.Cli -- fuzz -c projects/file-framed.yaml --dry-run
 
 # Live fuzz (needs binary — see targets/README.md)
 dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml
@@ -34,31 +34,24 @@ dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml
 | `boundary` | 0, 1, 0x7F, 0x80, 0xFF at random offset |
 | `insert` | Random blob appended — strange tail parsing |
 
-## cfpass setup (important)
+## Private targets
 
-Randall ships **placeholder** binary seeds (`CFPS` magic + fake fields). Replace with your real format:
+Copy your own YAML + seeds into `projects/local/` and binaries into `targets/local/`. Neither path is committed.
 
-1. Capture one valid file from cfpass
-2. Save as `projects/seeds/cfpass_valid.bin`
-3. Update `projects/cfpass.yaml` seeds list
-4. Fix `target.args` to match how cfpass opens files
+```powershell
+randall fuzz -c projects/local/my-target.yaml
+```
 
 ## vulnserver notes
 
-- Port **9999**, command prefix **`TRUN /.:/`** (classic lab path)
+- Port **9999**, session graph (TRUN, GMON, GTER, …)
 - Randall restarts vulnserver after each crash when `long_lived: true`
-- Known crash: TRUN with ~2000+ byte payload (your iteration count may vary)
+- Known crash: TRUN with ~2000+ byte payload (iteration count may vary)
 
-## notepadpp notes
+## File target notes
 
-- Spawns a new Notepad++ per iteration (slow but isolates crashes)
-- Hang until timeout counts as crash
-- Windows exit codes `0xC0000005` (AV) and `0xC0000409` (stack) detected
-
-## Roadmap
-
-- Phase 2: DynamoRIO coverage on vulnserver + cfpass
-- Phase 3: CANAPE-style TCP proxy for other commands (STATS, GMON, …)
-- Plugins: Python mutators for format-aware cfpass tricks
+- Point `target.executable` at your app under `targets/local/` or an absolute path
+- Replace placeholder seeds with a valid sample from your format
+- Enable `coverageGuided: true` in YAML for DynamoRIO on file targets
 
 See [ROADMAP.md](ROADMAP.md).

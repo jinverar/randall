@@ -23,6 +23,12 @@ public sealed class CrashStore(string crashesDir)
         Directory.CreateDirectory(crashesDir);
     }
 
+    public SavedCrash? FindByHash(string hash, string project)
+    {
+        return List(project).FirstOrDefault(c =>
+            c.InputHash.Equals(hash, StringComparison.OrdinalIgnoreCase));
+    }
+
     public SavedCrash Save(
         string project,
         int iteration,
@@ -32,8 +38,12 @@ public sealed class CrashStore(string crashesDir)
         string? miniDumpPath = null)
     {
         Ensure();
-        var id = Guid.NewGuid();
         var hash = InputHash.StackHash(input);
+        var existing = FindByHash(hash, project);
+        if (existing is not null)
+            return existing;
+
+        var id = Guid.NewGuid();
         var fileName = $"{project}_{iteration}_{hash}.bin";
         var inputPath = Path.Combine(crashesDir, fileName);
         File.WriteAllBytes(inputPath, input);

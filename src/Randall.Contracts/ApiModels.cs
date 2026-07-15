@@ -27,3 +27,27 @@ public static class RandallLegs
 public sealed record LegInfoDto(string Id, string Title, string Summary);
 
 public sealed record HealthDto(string Name, string Version, string Status);
+
+public sealed record FuzzStartRequest(
+    string ConfigPath,
+    bool DryRun = false,
+    bool CoverageGuided = false,
+    int? MaxIterations = null);
+
+public sealed record FuzzSessionStatusDto(
+    bool Running,
+    string Phase,
+    string? ConfigPath,
+    int Iterations,
+    int Crashes,
+    int CorpusAdded,
+    int CoverageEdges,
+    bool? CoverageGuided,
+    string? LastMessage);
+
+public sealed record CorpusStatsDto(
+    string Project,
+    int SeedFiles,
+    int SeenInputs,
+    int CoverageEdges,
+    bool DynamoRioAvailable);

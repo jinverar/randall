@@ -1,0 +1,13 @@
+name: file-text
+description: Structured XML shell with mutable inner body
+blocks:
+  - type: static
+    value: "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<Config>\r\n"
+  - type: bytes
+    name: body
+    mutable: true
+    minSize: 8
+    maxSize: 65536
+    seedFile: seeds/file_text_sample.xml
+  - type: static
+    value: "\r\n</Config>\r\n"

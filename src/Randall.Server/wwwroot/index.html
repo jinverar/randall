@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Randall — Fuzzer Lab</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="/randall.png" alt="Randall" class="brand-img" />
+      <div>
+        <strong>Randall</strong>
+        <span>Stalk · Scream</span>
+      </div>
+    </div>
+    <nav class="nav">
+      <button type="button" class="nav-btn active" data-view="dashboard">Dashboard</button>
+      <button type="button" class="nav-btn" data-view="fuzz">Fuzz</button>
+      <button type="button" class="nav-btn" data-view="proxy">Proxy</button>
+      <button type="button" class="nav-btn" data-view="campaign">Campaign</button>
+      <button type="button" class="nav-btn" data-view="crashes">Crashes</button>
+      <button type="button" class="nav-btn" data-view="models">Models</button>
+      <button type="button" class="nav-btn" data-view="roadmap">Roadmap</button>
+      <button type="button" class="nav-btn" data-view="legs">Eight legs</button>
+    </nav>
+    <div class="sidebar-foot">
+      <span id="health-label">—</span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <section id="view-dashboard" class="view visible">
+      <header class="page-header">
+        <h1>Dashboard</h1>
+        <p>Lab overview — targets, corpus, coverage backend.</p>
+      </header>
+      <div class="cards" id="dashboard-cards"></div>
+      <div class="panel">
+        <h2>Targets</h2>
+        <div id="dashboard-targets" class="table-wrap"></div>
+      </div>
+    </section>
+
+    <section id="view-fuzz" class="view">
+      <header class="page-header">
+        <h1>Fuzz</h1>
+        <p>Start a campaign from the web UI — live events via SignalR.</p>
+      </header>
+      <div class="fuzz-layout">
+        <form id="fuzz-form" class="panel fuzz-controls">
+          <label>
+            Target profile
+            <select id="fuzz-target" required></select>
+          </label>
+          <label>
+            Max iterations
+            <input type="number" id="fuzz-iterations" min="1" max="100000" value="500" />
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="fuzz-dry-run" />
+            Dry run (no target execution)
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="fuzz-coverage" />
+            Coverage-guided (file targets + DynamoRIO)
+          </label>
+          <div class="btn-row">
+            <button type="submit" class="btn primary" id="fuzz-start">Start</button>
+            <button type="button" class="btn" id="fuzz-stop">Stop</button>
+          </div>
+          <div id="fuzz-status" class="status-box">Idle</div>
+        </form>
+        <div class="panel fuzz-log-panel">
+          <h2>Live log</h2>
+          <pre id="fuzz-log" class="log"></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-proxy" class="view">
+      <header class="page-header">
+        <h1>Proxy</h1>
+        <p>CANAPE-style TCP MITM — capture, inspect, replay through the proxy.</p>
+      </header>
+      <div class="fuzz-layout">
+        <form id="proxy-form" class="panel fuzz-controls">
+          <label>Listen port <input type="number" id="proxy-listen" value="9998" min="1024" max="65535" /></label>
+          <label>Target host <input type="text" id="proxy-host" value="127.0.0.1" /></label>
+          <label>Target port <input type="number" id="proxy-port" value="9999" min="1" max="65535" /></label>
+          <div class="btn-row">
+            <button type="submit" class="btn primary" id="proxy-start">Start proxy</button>
+            <button type="button" class="btn" id="proxy-stop">Stop</button>
+          </div>
+          <div id="proxy-status" class="status-box">Idle</div>
+        </form>
+        <div class="panel">
+          <h2>Captured traffic</h2>
+          <div id="proxy-messages" class="table-wrap"></div>
+          <div id="proxy-replay" class="crash-detail hidden">
+            <h3>Replay message</h3>
+            <label>Edit hex (optional) <textarea id="proxy-hex" rows="3" class="hex-edit"></textarea></label>
+            <button type="button" class="btn primary" id="proxy-replay-btn">Replay to target</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-campaign" class="view">
+      <header class="page-header">
+        <h1>Campaign</h1>
+        <p>Run multiple targets in sequence — nightly lab smoke or full campaigns.</p>
+      </header>
+      <div class="fuzz-layout">
+        <form id="campaign-form" class="panel fuzz-controls">
+          <label>
+            Campaign YAML
+            <select id="campaign-select" required></select>
+          </label>
+          <div class="btn-row">
+            <button type="submit" class="btn primary">Start campaign</button>
+            <button type="button" class="btn" id="campaign-stop">Stop</button>
+          </div>
+          <div id="campaign-status" class="status-box">Idle</div>
+        </form>
+        <div class="panel">
+          <h2>Installed plugins (RPP)</h2>
+          <div id="plugin-list" class="table-wrap"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-crashes" class="view">
+      <header class="page-header">
+        <h1>Crashes</h1>
+        <p>Saved inputs and minidumps from fuzz runs.</p>
+      </header>
+      <div class="panel">
+        <label>
+          Filter project
+          <select id="crash-filter"><option value="">All</option></select>
+        </label>
+        <div id="crashes-table" class="table-wrap"></div>
+        <div id="crash-detail" class="crash-detail hidden"></div>
+      </div>
+    </section>
+
+    <section id="view-models" class="view">
+      <header class="page-header">
+        <h1>Models</h1>
+        <p>Leg 1 — Sulley-style block protocols with field-aware mutation.</p>
+      </header>
+      <div id="models-list" class="panel"></div>
+    </section>
+
+    <section id="view-roadmap" class="view">
+      <header class="page-header">
+        <h1>Roadmap</h1>
+        <p>Phase plan for the intelligent fuzzer build-out.</p>
+      </header>
+      <figure class="hero-banner">
+        <img src="/randall.png" alt="Randall at the console" />
+        <figcaption>Master of mayhem. Chaos is my code.</figcaption>
+      </figure>
+      <div id="roadmap-phases" class="roadmap"></div>
+    </section>
+
+    <section id="view-legs" class="view">
+      <header class="page-header">
+        <h1>Eight legs</h1>
+        <p>Each leg teaches one fuzzing concept.</p>
+      </header>
+      <ul id="legs-list" class="legs-list"></ul>
+    </section>
+  </main>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

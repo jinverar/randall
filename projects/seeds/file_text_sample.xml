@@ -1,0 +1,4 @@
+    <Section name="demo">
+        <Item id="1" value="seed" />
+        <Item id="2" value="fuzz-me" />
+    </Section>

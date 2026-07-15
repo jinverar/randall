@@ -53,7 +53,7 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Lab targets
 
-Default profiles for **vulnserver**, **Notepad++**, and **cfpass** (strange file formats).
+Default profiles: **vulnserver** (TCP lab) plus generic **file-text** / **file-framed** templates. Private targets go in gitignored `projects/local/`.
 
 ```powershell
 dotnet run --project src/Randall.Cli -- targets
@@ -85,7 +85,7 @@ dotnet run --project src/Randall.Server
 
 ## Status
 
-**Phase 1 complete** — lab targets, crash loop, replay, minidump, web UI. See [docs/ROADMAP.md](docs/ROADMAP.md) for live progress.
+**Phases 1–6 complete** — block models, coverage, proxy, triage export, RPP plugins, campaigns, portable pack, full web UI. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## License
 

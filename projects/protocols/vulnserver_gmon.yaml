@@ -1,0 +1,11 @@
+name: vulnserver-gmon
+description: Vulnserver GMON command
+blocks:
+  - type: static
+    value: "GMON /.:/"
+  - type: bytes
+    name: payload
+    mutable: true
+    minSize: 4
+    maxSize: 8192
+    seedFile: seeds/vulnserver_gmon.txt

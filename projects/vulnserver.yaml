@@ -1,5 +1,5 @@
 name: vulnserver
-description: Classic Vulnserver TCP lab target (TRUN and friends on port 9999)
+description: Classic Vulnserver TCP lab target — session graph + block models
 kind: tcp
 target:
   executable: ../targets/vulnserver/vulnserver.exe
@@ -9,8 +9,30 @@ transport:
   type: tcp
   host: 127.0.0.1
   port: 9999
-  prefix: "TRUN /.:/"
   receiveTimeoutMs: 1500
+sessionCommands:
+  - name: TRUN
+    model: protocols/vulnserver_trun.yaml
+    readBanner: true
+  - name: GMON
+    model: protocols/vulnserver_gmon.yaml
+    readBanner: true
+  - name: GTER
+    prefix: "GTER "
+    seed: seeds/vulnserver_gter.txt
+    readBanner: true
+  - name: KSTET
+    prefix: "KSTET /.:/"
+    seed: seeds/vulnserver_kstet.txt
+    readBanner: true
+  - name: HTER
+    prefix: "HTER /.:/"
+    seed: seeds/vulnserver_hter.txt
+    readBanner: true
+  - name: STAT_TRUN
+    model: protocols/vulnserver_trun.yaml
+    preamble: "STAT\r\n"
+    readBanner: true
 fuzz:
   maxIterations: 1000
   corpusDir: ../data/corpus/vulnserver
@@ -22,3 +44,6 @@ mutators:
   - expand
   - boundary
   - insert
+plugins:
+  - path: ../plugins/xor-silly
+    hook: mutate
