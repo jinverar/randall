@@ -43,6 +43,17 @@ Randall.Contracts     Shared DTOs
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
+## Lab targets
+
+Default profiles for **vulnserver**, **Notepad++**, and **cfpass** (strange file formats).
+
+```powershell
+dotnet run --project src/Randall.Cli -- targets
+dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml --dry-run
+```
+
+See [docs/TARGETS.md](docs/TARGETS.md) and [targets/README.md](targets/README.md).
+
 ## Quick start (development)
 
 Requires [.NET 8 SDK](https://dotnet.microsoft.com/download).

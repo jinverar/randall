@@ -1,0 +1,58 @@
+using Randall.Contracts;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+
+namespace Randall.Infrastructure;
+
+public static class ProjectLoader
+{
+    private static readonly IDeserializer Deserializer = new DeserializerBuilder()
+        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .IgnoreUnmatchedProperties()
+        .Build();
+
+    public static ProjectConfig Load(string yamlPath)
+    {
+        var full = Path.GetFullPath(yamlPath);
+        if (!File.Exists(full))
+            throw new FileNotFoundException($"Project file not found: {full}");
+        var yaml = File.ReadAllText(full);
+        var project = Deserializer.Deserialize<ProjectConfig>(yaml)
+            ?? throw new InvalidOperationException($"Failed to parse project: {full}");
+        project.Name = string.IsNullOrWhiteSpace(project.Name)
+            ? Path.GetFileNameWithoutExtension(full)
+            : project.Name;
+        return project;
+    }
+
+    public static string ResolveProjectRoot(string yamlPath)
+    {
+        return Path.GetDirectoryName(Path.GetFullPath(yamlPath)) ?? Directory.GetCurrentDirectory();
+    }
+
+    public static string ResolvePath(string yamlPath, string relativePath)
+    {
+        if (Path.IsPathRooted(relativePath))
+            return relativePath;
+        var baseDir = ResolveProjectRoot(yamlPath);
+        return Path.GetFullPath(Path.Combine(baseDir, relativePath));
+    }
+    public static byte[] LoadSeed(string yamlPath, string seedRelative)
+    {
+        var path = ResolvePath(yamlPath, seedRelative);
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"Seed not found: {path}");
+        return File.ReadAllBytes(path);
+    }
+
+    public static IEnumerable<string> DiscoverProjects(string projectsDir)
+    {
+        var dir = Path.GetFullPath(projectsDir);
+        if (!Directory.Exists(dir))
+            yield break;
+        foreach (var file in Directory.EnumerateFiles(dir, "*.yaml"))
+            yield return file;
+        foreach (var file in Directory.EnumerateFiles(dir, "*.yml"))
+            yield return file;
+    }
+}

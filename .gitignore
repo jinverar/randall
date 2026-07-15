@@ -22,6 +22,8 @@ Thumbs.db
 data/
 logs/
 tools/dynamorio/
+targets/vulnserver/vulnserver.exe
+targets/cfpass/cfpass.exe
 *.db
 *.dmp
 *.drcov

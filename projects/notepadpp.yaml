@@ -1,0 +1,24 @@
+name: notepadpp
+description: Notepad++ file parser — XML configs and odd text (GUI lab target)
+kind: file
+target:
+  executable: "C:/Program Files/Notepad++/notepad++.exe"
+  args:
+    - "{file}"
+  timeoutMs: 12000
+transport:
+  type: file
+  extension: .xml
+fuzz:
+  maxIterations: 300
+  corpusDir: ../data/corpus/notepadpp
+  crashesDir: ../data/crashes/notepadpp
+seeds:
+  - seeds/notepad_config.xml
+  - seeds/notepad_weird.txt
+mutators:
+  - bitflip
+  - expand
+  - truncate
+  - boundary
+  - insert

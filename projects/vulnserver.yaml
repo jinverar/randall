@@ -1,0 +1,24 @@
+name: vulnserver
+description: Classic Vulnserver TCP lab target (TRUN and friends on port 9999)
+kind: tcp
+target:
+  executable: ../targets/vulnserver/vulnserver.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 9999
+  prefix: "TRUN /.:/"
+  receiveTimeoutMs: 1500
+fuzz:
+  maxIterations: 1000
+  corpusDir: ../data/corpus/vulnserver
+  crashesDir: ../data/crashes/vulnserver
+seeds:
+  - seeds/vulnserver_trun.txt
+mutators:
+  - bitflip
+  - expand
+  - boundary
+  - insert

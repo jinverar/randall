@@ -1,0 +1,24 @@
+name: cfpass
+description: cfpass — custom / strange binary file formats (replace exe + seeds with your lab copy)
+kind: file
+target:
+  executable: ../targets/cfpass/cfpass.exe
+  args:
+    - "{file}"
+  timeoutMs: 15000
+transport:
+  type: file
+  extension: .cfpass
+fuzz:
+  maxIterations: 500
+  corpusDir: ../data/corpus/cfpass
+  crashesDir: ../data/crashes/cfpass
+seeds:
+  - seeds/cfpass_sample.bin
+  - seeds/cfpass_record.bin
+mutators:
+  - bitflip
+  - expand
+  - truncate
+  - boundary
+  - insert
