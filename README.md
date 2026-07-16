@@ -34,6 +34,43 @@ Full parody mapping: [docs/LORE.md](docs/LORE.md)
 | **DynamoRIO** | Fast basic-block coverage (drcov) |
 | **Dragon Dance / Ghidra** | Coverage export for reverse-engineering triage |
 
+## Stalking bugs — PaiMei-style coverage map
+
+<div align="center">
+  <a href="docs/assets/randal_stalking_bugs.png">
+    <img alt="Randall stalking bugs — color-coded control-flow graph inspired by PaiMei pStalker" src="docs/assets/randal_stalking_bugs.png" width="900" />
+  </a>
+  <br />
+  <em>I don't just find bugs. I stalk them. I choose them. I crash them.</em>
+</div>
+
+This diagram is the **visual language Randall inherits from [PaiMei Process Stalker](https://github.com/OpenRCE/paimei)** (Pedram Amini's *pstalker*): a control-flow graph where **color tells the story** of how an input walked through the target until something broke.
+
+### Color legend (pStalker method)
+
+| Color | Meaning | Randall equivalent |
+|-------|---------|-------------------|
+| **Blue** | Blocks on the **executed path** — code this input actually ran through | Known corpus paths; replayed inputs that hit the same edges |
+| **Green** | **New coverage** — basic blocks or edges seen for the first time | DynamoRIO drcov novelty; corpus entries that expand the frontier (`+N edges` in the fuzz log) |
+| **Gray** | Existing blocks **not taken** on this run | Unexplored branches — the stalker's next hunting ground |
+| **Red** | **Crash location** (e.g. `ACCESS_VIOLATION`) | `CrashRecord` + minidump + triage tag from RPP `post_crash` |
+
+Solid arrows = **taken** edges. Dashed arrows = **not taken** — forks you haven't fuzzed yet.
+
+### What the panels mean
+
+| Panel | pStalker idea | In Randall |
+|-------|---------------|------------|
+| **Coverage overview** | How much of the target have we mapped? | Corpus stats, `/api/corpus/{project}`, DynamoRIO edge counts |
+| **Path comparison** | Baseline run vs current run — did we learn anything? | Corpus energy / power schedule; inputs that add edges get kept |
+| **First divergence** | Where did this input peel off from the last known good path? | Crash path dedup + cluster triage (Phase 4) |
+| **Execution timeline** | Last N blocks before the scream | Live fuzz log (web UI + SignalR) — watch green `+edges` moments |
+| **Crash log** | Which exceptions came with new coverage? | Crashes tab — filter by project, triage tags, export to Ghidra bundle |
+
+Randall is **generation + stalking**: Boofuzz-style models get bytes in the door; PaiMei-style coverage decides which inputs are worth keeping and which path led to the crash. The [web UI](docs/LAB_PRACTICE.md#8-web-ui) (`randall serve`) is the lab console for that hunt — fuzz control, session graph, crashes, and coverage status on one screen.
+
+Leg 4 deep dive: [docs/LEGS.md#leg-4--stalk-coverage](docs/LEGS.md#leg-4--stalk-coverage)
+
 ## Eight legs (feature map)
 
 Randall has **eight legs** — each one teaches a fuzzing concept. See [docs/LEGS.md](docs/LEGS.md) for the learning path.

@@ -51,7 +51,7 @@ We are *not* building a Scream Extractor. We are building the thing that finds w
 |------|-------------------------|
 | **Sulley** | Sulley/Boofuzz — generation fuzzing Randall wants to **surpass** with coverage + stalking |
 | **CANAPE** | Leg 6 — see the protocol before you fuzz it |
-| **PaiMei / pStalker** | Leg 4 — coverage novelty and crash stalking |
+| **PaiMei / pStalker** | Leg 4 — coverage novelty, crash stalking, color-coded path maps (see README stalking diagram) |
 | **Boo** | The innocent input that still finds the bug (your seed corpus) |
 
 ---
