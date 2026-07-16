@@ -152,6 +152,17 @@ public static class LabDoctor
                 manifest?.Name ?? "rpp.yaml missing");
         }
 
+        if (project.SessionGraph is not null)
+        {
+            var graphReport = SessionGraphValidator.Validate(project, yamlPath);
+            var detail = graphReport.Valid
+                ? $"start={graphReport.Start}, mutate={graphReport.Mutate}, {project.SessionGraph.Edges.Count} edge(s)"
+                : string.Join("; ", graphReport.Errors);
+            Add("sessionGraph", graphReport.Valid ? "ok" : "fail", detail);
+            foreach (var w in graphReport.Warnings)
+                Add("sessionGraph", "warn", w);
+        }
+
         var ready = !checks.Any(c => c.Status == "fail");
         return new DoctorReportDto(project.Name, ready, checks);
     }

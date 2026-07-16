@@ -47,6 +47,7 @@ public static class CrashCatalog
                     c.InputPath,
                     c.MiniDumpPath,
                     c.TargetExitCode,
+                    c.TriageTag,
                     c.At));
             }
         }

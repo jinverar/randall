@@ -63,6 +63,24 @@ model: protocols/file_text.yaml
 
 Fuzz iterations render the model, pick a **mutable field** (length or payload), and apply built-in or RPP mutators.
 
+## Session graph (boofuzz s_switch)
+
+Branch TCP/UDP sessions on **live server responses** instead of fixed linear flows:
+
+```yaml
+sessionGraph:
+  start: USER          # first command sent
+  mutate: STOR         # which step receives mutations
+  edges:
+    - { from: USER, when: "331", to: PASS }
+    - { from: PASS, when: "230", to: STOR }
+    - { from: PASS, when: "230", to: RETR }
+```
+
+- `when` matches if the response **contains** the string (FTP codes, HTTP status, etc.)
+- `fuzz.sessionGraphBias` controls how often graph mode runs vs linear `sessionFlows`
+- Validate and export Mermaid: `randall graph -c projects/vulnftp.yaml`
+
 ## Bundles
 
 ```powershell

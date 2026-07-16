@@ -300,12 +300,17 @@ public sealed class FuzzEngine
                 if (result.Crashed)
                 {
                     crashCount++;
+                    var crashTag = await RppCrashHook.RunAsync(
+                        project, yamlPath, payload, result, cancellationToken);
+
                     var saved = crashStore.Save(
-                        project.Name, iterations, $"{commandName}/{mutator.Name}", payload, result.ExitCode, result.MiniDumpPath);
+                        project.Name, iterations, $"{commandName}/{mutator.Name}", payload,
+                        result.ExitCode, result.MiniDumpPath, crashTag);
                     Console.WriteLine(
                         $"CRASH #{crashCount} iter={iterations} {commandName}/{mutator.Name} " +
                         $"detail={result.Detail} saved={saved.InputPath}" +
-                        (saved.MiniDumpPath is not null ? $" dump={saved.MiniDumpPath}" : ""));
+                        (saved.MiniDumpPath is not null ? $" dump={saved.MiniDumpPath}" : "") +
+                        (crashTag is not null ? $" tag={crashTag}" : ""));
                     crashes.Add(new CrashRecord(
                         saved.Id,
                         payload,
@@ -314,11 +319,6 @@ public sealed class FuzzEngine
                         null,
                         saved.MiniDumpPath,
                         newEdges));
-
-                    var crashTag = await RppCrashHook.RunAsync(
-                        project, yamlPath, payload, result, cancellationToken);
-                    if (crashTag is not null)
-                        Console.WriteLine($"  triage tag: {crashTag}");
 
                     if (!useCoverageTcp && project.Target.LongLived &&
                         (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) ||

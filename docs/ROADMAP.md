@@ -252,3 +252,36 @@ sessionGraph:
     - { from: USER, when: "331", to: PASS }
     - { from: PASS, when: "230", to: STOR }
 ```
+
+---
+
+## Phase 13 — Night shift (graph + triage) ✅
+
+| Item | Status |
+|------|--------|
+| **`randall graph`** — validate sessionGraph, export Mermaid | ✅ |
+| **`/api/graph`** + doctor sessionGraph checks | ✅ |
+| **Crash triage tags** — persisted in index, shown in web UI | ✅ |
+| **CI smoke** — lab-smoke campaign on every push | ✅ |
+| **`examples/tftp-simple`** | ✅ |
+
+```powershell
+randall graph -c projects/vulnftp.yaml
+randall doctor -c projects/vulnftp.yaml
+```
+
+---
+
+## Phase 14 — Graph editor (web UI) ✅
+
+| Item | Status |
+|------|--------|
+| **Session graph tab** — Mermaid diagram in web UI | ✅ |
+| **Edge table** — mutate target highlighted | ✅ |
+| **YAML snippet** — copy to clipboard | ✅ |
+| **Lab practice guide** | ✅ `docs/LAB_PRACTICE.md` |
+
+```powershell
+dotnet run --project src/Randall.Server
+# Open http://127.0.0.1:5000 → Session graph → vulnftp → Load graph
+```

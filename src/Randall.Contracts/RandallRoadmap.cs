@@ -103,5 +103,20 @@ public static class RandallRoadmap
             new("p12-tcpcov", "TCP coverage via instrumented spawn (drcov)", true, null),
             new("p12-udpmon", "UDP long-lived process crash detection", true, null),
         ]),
+        new(13, "Night shift (graph + triage)", "complete",
+        [
+            new("p13-graph-cli", "randall graph — validate + Mermaid export", true, null),
+            new("p13-graph-api", "/api/graph + doctor sessionGraph check", true, null),
+            new("p13-tags", "Crash triage tags in index + web UI", true, null),
+            new("p13-ci", "CI lab-smoke campaign dry-run", true, ".github/workflows/ci.yml"),
+            new("p13-tftp-ex", "examples/tftp-simple gallery entry", true, "examples/tftp-simple"),
+        ]),
+        new(14, "Graph editor (web UI)", "complete",
+        [
+            new("p14-graph-tab", "Session graph tab — Mermaid diagram + edge table", true, null),
+            new("p14-yaml-snippet", "YAML snippet viewer + copy", true, null),
+            new("p14-graph-meta", "Validation errors/warnings in UI", true, null),
+            new("p14-practice", "Lab practice guide for hands-on testing", true, "docs/LAB_PRACTICE.md"),
+        ]),
     ];
 }

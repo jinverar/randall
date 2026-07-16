@@ -39,6 +39,20 @@ hook: mutate       # mutate | post_receive | post_crash
 
 `action` may be `continue` or `abort`.
 
+**post_crash request**:
+
+```json
+{"op":"post_crash","input":"<base64 payload>","response":"<base64 recv>","exitCode":-1073741819,"signal":null}
+```
+
+**post_crash response**:
+
+```json
+{"tags":["overflow","access_violation"],"note":"heap smash","name":"crash-tag"}
+```
+
+Tags feed crash cluster metadata and web UI triage.
+
 ## Enable in a project
 
 ```yaml
@@ -67,7 +81,7 @@ echo '{"op":"mutate","input":"QUFBQQ=="}' | python plugins/xor-silly/mutator.py
 | `node` | `node.exe mutator.js` |
 | `exe` | native binary (future) |
 
-## Hooks (roadmap)
+## Hooks
 
 | Hook | Purpose |
 |------|---------|

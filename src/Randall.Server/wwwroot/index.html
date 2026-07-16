@@ -6,6 +6,7 @@
   <title>Randall — Fuzzer Lab</title>
   <link rel="stylesheet" href="/css/app.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
   <aside class="sidebar">
@@ -23,6 +24,7 @@
       <button type="button" class="nav-btn" data-view="campaign">Campaign</button>
       <button type="button" class="nav-btn" data-view="crashes">Crashes</button>
       <button type="button" class="nav-btn" data-view="models">Models</button>
+      <button type="button" class="nav-btn" data-view="graph">Session graph</button>
       <button type="button" class="nav-btn" data-view="bundles">Bundles</button>
       <button type="button" class="nav-btn" data-view="roadmap">Roadmap</button>
       <button type="button" class="nav-btn" data-view="legs">Eight legs</button>
@@ -161,6 +163,35 @@
         <p>Leg 1 — Sulley-style block protocols with field-aware mutation.</p>
       </header>
       <div id="models-list" class="panel"></div>
+    </section>
+
+    <section id="view-graph" class="view">
+      <header class="page-header">
+        <h1>Session graph</h1>
+        <p>boofuzz s_switch — visualize response-driven branching (Phase 14).</p>
+      </header>
+      <div class="fuzz-layout">
+        <form id="graph-form" class="panel fuzz-controls">
+          <label>
+            Project profile
+            <select id="graph-target" required></select>
+          </label>
+          <div class="btn-row">
+            <button type="submit" class="btn primary">Load graph</button>
+            <button type="button" class="btn" id="graph-copy-yaml">Copy YAML</button>
+          </div>
+          <div id="graph-status" class="status-box">Select a project with sessionGraph (e.g. vulnftp).</div>
+        </form>
+        <div class="panel graph-panel">
+          <div id="graph-meta" class="graph-meta"></div>
+          <div id="graph-diagram" class="graph-diagram"></div>
+          <div id="graph-edges" class="table-wrap"></div>
+          <label class="graph-yaml-label">
+            YAML snippet (edit on disk, then reload)
+            <textarea id="graph-yaml" rows="8" readonly class="hex-edit"></textarea>
+          </label>
+        </div>
+      </div>
     </section>
 
     <section id="view-bundles" class="view">

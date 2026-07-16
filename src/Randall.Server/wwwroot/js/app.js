@@ -37,6 +37,7 @@ function switchView(name) {
   if (name === 'proxy') loadProxy().catch(() => {});
   if (name === 'campaign') loadCampaignView().catch(() => {});
   if (name === 'models') loadModels().catch(() => {});
+  if (name === 'graph') loadGraphView().catch(() => {});
   if (name === 'bundles') loadBundlesView().catch(() => {});
 }
 
@@ -157,10 +158,11 @@ async function loadCrashes(project = '') {
     el.innerHTML = '<p class="empty">No crashes yet — start a fuzz run from the Fuzz tab.</p>';
     return;
   }
-  el.innerHTML = `<table><thead><tr><th>When</th><th>Project</th><th>Iter</th><th>Mutator</th><th>Input</th></tr></thead>
+  el.innerHTML = `<table><thead><tr><th>When</th><th>Project</th><th>Iter</th><th>Mutator</th><th>Tag</th><th>Input</th></tr></thead>
     <tbody>${crashes.map((c) => `<tr class="clickable" data-id="${c.id}">
       <td>${new Date(c.observedAt).toLocaleString()}</td>
       <td>${c.project}</td><td>${c.iteration}</td><td>${c.mutator}</td>
+      <td>${c.triageTag ? `<code>${c.triageTag}</code>` : '—'}</td>
       <td><code>${c.inputPath.split(/[/\\]/).pop()}</code></td>
     </tr>`).join('')}</tbody></table>`;
 
@@ -172,6 +174,7 @@ async function loadCrashes(project = '') {
       box.innerHTML = `
         <h3>Crash ${detail.summary.project} #${detail.summary.iteration}</h3>
         <p>Mutator: <code>${detail.summary.mutator}</code> · Hash: <code>${detail.summary.inputHash}</code></p>
+        ${detail.summary.triageTag ? `<p>Tag: <code>${detail.summary.triageTag}</code></p>` : ''}
         <p>Length: ${detail.inputLength} bytes · Id: <code>${detail.summary.id}</code></p>
         <p class="hex-preview">${detail.hexPreview}</p>
         <p><code>${detail.summary.inputPath}</code></p>
@@ -272,6 +275,89 @@ document.getElementById('fuzz-doctor').addEventListener('click', async () => {
   } catch (err) {
     box.textContent = err.message;
   }
+});
+
+async function loadGraphView() {
+  const targets = await api.get('/api/targets');
+  const sel = document.getElementById('graph-target');
+  if (!sel.options.length) {
+    sel.innerHTML = targets.map((t) => `<option value="${t.configPath}">${t.name} [${t.kind}]</option>`).join('');
+    const ftp = targets.find((t) => t.name === 'vulnftp');
+    if (ftp) sel.value = ftp.configPath;
+  }
+}
+
+async function renderGraph(configPath) {
+  const status = document.getElementById('graph-status');
+  const meta = document.getElementById('graph-meta');
+  const diagram = document.getElementById('graph-diagram');
+  const edgesEl = document.getElementById('graph-edges');
+  const yamlEl = document.getElementById('graph-yaml');
+
+  status.textContent = 'Loading…';
+  const report = await api.get(`/api/graph?configPath=${encodeURIComponent(configPath)}`);
+
+  if (!report.hasGraph) {
+    status.textContent = `${report.project}: no sessionGraph — use sessionFlows for linear chains.`;
+    status.className = 'status-box warn';
+    meta.innerHTML = `<p>Session commands: ${(report.commands || []).map((c) => `<code>${c}</code>`).join(' ') || '—'}</p>`;
+    diagram.innerHTML = '';
+    edgesEl.innerHTML = '';
+    yamlEl.value = '';
+    return;
+  }
+
+  status.className = `status-box ${report.valid ? 'ok' : 'crash'}`;
+  status.textContent = report.valid
+    ? `Valid graph — start=${report.start}, mutate=${report.mutate}`
+    : `Invalid graph — fix errors below`;
+
+  const warnHtml = (report.warnings || []).map((w) => `<div class="warn">⚠ ${w}</div>`).join('');
+  const errHtml = (report.errors || []).map((e) => `<div class="crash">✗ ${e}</div>`).join('');
+  meta.innerHTML = `
+    <p><strong>${report.project}</strong> · start <code>${report.start}</code> · mutate <code>${report.mutate || '—'}</code></p>
+    ${errHtml}${warnHtml}
+    <p class="hex">Commands: ${(report.commands || []).map((c) => `<code>${c}</code>`).join(' ')}</p>`;
+
+  yamlEl.value = report.yamlSnippet || '';
+
+  if (report.mermaid) {
+    diagram.innerHTML = `<pre class="mermaid">${report.mermaid}</pre>`;
+    if (window.mermaid) {
+      mermaid.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+      await mermaid.run({ nodes: diagram.querySelectorAll('.mermaid') });
+    }
+  } else {
+    diagram.innerHTML = '<p class="empty">No edges defined.</p>';
+  }
+
+  const edges = report.edges || [];
+  if (!edges.length) {
+    edgesEl.innerHTML = '';
+  } else {
+    edgesEl.innerHTML = `<table><thead><tr><th>From</th><th>When (response contains)</th><th>To</th></tr></thead>
+      <tbody>${edges.map((e) => `<tr class="${e.to === report.mutate ? 'mutate-row' : ''}">
+        <td><code>${e.from}</code></td>
+        <td><code>${e.when || '?'}</code></td>
+        <td><code>${e.to}</code>${e.to === report.mutate ? ' ★ mutate' : ''}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+}
+
+document.getElementById('graph-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await renderGraph(document.getElementById('graph-target').value);
+  } catch (err) {
+    document.getElementById('graph-status').textContent = err.message;
+  }
+});
+
+document.getElementById('graph-copy-yaml').addEventListener('click', async () => {
+  const yaml = document.getElementById('graph-yaml').value;
+  if (!yaml) return;
+  await navigator.clipboard.writeText(yaml);
+  document.getElementById('graph-status').textContent = 'YAML copied to clipboard.';
 });
 
 let selectedProxyMessage = null;

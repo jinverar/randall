@@ -72,6 +72,8 @@ dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml --dry-r
 
 See [docs/TARGETS.md](docs/TARGETS.md) and [targets/README.md](targets/README.md).
 
+**Hands-on lab walkthrough:** [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md)
+
 ## Quick start (development)
 
 Requires [.NET 8 SDK](https://dotnet.microsoft.com/download).
@@ -95,7 +97,7 @@ dotnet run --project src/Randall.Server
 
 ## Status
 
-**Phase 12 complete — VulnTftp, session graph, TCP coverage stalk.** See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Phase 14 complete — web session graph viewer + lab practice guide.** See [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md).
 
 ## License
 

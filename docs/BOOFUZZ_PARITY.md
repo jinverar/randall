@@ -8,7 +8,8 @@ Randall vs [boofuzz](https://github.com/jtpereyda/boofuzz) — *Randall kidnappe
 | `Word`, `DWord`, `QWord` | `word`, `dword`, `qword` | ✅ |
 | `Group` (choices) | `choices` block | ✅ |
 | `Bytes`, `Sized`, checksum | `bytes`, `sized`, `checksum` | ✅ |
-| `session.connect()` DAG | `sessionFlows` + `mutateStep` | ✅ partial |
+| `session.connect()` DAG | `sessionFlows` + `mutateStep` | ✅ |
+| `s_switch` response graph | `sessionGraph` + `randall graph` | ✅ partial |
 | `session.fuzz()` exhaustive | `fuzz.mode: exhaustive` | ✅ |
 | Mutate any request in chain | `mutateStep: all` / indices | ✅ |
 | `TCPSocketConnection` | `kind: tcp` | ✅ |
@@ -17,12 +18,14 @@ Randall vs [boofuzz](https://github.com/jtpereyda/boofuzz) — *Randall kidnappe
 | ProcessMonitor | `ProcessMonitor` + longLived restart | ✅ |
 | Response validation | `expectResponse` on session commands | ✅ |
 | post_receive plugins | RPP `post_receive` hook | ✅ |
+| post_crash triage | RPP `post_crash` + crash-tag plugin | ✅ |
 | Boofuzz importer | `scripts/import-boofuzz.py` | ✅ |
 | Web UI | `randall serve` | ✅ Randall ahead |
-| Coverage | DynamoRIO (file + planned TCP) | ✅ partial |
+| Coverage | DynamoRIO (file + TCP spawn) | ✅ partial |
 | Examples folder | `examples/` | ✅ |
 | FTP example | `examples/ftp-simple` + `vulnftp` | ✅ |
 | HTTP example | `examples/http-simple` + `vulnhttp` | ✅ |
+| TFTP example | `examples/tftp-simple` + `vulntftp` | ✅ |
 
 ## Randall beats boofuzz
 
@@ -31,10 +34,10 @@ Randall vs [boofuzz](https://github.com/jtpereyda/boofuzz) — *Randall kidnappe
 - Crash clusters, Ghidra export, minidumps
 - MITM proxy tab, lab agent, campaigns
 - Coverage-guided file fuzz (DynamoRIO)
+- Session graph inspector (`randall graph`)
 
 ## Still planned
 
-- Response-driven `s_switch` branching (full graph)
-- RPP `post_crash` triage hook
+- Visual s_switch graph editor in web UI
 - Boofuzz Python → YAML importer (complex scripts)
-- Coverage on TCP lab servers
+- Coverage on long-lived TCP without per-iteration respawn

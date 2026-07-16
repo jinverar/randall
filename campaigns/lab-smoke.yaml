@@ -22,6 +22,9 @@ runs:
   - project: examples/ftp-simple/project.yaml
     maxIterations: 30
     dryRun: true
+  - project: examples/tftp-simple/project.yaml
+    maxIterations: 30
+    dryRun: true
   - project: projects/file-text.yaml
     maxIterations: 50
     dryRun: true

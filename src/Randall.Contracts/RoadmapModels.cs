@@ -23,7 +23,23 @@ public sealed record CrashSummaryDto(
     string InputPath,
     string? MiniDumpPath,
     string? TargetExitCode,
+    string? TriageTag,
     DateTimeOffset ObservedAt);
+
+public sealed record SessionGraphEdgeDto(string From, string When, string To);
+
+public sealed record SessionGraphReportDto(
+    string Project,
+    bool HasGraph,
+    bool Valid,
+    IReadOnlyList<string> Errors,
+    IReadOnlyList<string> Warnings,
+    string Mermaid,
+    string? Start,
+    string? Mutate,
+    IReadOnlyList<SessionGraphEdgeDto> Edges,
+    IReadOnlyList<string> Commands,
+    string YamlSnippet);
 
 public sealed record CrashDetailDto(
     CrashSummaryDto Summary,

@@ -194,6 +194,25 @@ code, .mono {
 .log .crash { color: var(--danger); }
 .log .cov { color: var(--ok); }
 
+.graph-panel { min-width: 0; }
+.graph-meta { margin-bottom: 1rem; }
+.graph-meta .warn { color: var(--warn); font-size: 0.9rem; }
+.graph-meta .crash { color: var(--danger); font-size: 0.9rem; }
+.graph-diagram {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  overflow: auto;
+}
+.graph-diagram .mermaid { background: transparent; }
+.graph-yaml-label { display: block; margin-top: 1rem; color: var(--muted); font-size: 0.85rem; }
+.graph-yaml-label textarea { width: 100%; margin-top: 0.35rem; }
+tr.mutate-row td { background: #2a2218; }
+.status-box.ok { border-color: var(--ok); color: var(--ok); }
+.status-box.warn { border-color: var(--warn); color: var(--warn); }
+
 .hero-banner { text-align: center; margin-bottom: 1.25rem; }
 .hero-banner img { max-width: 420px; width: 100%; border-radius: 10px; border: 1px solid var(--border); }
 .hero-banner figcaption { color: var(--muted); margin-top: 0.5rem; font-size: 0.85rem; }

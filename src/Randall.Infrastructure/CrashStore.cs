@@ -12,6 +12,7 @@ public sealed record SavedCrash(
     string InputPath,
     string? TargetExitCode,
     string? MiniDumpPath,
+    string? TriageTag,
     DateTimeOffset At);
 
 public sealed class CrashStore(string crashesDir)
@@ -35,7 +36,8 @@ public sealed class CrashStore(string crashesDir)
         string mutator,
         byte[] input,
         int? exitCode,
-        string? miniDumpPath = null)
+        string? miniDumpPath = null,
+        string? triageTag = null)
     {
         Ensure();
         var hash = InputHash.StackHash(input);
@@ -56,6 +58,7 @@ public sealed class CrashStore(string crashesDir)
             inputPath,
             exitCode?.ToString(),
             miniDumpPath,
+            triageTag,
             DateTimeOffset.UtcNow);
         File.AppendAllText(_indexPath, JsonSerializer.Serialize(record) + Environment.NewLine);
         return record;

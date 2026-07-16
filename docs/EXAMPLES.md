@@ -25,6 +25,7 @@ randall fuzz -c projects/vulnssh.yaml
 | `examples/http-simple/` | HTTP GET (boofuzz `http_simple.py`) | `projects/vulnhttp.yaml` |
 | `examples/ftp-simple/` | FTP session (boofuzz `ftp_simple.py`) | `projects/vulnftp.yaml` |
 | `examples/https-simple/` | TLS HTTP template | any HTTPS service |
+| `examples/tftp-simple/` | TFTP RRQ/WRQ (boofuzz `tftp_simple.py`) | `projects/vulntftp.yaml` |
 
 ## Boofuzz import
 

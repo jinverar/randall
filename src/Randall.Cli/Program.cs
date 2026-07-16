@@ -24,6 +24,7 @@ return args[0].ToLowerInvariant() switch
     "bundle" => RunBundle(args.Skip(1).ToArray()),
     "export" => RunExport(args.Skip(1).ToArray()),
     "doctor" => RunDoctor(args.Skip(1).ToArray()),
+    "graph" => RunGraph(args.Skip(1).ToArray()),
     _ => Unknown(args[0]),
 };
 
@@ -44,6 +45,7 @@ static void PrintHelp()
           randall bundle export -c projects/vulnserver.yaml -o bundles/vulnserver.zip
           randall bundle import -i bundles/vulnserver.zip -o projects/imported
           randall doctor -c <project>     Preflight lab checks before fuzzing
+          randall graph -c <project>        Validate sessionGraph + print Mermaid
           randall export -i <crash-guid>
           randall serve [--port N] [--bind host]   Web UI + API (localhost)
           randall agent [--port N] [--bind host]   Lab agent (all interfaces)
@@ -76,7 +78,7 @@ static int PrintLegs()
 
 static int PrintVersion()
 {
-    Console.WriteLine("Randall 0.13.0-alpha (Phase 12 — TFTP, graph, TCP stalk)");
+    Console.WriteLine("Randall 0.15.0-alpha (Phase 14 — web session graph)");
     return 0;
 }
 
@@ -395,6 +397,59 @@ static int RunDoctor(string[] args)
         : $"Not ready — fix failures above, then: randall fuzz -c {config} --dry-run");
 
     return report.Ready ? 0 : 1;
+}
+
+static int RunGraph(string[] args)
+{
+    string? config = null;
+    var json = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-c" or "--config" && i + 1 < args.Length)
+            config = args[++i];
+        else if (args[i] is "--json")
+            json = true;
+    }
+
+    if (config is null)
+    {
+        Console.Error.WriteLine("Usage: randall graph -c projects/vulnftp.yaml [--json]");
+        return 1;
+    }
+
+    var yamlPath = Path.GetFullPath(config);
+    var project = ProjectLoader.Load(yamlPath);
+    var report = SessionGraphValidator.Validate(project, yamlPath);
+
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report));
+        return report.Valid ? 0 : 1;
+    }
+
+    if (project.SessionGraph is null)
+    {
+        Console.WriteLine($"{project.Name}: no sessionGraph defined.");
+        Console.WriteLine("Use sessionFlows for linear chains, or add sessionGraph for response branching.");
+        if (report.Commands.Count > 0)
+            Console.WriteLine($"Session commands: {string.Join(", ", report.Commands)}");
+        return 0;
+    }
+
+    Console.WriteLine($"Session graph: {project.Name} (start={report.Start}, mutate={report.Mutate})");
+    foreach (var err in report.Errors)
+        Console.Error.WriteLine($"  error: {err}");
+    foreach (var warn in report.Warnings)
+        Console.WriteLine($"  warn: {warn}");
+
+    if (!string.IsNullOrWhiteSpace(report.Mermaid))
+    {
+        Console.WriteLine();
+        Console.WriteLine("Mermaid (paste into mermaid.live):");
+        Console.WriteLine(report.Mermaid);
+    }
+
+    return report.Valid ? 0 : 1;
 }
 
 static int RunServe(string[] args) => RunWebHost(args, defaultBind: "127.0.0.1", label: "web UI");

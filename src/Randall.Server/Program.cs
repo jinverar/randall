@@ -28,7 +28,7 @@ app.MapGet("/randall.png", () =>
     return Results.NotFound();
 });
 
-app.MapGet("/api/health", () => new HealthDto("Randall", "0.10.0-alpha", "phase9-doctor"));
+app.MapGet("/api/health", () => new HealthDto("Randall", "0.15.0-alpha", "phase14-graph-ui"));
 app.MapGet("/api/doctor", (string configPath) =>
 {
     if (string.IsNullOrWhiteSpace(configPath))
@@ -36,6 +36,21 @@ app.MapGet("/api/doctor", (string configPath) =>
     try
     {
         return Results.Ok(LabDoctor.Examine(Path.GetFullPath(configPath)));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapGet("/api/graph", (string configPath) =>
+{
+    if (string.IsNullOrWhiteSpace(configPath))
+        return Results.BadRequest(new { error = "configPath required" });
+    try
+    {
+        var yamlPath = Path.GetFullPath(configPath);
+        var project = ProjectLoader.Load(yamlPath);
+        return Results.Ok(SessionGraphValidator.Validate(project, yamlPath));
     }
     catch (Exception ex)
     {

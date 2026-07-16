@@ -17,3 +17,5 @@ jobs:
       - run: dotnet restore
       - run: dotnet build --no-restore -c Release
       - run: dotnet test --no-build -c Release --if-present
+      - run: dotnet run --no-build -c Release --project src/Randall.Cli -- campaign -c campaigns/lab-smoke.yaml
+      - run: dotnet run --no-build -c Release --project src/Randall.Cli -- graph -c projects/vulnftp.yaml
