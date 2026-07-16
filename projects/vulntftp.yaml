@@ -1,0 +1,29 @@
+name: vulntftp
+description: Randall VulnTftp UDP lab — build with scripts/build-vulntftp.ps1
+kind: udp
+target:
+  executable: ../targets/vulntftp/randall-vulntftp.exe
+  longLived: true
+  timeoutMs: 3000
+transport:
+  type: udp
+  host: 127.0.0.1
+  port: 6969
+  receiveTimeoutMs: 500
+sessionCommands:
+  - name: RRQ
+    model: protocols/tftp_rrq.yaml
+  - name: WRQ
+    model: protocols/tftp_wrq.yaml
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  corpusDir: ../data/corpus/vulntftp
+  crashesDir: ../data/crashes/vulntftp
+mutators:
+  - havoc
+  - bitflip
+  - interesting
+  - expand
+  - boundary

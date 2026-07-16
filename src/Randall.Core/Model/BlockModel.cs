@@ -20,6 +20,8 @@ public sealed class RenderContext
 {
     public required IReadOnlyDictionary<string, byte[]> Seeds { get; init; }
     public Random Rng { get; } = Random.Shared;
+    /// <summary>Deterministic choice index for exhaustive / choices blocks.</summary>
+    public int? ChoiceIndex { get; init; }
 }
 
 public sealed class StaticBlock(string value, Encoding? encoding = null) : IBlockNode
@@ -33,6 +35,143 @@ public sealed class StaticBlock(string value, Encoding? encoding = null) : IBloc
     }
 
     public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx) { }
+}
+
+/// <summary>Boofuzz Delim — fixed separator, optionally mutable.</summary>
+public sealed class DelimBlock(string value, string name, bool mutable) : IBlockNode
+{
+    private readonly byte[] _bytes = Encoding.ASCII.GetBytes(value);
+
+    public int Render(Span<byte> buffer, int offset, RenderContext ctx)
+    {
+        _bytes.CopyTo(buffer[offset..]);
+        return _bytes.Length;
+    }
+
+    public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx)
+    {
+        if (mutable)
+            fields.Add(new FieldRegion(name, baseOffset, _bytes.Length, true, "delim"));
+    }
+}
+
+/// <summary>Boofuzz String — mutable ASCII/UTF-8 text field.</summary>
+public sealed class StringBlock : IBlockNode
+{
+    public required string Name { get; init; }
+    public bool Mutable { get; init; } = true;
+    public string DefaultValue { get; init; } = "";
+    public int MinSize { get; init; } = 0;
+    public int MaxSize { get; init; } = 4096;
+    public string? SeedFile { get; init; }
+
+    public int Render(Span<byte> buffer, int offset, RenderContext ctx)
+    {
+        var data = ResolveBytes(ctx);
+        data.CopyTo(buffer[offset..]);
+        return data.Length;
+    }
+
+    public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx)
+    {
+        var len = ResolveBytes(ctx).Length;
+        fields.Add(new FieldRegion(Name, baseOffset, len, Mutable, "string"));
+    }
+
+    private byte[] ResolveBytes(RenderContext ctx)
+    {
+        if (SeedFile is not null && ctx.Seeds.TryGetValue(SeedFile, out var seed))
+            return seed;
+        if (!string.IsNullOrEmpty(DefaultValue))
+            return Encoding.ASCII.GetBytes(DefaultValue);
+        var size = ctx.Rng.Next(MinSize, Math.Max(MinSize + 1, MaxSize + 1));
+        var buf = new byte[size];
+        ctx.Rng.NextBytes(buf);
+        return buf;
+    }
+}
+
+/// <summary>Boofuzz Word/DWord/QWord — fixed-width integer field.</summary>
+public sealed class IntegerBlock : IBlockNode
+{
+    public required string Name { get; init; }
+    public int Width { get; init; } = 4;
+    public bool LittleEndian { get; init; } = true;
+    public bool Mutable { get; init; } = true;
+    public ulong DefaultValue { get; init; }
+
+    public int Render(Span<byte> buffer, int offset, RenderContext ctx)
+    {
+        WriteInteger(buffer[offset..], DefaultValue);
+        return Width;
+    }
+
+    public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx)
+    {
+        var kind = Width switch { 2 => "word", 8 => "qword", _ => "dword" };
+        fields.Add(new FieldRegion(Name, baseOffset, Width, Mutable, kind, LittleEndian));
+    }
+
+    private void WriteInteger(Span<byte> dest, ulong value)
+    {
+        if (Width == 2)
+        {
+            var v = (ushort)value;
+            if (LittleEndian) { dest[0] = (byte)v; dest[1] = (byte)(v >> 8); }
+            else { dest[0] = (byte)(v >> 8); dest[1] = (byte)v; }
+        }
+        else if (Width == 8)
+        {
+            if (LittleEndian)
+                for (var i = 0; i < 8; i++)
+                    dest[i] = (byte)(value >> (8 * i));
+            else
+                for (var i = 0; i < 8; i++)
+                    dest[7 - i] = (byte)(value >> (8 * i));
+        }
+        else
+        {
+            var v = (uint)value;
+            if (LittleEndian)
+            {
+                dest[0] = (byte)v; dest[1] = (byte)(v >> 8);
+                dest[2] = (byte)(v >> 16); dest[3] = (byte)(v >> 24);
+            }
+            else
+            {
+                dest[0] = (byte)(v >> 24); dest[1] = (byte)(v >> 16);
+                dest[2] = (byte)(v >> 8); dest[3] = (byte)v;
+            }
+        }
+    }
+}
+
+/// <summary>Boofuzz Group — pick one of several static values.</summary>
+public sealed class ChoiceBlock : IBlockNode
+{
+    public required string Name { get; init; }
+    public required IReadOnlyList<byte[]> Values { get; init; }
+    public bool Mutable { get; init; } = true;
+
+    public int Render(Span<byte> buffer, int offset, RenderContext ctx)
+    {
+        if (Values.Count == 0)
+            return 0;
+        var idx = ctx.ChoiceIndex.HasValue
+            ? ctx.ChoiceIndex.Value % Values.Count
+            : ctx.Rng.Next(Values.Count);
+        var pick = Values[idx];
+        pick.CopyTo(buffer[offset..]);
+        return pick.Length;
+    }
+
+    public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx)
+    {
+        if (!Mutable || Values.Count == 0)
+            return;
+        var maxLen = Values.Max(v => v.Length);
+        fields.Add(new FieldRegion(Name, baseOffset, maxLen, true, "choices"));
+    }
 }
 
 public sealed class BytesBlock : IBlockNode

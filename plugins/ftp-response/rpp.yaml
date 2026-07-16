@@ -1,0 +1,4 @@
+name: ftp-response
+runtime: python
+entry: handler.py
+hook: post_receive

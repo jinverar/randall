@@ -95,7 +95,7 @@ dotnet run --project src/Randall.Server
 
 ## Status
 
-**Phases 1–9 complete** — doctor preflight, UDP, checksums, advanced mutators. See [docs/ROADMAP.md](docs/ROADMAP.md).
+**Phase 12 complete — VulnTftp, session graph, TCP coverage stalk.** See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## License
 

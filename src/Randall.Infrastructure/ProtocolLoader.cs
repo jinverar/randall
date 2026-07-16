@@ -106,7 +106,48 @@ public static class ProtocolLoader
         def.Type.ToLowerInvariant() switch
         {
             "static" => new StaticBlock(def.Value ?? ""),
-            "string" => new StaticBlock(def.Value ?? ""),
+            "delim" => new DelimBlock(def.Value ?? " ", def.Name ?? "delim", def.Mutable),
+            "string" => new StringBlock
+            {
+                Name = def.Name ?? "string",
+                Mutable = def.Mutable,
+                DefaultValue = def.Value ?? "",
+                MinSize = def.MinSize,
+                MaxSize = def.MaxSize,
+                SeedFile = def.SeedFile,
+            },
+            "word" => new IntegerBlock
+            {
+                Name = def.Name ?? "word",
+                Width = 2,
+                LittleEndian = def.LittleEndian,
+                Mutable = def.Mutable,
+                DefaultValue = ParseIntegerDefault(def.Value, 2),
+            },
+            "dword" => new IntegerBlock
+            {
+                Name = def.Name ?? "dword",
+                Width = 4,
+                LittleEndian = def.LittleEndian,
+                Mutable = def.Mutable,
+                DefaultValue = ParseIntegerDefault(def.Value, 4),
+            },
+            "qword" => new IntegerBlock
+            {
+                Name = def.Name ?? "qword",
+                Width = 8,
+                LittleEndian = def.LittleEndian,
+                Mutable = def.Mutable,
+                DefaultValue = ParseIntegerDefault(def.Value, 8),
+            },
+            "choices" or "group_values" => new ChoiceBlock
+            {
+                Name = def.Name ?? "choice",
+                Mutable = def.Mutable,
+                Values = (def.Values.Count > 0 ? def.Values : [def.Value ?? ""])
+                    .Select(v => Encoding.ASCII.GetBytes(v))
+                    .ToList(),
+            },
             "bytes" or "data" or "payload" => new BytesBlock
             {
                 Name = def.Name ?? "payload",
@@ -134,6 +175,16 @@ public static class ProtocolLoader
             _ => new StaticBlock(def.Value ?? ""),
         };
 
+    private static ulong ParseIntegerDefault(string? value, int width)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return 0;
+        value = value.Trim();
+        if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            return Convert.ToUInt64(value, 16);
+        return ulong.Parse(value);
+    }
+
     private static IBlockNode BuildSizedPayload(ProtocolBlockDefinition def)
     {
         if (def.Child is not null)
@@ -152,7 +203,17 @@ public static class ModelFuzzer
         IMutator mutator,
         Random rng,
         bool syncLengthFields = false,
-        int havocDepth = 6)
+        int havocDepth = 6) =>
+        BuildPayload(model, seeds, mutator, rng, syncLengthFields, havocDepth, targetField: null);
+
+    public static byte[] BuildPayload(
+        BlockModel model,
+        IReadOnlyDictionary<string, byte[]> seeds,
+        IMutator mutator,
+        Random rng,
+        bool syncLengthFields,
+        int havocDepth,
+        FieldRegion? targetField)
     {
         var baseline = model.Render(seeds);
         var mutable = model.GetMutableFields();
@@ -160,25 +221,116 @@ public static class ModelFuzzer
             return model.FinalizeMessage(baseline, syncLengthFields);
 
         var lengthFields = mutable.Where(f => f.Kind == "length").ToList();
-        IReadOnlyList<FieldRegion> pool = lengthFields.Count > 0 && rng.NextDouble() < 0.25
-            ? lengthFields
-            : mutable;
+        IReadOnlyList<FieldRegion> pool = targetField is not null
+            ? [targetField]
+            : lengthFields.Count > 0 && rng.NextDouble() < 0.25
+                ? lengthFields
+                : mutable;
 
-        var field = pool[rng.Next(pool.Count)];
-        if (field.Offset + field.Length > baseline.Length)
+        var field = targetField ?? pool[rng.Next(pool.Count)];
+        if (field.Offset + field.Length > baseline.Length && field.Kind is not "string" and not "choices")
             return model.FinalizeMessage(baseline, syncLengthFields);
 
-        var slice = baseline.AsSpan(field.Offset, field.Length).ToArray();
+        var slice = field.Offset + field.Length <= baseline.Length
+            ? baseline.AsSpan(field.Offset, field.Length).ToArray()
+            : Array.Empty<byte>();
         byte[] mutated;
-        if (field.Kind == "length")
+        if (field.Kind is "word" or "dword" or "qword")
+            mutated = MutateIntegerField(slice, field, rng);
+        else if (field.Kind == "length")
             mutated = MutateLengthField(slice, field, baseline, rng);
-        else if (mutator.Name == "havoc" || (field.Kind == "bytes" && rng.NextDouble() < 0.15))
+        else if (mutator.Name == "havoc" || field.Kind is "bytes" or "string" && rng.NextDouble() < 0.15)
             mutated = MutationOps.Havoc(slice, rng, havocDepth);
         else
             mutated = mutator.Mutate(slice).ToArray();
 
         var patched = model.PatchField(baseline, field.Name, mutated);
         return model.FinalizeMessage(patched, syncLengthFields);
+    }
+
+    private static byte[] MutateIntegerField(byte[] bytes, FieldRegion field, Random rng)
+    {
+        var current = ReadInteger(bytes, field.Length, field.LittleEndian);
+        var choices = new List<ulong>
+        {
+            0, 1, current,
+            current > 0 ? current - 1 : 0,
+            current + 1,
+        };
+        if (field.Length == 2)
+        {
+            choices.Add(ushort.MaxValue);
+            choices.Add(ushort.MaxValue - 1);
+        }
+        else if (field.Length == 4)
+        {
+            choices.Add(uint.MaxValue);
+            choices.Add(uint.MaxValue - 1);
+        }
+        else
+        {
+            choices.Add(ulong.MaxValue);
+            choices.Add(ulong.MaxValue - 1);
+        }
+        var pick = choices[rng.Next(choices.Count)];
+        return WriteInteger(pick, field.Length, field.LittleEndian);
+    }
+
+    private static ulong ReadInteger(ReadOnlySpan<byte> bytes, int width, bool littleEndian)
+    {
+        if (width == 2)
+            return littleEndian
+                ? (ulong)(bytes[0] | (bytes[1] << 8))
+                : (ulong)((bytes[0] << 8) | bytes[1]);
+        if (width == 8)
+        {
+            ulong v = 0;
+            if (littleEndian)
+                for (var i = 0; i < 8; i++)
+                    v |= (ulong)bytes[i] << (8 * i);
+            else
+                for (var i = 0; i < 8; i++)
+                    v |= (ulong)bytes[i] << (8 * (7 - i));
+            return v;
+        }
+        return littleEndian
+            ? (ulong)(bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24))
+            : (ulong)((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]);
+    }
+
+    private static byte[] WriteInteger(ulong value, int width, bool littleEndian)
+    {
+        var buf = new byte[width];
+        if (width == 2)
+        {
+            var v = (ushort)value;
+            if (littleEndian) { buf[0] = (byte)v; buf[1] = (byte)(v >> 8); }
+            else { buf[0] = (byte)(v >> 8); buf[1] = (byte)v; }
+        }
+        else if (width == 8)
+        {
+            if (littleEndian)
+                for (var i = 0; i < 8; i++)
+                    buf[i] = (byte)(value >> (8 * i));
+            else
+                for (var i = 0; i < 8; i++)
+                    buf[7 - i] = (byte)(value >> (8 * i));
+        }
+        else
+        {
+            var v = (uint)value;
+            if (littleEndian)
+            {
+                buf[0] = (byte)v; buf[1] = (byte)(v >> 8);
+                buf[2] = (byte)(v >> 16); buf[3] = (byte)(v >> 24);
+            }
+            else
+            {
+                buf[0] = (byte)(v >> 24); buf[1] = (byte)(v >> 16);
+                buf[2] = (byte)(v >> 8); buf[3] = (byte)v;
+            }
+        }
+        return buf;
     }
 
     private static byte[] MutateLengthField(

@@ -1,0 +1,23 @@
+name: https-simple
+description: TLS TCP template — boofuzz fuzz_ssl_client.py style (point at your HTTPS service)
+kind: tcp
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 443
+  tls: true
+  tlsInsecure: true
+  tlsHost: localhost
+  receiveTimeoutMs: 3000
+sessionCommands:
+  - name: HTTP-Request
+    model: protocols/http_get.yaml
+    readBanner: false
+fuzz:
+  maxIterations: 100
+  corpusDir: ../../data/corpus/examples-https
+  crashesDir: ../../data/crashes/examples-https
+mutators:
+  - bitflip
+  - havoc
+  - boundary

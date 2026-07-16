@@ -24,6 +24,14 @@ logs/
 tools/dynamorio/
 targets/vulnserver/*
 !targets/vulnserver/.gitkeep
+targets/vulnhttp/*
+!targets/vulnhttp/.gitkeep
+targets/vulnftp/*
+!targets/vulnftp/.gitkeep
+targets/vulnssh/*
+!targets/vulnssh/.gitkeep
+targets/vulntftp/*
+!targets/vulntftp/.gitkeep
 targets/local/
 *.db
 *.dmp

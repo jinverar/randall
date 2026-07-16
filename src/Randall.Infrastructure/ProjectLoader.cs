@@ -55,4 +55,26 @@ public static class ProjectLoader
         foreach (var file in Directory.EnumerateFiles(dir, "*.yml"))
             yield return file;
     }
+
+    /// <summary>Discover example projects under examples/*/project.yaml.</summary>
+    public static IEnumerable<string> DiscoverExamples(string repoRoot)
+    {
+        var examplesDir = Path.Combine(repoRoot, "examples");
+        if (!Directory.Exists(examplesDir))
+            yield break;
+
+        foreach (var projectFile in Directory.EnumerateFiles(examplesDir, "project.yaml", SearchOption.AllDirectories))
+            yield return projectFile;
+    }
+
+    public static IEnumerable<string> DiscoverAll(string repoRoot)
+    {
+        var projectsDir = Path.Combine(repoRoot, "projects");
+        foreach (var p in DiscoverProjects(projectsDir))
+            yield return p;
+        foreach (var p in DiscoverProjects(Path.Combine(projectsDir, "local")))
+            yield return p;
+        foreach (var p in DiscoverExamples(repoRoot))
+            yield return p;
+    }
 }

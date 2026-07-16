@@ -1,0 +1,15 @@
+name: tftp-rrq
+description: TFTP read request (opcode 1)
+blocks:
+  - type: word
+    name: opcode
+    value: "0x0001"
+    mutable: false
+    littleEndian: false
+  - type: string
+    name: filename
+    mutable: true
+    value: "boot.bin"
+    maxSize: 4096
+  - type: static
+    value: "\0octet\0"

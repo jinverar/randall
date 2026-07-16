@@ -76,7 +76,7 @@ static int PrintLegs()
 
 static int PrintVersion()
 {
-    Console.WriteLine("Randall 0.10.0-alpha (Phase 9 — doctor, UDP, checksums)");
+    Console.WriteLine("Randall 0.13.0-alpha (Phase 12 — TFTP, graph, TCP stalk)");
     return 0;
 }
 

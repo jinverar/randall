@@ -4,6 +4,24 @@ runs:
   - project: projects/vulnserver.yaml
     maxIterations: 100
     dryRun: true
+  - project: projects/vulnhttp.yaml
+    maxIterations: 50
+    dryRun: true
+  - project: projects/vulnftp.yaml
+    maxIterations: 50
+    dryRun: true
+  - project: projects/vulnssh.yaml
+    maxIterations: 50
+    dryRun: true
+  - project: projects/vulntftp.yaml
+    maxIterations: 50
+    dryRun: true
+  - project: examples/http-simple/project.yaml
+    maxIterations: 30
+    dryRun: true
+  - project: examples/ftp-simple/project.yaml
+    maxIterations: 30
+    dryRun: true
   - project: projects/file-text.yaml
     maxIterations: 50
     dryRun: true

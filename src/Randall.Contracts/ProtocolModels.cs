@@ -17,6 +17,7 @@ public sealed class ProtocolBlockDefinition
     public int MinSize { get; set; } = 1;
     public int MaxSize { get; set; } = 4096;
     public string? SeedFile { get; set; }
+    public List<string> Values { get; set; } = [];
     public List<ProtocolBlockDefinition>? Children { get; set; }
     public ProtocolBlockDefinition? Child { get; set; }
     public string? LengthName { get; set; }

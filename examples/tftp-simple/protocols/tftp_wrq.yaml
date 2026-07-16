@@ -1,0 +1,15 @@
+name: tftp-wrq
+description: TFTP write request (opcode 2)
+blocks:
+  - type: word
+    name: opcode
+    value: "0x0002"
+    mutable: false
+    littleEndian: false
+  - type: string
+    name: filename
+    mutable: true
+    value: "upload.bin"
+    maxSize: 4096
+  - type: static
+    value: "\0octet\0"

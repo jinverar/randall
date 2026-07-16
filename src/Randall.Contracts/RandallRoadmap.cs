@@ -76,5 +76,32 @@ public static class RandallRoadmap
             new("p9-crc", "CRC32 checksum block + resync", true, "docs/MODEL.md"),
             new("p9-havoc-model", "Field-level havoc in model fuzzer", true, null),
         ]),
+        new(10, "Kidnap Boo (boofuzz parity)", "complete",
+        [
+            new("p10-primitives", "string/delim/word/dword/choices blocks", true, "docs/MODEL.md"),
+            new("p10-exhaustive", "Exhaustive fuzz mode + mutateStep", true, "docs/BOOFUZZ_PARITY.md"),
+            new("p10-processmon", "ProcessMonitor for long-lived targets", true, null),
+            new("p10-vulnhttp", "VulnHttp lab server + project", true, "projects/vulnhttp.yaml"),
+            new("p10-vulnftp", "VulnFtp lab server + FTP session flows", true, "projects/vulnftp.yaml"),
+            new("p10-vulnssh", "VulnSsh stub server + project", true, "projects/vulnssh.yaml"),
+            new("p10-examples", "examples/ gallery (http, ftp)", true, "docs/EXAMPLES.md"),
+        ]),
+        new(11, "Camouflage (TLS + responses)", "complete",
+        [
+            new("p11-tls", "TLS transport (SslStream)", true, "examples/https-simple"),
+            new("p11-expect", "expectResponse session validation", true, null),
+            new("p11-postrecv", "RPP post_receive hook + ftp-response plugin", true, "docs/RPP.md"),
+            new("p11-tcpdump", "TCP server minidump on crash", true, null),
+            new("p11-importer", "Boofuzz → YAML importer script", true, "scripts/import-boofuzz.py"),
+            new("p11-smoke", "lab-smoke campaign covers all lab targets", true, "campaigns/lab-smoke.yaml"),
+        ]),
+        new(12, "Stalk the factory (TCP + TFTP)", "complete",
+        [
+            new("p12-vulntftp", "VulnTftp UDP lab server + project", true, "projects/vulntftp.yaml"),
+            new("p12-graph", "sessionGraph response branching (s_switch)", true, "docs/MODEL.md"),
+            new("p12-postcrash", "RPP post_crash + crash-tag plugin", true, "docs/RPP.md"),
+            new("p12-tcpcov", "TCP coverage via instrumented spawn (drcov)", true, null),
+            new("p12-udpmon", "UDP long-lived process crash detection", true, null),
+        ]),
     ];
 }

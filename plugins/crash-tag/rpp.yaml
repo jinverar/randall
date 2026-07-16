@@ -1,0 +1,4 @@
+name: crash-tag
+runtime: python
+entry: handler.py
+hook: post_crash

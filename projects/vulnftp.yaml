@@ -1,0 +1,69 @@
+name: vulnftp
+description: Randall VulnFtp — FTP lab (boofuzz ftp_simple parity). Build with scripts/build-vulnftp.ps1
+kind: tcp
+target:
+  executable: ../targets/vulnftp/randall-vulnftp.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 2121
+  receiveTimeoutMs: 2000
+sessionCommands:
+  - name: USER
+    model: protocols/ftp_user.yaml
+    readBanner: true
+    expectResponse: "331"
+  - name: PASS
+    model: protocols/ftp_pass.yaml
+    readBanner: false
+    expectResponse: "230"
+  - name: STOR
+    model: protocols/ftp_stor.yaml
+    readBanner: false
+  - name: RETR
+    model: protocols/ftp_retr.yaml
+    readBanner: false
+sessionFlows:
+  - name: login_stor
+    steps: [USER, PASS, STOR]
+    mutateStep: last
+  - name: login_retr
+    steps: [USER, PASS, RETR]
+    mutateStep: all
+sessionGraph:
+  start: USER
+  mutate: STOR
+  edges:
+    - from: USER
+      when: "331"
+      to: PASS
+    - from: PASS
+      when: "230"
+      to: STOR
+    - from: PASS
+      when: "230"
+      to: RETR
+fuzz:
+  maxIterations: 1000
+  mutateStep: last
+  sessionGraphBias: 0.3
+  powerSchedule: true
+  havocDepth: 8
+  sessionFlowBias: 0.35
+  corpusDir: ../data/corpus/vulnftp
+  crashesDir: ../data/crashes/vulnftp
+mutators:
+  - bitflip
+  - havoc
+  - interesting
+  - dictionary
+  - expand
+  - boundary
+  - insert
+plugins:
+  - path: ../plugins/ftp-response
+    hook: post_receive
+  - path: ../plugins/crash-tag
+    hook: post_crash

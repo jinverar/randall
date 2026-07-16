@@ -86,6 +86,58 @@ public sealed class DynamoRioRunner
             process.ExitCode,
             process.ExitCode == 0 ? "ok" : $"exit {process.ExitCode}");
     }
+
+    public Process? StartInstrumentedTarget(
+        ProjectConfig project,
+        string yamlPath,
+        string traceDir)
+    {
+        if (!IsAvailable)
+            return null;
+
+        var targetExe = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
+        if (!File.Exists(targetExe))
+            return null;
+
+        Directory.CreateDirectory(traceDir);
+        var args = project.Target.Args.Count > 0
+            ? string.Join(' ', project.Target.Args)
+            : "";
+
+        var workDir = string.IsNullOrWhiteSpace(project.Target.WorkingDirectory)
+            ? Path.GetDirectoryName(targetExe) ?? traceDir
+            : ProjectLoader.ResolvePath(yamlPath, project.Target.WorkingDirectory);
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = DrrunPath,
+            Arguments = $"-t drcov -dump_text -logdir \"{traceDir}\" -- \"{targetExe}\" {args}".Trim(),
+            UseShellExecute = false,
+            WorkingDirectory = workDir,
+        };
+
+        return Process.Start(psi);
+    }
+
+    public string? CollectLatestTrace(string traceDir)
+    {
+        if (!Directory.Exists(traceDir))
+            return null;
+        return Directory.EnumerateFiles(traceDir, "*.log")
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
+    }
+
+    public async Task StopInstrumentedAsync(Process? process, CancellationToken cancellationToken = default)
+    {
+        if (process is { HasExited: false })
+        {
+            process.Kill(entireProcessTree: true);
+            try { await process.WaitForExitAsync(cancellationToken); }
+            catch { /* ignore */ }
+        }
+        process?.Dispose();
+    }
 }
 
 public sealed record DrcovRunResult(

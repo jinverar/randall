@@ -8,7 +8,7 @@ Polyglot plugins run as **child processes** and talk to Randall over **line-deli
 name: xor-silly
 runtime: python    # python | node | exe
 entry: mutator.py
-hook: mutate       # mutate | post_crash (post_crash planned)
+hook: mutate       # mutate | post_receive | post_crash
 ```
 
 ## Wire protocol
@@ -24,6 +24,20 @@ hook: mutate       # mutate | post_crash (post_crash planned)
 ```json
 {"output":"<base64 mutated>","name":"xor-silly"}
 ```
+
+**post_receive request**:
+
+```json
+{"op":"post_receive","input":"<base64 sent>","response":"<base64 recv>"}
+```
+
+**post_receive response**:
+
+```json
+{"action":"continue","note":"logged_in","name":"ftp-response"}
+```
+
+`action` may be `continue` or `abort`.
 
 ## Enable in a project
 
@@ -58,5 +72,6 @@ echo '{"op":"mutate","input":"QUFBQQ=="}' | python plugins/xor-silly/mutator.py
 | Hook | Purpose |
 |------|---------|
 | `mutate` | Return mutated bytes |
-| `post_crash` | Triage / classify crash (planned) |
+| `post_receive` | Classify server response — continue or abort |
+| `post_crash` | Tag/classify crash for triage |
 | `observe` | Custom coverage signal (planned) |

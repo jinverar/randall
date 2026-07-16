@@ -9,9 +9,9 @@ public static class MiniDumpWriter
 {
     private const int MiniDumpWithDataSegs = 0x00000002;
 
-    public static string? TryWriteDump(Process process, string dumpsDir, string baseName)
+    public static string? TryWriteDump(Process process, string dumpsDir, string baseName, bool allowExited = false)
     {
-        if (process.HasExited)
+        if (process.HasExited && !allowExited)
             return null;
 
         try

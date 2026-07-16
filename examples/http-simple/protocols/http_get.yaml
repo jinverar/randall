@@ -1,0 +1,40 @@
+name: http-get
+description: HTTP GET request — boofuzz http_simple parity
+blocks:
+  - type: choices
+    name: method
+    values: ["GET", "HEAD", "POST", "PUT", "DELETE"]
+  - type: delim
+    name: space1
+    value: " "
+    mutable: false
+  - type: string
+    name: uri
+    mutable: true
+    value: "/index.html"
+    maxSize: 8192
+  - type: delim
+    name: space2
+    value: " "
+    mutable: false
+  - type: string
+    name: version
+    mutable: true
+    value: "HTTP/1.1"
+  - type: static
+    value: "\r\n"
+  - type: string
+    name: host_key
+    value: "Host:"
+    mutable: false
+  - type: delim
+    name: space3
+    value: " "
+    mutable: false
+  - type: string
+    name: host_value
+    mutable: true
+    value: "127.0.0.1"
+    maxSize: 512
+  - type: static
+    value: "\r\n\r\n"

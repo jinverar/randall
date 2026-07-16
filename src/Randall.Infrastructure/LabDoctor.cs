@@ -108,6 +108,8 @@ public static class LabDoctor
 
         if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase))
         {
+            var tlsNote = project.Transport.Tls ? "TLS enabled" : "plain TCP";
+            Add("transport", "ok", $"{project.Transport.Host}:{project.Transport.Port} ({tlsNote})");
             try
             {
                 using var client = new TcpClient();

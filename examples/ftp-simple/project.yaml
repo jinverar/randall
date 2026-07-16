@@ -1,0 +1,34 @@
+name: ftp-simple
+description: Port of boofuzz examples/ftp_simple.py — session USER→PASS→STOR/RETR
+kind: tcp
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 2121
+  receiveTimeoutMs: 2000
+sessionCommands:
+  - name: USER
+    model: protocols/ftp_user.yaml
+    readBanner: true
+  - name: PASS
+    model: protocols/ftp_pass.yaml
+  - name: STOR
+    model: protocols/ftp_stor.yaml
+  - name: RETR
+    model: protocols/ftp_retr.yaml
+sessionFlows:
+  - name: login_stor
+    steps: [USER, PASS, STOR]
+  - name: login_retr
+    steps: [USER, PASS, RETR]
+fuzz:
+  maxIterations: 200
+  mode: exhaustive
+  mutateStep: last
+  sessionFlowBias: 0.5
+  corpusDir: ../../data/corpus/examples-ftp
+  crashesDir: ../../data/crashes/examples-ftp
+mutators:
+  - bitflip
+  - havoc
+  - boundary

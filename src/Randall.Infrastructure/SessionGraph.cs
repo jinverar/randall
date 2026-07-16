@@ -12,7 +12,8 @@ public static class SessionGraph
         byte[] Prefix,
         byte[]? Preamble,
         bool ReadBanner,
-        string? ModelPath);
+        string? ModelPath,
+        string? ExpectResponse);
 
     public static IReadOnlyList<PreparedCommand> LoadCommands(ProjectConfig project, string yamlPath)
     {
@@ -39,7 +40,8 @@ public static class SessionGraph
                 Encoding.ASCII.GetBytes(cmd.Prefix),
                 string.IsNullOrWhiteSpace(cmd.Preamble) ? null : Encoding.ASCII.GetBytes(cmd.Preamble),
                 cmd.ReadBanner,
-                cmd.Model));
+                cmd.Model,
+                cmd.ExpectResponse));
         }
         return list;
     }
@@ -47,7 +49,7 @@ public static class SessionGraph
     public static byte[] BuildPayload(PreparedCommand command, byte[] mutatedBody) =>
         command.Prefix.Concat(mutatedBody).ToArray();
 
-    public sealed record PreparedFlow(string Name, IReadOnlyList<PreparedCommand> Steps);
+    public sealed record PreparedFlow(string Name, IReadOnlyList<PreparedCommand> Steps, string MutateStep = "");
 
     public static IReadOnlyList<PreparedFlow> LoadFlows(
         ProjectConfig project,
@@ -72,7 +74,8 @@ public static class SessionGraph
             if (steps.Count > 0)
                 flows.Add(new PreparedFlow(
                     string.IsNullOrWhiteSpace(flow.Name) ? string.Join("→", flow.Steps) : flow.Name,
-                    steps));
+                    steps,
+                    flow.MutateStep));
         }
         return flows;
     }

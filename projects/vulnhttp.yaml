@@ -1,0 +1,33 @@
+name: vulnhttp
+description: Randall VulnHttp — HTTP lab (browser/server fuzzing). Build with scripts/build-vulnhttp.ps1
+kind: tcp
+target:
+  executable: ../targets/vulnhttp/randall-vulnhttp.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 8080
+  receiveTimeoutMs: 2000
+sessionCommands:
+  - name: GET
+    model: protocols/http_get.yaml
+    readBanner: false
+  - name: POST
+    model: protocols/http_post.yaml
+    readBanner: false
+fuzz:
+  maxIterations: 1000
+  powerSchedule: true
+  havocDepth: 8
+  corpusDir: ../data/corpus/vulnhttp
+  crashesDir: ../data/crashes/vulnhttp
+mutators:
+  - bitflip
+  - havoc
+  - interesting
+  - dictionary
+  - expand
+  - boundary
+  - splice

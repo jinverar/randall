@@ -1,0 +1,10 @@
+name: ssh-version
+description: Client SSH version string (after server banner)
+blocks:
+  - type: string
+    name: version
+    mutable: true
+    value: "SSH-2.0-RandallFuzz_1.0"
+    maxSize: 4096
+  - type: static
+    value: "\r\n"

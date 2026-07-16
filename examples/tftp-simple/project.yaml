@@ -1,0 +1,21 @@
+name: tftp-simple
+description: Port of boofuzz tftp_simple — RRQ/WRQ against VulnTftp
+kind: udp
+transport:
+  type: udp
+  host: 127.0.0.1
+  port: 6969
+  receiveTimeoutMs: 500
+sessionCommands:
+  - name: RRQ
+    model: protocols/tftp_rrq.yaml
+  - name: WRQ
+    model: protocols/tftp_wrq.yaml
+fuzz:
+  maxIterations: 200
+  corpusDir: ../../data/corpus/examples-tftp
+  crashesDir: ../../data/crashes/examples-tftp
+mutators:
+  - havoc
+  - bitflip
+  - boundary

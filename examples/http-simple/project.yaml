@@ -1,0 +1,22 @@
+name: http-simple
+description: Port of boofuzz examples/http_simple.py — fuzz HTTP GET against VulnHttp or any server on :8080
+kind: tcp
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 8080
+  receiveTimeoutMs: 2000
+sessionCommands:
+  - name: HTTP-Request
+    model: protocols/http_get.yaml
+    readBanner: false
+fuzz:
+  maxIterations: 200
+  mode: random
+  corpusDir: ../../data/corpus/examples-http
+  crashesDir: ../../data/crashes/examples-http
+mutators:
+  - bitflip
+  - havoc
+  - boundary
+  - expand

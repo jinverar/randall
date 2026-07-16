@@ -1,0 +1,18 @@
+# Examples — Randall for boofuzz users
+
+Self-contained YAML projects ported from [boofuzz/examples](https://github.com/jtpereyda/boofuzz/tree/master/examples).
+
+| Example | Boofuzz source | Randall command |
+|---------|----------------|-----------------|
+| [http-simple](http-simple/) | `http_simple.py` | `randall fuzz -c examples/http-simple/project.yaml --dry-run` |
+| [ftp-simple](ftp-simple/) | `ftp_simple.py` | `randall fuzz -c examples/ftp-simple/project.yaml --dry-run` |
+
+Pair with lab targets:
+
+```powershell
+.\scripts\build-all-lab-targets.ps1
+randall fuzz -c projects/vulnhttp.yaml
+randall fuzz -c projects/vulnftp.yaml
+```
+
+See [docs/BOOFUZZ_PARITY.md](../docs/BOOFUZZ_PARITY.md) for the feature matrix.

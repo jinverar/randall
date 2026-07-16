@@ -1,0 +1,23 @@
+name: http-post
+description: HTTP POST with body
+blocks:
+  - type: static
+    value: "POST "
+  - type: string
+    name: uri
+    mutable: true
+    value: "/upload"
+    maxSize: 4096
+  - type: static
+    value: " HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: "
+  - type: string
+    name: content_length
+    mutable: true
+    value: "4"
+  - type: static
+    value: "\r\n\r\n"
+  - type: string
+    name: body
+    mutable: true
+    value: "AAAA"
+    maxSize: 8192

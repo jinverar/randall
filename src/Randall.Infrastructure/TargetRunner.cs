@@ -8,11 +8,12 @@ public sealed record TargetRunResult(
     bool Crashed,
     int? ExitCode,
     string? MiniDumpPath,
-    string Detail);
+    string Detail,
+    byte[]? ResponseBytes = null);
 
 public static class TargetRunner
 {
-    public sealed record TcpSendOptions(byte[]? Preamble = null, bool ReadBanner = true);
+    public sealed record TcpSendOptions(byte[]? Preamble = null, bool ReadBanner = true, string? ExpectResponse = null);
 
     public static async Task<TargetRunResult> RunPayloadAsync(
         ProjectConfig project,
@@ -23,9 +24,9 @@ public static class TargetRunner
         TcpSendOptions? tcpOptions = null)
     {
         if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase))
-            return await RunTcpAsync(project, longLivedServer, payload, tcpOptions, cancellationToken);
+            return await RunTcpAsync(project, yamlPath, longLivedServer, payload, tcpOptions, cancellationToken);
         if (project.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase))
-            return await RunUdpAsync(project, payload, cancellationToken);
+            return await RunUdpAsync(project, longLivedServer, payload, cancellationToken);
         return await RunFileAsync(project, yamlPath, payload, cancellationToken);
     }
 
@@ -102,68 +103,91 @@ public static class TargetRunner
 
     private static async Task<TargetRunResult> RunTcpAsync(
         ProjectConfig project,
+        string yamlPath,
         Process? server,
         byte[] payload,
         TcpSendOptions? tcpOptions,
         CancellationToken cancellationToken)
     {
         tcpOptions ??= new TcpSendOptions();
+        byte[]? lastResponse = null;
         try
         {
-            using var client = new TcpClient();
-            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            connectCts.CancelAfter(2000);
-            try
-            {
-                await client.ConnectAsync(project.Transport.Host, project.Transport.Port, connectCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                return new TargetRunResult(false, null, null, "connect timeout");
-            }
-
-            await using var stream = client.GetStream();
-            var buf = new byte[4096];
-            stream.ReadTimeout = project.Transport.ReceiveTimeoutMs;
+            await using var stream = await TcpTransport.ConnectAsync(project.Transport, cancellationToken);
 
             if (tcpOptions.ReadBanner)
-            {
-                try { _ = await stream.ReadAsync(buf, cancellationToken); }
-                catch { /* banner optional */ }
-            }
+                lastResponse = await TcpTransport.ReadAvailableAsync(
+                    stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
 
             if (tcpOptions.Preamble is { Length: > 0 })
             {
                 await stream.WriteAsync(tcpOptions.Preamble, cancellationToken);
                 await stream.FlushAsync(cancellationToken);
-                try { _ = await stream.ReadAsync(buf, cancellationToken); }
-                catch { /* response optional */ }
+                lastResponse = await TcpTransport.ReadAvailableAsync(
+                    stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
             }
 
             await stream.WriteAsync(payload, cancellationToken);
             await stream.FlushAsync(cancellationToken);
+            lastResponse = await TcpTransport.ReadAvailableAsync(
+                stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
 
-            try { _ = await stream.ReadAsync(buf, cancellationToken); }
-            catch { /* optional */ }
+            if (!ResponseMatcher.Matches(lastResponse, tcpOptions.ExpectResponse))
+            {
+                return new TargetRunResult(
+                    false,
+                    null,
+                    null,
+                    $"response mismatch expect={tcpOptions.ExpectResponse} got={ResponseMatcher.Describe(lastResponse)}",
+                    lastResponse);
+            }
         }
         catch (Exception ex)
         {
             if (server is null)
-                return new TargetRunResult(false, null, null, ex.Message);
+                return new TargetRunResult(false, null, null, ex.Message, lastResponse);
         }
 
+        return await FinishTcpRun(project, server, yamlPath, lastResponse, cancellationToken);
+    }
+
+    private static async Task<TargetRunResult> FinishTcpRun(
+        ProjectConfig project,
+        Process? server,
+        string? yamlPath,
+        byte[]? lastResponse,
+        CancellationToken cancellationToken)
+    {
         if (server is null)
-            return new TargetRunResult(false, null, null, "no server process");
+            return new TargetRunResult(false, null, null, "no server process", lastResponse);
 
         await Task.Delay(150, cancellationToken);
-        if (server.HasExited)
-            return new TargetRunResult(true, server.ExitCode, null, "server exited");
+        if (!server.HasExited)
+            return new TargetRunResult(false, null, null, "ok", lastResponse);
 
-        return new TargetRunResult(false, null, null, "ok");
+        string? dumpPath = null;
+        if (IsCrashExitCode(server.ExitCode) && yamlPath is not null)
+        {
+            var dumpsDir = Path.Combine(
+                ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir), "dumps");
+            dumpPath = MiniDumpWriter.TryWriteDump(
+                server, dumpsDir, $"tcp_{DateTime.UtcNow:yyyyMMdd_HHmmss}", allowExited: true);
+        }
+
+        return new TargetRunResult(true, server.ExitCode, dumpPath, "server exited", lastResponse);
     }
+
+    public static Task<TargetRunResult> FinishTcpRunFromGraph(
+        ProjectConfig project,
+        string yamlPath,
+        Process? server,
+        byte[]? lastResponse,
+        CancellationToken cancellationToken) =>
+        FinishTcpRun(project, server, yamlPath, lastResponse, cancellationToken);
 
     private static async Task<TargetRunResult> RunUdpAsync(
         ProjectConfig project,
+        Process? server,
         byte[] payload,
         CancellationToken cancellationToken)
     {
@@ -173,29 +197,42 @@ public static class TargetRunner
             client.Connect(project.Transport.Host, project.Transport.Port);
             await client.SendAsync(payload, cancellationToken);
 
+            byte[]? response = null;
             if (project.Transport.ReceiveTimeoutMs > 0)
             {
                 using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 cts.CancelAfter(project.Transport.ReceiveTimeoutMs);
                 try
                 {
-                    _ = await client.ReceiveAsync(cts.Token);
+                    var result = await client.ReceiveAsync(cts.Token);
+                    response = result.Buffer;
                 }
                 catch (OperationCanceledException) { /* no response ok */ }
             }
+
+            if (server is not null)
+            {
+                await Task.Delay(100, cancellationToken);
+                if (server.HasExited)
+                {
+                    return new TargetRunResult(
+                        true, server.ExitCode, null, "udp server exited", response);
+                }
+            }
+
+            return new TargetRunResult(false, null, null, "ok", response);
         }
         catch (Exception ex)
         {
             return new TargetRunResult(false, null, null, ex.Message);
         }
-
-        return new TargetRunResult(false, null, null, "ok");
     }
 
     public sealed record TcpStep(byte[] Payload, TcpSendOptions Options);
 
     public static async Task<TargetRunResult> RunTcpSequenceAsync(
         ProjectConfig project,
+        string yamlPath,
         Process? server,
         IReadOnlyList<TcpStep> steps,
         CancellationToken cancellationToken = default)
@@ -203,62 +240,51 @@ public static class TargetRunner
         if (steps.Count == 0)
             return new TargetRunResult(false, null, null, "empty sequence");
 
+        byte[]? lastResponse = null;
         try
         {
-            using var client = new TcpClient();
-            using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            connectCts.CancelAfter(2000);
-            try
-            {
-                await client.ConnectAsync(project.Transport.Host, project.Transport.Port, connectCts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                return new TargetRunResult(false, null, null, "connect timeout");
-            }
-
-            await using var stream = client.GetStream();
-            var buf = new byte[4096];
-            stream.ReadTimeout = project.Transport.ReceiveTimeoutMs;
+            await using var stream = await TcpTransport.ConnectAsync(project.Transport, cancellationToken);
 
             for (var i = 0; i < steps.Count; i++)
             {
                 var step = steps[i];
                 if (i == 0 && step.Options.ReadBanner)
                 {
-                    try { _ = await stream.ReadAsync(buf, cancellationToken); }
-                    catch { /* banner optional */ }
+                    lastResponse = await TcpTransport.ReadAvailableAsync(
+                        stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
                 }
 
                 if (step.Options.Preamble is { Length: > 0 })
                 {
                     await stream.WriteAsync(step.Options.Preamble, cancellationToken);
                     await stream.FlushAsync(cancellationToken);
-                    try { _ = await stream.ReadAsync(buf, cancellationToken); }
-                    catch { /* response optional */ }
+                    lastResponse = await TcpTransport.ReadAvailableAsync(
+                        stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
                 }
 
                 await stream.WriteAsync(step.Payload, cancellationToken);
                 await stream.FlushAsync(cancellationToken);
+                lastResponse = await TcpTransport.ReadAvailableAsync(
+                    stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
 
-                try { _ = await stream.ReadAsync(buf, cancellationToken); }
-                catch { /* optional */ }
+                if (!ResponseMatcher.Matches(lastResponse, step.Options.ExpectResponse))
+                {
+                    return new TargetRunResult(
+                        false,
+                        null,
+                        null,
+                        $"step {i} response mismatch expect={step.Options.ExpectResponse} got={ResponseMatcher.Describe(lastResponse)}",
+                        lastResponse);
+                }
             }
         }
         catch (Exception ex)
         {
             if (server is null)
-                return new TargetRunResult(false, null, null, ex.Message);
+                return new TargetRunResult(false, null, null, ex.Message, lastResponse);
         }
 
-        if (server is null)
-            return new TargetRunResult(false, null, null, "no server process");
-
-        await Task.Delay(150, cancellationToken);
-        if (server.HasExited)
-            return new TargetRunResult(true, server.ExitCode, null, "server exited");
-
-        return new TargetRunResult(false, null, null, "ok");
+        return await FinishTcpRun(project, server, yamlPath, lastResponse, cancellationToken);
     }
 
     public static bool IsCrashExitCode(int code) =>

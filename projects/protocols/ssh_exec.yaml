@@ -1,0 +1,12 @@
+name: ssh-exec
+description: Fake SSH channel exec payload
+blocks:
+  - type: static
+    value: "exec "
+  - type: string
+    name: command
+    mutable: true
+    value: "id"
+    maxSize: 8192
+  - type: static
+    value: "\r\n"

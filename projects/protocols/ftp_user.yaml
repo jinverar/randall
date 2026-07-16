@@ -1,0 +1,18 @@
+name: ftp-user
+description: FTP USER command — boofuzz parity
+blocks:
+  - type: string
+    name: key
+    value: "USER"
+    mutable: false
+  - type: delim
+    name: space
+    value: " "
+    mutable: false
+  - type: string
+    name: username
+    mutable: true
+    value: "anonymous"
+    maxSize: 4096
+  - type: static
+    value: "\r\n"

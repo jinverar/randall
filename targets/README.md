@@ -1,5 +1,22 @@
 # Lab targets
 
+Build all lab servers:
+
+```powershell
+.\scripts\build-all-lab-targets.ps1
+```
+
+## Randall lab servers
+
+| Target | Port | Profile | Source |
+|--------|------|---------|--------|
+| **Vulnserver** | 9999 | `projects/vulnserver.yaml` | [Randall.Vulnserver](Randall.Vulnserver/) |
+| **VulnHttp** | 8080 | `projects/vulnhttp.yaml` | [Randall.VulnHttp](Randall.VulnHttp/) |
+| **VulnFtp** | 2121 | `projects/vulnftp.yaml` | [Randall.VulnFtp](Randall.VulnFtp/) |
+| **VulnSsh** | 2222 | `projects/vulnssh.yaml` | [Randall.VulnSsh](Randall.VulnSsh/) (stub, not real crypto) |
+
+Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md).
+
 ## Randall Vulnserver (included)
 
 Build the custom lab server from source:

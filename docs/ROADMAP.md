@@ -175,3 +175,80 @@ randall doctor -c projects/local/notepadpp.yaml   # private targets
 randall fuzz -c projects/vulnserver.yaml --dry-run
 randall serve
 ```
+
+---
+
+## Phase 10 — Kidnap Boo (boofuzz parity) ✅
+
+| Item | Status |
+|------|--------|
+| **Typed primitives** — string, delim, word, dword, qword, choices | ✅ |
+| **Exhaustive mode** — `fuzz.mode: exhaustive` | ✅ |
+| **mutateStep** — last / all / indices on session flows | ✅ |
+| **ProcessMonitor** — long-lived target restart | ✅ |
+| **VulnHttp** — HTTP lab server (:8080) | ✅ |
+| **VulnFtp** — FTP lab server (:2121) | ✅ |
+| **VulnSsh** — SSH stub server (:2222) | ✅ |
+| **examples/** — http-simple, ftp-simple | ✅ |
+
+**Build lab floor:**
+```powershell
+.\scripts\build-all-lab-targets.ps1
+randall fuzz -c projects/vulnhttp.yaml --dry-run
+randall fuzz -c examples/ftp-simple/project.yaml --dry-run
+```
+
+**Docs:** [EXAMPLES.md](EXAMPLES.md) · [BOOFUZZ_PARITY.md](BOOFUZZ_PARITY.md)
+
+---
+
+## Phase 11 — Camouflage (TLS + responses) ✅
+
+| Item | Status |
+|------|--------|
+| **TLS transport** — `transport.tls`, `tlsInsecure`, SNI | ✅ |
+| **expectResponse** — session step response validation | ✅ |
+| **RPP post_receive** — `plugins/ftp-response` | ✅ |
+| **TCP minidumps** — dump on long-lived server crash | ✅ |
+| **Boofuzz importer** — `scripts/import-boofuzz.py` | ✅ |
+| **https-simple** example + expanded lab-smoke campaign | ✅ |
+
+```powershell
+python scripts/import-boofuzz.py https://raw.githubusercontent.com/.../ftp_simple.py -o projects/imported/ftp
+# Or local clone:
+python scripts/import-boofuzz.py path/to/boofuzz/examples/ftp_simple.py -o projects/imported/ftp -p 2121
+
+randall fuzz -c examples/https-simple/project.yaml --dry-run
+randall campaign -c campaigns/lab-smoke.yaml
+```
+
+---
+
+## Phase 12 — Stalk the factory (TCP + TFTP) ✅
+
+| Item | Status |
+|------|--------|
+| **VulnTftp** — UDP RRQ/WRQ lab server (:6969) | ✅ |
+| **sessionGraph** — response-driven branching (s_switch) | ✅ |
+| **RPP post_crash** — `plugins/crash-tag` triage tags | ✅ |
+| **TCP coverage stalk** — instrumented spawn per iteration (drcov) | ✅ |
+| **UDP monitor** — long-lived process crash detection | ✅ |
+
+```powershell
+.\scripts\build-vulntftp.ps1
+randall fuzz -c projects/vulntftp.yaml --dry-run
+
+# TCP coverage stalk (needs DYNAMORIO_HOME):
+# Set coverageGuided: true + coverageTcpSpawn: true in project YAML
+randall fuzz -c projects/vulnserver.yaml
+```
+
+**sessionGraph example** (in `projects/vulnftp.yaml`):
+```yaml
+sessionGraph:
+  start: USER
+  mutate: STOR
+  edges:
+    - { from: USER, when: "331", to: PASS }
+    - { from: PASS, when: "230", to: STOR }
+```
