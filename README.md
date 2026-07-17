@@ -8,9 +8,9 @@
   <em>Stalk code paths. Scream on crash.</em>
 </div>
 
-**Generation + coverage-guided fuzzing for Windows** — built in C#/.NET for lab and research workflows.
+**A next-generation fuzzer for Windows** — generation + coverage-guided stalking, built in native C#/.NET.
 
-Randall **combines useful ideas** from several well-known fuzzing traditions — block-based protocol modeling ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz)), in-stream traffic analysis ([CANAPE](https://github.com/foxitcs/canape)), and coverage-guided path exploration ([PaiMei pStalker](https://github.com/OpenRCE/paimei)) — alongside modern instrumentation ([DynamoRIO](https://dynamorio.org/)). It is a learning and lab tool, not a replacement for any of the above.
+Randall **unifies capabilities** that teams have historically spread across separate tools: block-based protocol fuzzing ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz)), in-stream traffic work ([CANAPE](https://github.com/foxitcs/canape)), coverage-driven path exploration ([PaiMei pStalker](https://github.com/OpenRCE/paimei)), and fast instrumentation ([DynamoRIO](https://dynamorio.org/)) — in one stack with a CLI, web UI, and portable deploy. We stand on that prior work; Randall is the integrated next step, not a fork or a toy.
 
 Named after **Randall Boggs** (*Monsters, Inc.*) — master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. The mascot is parody; the tooling is respectfully inspired by prior art:
 
@@ -26,11 +26,11 @@ Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
 > *Stalk code paths. Scream on crash.*
 
-## What Randall combines
+## Built on proven ideas
 
-Randall is our attempt to stitch together techniques that teams often run as separate tools — in one Windows-friendly workflow. We are grateful to the communities behind the projects below.
+Randall pulls forward the best parts of several fuzzing lineages into a single Windows-native engine. Credit where it is due:
 
-| Tool / tradition | Ideas Randall borrows |
+| Tool / tradition | Capabilities Randall integrates |
 |-------------|----------------------|
 | **[Sulley / Boofuzz](https://github.com/jtpereyda/boofuzz)** | Block-based protocol models, sessions, mutations |
 | **[CANAPE](https://github.com/foxitcs/canape)** | MITM capture, parse, inject, fuzz in-stream |
@@ -38,7 +38,7 @@ Randall is our attempt to stitch together techniques that teams often run as sep
 | **[DynamoRIO](https://dynamorio.org/)** | Fast basic-block coverage (drcov) |
 | **Ghidra / triage workflows** | Coverage export for reverse-engineering |
 
-If you already use Boofuzz or AFL-family fuzzers daily, keep using them — Randall may still help as a lab sandbox or for teaching how the pieces fit together.
+The goal is simple: **one fuzzer that does generation, stalking, proxying, and triage** without duct-taping half a dozen runtimes. Boofuzz, AFL, and friends remain great at what they do — Randall is for when you want that full pipeline on Windows in one place.
 
 ## Stalking bugs — coverage map (PaiMei-inspired)
 
@@ -73,13 +73,13 @@ Solid arrows = **taken** edges. Dashed arrows = **not taken** — forks you have
 | **Execution timeline** | Last N blocks before the scream | Live fuzz log (web UI + SignalR) — watch green `+edges` moments |
 | **Crash log** | Which exceptions came with new coverage? | Crashes tab — filter by project, triage tags, export to Ghidra bundle |
 
-**Generation + coverage guidance:** protocol models (Boofuzz-style) produce structured inputs; coverage feedback (pStalker-style) helps decide what to keep and how to triage crashes. The [web UI](docs/LAB_PRACTICE.md#8-web-ui) (`randall serve`) is a single lab console for fuzz runs, session graphs, crashes, and coverage status.
+**Generation + coverage guidance:** protocol models (Boofuzz-style) produce structured inputs; coverage feedback (pStalker-style) drives corpus ranking and crash triage. The [web UI](docs/LAB_PRACTICE.md#8-web-ui) (`randall serve`) is the operations console — fuzz runs, session graphs, crashes, and coverage in one place.
 
 Leg 4 deep dive: [docs/LEGS.md#leg-4--stalk-coverage](docs/LEGS.md#leg-4--stalk-coverage)
 
 ## Eight legs (feature map)
 
-Randall has **eight legs** — each one teaches a fuzzing concept. See [docs/LEGS.md](docs/LEGS.md) for the learning path.
+Randall has **eight legs** — eight major capability areas in one fuzzer. See [docs/LEGS.md](docs/LEGS.md) for the feature map.
 
 | Leg | Module | Concept |
 |-----|--------|---------|
@@ -144,7 +144,7 @@ dotnet run --project src/Randall.Server
 
 ## Acknowledgments
 
-Randall is a hobby/lab project that **builds on** excellent prior work — especially [Sulley](https://github.com/OpenRCE/sulley), [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei](https://github.com/OpenRCE/paimei), AFL/libFuzzer-style mutation strategies, and [DynamoRIO](https://dynamorio.org/). Thank you to everyone who maintained those tools and documented how to fuzz well. We welcome issues and PRs that improve interoperability (e.g. importing Boofuzz examples) rather than claiming superiority.
+Randall **builds on** excellent prior work — [Sulley](https://github.com/OpenRCE/sulley), [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei](https://github.com/OpenRCE/paimei), AFL/libFuzzer-style mutation strategies, and [DynamoRIO](https://dynamorio.org/). Thank you to the researchers and maintainers who paved the way. We aim to push the state of the art forward respectfully — interoperable imports, shared concepts, and credit where it belongs.
 
 ## License
 
