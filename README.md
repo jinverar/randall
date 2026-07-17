@@ -140,7 +140,7 @@ dotnet run --project src/Randall.Server
 
 ## Status
 
-**Phase 14** — web session graph, stalking diagram, lab practice guide. Still evolving; always hunting. Details: [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md).
+**Phase 15** — execution journal + crash sidecars. Logging: [docs/EXECUTION_LOGGING.md](docs/EXECUTION_LOGGING.md), [docs/CRASH_LOGGING.md](docs/CRASH_LOGGING.md). Native stalk (Phase 16) replaces optional external coverage later.
 
 ## Acknowledgments
 

@@ -118,5 +118,19 @@ public static class RandallRoadmap
             new("p14-graph-meta", "Validation errors/warnings in UI", true, null),
             new("p14-practice", "Lab practice guide for hands-on testing", true, "docs/LAB_PRACTICE.md"),
         ]),
+        new(15, "Deep logging (journal + crash sidecars)", "complete",
+        [
+            new("p15-journal", "iterations.jsonl + run.json execution journal", true, "docs/EXECUTION_LOGGING.md"),
+            new("p15-sidecar", "crash.json sidecar with lineage + coverage at crash", true, "docs/CRASH_LOGGING.md"),
+            new("p15-trace-copy", "Per-crash trace copy under crashes/traces/", true, null),
+            new("p15-stalk-backend", "Backend-agnostic stalk IDs (external vs native)", true, null),
+            new("p15-minidump", "Richer minidump flags + file-target crash dumps", true, null),
+        ]),
+        new(16, "Native stalk (Randall-owned)", "planned",
+        [
+            new("p16-native", "Windows basic-block stalk without DynamoRIO", false, null),
+            new("p16-edge-freq", "Edge hit counters + hot-spot detection", false, null),
+            new("p16-analyze", "randall crash analyze — registers from dump", false, null),
+        ]),
     ];
 }

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Randall.Contracts;
 using Randall.Infrastructure.Mutators;
 
 namespace Randall.Infrastructure;
@@ -13,6 +14,8 @@ public sealed record SavedCrash(
     string? TargetExitCode,
     string? MiniDumpPath,
     string? TriageTag,
+    string? SidecarPath,
+    string? RunId,
     DateTimeOffset At);
 
 public sealed class CrashStore(string crashesDir)
@@ -37,7 +40,9 @@ public sealed class CrashStore(string crashesDir)
         byte[] input,
         int? exitCode,
         string? miniDumpPath = null,
-        string? triageTag = null)
+        string? triageTag = null,
+        string? runId = null,
+        Func<Guid, CrashSidecarDto>? buildSidecar = null)
     {
         Ensure();
         var hash = InputHash.StackHash(input);
@@ -49,6 +54,11 @@ public sealed class CrashStore(string crashesDir)
         var fileName = $"{project}_{iteration}_{hash}.bin";
         var inputPath = Path.Combine(crashesDir, fileName);
         File.WriteAllBytes(inputPath, input);
+
+        string? sidecarPath = null;
+        if (buildSidecar is not null)
+            sidecarPath = CrashSidecarWriter.Write(crashesDir, buildSidecar(id));
+
         var record = new SavedCrash(
             id,
             project,
@@ -59,6 +69,8 @@ public sealed class CrashStore(string crashesDir)
             exitCode?.ToString(),
             miniDumpPath,
             triageTag,
+            sidecarPath,
+            runId,
             DateTimeOffset.UtcNow);
         File.AppendAllText(_indexPath, JsonSerializer.Serialize(record) + Environment.NewLine);
         return record;

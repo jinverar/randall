@@ -48,6 +48,8 @@ public static class CrashCatalog
                     c.MiniDumpPath,
                     c.TargetExitCode,
                     c.TriageTag,
+                    c.SidecarPath,
+                    c.RunId,
                     c.At));
             }
         }
@@ -77,14 +79,15 @@ public static class CrashCatalog
             if (summary.Id != id)
                 continue;
             if (!File.Exists(summary.InputPath))
-                return new CrashDetailDto(summary, 0, "(file missing)");
+                return new CrashDetailDto(summary, 0, "(file missing)", null);
 
             var bytes = File.ReadAllBytes(summary.InputPath);
             var previewLen = Math.Min(bytes.Length, 256);
             var hex = string.Join(' ', bytes.AsSpan(0, previewLen).ToArray().Select(b => b.ToString("X2")));
             if (bytes.Length > previewLen)
                 hex += " …";
-            return new CrashDetailDto(summary, bytes.Length, hex);
+            var sidecar = CrashSidecarWriter.TryRead(summary.SidecarPath);
+            return new CrashDetailDto(summary, bytes.Length, hex, sidecar);
         }
         return null;
     }

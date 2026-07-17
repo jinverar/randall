@@ -40,15 +40,24 @@ public static class CrashStalker
         File.Copy(detail.Summary.InputPath, inputCopy, overwrite: true);
 
         string? drcovPath = null;
-        var corpusTraces = Path.Combine(repoRoot, "data", "corpus", detail.Summary.Project, "traces");
-        if (Directory.Exists(corpusTraces))
+        var sidecar = CrashSidecarWriter.TryRead(detail.Summary.SidecarPath);
+        if (sidecar?.TraceCopyPath is not null && File.Exists(sidecar.TraceCopyPath))
+            drcovPath = sidecar.TraceCopyPath;
+        else if (sidecar?.TracePath is not null && File.Exists(sidecar.TracePath))
+            drcovPath = sidecar.TracePath;
+        else
         {
-            drcovPath = Directory.EnumerateFiles(corpusTraces, "*.log")
-                .OrderByDescending(File.GetLastWriteTimeUtc)
-                .FirstOrDefault();
-            if (drcovPath is not null)
-                File.Copy(drcovPath, Path.Combine(exportDir, "sample.drcov.log"), overwrite: true);
+            var corpusTraces = Path.Combine(repoRoot, "data", "corpus", detail.Summary.Project, "traces");
+            if (Directory.Exists(corpusTraces))
+            {
+                drcovPath = Directory.EnumerateFiles(corpusTraces, "*.log")
+                    .OrderByDescending(File.GetLastWriteTimeUtc)
+                    .FirstOrDefault();
+            }
         }
+
+        if (drcovPath is not null && File.Exists(drcovPath))
+            File.Copy(drcovPath, Path.Combine(exportDir, "sample.drcov.log"), overwrite: true);
 
         string? dumpCopy = null;
         if (detail.Summary.MiniDumpPath is not null && File.Exists(detail.Summary.MiniDumpPath))

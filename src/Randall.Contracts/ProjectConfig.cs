@@ -116,4 +116,8 @@ public sealed class FuzzConfig
     public bool CoverageTcpSpawn { get; set; } = true;
     /// <summary>Re-sync length fields after model patch (default: keep mutated length).</summary>
     public bool SyncLengthFields { get; set; }
+    /// <summary>Write iterations.jsonl + run.json under runsDir (Phase 15).</summary>
+    public bool ExecutionLog { get; set; } = true;
+    /// <summary>Execution journal root (relative to project YAML).</summary>
+    public string RunsDir { get; set; } = "../data/runs";
 }

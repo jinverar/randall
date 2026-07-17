@@ -24,9 +24,15 @@ public sealed record CrashSummaryDto(
     string? MiniDumpPath,
     string? TargetExitCode,
     string? TriageTag,
+    string? SidecarPath,
+    string? RunId,
     DateTimeOffset ObservedAt);
 
-public sealed record SessionGraphEdgeDto(string From, string When, string To);
+public sealed record CrashDetailDto(
+    CrashSummaryDto Summary,
+    int InputLength,
+    string HexPreview,
+    CrashSidecarDto? Sidecar);
 
 public sealed record SessionGraphReportDto(
     string Project,
@@ -41,10 +47,7 @@ public sealed record SessionGraphReportDto(
     IReadOnlyList<string> Commands,
     string YamlSnippet);
 
-public sealed record CrashDetailDto(
-    CrashSummaryDto Summary,
-    int InputLength,
-    string HexPreview);
+public sealed record SessionGraphEdgeDto(string From, string When, string To);
 
 public sealed record CrashClusterDto(
     string ClusterId,

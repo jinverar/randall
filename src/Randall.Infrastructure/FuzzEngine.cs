@@ -46,8 +46,16 @@ public sealed class FuzzEngine
 
         var crashStore = new CrashStore(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir));
         crashStore.Ensure();
+        var crashesDir = ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir);
 
         var dynamo = DynamoRioRunner.Discover();
+        var stalkBackend = StalkBackend.Resolve(coverageGuided, dynamo.IsAvailable);
+        FuzzRunJournal? journal = null;
+        if (project.Fuzz.ExecutionLog)
+        {
+            journal = FuzzRunJournal.Start(project, yamlPath, dryRun, coverageGuided, stalkBackend);
+            Console.WriteLine($"Run journal: {journal.RunDirectory}");
+        }
         var useCoverageFile = coverageGuided && dynamo.IsAvailable &&
                               project.Kind.Equals("file", StringComparison.OrdinalIgnoreCase);
         var useCoverageTcp = coverageGuided && dynamo.IsAvailable &&
@@ -94,6 +102,9 @@ public sealed class FuzzEngine
                 TargetRunner.TcpSendOptions? tcpOptions = null;
                 string commandName = "default";
                 byte[] payload;
+                string? parentInputHash = null;
+                string seedSource = "unknown";
+                var seedFiles = new List<string>();
                 IReadOnlyList<TargetRunner.TcpStep>? tcpSequence = null;
                 var useResponseGraph = false;
 
@@ -111,8 +122,15 @@ public sealed class FuzzEngine
                         {
                             var cmd = planned.Flow.Steps[si];
                             var mutate = si == planned.FlowStepIndex;
-                            var stepPayload = BuildCommandPayload(
+                            var built = BuildCommandPayload(
                                 cmd, yamlPath, mutator, rng, mutate, project, planned.TargetField);
+                            var stepPayload = built.Payload;
+                            if (mutate)
+                            {
+                                parentInputHash = built.ParentHash;
+                                seedSource = built.SeedSource;
+                                seedFiles = built.SeedFiles;
+                            }
                             steps.Add(new TargetRunner.TcpStep(
                                 stepPayload,
                                 new TargetRunner.TcpSendOptions(
@@ -126,7 +144,11 @@ public sealed class FuzzEngine
                         var cmd = planned.Command;
                         tcpOptions = new TargetRunner.TcpSendOptions(
                             cmd.Preamble, cmd.ReadBanner, cmd.ExpectResponse);
-                        payload = BuildCommandPayload(cmd, yamlPath, mutator, rng, true, project, planned.TargetField);
+                        var built = BuildCommandPayload(cmd, yamlPath, mutator, rng, true, project, planned.TargetField);
+                        payload = built.Payload;
+                        parentInputHash = built.ParentHash;
+                        seedSource = built.SeedSource;
+                        seedFiles = built.SeedFiles;
                     }
                     else if (!string.IsNullOrWhiteSpace(project.Model))
                     {
@@ -135,6 +157,10 @@ public sealed class FuzzEngine
                         payload = ModelFuzzer.BuildPayload(
                             model, protoSeeds, mutator, rng,
                             project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth, planned.TargetField);
+                        var baseline = model.Render(protoSeeds);
+                        parentInputHash = InputHash.StackHash(baseline);
+                        seedSource = "model";
+                        seedFiles = protoSeeds.Keys.ToList();
                     }
                     else
                     {
@@ -149,6 +175,7 @@ public sealed class FuzzEngine
                     useResponseGraph = true;
                     commandName = "graph";
                     payload = Array.Empty<byte>();
+                    seedSource = "sessionGraph";
                 }
                 else if (sessionCommands.Count > 0 &&
                     sessionFlows.Count > 0 &&
@@ -161,7 +188,14 @@ public sealed class FuzzEngine
                     {
                         var cmd = flow.Steps[si];
                         var mutate = mutateSteps.Contains(si);
-                        var stepPayload = BuildCommandPayload(cmd, yamlPath, mutator, rng, mutate, project);
+                        var built = BuildCommandPayload(cmd, yamlPath, mutator, rng, mutate, project);
+                        var stepPayload = built.Payload;
+                        if (mutate)
+                        {
+                            parentInputHash = built.ParentHash;
+                            seedSource = built.SeedSource;
+                            seedFiles = built.SeedFiles;
+                        }
                         steps.Add(new TargetRunner.TcpStep(
                             stepPayload,
                             new TargetRunner.TcpSendOptions(
@@ -170,6 +204,7 @@ public sealed class FuzzEngine
                     tcpSequence = steps;
                     payload = steps[^1].Payload;
                     commandName = $"flow/{flow.Name}";
+                    seedSource = "sessionFlow";
                 }
                 else if (sessionCommands.Count > 0)
                 {
@@ -177,7 +212,11 @@ public sealed class FuzzEngine
                     commandName = cmd.Name;
                     tcpOptions = new TargetRunner.TcpSendOptions(
                         cmd.Preamble, cmd.ReadBanner, cmd.ExpectResponse);
-                    payload = BuildCommandPayload(cmd, yamlPath, mutator, rng, mutate: true, project);
+                    var built = BuildCommandPayload(cmd, yamlPath, mutator, rng, mutate: true, project);
+                    payload = built.Payload;
+                    parentInputHash = built.ParentHash;
+                    seedSource = built.SeedSource;
+                    seedFiles = built.SeedFiles;
                     if (!string.IsNullOrWhiteSpace(cmd.ModelPath))
                     {
                         var model = ProtocolLoader.Load(yamlPath, cmd.ModelPath);
@@ -194,10 +233,15 @@ public sealed class FuzzEngine
                         model, protoSeeds, mutator, rng,
                         project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth);
                     commandName = $"model/{model.Name}";
+                    parentInputHash = InputHash.StackHash(model.Render(protoSeeds));
+                    seedSource = "model";
+                    seedFiles = protoSeeds.Keys.ToList();
                 }
                 else
                 {
                     var seed = corpus.PickSeed(seeds, rng, powerSchedule);
+                    parentInputHash = InputHash.StackHash(seed);
+                    seedSource = "corpus";
                     payload = mutator.Mutate(seed).ToArray();
                     if (project.Transport.Prefix.Length > 0)
                     {
@@ -206,8 +250,18 @@ public sealed class FuzzEngine
                     }
                 }
 
+                var mutatorChain = new List<string> { mutator.Name };
+                var sw = Stopwatch.StartNew();
+                string? iterTracePath = null;
+
                 if (dryRun)
                 {
+                    sw.Stop();
+                    journal?.LogIteration(new IterationLogEntry(
+                        iterations, DateTimeOffset.UtcNow, commandName, mutator.Name, mutatorChain,
+                        parentInputHash, seedSource, payload.Length, InputHash.StackHash(payload),
+                        false, 0, coverage.TotalEdges, sw.ElapsedMilliseconds, "dry-run", null,
+                        stalkBackend, null, journal?.RunId ?? "", true));
                     options.Progress?.OnIteration(new FuzzIterationEvent(
                         iterations, $"{commandName}/{mutator.Name}", payload.Length, false, false, 0, corpus.SeenCount, coverage.TotalEdges, "dry-run"));
                     Console.WriteLine($"[dry-run] #{iterations} {commandName}/{mutator.Name} len={payload.Length}");
@@ -254,6 +308,7 @@ public sealed class FuzzEngine
                     var trace = dynamo.CollectLatestTrace(traceDir);
                     await dynamo.StopInstrumentedAsync(longLived, cancellationToken);
                     longLived = null;
+                    iterTracePath = trace;
                     if (trace is not null)
                     {
                         newEdges = coverage.RegisterTrace(trace);
@@ -265,26 +320,32 @@ public sealed class FuzzEngine
                         }
                     }
                 }
-                else if (!result.Crashed)
+                else if (useCoverageFile)
                 {
-                    if (useCoverageFile)
+                    var covRun = await dynamo.RunWithCoverageAsync(
+                        project, yamlPath, payload, traceDir, cancellationToken);
+                    iterTracePath = covRun.TracePath;
+                    newEdges = coverage.RegisterTrace(covRun.TracePath);
+                    newCoverage = newEdges > 0;
+                    if (newCoverage && !result.Crashed)
                     {
-                        var covRun = await dynamo.RunWithCoverageAsync(
-                            project, yamlPath, payload, traceDir, cancellationToken);
-                        newEdges = coverage.RegisterTrace(covRun.TracePath);
-                        newCoverage = newEdges > 0;
-                        if (newCoverage)
-                        {
-                            corpus.AddPriority(payload);
-                            corpusAdded++;
-                        }
-                    }
-                    else if (corpus.IsNew(payload))
-                    {
-                        corpus.SaveInteresting(payload, "corpus");
+                        corpus.AddPriority(payload);
                         corpusAdded++;
                     }
                 }
+                else if (!result.Crashed && corpus.IsNew(payload))
+                {
+                    corpus.SaveInteresting(payload, "corpus");
+                    corpusAdded++;
+                }
+
+                sw.Stop();
+                journal?.LogIteration(new IterationLogEntry(
+                    iterations, DateTimeOffset.UtcNow, commandName, mutator.Name, mutatorChain,
+                    parentInputHash, seedSource, payload.Length, InputHash.StackHash(payload),
+                    result.Crashed, newEdges, coverage.TotalEdges, sw.ElapsedMilliseconds,
+                    result.Detail, result.ExitCode, stalkBackend, iterTracePath,
+                    journal?.RunId ?? "", false));
 
                 options.Progress?.OnIteration(new FuzzIterationEvent(
                     iterations,
@@ -303,13 +364,58 @@ public sealed class FuzzEngine
                     var crashTag = await RppCrashHook.RunAsync(
                         project, yamlPath, payload, result, cancellationToken);
 
+                    var mutatorLabel = $"{commandName}/{mutator.Name}";
+                    var payloadHash = InputHash.StackHash(payload);
+                    var expectedInputPath = Path.Combine(crashesDir, $"{project.Name}_{iterations}_{payloadHash}.bin");
+
                     var saved = crashStore.Save(
-                        project.Name, iterations, $"{commandName}/{mutator.Name}", payload,
-                        result.ExitCode, result.MiniDumpPath, crashTag);
+                        project.Name,
+                        iterations,
+                        mutatorLabel,
+                        payload,
+                        result.ExitCode,
+                        result.MiniDumpPath,
+                        crashTag,
+                        journal?.RunId,
+                        buildSidecar: id =>
+                        {
+                            var traceCopy = CrashSidecarWriter.CopyTrace(crashesDir, id, iterTracePath);
+                            return new CrashSidecarDto(
+                                id,
+                                journal?.RunId ?? "",
+                                iterations,
+                                project.Name,
+                                commandName,
+                                mutator.Name,
+                                mutatorChain,
+                                parentInputHash,
+                                seedSource,
+                                seedFiles,
+                                payloadHash,
+                                expectedInputPath,
+                                payload.Length,
+                                result.ExitCode,
+                                WindowsExceptionHints.Describe(result.ExitCode),
+                                result.Detail,
+                                crashTag,
+                                newEdges,
+                                coverage.TotalEdges,
+                                stalkBackend,
+                                iterTracePath,
+                                traceCopy,
+                                result.MiniDumpPath,
+                                CrashSidecarWriter.HexPreview(result.ResponseBytes),
+                                new TransportSnapshotDto(
+                                    project.Kind, project.Transport.Host, project.Transport.Port, project.Transport.Tls),
+                                new FuzzSnapshotDto(coverageGuided, dryRun, Path.GetFullPath(yamlPath)),
+                                DateTimeOffset.UtcNow);
+                        });
+
                     Console.WriteLine(
-                        $"CRASH #{crashCount} iter={iterations} {commandName}/{mutator.Name} " +
+                        $"CRASH #{crashCount} iter={iterations} {mutatorLabel} " +
                         $"detail={result.Detail} saved={saved.InputPath}" +
                         (saved.MiniDumpPath is not null ? $" dump={saved.MiniDumpPath}" : "") +
+                        (saved.SidecarPath is not null ? $" sidecar={saved.SidecarPath}" : "") +
                         (crashTag is not null ? $" tag={crashTag}" : ""));
                     crashes.Add(new CrashRecord(
                         saved.Id,
@@ -340,6 +446,7 @@ public sealed class FuzzEngine
             if (useCoverageTcp)
                 dynamo.StopInstrumentedAsync(longLived, cancellationToken).GetAwaiter().GetResult();
             monitor?.Dispose();
+            journal?.Complete(iterations, crashCount);
         }
 
         var runResult = new FuzzRunResult(iterations, corpusAdded, crashCount, crashes);
@@ -375,7 +482,13 @@ public sealed class FuzzEngine
         return mutators;
     }
 
-    private static byte[] BuildCommandPayload(
+    private sealed record CommandPayloadBuild(
+        byte[] Payload,
+        string? ParentHash,
+        string SeedSource,
+        List<string> SeedFiles);
+
+    private static CommandPayloadBuild BuildCommandPayload(
         SessionGraph.PreparedCommand cmd,
         string yamlPath,
         IMutator mutator,
@@ -384,19 +497,36 @@ public sealed class FuzzEngine
         ProjectConfig project,
         FieldRegion? targetField = null)
     {
+        var seedFiles = new List<string>();
+        var seedSource = "sessionCommand";
+        string? parentInputHash = null;
+
         if (!string.IsNullOrWhiteSpace(cmd.ModelPath))
         {
             var model = ProtocolLoader.Load(yamlPath, cmd.ModelPath);
             var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, cmd.ModelPath);
+            seedFiles = protoSeeds.Keys.ToList();
+            seedSource = "model";
+            var baseline = model.Render(protoSeeds);
+            parentInputHash = InputHash.StackHash(baseline);
             if (mutate)
-                return ModelFuzzer.BuildPayload(
-                    model, protoSeeds, mutator, rng,
-                    project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth, targetField);
-            return model.FinalizeMessage(model.Render(protoSeeds), project.Fuzz.SyncLengthFields);
+            {
+                return new CommandPayloadBuild(
+                    ModelFuzzer.BuildPayload(
+                        model, protoSeeds, mutator, rng,
+                        project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth, targetField),
+                    parentInputHash, seedSource, seedFiles);
+            }
+            return new CommandPayloadBuild(
+                model.FinalizeMessage(baseline, project.Fuzz.SyncLengthFields),
+                parentInputHash, seedSource, seedFiles);
         }
 
+        parentInputHash = InputHash.StackHash(cmd.Seed);
         var body = mutate ? mutator.Mutate(cmd.Seed).ToArray() : cmd.Seed;
-        return SessionGraph.BuildPayload(cmd, body);
+        return new CommandPayloadBuild(
+            SessionGraph.BuildPayload(cmd, body),
+            parentInputHash, seedSource, seedFiles);
     }
 
     private static List<byte[]> LoadAllSeeds(ProjectConfig project, string yamlPath)

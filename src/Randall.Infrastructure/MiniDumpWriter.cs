@@ -7,7 +7,11 @@ namespace Randall.Infrastructure;
 /// <summary>Leg 5 — Scream: capture minidump before killing hung targets.</summary>
 public static class MiniDumpWriter
 {
-    private const int MiniDumpWithDataSegs = 0x00000002;
+    private const int MiniDumpType =
+        0x00000002 | // WithDataSegs
+        0x00000004 | // WithHandleData
+        0x00000008 | // WithThreadInfo (registers / exception context)
+        0x00000020;  // WithUnloadedModules
 
     public static string? TryWriteDump(Process process, string dumpsDir, string baseName, bool allowExited = false)
     {
@@ -23,7 +27,7 @@ public static class MiniDumpWriter
                 process.Handle,
                 (uint)process.Id,
                 file.SafeFileHandle,
-                MiniDumpWithDataSegs,
+                MiniDumpType,
                 IntPtr.Zero,
                 IntPtr.Zero,
                 IntPtr.Zero);

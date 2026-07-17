@@ -175,6 +175,10 @@ async function loadCrashes(project = '') {
         <h3>Crash ${detail.summary.project} #${detail.summary.iteration}</h3>
         <p>Mutator: <code>${detail.summary.mutator}</code> · Hash: <code>${detail.summary.inputHash}</code></p>
         ${detail.summary.triageTag ? `<p>Tag: <code>${detail.summary.triageTag}</code></p>` : ''}
+        ${detail.sidecar?.exceptionHint ? `<p>Exception: <code>${detail.sidecar.exceptionHint}</code></p>` : ''}
+        ${detail.sidecar?.parentInputHash ? `<p>Parent hash: <code>${detail.sidecar.parentInputHash}</code> · source: <code>${detail.sidecar.seedSource}</code></p>` : ''}
+        ${detail.sidecar?.newEdgesAtCrash != null ? `<p>Coverage at crash: +${detail.sidecar.newEdgesAtCrash} new (total ${detail.sidecar.totalEdgesAtCrash}) · backend <code>${detail.sidecar.stalkBackend}</code></p>` : ''}
+        ${detail.sidecar?.runId ? `<p>Run: <code>${detail.sidecar.runId}</code></p>` : ''}
         <p>Length: ${detail.inputLength} bytes · Id: <code>${detail.summary.id}</code></p>
         <p class="hex-preview">${detail.hexPreview}</p>
         <p><code>${detail.summary.inputPath}</code></p>

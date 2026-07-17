@@ -98,6 +98,12 @@ public static class TargetRunner
 
         var code = process.ExitCode;
         var crashed = IsCrashExitCode(code);
+        if (crashed)
+        {
+            dumpPath = MiniDumpWriter.TryWriteDump(
+                process, dumpsDir, $"file_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
+        }
+
         return new TargetRunResult(crashed, code, dumpPath, crashed ? "abnormal exit" : "ok");
     }
 
