@@ -126,11 +126,12 @@ public static class RandallRoadmap
             new("p15-stalk-backend", "Backend-agnostic stalk IDs (external vs native)", true, null),
             new("p15-minidump", "Richer minidump flags + file-target crash dumps", true, null),
         ]),
-        new(16, "Native stalk (Randall-owned)", "planned",
+        new(16, "Native stalk (Randall-owned)", "in progress",
         [
-            new("p16-native", "Windows basic-block stalk without DynamoRIO", false, null),
-            new("p16-edge-freq", "Edge hit counters + hot-spot detection", false, null),
-            new("p16-analyze", "randall crash analyze — registers from dump", false, null),
+            new("p16-native", "Windows basic-block stalk without DynamoRIO", false, "scaffold only — stalkMode: native"),
+            new("p16-edge-freq", "Edge hit counters + hot-spot detection", true, "run.json hotEdges"),
+            new("p16-analyze", "randall analyze — registers from dump", true, "docs/CRASH_ANALYSIS.md"),
+            new("p16-stalk-backend", "IStalkTraceBackend pluggable adapter", true, "external | native | none"),
         ]),
     ];
 }

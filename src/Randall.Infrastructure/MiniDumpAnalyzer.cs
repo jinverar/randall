@@ -15,7 +15,7 @@ public static class MiniDumpAnalyzer
         if (string.IsNullOrWhiteSpace(dumpPath) || !File.Exists(dumpPath))
         {
             return new CrashAnalysisDto(
-                false, dumpPath, null, null, null, null, null, [], [], "minidump not found");
+                false, dumpPath, null, null, null, null, null, [], "minidump not found");
         }
 
         try
@@ -29,24 +29,25 @@ public static class MiniDumpAnalyzer
                     streamPtr == IntPtr.Zero || streamSize < (uint)Marshal.SizeOf<MiniDumpExceptionStream>())
                 {
                     return new CrashAnalysisDto(
-                        false, dumpPath, null, null, null, null, null, [], [], "no exception stream in dump");
+                        false, dumpPath, null, null, null, null, null, [], "no exception stream in dump");
                 }
 
                 var exStream = Marshal.PtrToStructure<MiniDumpExceptionStream>(streamPtr);
                 var code = exStream.Exception.ExceptionCode;
                 var address = exStream.Exception.ExceptionAddress;
-                var hint = WindowsExceptionHints.Describe(unchecked((int)code)) ??
-                           $"0x{code:X8}";
+                var hint = WindowsExceptionHints.DescribeCode(code);
 
                 RegisterSnapshotDto? regs = null;
                 if (exStream.ThreadContext.DataSize > 0 &&
                     TryReadContext(bytes, exStream.ThreadContext.Rva, out var ctx))
                 {
                     regs = new RegisterSnapshotDto(
-                        ctx.Rip, ctx.Rsp, ctx.Rbp, ctx.Rax, ctx.Rbx, ctx.Rcx, ctx.Rdx);
+                        Hex(ctx.Rip), Hex(ctx.Rsp), Hex(ctx.Rbp),
+                        Hex(ctx.Rax), Hex(ctx.Rbx), Hex(ctx.Rcx), Hex(ctx.Rdx));
                 }
 
                 var modules = ReadModuleList(basePtr, bytes);
+                var moduleNames = modules.Select(m => m.Name).ToList();
                 var faultModule = ResolveModule(modules, address);
 
                 return new CrashAnalysisDto(
@@ -57,8 +58,7 @@ public static class MiniDumpAnalyzer
                     $"0x{address:X}",
                     faultModule,
                     regs,
-                    modules.Take(12).ToList(),
-                    HotEdgesFromModules(modules),
+                    moduleNames,
                     null);
             }
             finally
@@ -69,11 +69,11 @@ public static class MiniDumpAnalyzer
         catch (Exception ex)
         {
             return new CrashAnalysisDto(
-                false, dumpPath, null, null, null, null, null, [], [], ex.Message);
+                false, dumpPath, null, null, null, null, null, [], ex.Message);
         }
     }
 
-    private static List<string> HotEdgesFromModules(IReadOnlyList<string> modules) => modules;
+    private static string Hex(ulong value) => $"0x{value:X}";
 
     private static string? ResolveModule(IReadOnlyList<(ulong Base, string Name)> modules, ulong address)
     {

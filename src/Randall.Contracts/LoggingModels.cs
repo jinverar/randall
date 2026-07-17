@@ -71,4 +71,28 @@ public sealed record FuzzRunManifestDto(
     string StalkBackend,
     string StalkBackendNote,
     int Iterations,
-    int CrashesFound);
+    int CrashesFound,
+    IReadOnlyList<HotEdgeDto>? HotEdges = null);
+
+public sealed record HotEdgeDto(string Edge, long HitCount);
+
+public sealed record RegisterSnapshotDto(
+    string? Rip,
+    string? Rsp,
+    string? Rbp,
+    string? Rax,
+    string? Rbx,
+    string? Rcx,
+    string? Rdx);
+
+/// <summary>Minidump triage output (*_analysis.json).</summary>
+public sealed record CrashAnalysisDto(
+    bool Ok,
+    string? DumpPath,
+    string? ExceptionCode,
+    string? ExceptionHint,
+    string? FaultAddress,
+    string? FaultModule,
+    RegisterSnapshotDto? Registers,
+    IReadOnlyList<string> LoadedModules,
+    string? Error);

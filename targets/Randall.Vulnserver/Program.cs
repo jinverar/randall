@@ -42,7 +42,7 @@ internal static class Program
                 continue;
             }
 
-            _ = Task.Run(() => HandleClient(client));
+            HandleClient(client);
         }
     }
 
@@ -76,12 +76,29 @@ internal static class Program
     {
         using var ms = new MemoryStream();
         var buf = new byte[8192];
-        while (stream.DataAvailable)
+        stream.ReadTimeout = 800;
+        var idleRounds = 0;
+        while (idleRounds < 6)
         {
-            var n = stream.Read(buf, 0, buf.Length);
-            if (n <= 0)
+            try
+            {
+                if (!stream.DataAvailable)
+                {
+                    Thread.Sleep(40);
+                    idleRounds++;
+                    continue;
+                }
+
+                idleRounds = 0;
+                var n = stream.Read(buf, 0, buf.Length);
+                if (n <= 0)
+                    break;
+                ms.Write(buf, 0, n);
+            }
+            catch (IOException)
+            {
                 break;
-            ms.Write(buf, 0, n);
+            }
         }
 
         if (ms.Length == 0)
@@ -218,7 +235,11 @@ internal static unsafe class VulnHandlers
 
     private static void CopyOverflow(ReadOnlySpan<byte> src, int stackSize)
     {
-        // Intentionally unbounded copy into a small stack buffer.
+        // Lab target: kill the whole process so Randall's ProcessMonitor detects the crash.
+        // Use explicit exit code (not FailFast) so minidump capture can open the process.
+        if (src.Length > stackSize)
+            Environment.Exit(unchecked((int)0xC0000005));
+
         var buf = stackalloc byte[stackSize];
         for (var i = 0; i < src.Length; i++)
             buf[i] = src[i];

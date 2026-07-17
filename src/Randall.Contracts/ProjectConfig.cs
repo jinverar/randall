@@ -120,4 +120,8 @@ public sealed class FuzzConfig
     public bool ExecutionLog { get; set; } = true;
     /// <summary>Execution journal root (relative to project YAML).</summary>
     public string RunsDir { get; set; } = "../data/runs";
+    /// <summary>auto | external | native | none — coverage trace backend (Phase 16).</summary>
+    public string StalkMode { get; set; } = "auto";
+    /// <summary>Write *_analysis.json from minidump when a crash is saved.</summary>
+    public bool AutoAnalyzeCrash { get; set; } = true;
 }

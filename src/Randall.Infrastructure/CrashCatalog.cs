@@ -7,13 +7,26 @@ public static class CrashCatalog
 {
     public static string? FindRepoRoot()
     {
-        var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
-        while (dir is not null)
+        var starts = new[]
         {
-            if (File.Exists(Path.Combine(dir.FullName, "Randall.sln")))
-                return dir.FullName;
-            dir = dir.Parent;
+            Directory.GetCurrentDirectory(),
+            AppContext.BaseDirectory,
+        };
+
+        foreach (var start in starts)
+        {
+            if (string.IsNullOrWhiteSpace(start))
+                continue;
+
+            var dir = new DirectoryInfo(Path.GetFullPath(start));
+            while (dir is not null)
+            {
+                if (File.Exists(Path.Combine(dir.FullName, "Randall.sln")))
+                    return dir.FullName;
+                dir = dir.Parent;
+            }
         }
+
         return null;
     }
 
@@ -79,17 +92,38 @@ public static class CrashCatalog
             if (summary.Id != id)
                 continue;
             if (!File.Exists(summary.InputPath))
-                return new CrashDetailDto(summary, 0, "(file missing)", null);
+                return new CrashDetailDto(summary, 0, "(file missing)", "(file missing)", null, null);
 
             var bytes = File.ReadAllBytes(summary.InputPath);
             var previewLen = Math.Min(bytes.Length, 256);
             var hex = string.Join(' ', bytes.AsSpan(0, previewLen).ToArray().Select(b => b.ToString("X2")));
             if (bytes.Length > previewLen)
                 hex += " …";
+            var ascii = BuildAsciiPreview(bytes, previewLen);
             var sidecar = CrashSidecarWriter.TryRead(summary.SidecarPath);
-            return new CrashDetailDto(summary, bytes.Length, hex, sidecar);
+            var crashesDir = Path.GetDirectoryName(summary.InputPath)!;
+            var analysisPath = CrashAnalysisWriter.AnalysisPathFor(crashesDir, summary.Id);
+            var analysis = CrashAnalysisWriter.TryRead(analysisPath)
+                ?? (summary.MiniDumpPath is not null
+                    ? CrashAnalysisWriter.AnalyzeDump(summary.MiniDumpPath)
+                    : null);
+            return new CrashDetailDto(summary, bytes.Length, hex, ascii, sidecar, analysis);
         }
         return null;
+    }
+
+    internal static string BuildAsciiPreview(ReadOnlySpan<byte> bytes, int previewLen)
+    {
+        var chars = new char[previewLen];
+        for (var i = 0; i < previewLen; i++)
+        {
+            var b = bytes[i];
+            chars[i] = b is >= 32 and <= 126 ? (char)b : '.';
+        }
+        var text = new string(chars);
+        if (bytes.Length > previewLen)
+            text += " …";
+        return text;
     }
 
     public static IReadOnlyList<TargetProfileDto> ListTargets(string? repoRoot = null)

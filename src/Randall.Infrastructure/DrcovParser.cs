@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.Text.RegularExpressions;
+using Randall.Contracts;
 
 namespace Randall.Infrastructure;
 
@@ -8,36 +8,43 @@ public static partial class DrcovParser
 {
     public static IReadOnlyList<string> ParseEdges(string tracePath)
     {
-        if (!File.Exists(tracePath))
+        if (string.IsNullOrWhiteSpace(tracePath) || !File.Exists(tracePath))
             return [];
 
         var edges = new List<string>();
         var inBbTable = false;
-        foreach (var line in File.ReadLines(tracePath))
+        try
         {
-            if (line.StartsWith("BB Table:", StringComparison.OrdinalIgnoreCase))
+            foreach (var line in File.ReadLines(tracePath))
             {
-                inBbTable = true;
-                continue;
+                if (line.StartsWith("BB Table:", StringComparison.OrdinalIgnoreCase))
+                {
+                    inBbTable = true;
+                    continue;
+                }
+
+                if (!inBbTable)
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
+
+                if (line.Contains("module id", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var match = BbLine().Match(line);
+                if (!match.Success)
+                    continue;
+
+                var moduleId = match.Groups[1].Value;
+                var start = match.Groups[2].Value;
+                var size = match.Groups[3].Value;
+                edges.Add($"{moduleId}:{start}:{size}");
             }
-
-            if (!inBbTable)
-                continue;
-
-            if (string.IsNullOrWhiteSpace(line))
-                continue;
-
-            if (line.Contains("module id", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var match = BbLine().Match(line);
-            if (!match.Success)
-                continue;
-
-            var moduleId = match.Groups[1].Value;
-            var start = match.Groups[2].Value;
-            var size = match.Groups[3].Value;
-            edges.Add($"{moduleId}:{start}:{size}");
+        }
+        catch (IOException)
+        {
+            return [];
         }
 
         return edges;
@@ -52,6 +59,7 @@ public static partial class DrcovParser
 public sealed class CoverageSet(string? persistPath = null)
 {
     private readonly HashSet<string> _edges = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, long> _hitCounts = new(StringComparer.OrdinalIgnoreCase);
     private readonly string? _persistPath = persistPath;
 
     public void Load()
@@ -61,7 +69,11 @@ public sealed class CoverageSet(string? persistPath = null)
         foreach (var line in File.ReadLines(_persistPath))
         {
             if (!string.IsNullOrWhiteSpace(line))
-                _edges.Add(line.Trim());
+            {
+                var edge = line.Trim();
+                _edges.Add(edge);
+                _hitCounts.TryAdd(edge, 1);
+            }
         }
     }
 
@@ -73,6 +85,9 @@ public sealed class CoverageSet(string? persistPath = null)
         var newCount = 0;
         foreach (var edge in DrcovParser.ParseEdges(tracePath))
         {
+            _hitCounts.TryGetValue(edge, out var hits);
+            _hitCounts[edge] = hits + 1;
+
             if (_edges.Add(edge))
             {
                 newCount++;
@@ -84,4 +99,13 @@ public sealed class CoverageSet(string? persistPath = null)
     }
 
     public int TotalEdges => _edges.Count;
+
+    public long TotalHits => _hitCounts.Values.Sum();
+
+    public IReadOnlyList<HotEdgeDto> GetTopHotEdges(int limit = 20) =>
+        _hitCounts
+            .OrderByDescending(kv => kv.Value)
+            .Take(limit)
+            .Select(kv => new HotEdgeDto(kv.Key, kv.Value))
+            .ToList();
 }

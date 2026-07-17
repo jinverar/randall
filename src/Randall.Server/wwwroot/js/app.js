@@ -94,6 +94,7 @@ async function loadDashboard() {
     <div class="card ${coverage.dynamoRioAvailable ? 'ok' : 'warn'}">
       <div class="label">DynamoRIO</div>
       <div class="value">${coverage.dynamoRioAvailable ? 'Ready' : 'Missing'}</div>
+      ${coverage.drrunPath ? `<div class="hex" style="margin-top:0.35rem;font-size:0.72rem">${coverage.drrunPath.split(/[/\\]/).slice(-3).join('/')}</div>` : ''}
     </div>
     <div class="card"><div class="label">Coverage edges</div><div class="value">${totalEdges}</div></div>`;
 }
@@ -114,6 +115,43 @@ async function loadLegs() {
   const legs = await api.get('/api/legs');
   document.getElementById('legs-list').innerHTML = legs.map((l) =>
     `<li><strong>${l.title}</strong> — ${l.summary}</li>`).join('');
+}
+
+function renderCrashDetail(detail, title) {
+  const box = document.getElementById('crash-detail');
+  box.classList.remove('hidden');
+  const s = detail.sidecar;
+  const why = s?.exceptionHint
+    ? `${s.exceptionHint}${s.targetDetail ? ` · ${s.targetDetail}` : ''}`
+    : (detail.summary.targetExitCode ? `exit ${detail.summary.targetExitCode}` : '');
+  box.innerHTML = `
+    <h3>${title}</h3>
+    <p>Mutator: <code>${detail.summary.mutator}</code> · Hash: <code>${detail.summary.inputHash}</code></p>
+    ${s?.command ? `<p>Command: <code>${s.command}</code></p>` : ''}
+    ${why ? `<p><strong>Why:</strong> <code>${why}</code></p>` : ''}
+    ${detail.summary.triageTag ? `<p>Tag: <code>${detail.summary.triageTag}</code></p>` : ''}
+    ${s?.parentInputHash ? `<p>Parent hash: <code>${s.parentInputHash}</code> · source: <code>${s.seedSource}</code></p>` : ''}
+    ${s?.newEdgesAtCrash != null ? `<p>Coverage at crash: +${s.newEdgesAtCrash} new (total ${s.totalEdgesAtCrash}) · backend <code>${s.stalkBackend}</code></p>` : ''}
+    ${s?.runId ? `<p>Run: <code>${s.runId}</code></p>` : ''}
+    ${detail.analysis?.ok ? `<p>Fault: <code>${detail.analysis.faultAddress || '?'}</code>${detail.analysis.faultModule ? ` in <code>${detail.analysis.faultModule}</code>` : ''}</p>` : ''}
+    ${detail.analysis?.registers?.rip ? `<p>RIP=<code>${detail.analysis.registers.rip}</code> RSP=<code>${detail.analysis.registers.rsp}</code></p>` : ''}
+    <p>Length: ${detail.inputLength} bytes · Id: <code>${detail.summary.id}</code></p>
+    <p class="label">Payload (ASCII, first 256 bytes)</p>
+    <pre class="ascii-preview">${detail.asciiPreview || '(none)'}</pre>
+    <p class="label">Payload (hex)</p>
+    <p class="hex-preview">${detail.hexPreview}</p>
+    <p><code>${detail.summary.inputPath}</code></p>
+    <button type="button" class="btn primary" id="export-crash-btn">Export triage bundle</button>
+    <p id="export-result" class="empty"></p>`;
+  document.getElementById('export-crash-btn')?.addEventListener('click', async () => {
+    try {
+      const bundle = await api.post(`/api/crashes/${detail.summary.id}/export`, {});
+      document.getElementById('export-result').textContent = `Exported to ${bundle.exportPath}`;
+    } catch (err) {
+      document.getElementById('export-result').textContent = err.message;
+    }
+  });
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function loadCrashes(project = '') {
@@ -138,18 +176,7 @@ async function loadCrashes(project = '') {
       clusterEl.querySelectorAll('tr.clickable').forEach((row) => {
         row.addEventListener('click', async () => {
           const detail = await api.get(`/api/crashes/${row.dataset.id}`);
-          const box = document.getElementById('crash-detail');
-          box.classList.remove('hidden');
-          box.innerHTML = `
-            <h3>Cluster representative — ${detail.summary.project}</h3>
-            <p>Mutator: <code>${detail.summary.mutator}</code> · Hash: <code>${detail.summary.inputHash}</code></p>
-            <p class="hex-preview">${detail.hexPreview}</p>
-            <button type="button" class="btn primary" id="export-crash-btn">Export triage bundle</button>
-            <p id="export-result" class="empty"></p>`;
-          document.getElementById('export-crash-btn')?.addEventListener('click', async () => {
-            const bundle = await api.post(`/api/crashes/${detail.summary.id}/export`, {});
-            document.getElementById('export-result').textContent = `Exported to ${bundle.exportPath}`;
-          });
+          renderCrashDetail(detail, `Cluster representative — ${detail.summary.project}`);
         });
       });
     }
@@ -169,29 +196,7 @@ async function loadCrashes(project = '') {
   el.querySelectorAll('tr.clickable').forEach((row) => {
     row.addEventListener('click', async () => {
       const detail = await api.get(`/api/crashes/${row.dataset.id}`);
-      const box = document.getElementById('crash-detail');
-      box.classList.remove('hidden');
-      box.innerHTML = `
-        <h3>Crash ${detail.summary.project} #${detail.summary.iteration}</h3>
-        <p>Mutator: <code>${detail.summary.mutator}</code> · Hash: <code>${detail.summary.inputHash}</code></p>
-        ${detail.summary.triageTag ? `<p>Tag: <code>${detail.summary.triageTag}</code></p>` : ''}
-        ${detail.sidecar?.exceptionHint ? `<p>Exception: <code>${detail.sidecar.exceptionHint}</code></p>` : ''}
-        ${detail.sidecar?.parentInputHash ? `<p>Parent hash: <code>${detail.sidecar.parentInputHash}</code> · source: <code>${detail.sidecar.seedSource}</code></p>` : ''}
-        ${detail.sidecar?.newEdgesAtCrash != null ? `<p>Coverage at crash: +${detail.sidecar.newEdgesAtCrash} new (total ${detail.sidecar.totalEdgesAtCrash}) · backend <code>${detail.sidecar.stalkBackend}</code></p>` : ''}
-        ${detail.sidecar?.runId ? `<p>Run: <code>${detail.sidecar.runId}</code></p>` : ''}
-        <p>Length: ${detail.inputLength} bytes · Id: <code>${detail.summary.id}</code></p>
-        <p class="hex-preview">${detail.hexPreview}</p>
-        <p><code>${detail.summary.inputPath}</code></p>
-        <button type="button" class="btn primary" id="export-crash-btn">Export triage bundle</button>
-        <p id="export-result" class="empty"></p>`;
-      document.getElementById('export-crash-btn')?.addEventListener('click', async () => {
-        try {
-          const bundle = await api.post(`/api/crashes/${detail.summary.id}/export`, {});
-          document.getElementById('export-result').textContent = `Exported to ${bundle.exportPath}`;
-        } catch (err) {
-          document.getElementById('export-result').textContent = err.message;
-        }
-      });
+      renderCrashDetail(detail, `Crash ${detail.summary.project} #${detail.summary.iteration}`);
     });
   });
 }

@@ -19,6 +19,25 @@ public sealed class DynamoRioRunner
                 return new DynamoRioRunner { DrrunPath = drrun };
         }
 
+        var repoRoot = CrashCatalog.FindRepoRoot();
+        if (repoRoot is not null)
+        {
+            var local = Path.Combine(repoRoot, "tools", "dynamorio", "bin64", "drrun.exe");
+            if (File.Exists(local))
+                return new DynamoRioRunner { DrrunPath = local };
+
+            var toolsDir = Path.Combine(repoRoot, "tools");
+            if (Directory.Exists(toolsDir))
+            {
+                foreach (var dir in Directory.EnumerateDirectories(toolsDir, "DynamoRIO-*"))
+                {
+                    var candidate = Path.Combine(dir, "bin64", "drrun.exe");
+                    if (File.Exists(candidate))
+                        return new DynamoRioRunner { DrrunPath = candidate };
+                }
+            }
+        }
+
         foreach (var candidate in new[]
         {
             @"C:\DynamoRIO\bin64\drrun.exe",
@@ -47,7 +66,7 @@ public sealed class DynamoRioRunner
                 false,
                 null,
                 null,
-                "DynamoRIO not found — set DYNAMORIO_HOME or install to C:\\DynamoRIO");
+                "DynamoRIO not found — run scripts/install-dynamorio.ps1 or set DYNAMORIO_HOME");
         }
 
         Directory.CreateDirectory(traceDir);

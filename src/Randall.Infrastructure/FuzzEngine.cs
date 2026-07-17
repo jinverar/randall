@@ -48,21 +48,21 @@ public sealed class FuzzEngine
         crashStore.Ensure();
         var crashesDir = ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir);
 
-        var dynamo = DynamoRioRunner.Discover();
-        var stalkBackend = StalkBackend.Resolve(coverageGuided, dynamo.IsAvailable);
+        var stalk = StalkTraceBackendFactory.Create(project);
+        var stalkBackend = StalkTraceBackendFactory.ResolveBackendId(project);
+        var stalkNote = stalk.AvailabilityNote;
         FuzzRunJournal? journal = null;
         if (project.Fuzz.ExecutionLog)
         {
-            journal = FuzzRunJournal.Start(project, yamlPath, dryRun, coverageGuided, stalkBackend);
+            journal = FuzzRunJournal.Start(project, yamlPath, dryRun, coverageGuided, stalkBackend, stalkNote);
             Console.WriteLine($"Run journal: {journal.RunDirectory}");
         }
-        var useCoverageFile = coverageGuided && dynamo.IsAvailable &&
+        var useCoverage = coverageGuided && stalk.IsAvailable;
+        var useCoverageFile = useCoverage &&
                               project.Kind.Equals("file", StringComparison.OrdinalIgnoreCase);
-        var useCoverageTcp = coverageGuided && dynamo.IsAvailable &&
-                             project.Fuzz.CoverageTcpSpawn &&
+        var useCoverageTcp = useCoverage && project.Fuzz.CoverageTcpSpawn &&
                              project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) &&
                              !string.IsNullOrWhiteSpace(project.Target.Executable);
-        var useCoverage = useCoverageFile;
 
         options.Progress?.OnStarted(project.Name, project.Kind);
 
@@ -220,7 +220,8 @@ public sealed class FuzzEngine
                     if (!string.IsNullOrWhiteSpace(cmd.ModelPath))
                     {
                         var model = ProtocolLoader.Load(yamlPath, cmd.ModelPath);
-                        var mutableFields = model.GetMutableFields();
+                        var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, cmd.ModelPath);
+                        var mutableFields = model.GetMutableFields(protoSeeds);
                         if (mutableFields.Count > 0)
                             commandName = $"{cmd.Name}/{mutableFields[rng.Next(mutableFields.Count)].Name}";
                     }
@@ -270,8 +271,8 @@ public sealed class FuzzEngine
 
                 if (useCoverageTcp)
                 {
-                    await dynamo.StopInstrumentedAsync(longLived, cancellationToken);
-                    longLived = dynamo.StartInstrumentedTarget(project, yamlPath, traceDir);
+                    await stalk.StopLongLivedAsync(longLived, cancellationToken);
+                    longLived = stalk.StartLongLivedTarget(project, yamlPath, traceDir);
                     await Task.Delay(500, cancellationToken);
                 }
 
@@ -305,11 +306,12 @@ public sealed class FuzzEngine
                 var newCoverage = false;
                 if (useCoverageTcp)
                 {
-                    var trace = dynamo.CollectLatestTrace(traceDir);
-                    await dynamo.StopInstrumentedAsync(longLived, cancellationToken);
+                    await stalk.StopLongLivedAsync(longLived, cancellationToken);
                     longLived = null;
+                    await Task.Delay(250, cancellationToken);
+                    var trace = stalk.CollectLatestTrace(traceDir);
                     iterTracePath = trace;
-                    if (trace is not null)
+                    if (trace is not null && File.Exists(trace))
                     {
                         newEdges = coverage.RegisterTrace(trace);
                         newCoverage = newEdges > 0;
@@ -322,7 +324,7 @@ public sealed class FuzzEngine
                 }
                 else if (useCoverageFile)
                 {
-                    var covRun = await dynamo.RunWithCoverageAsync(
+                    var covRun = await stalk.RunFileTargetAsync(
                         project, yamlPath, payload, traceDir, cancellationToken);
                     iterTracePath = covRun.TracePath;
                     newEdges = coverage.RegisterTrace(covRun.TracePath);
@@ -417,6 +419,23 @@ public sealed class FuzzEngine
                         (saved.MiniDumpPath is not null ? $" dump={saved.MiniDumpPath}" : "") +
                         (saved.SidecarPath is not null ? $" sidecar={saved.SidecarPath}" : "") +
                         (crashTag is not null ? $" tag={crashTag}" : ""));
+
+                    if (project.Fuzz.AutoAnalyzeCrash && saved.MiniDumpPath is not null)
+                    {
+                        var analysis = CrashAnalysisWriter.AnalyzeDump(saved.MiniDumpPath);
+                        var analysisPath = CrashAnalysisWriter.Write(crashesDir, saved.Id, analysis);
+                        if (analysis.Ok)
+                        {
+                            Console.WriteLine(
+                                $"  analysis: {analysis.ExceptionHint} @ {analysis.FaultAddress}" +
+                                (analysis.FaultModule is not null ? $" ({analysis.FaultModule})" : "") +
+                                $" → {analysisPath}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"  analysis skipped: {analysis.Error}");
+                        }
+                    }
                     crashes.Add(new CrashRecord(
                         saved.Id,
                         payload,
@@ -444,9 +463,9 @@ public sealed class FuzzEngine
         finally
         {
             if (useCoverageTcp)
-                dynamo.StopInstrumentedAsync(longLived, cancellationToken).GetAwaiter().GetResult();
+                stalk.StopLongLivedAsync(longLived, cancellationToken).GetAwaiter().GetResult();
             monitor?.Dispose();
-            journal?.Complete(iterations, crashCount);
+            journal?.Complete(iterations, crashCount, coverage.GetTopHotEdges());
         }
 
         var runResult = new FuzzRunResult(iterations, corpusAdded, crashCount, crashes);

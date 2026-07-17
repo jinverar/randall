@@ -28,7 +28,7 @@ app.MapGet("/randall.png", () =>
     return Results.NotFound();
 });
 
-app.MapGet("/api/health", () => new HealthDto("Randall", "0.15.0-alpha", "phase14-graph-ui"));
+app.MapGet("/api/health", () => new HealthDto("Randall", "0.16.0-alpha", "phase16-analyze"));
 app.MapGet("/api/doctor", (string configPath) =>
 {
     if (string.IsNullOrWhiteSpace(configPath))

@@ -216,7 +216,7 @@ public static class ModelFuzzer
         FieldRegion? targetField)
     {
         var baseline = model.Render(seeds);
-        var mutable = model.GetMutableFields();
+        var mutable = model.GetMutableFields(seeds);
         if (mutable.Count == 0)
             return model.FinalizeMessage(baseline, syncLengthFields);
 
@@ -239,12 +239,14 @@ public static class ModelFuzzer
             mutated = MutateIntegerField(slice, field, rng);
         else if (field.Kind == "length")
             mutated = MutateLengthField(slice, field, baseline, rng);
-        else if (mutator.Name == "havoc" || field.Kind is "bytes" or "string" && rng.NextDouble() < 0.15)
+        else if (mutator.Name == "havoc" ||
+                 mutator.Name is not ("expand" or "insert") &&
+                 field.Kind is "bytes" or "string" && rng.NextDouble() < 0.15)
             mutated = MutationOps.Havoc(slice, rng, havocDepth);
         else
             mutated = mutator.Mutate(slice).ToArray();
 
-        var patched = model.PatchField(baseline, field.Name, mutated);
+        var patched = model.PatchField(baseline, field, mutated);
         return model.FinalizeMessage(patched, syncLengthFields);
     }
 

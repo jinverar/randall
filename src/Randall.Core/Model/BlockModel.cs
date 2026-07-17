@@ -351,7 +351,7 @@ public sealed class BlockModel : IProtocolModel
     {
         _derived.Clear();
         var msg = Render(seeds);
-        foreach (var f in GetFields())
+        foreach (var f in GetFields(seeds))
         {
             if (f.Kind is "checksum" or "length")
             {
@@ -437,31 +437,39 @@ public sealed class BlockModel : IProtocolModel
         return buffer[..len];
     }
 
-    public IReadOnlyList<FieldRegion> GetFields()
+    public IReadOnlyList<FieldRegion> GetFields(IReadOnlyDictionary<string, byte[]>? seeds = null)
     {
-        var ctx = new RenderContext { Seeds = new Dictionary<string, byte[]>() };
+        var ctx = new RenderContext { Seeds = seeds ?? new Dictionary<string, byte[]>() };
         var fields = new List<FieldRegion>();
         _root.CollectFields(0, fields, ctx);
         return fields;
     }
 
-    public IReadOnlyList<FieldRegion> GetMutableFields() =>
-        GetFields().Where(f => f.Mutable).ToList();
+    public IReadOnlyList<FieldRegion> GetMutableFields(IReadOnlyDictionary<string, byte[]>? seeds = null) =>
+        GetFields(seeds).Where(f => f.Mutable).ToList();
+
+    public byte[] PatchField(byte[] message, FieldRegion field, byte[] newValue)
+    {
+        if (string.IsNullOrEmpty(field.Name))
+            return message;
+
+        var before = message.AsSpan(0, field.Offset);
+        var after = field.Offset + field.Length <= message.Length
+            ? message.AsSpan(field.Offset + field.Length)
+            : ReadOnlySpan<byte>.Empty;
+        var result = new byte[before.Length + newValue.Length + after.Length];
+        before.CopyTo(result);
+        newValue.CopyTo(result.AsSpan(before.Length));
+        after.CopyTo(result.AsSpan(before.Length + newValue.Length));
+        return result;
+    }
 
     public byte[] PatchField(byte[] message, string fieldName, byte[] newValue)
     {
         var match = GetFields().FirstOrDefault(f => f.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase));
         if (match is null || string.IsNullOrEmpty(match.Name))
             return message;
-        var field = match;
-
-        var before = message.AsSpan(0, field.Offset);
-        var after = message.AsSpan(field.Offset + field.Length);
-        var result = new byte[before.Length + newValue.Length + after.Length];
-        before.CopyTo(result);
-        newValue.CopyTo(result.AsSpan(before.Length));
-        after.CopyTo(result.AsSpan(before.Length + newValue.Length));
-        return result;
+        return PatchField(message, match, newValue);
     }
 
     byte[] IProtocolModel.Render() => Render();

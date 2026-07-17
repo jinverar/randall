@@ -99,7 +99,7 @@ public static class FuzzCasePlanner
         IReadOnlyList<IMutator> mutators)
     {
         model.Render(seeds);
-        var fields = model.GetMutableFields();
+        var fields = model.GetMutableFields(seeds);
         if (fields.Count == 0)
         {
             foreach (var mutator in mutators)

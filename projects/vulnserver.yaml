@@ -38,6 +38,7 @@ fuzz:
   powerSchedule: true
   havocDepth: 8
   sessionFlowBias: 0.25
+  sessionGraphBias: 0.2
   coverageGuided: false
   coverageTcpSpawn: true
   corpusDir: ../data/corpus/vulnserver
@@ -54,6 +55,16 @@ sessionFlows:
   - name: gmon_probe
     steps:
       - GMON
+sessionGraph:
+  start: STAT_TRUN
+  mutate: TRUN
+  edges:
+    - from: STAT_TRUN
+      when: "STAT OK"
+      to: TRUN
+    - from: GMON
+      when: "GMON OK"
+      to: GTER
 seeds:
   - seeds/vulnserver_trun.txt
 mutators:

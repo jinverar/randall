@@ -27,9 +27,9 @@ public sealed class FuzzRunJournal
         string yamlPath,
         bool dryRun,
         bool coverageGuided,
-        string stalkBackend)
+        string stalkBackend,
+        string stalkBackendNote)
     {
-        var repoRoot = ProjectLoader.ResolveProjectRoot(yamlPath);
         var runsRoot = ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir);
         Directory.CreateDirectory(runsRoot);
 
@@ -47,7 +47,7 @@ public sealed class FuzzRunJournal
             dryRun,
             coverageGuided,
             stalkBackend,
-            stalkBackend == StalkBackend.External ? StalkBackend.ExternalNote : "",
+            stalkBackendNote,
             0,
             0);
 
@@ -63,13 +63,14 @@ public sealed class FuzzRunJournal
         File.AppendAllText(_iterationsPath, JsonSerializer.Serialize(entry, JsonOptions) + Environment.NewLine);
     }
 
-    public void Complete(int iterations, int crashesFound)
+    public void Complete(int iterations, int crashesFound, IReadOnlyList<HotEdgeDto>? hotEdges = null)
     {
         var done = _manifest with
         {
             CompletedAt = DateTimeOffset.UtcNow,
             Iterations = iterations,
             CrashesFound = crashesFound,
+            HotEdges = hotEdges,
         };
         File.WriteAllText(
             Path.Combine(_runDir, "run.json"),

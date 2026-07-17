@@ -32,7 +32,9 @@ public sealed record CrashDetailDto(
     CrashSummaryDto Summary,
     int InputLength,
     string HexPreview,
-    CrashSidecarDto? Sidecar);
+    string AsciiPreview,
+    CrashSidecarDto? Sidecar,
+    CrashAnalysisDto? Analysis);
 
 public sealed record SessionGraphReportDto(
     string Project,

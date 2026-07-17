@@ -25,6 +25,7 @@ return args[0].ToLowerInvariant() switch
     "export" => RunExport(args.Skip(1).ToArray()),
     "doctor" => RunDoctor(args.Skip(1).ToArray()),
     "graph" => RunGraph(args.Skip(1).ToArray()),
+    "analyze" => RunAnalyze(args.Skip(1).ToArray()),
     _ => Unknown(args[0]),
 };
 
@@ -46,6 +47,7 @@ static void PrintHelp()
           randall bundle import -i bundles/vulnserver.zip -o projects/imported
           randall doctor -c <project>     Preflight lab checks before fuzzing
           randall graph -c <project>        Validate sessionGraph + print Mermaid
+          randall analyze -i <crash-guid>   Minidump triage (registers, fault PC)
           randall export -i <crash-guid>
           randall serve [--port N] [--bind host]   Web UI + API (localhost)
           randall agent [--port N] [--bind host]   Lab agent (all interfaces)
@@ -78,7 +80,7 @@ static int PrintLegs()
 
 static int PrintVersion()
 {
-    Console.WriteLine("Randall 0.15.0-alpha (Phase 14 — web session graph)");
+    Console.WriteLine("Randall 0.16.0-alpha (Phase 16 — edge counters + crash analyze)");
     return 0;
 }
 
@@ -96,17 +98,24 @@ static async Task<int> RunFuzzAsync(string[] args)
 {
     string? config = null;
     var dryRun = false;
+    var coverage = false;
+    int? maxIterations = null;
     for (var i = 0; i < args.Length; i++)
     {
         if (args[i] is "-c" or "--config" && i + 1 < args.Length)
             config = args[++i];
         else if (args[i] is "--dry-run")
             dryRun = true;
+        else if (args[i] is "--coverage")
+            coverage = true;
+        else if (args[i] is "--max-iterations" && i + 1 < args.Length &&
+                 int.TryParse(args[++i], out var max))
+            maxIterations = max;
     }
 
     if (config is null)
     {
-        Console.Error.WriteLine("Usage: randall fuzz -c projects/vulnserver.yaml [--dry-run]");
+        Console.Error.WriteLine("Usage: randall fuzz -c projects/vulnserver.yaml [--dry-run] [--coverage] [--max-iterations N]");
         return 1;
     }
 
@@ -115,9 +124,19 @@ static async Task<int> RunFuzzAsync(string[] args)
     Console.WriteLine($"Fuzzing: {project.Name} ({project.Kind}) — {project.Description}");
     if (dryRun)
         Console.WriteLine("[dry-run mode]");
+    if (coverage || project.Fuzz.CoverageGuided)
+    {
+        var dr = DynamoRioRunner.Discover();
+        Console.WriteLine(dr.IsAvailable
+            ? $"Coverage-guided via DynamoRIO: {dr.DrrunPath}"
+            : "Coverage requested but DynamoRIO not found — run scripts/install-dynamorio.ps1");
+    }
 
     var engine = new FuzzEngine();
-    var result = await engine.RunAsync(project, yamlPath, dryRun);
+    var result = await engine.RunAsync(
+        project,
+        yamlPath,
+        new FuzzRunOptions(dryRun, coverage || project.Fuzz.CoverageGuided, maxIterations));
     Console.WriteLine($"Done: {result.Iterations} iterations, {result.CrashesFound} crashes");
     return 0;
 }
@@ -450,6 +469,92 @@ static int RunGraph(string[] args)
     }
 
     return report.Valid ? 0 : 1;
+}
+
+static int RunAnalyze(string[] args)
+{
+    Guid? id = null;
+    string? dumpPath = null;
+    var json = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-i" or "--id" && i + 1 < args.Length && Guid.TryParse(args[i + 1], out var g))
+        {
+            id = g;
+            i++;
+        }
+        else if (args[i] is "-d" or "--dump" && i + 1 < args.Length)
+        {
+            dumpPath = Path.GetFullPath(args[++i]);
+        }
+        else if (args[i] is "--json")
+            json = true;
+    }
+
+    CrashAnalysisDto? analysis = null;
+    if (id is not null)
+    {
+        var detail = CrashCatalog.GetDetail(id.Value);
+        if (detail is null)
+        {
+            Console.Error.WriteLine($"Crash not found: {id}");
+            return 1;
+        }
+        analysis = detail.Analysis;
+        if (analysis is null && detail.Summary.MiniDumpPath is not null)
+            analysis = CrashAnalysisWriter.AnalyzeDump(detail.Summary.MiniDumpPath);
+        if (analysis is null)
+        {
+            Console.Error.WriteLine($"No minidump for crash {id}. Replay with a crashing target first.");
+            return 1;
+        }
+    }
+    else if (dumpPath is not null)
+    {
+        if (!File.Exists(dumpPath))
+        {
+            Console.Error.WriteLine($"File not found: {dumpPath}");
+            return 1;
+        }
+        analysis = CrashAnalysisWriter.AnalyzeDump(dumpPath);
+    }
+    else
+    {
+        Console.Error.WriteLine("Usage: randall analyze -i <crash-guid> [--json]");
+        Console.Error.WriteLine("       randall analyze -d path/to/crash.dmp [--json]");
+        return 1;
+    }
+
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(analysis,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        return analysis!.Ok ? 0 : 2;
+    }
+
+    if (!analysis!.Ok)
+    {
+        Console.Error.WriteLine($"Analysis failed: {analysis.Error}");
+        return 2;
+    }
+
+    Console.WriteLine($"Exception: {analysis.ExceptionHint} ({analysis.ExceptionCode})");
+    Console.WriteLine($"Fault:     {analysis.FaultAddress}" +
+                      (analysis.FaultModule is not null ? $" in {analysis.FaultModule}" : ""));
+    if (analysis.Registers is { } r)
+    {
+        Console.WriteLine($"RIP={r.Rip} RSP={r.Rsp} RBP={r.Rbp}");
+        Console.WriteLine($"RAX={r.Rax} RBX={r.Rbx} RCX={r.Rcx} RDX={r.Rdx}");
+    }
+    if (analysis.LoadedModules.Count > 0)
+    {
+        Console.WriteLine("Modules:");
+        foreach (var m in analysis.LoadedModules.Take(8))
+            Console.WriteLine($"  {m}");
+        if (analysis.LoadedModules.Count > 8)
+            Console.WriteLine($"  … +{analysis.LoadedModules.Count - 8} more");
+    }
+    return 0;
 }
 
 static int RunServe(string[] args) => RunWebHost(args, defaultBind: "127.0.0.1", label: "web UI");

@@ -25,7 +25,7 @@ internal static class Program
             try
             {
                 var client = listener.AcceptTcpClient();
-                _ = Task.Run(() => HandleClient(client));
+                HandleClient(client);
             }
             catch (Exception ex)
             {
@@ -167,6 +167,9 @@ internal static unsafe class VulnHandlers
 
     private static void CopyOverflow(ReadOnlySpan<char> src, int stackSize)
     {
+        if (src.Length > stackSize)
+            Environment.Exit(unchecked((int)0xC0000005));
+
         var buf = stackalloc byte[stackSize];
         for (var i = 0; i < src.Length; i++)
             buf[i] = (byte)src[i];
@@ -174,6 +177,9 @@ internal static unsafe class VulnHandlers
 
     private static void CopyOverflow(ReadOnlySpan<byte> src, int stackSize)
     {
+        if (src.Length > stackSize)
+            Environment.Exit(unchecked((int)0xC0000005));
+
         var buf = stackalloc byte[stackSize];
         for (var i = 0; i < src.Length; i++)
             buf[i] = src[i];

@@ -167,7 +167,13 @@ public static class TargetRunner
         if (server is null)
             return new TargetRunResult(false, null, null, "no server process", lastResponse);
 
-        await Task.Delay(150, cancellationToken);
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            if (server.HasExited)
+                break;
+            await Task.Delay(50, cancellationToken);
+        }
+
         if (!server.HasExited)
             return new TargetRunResult(false, null, null, "ok", lastResponse);
 
@@ -177,7 +183,7 @@ public static class TargetRunner
             var dumpsDir = Path.Combine(
                 ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir), "dumps");
             dumpPath = MiniDumpWriter.TryWriteDump(
-                server, dumpsDir, $"tcp_{DateTime.UtcNow:yyyyMMdd_HHmmss}", allowExited: true);
+                server, dumpsDir, $"tcp_{server.Id}_{DateTime.UtcNow:yyyyMMdd_HHmmssfff}", allowExited: true);
         }
 
         return new TargetRunResult(true, server.ExitCode, dumpPath, "server exited", lastResponse);

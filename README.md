@@ -117,6 +117,65 @@ See [docs/TARGETS.md](docs/TARGETS.md) and [targets/README.md](targets/README.md
 
 **Hands-on lab walkthrough:** [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md)
 
+## Optional — DynamoRIO (coverage-guided stalking)
+
+Coverage is **optional**. Randall finds crashes without it. Install DynamoRIO when you want `+N edges` in the fuzz log and corpus inputs ranked by new basic blocks.
+
+### Install (pick one)
+
+**A. Script (downloads latest release)**
+
+```powershell
+powershell -File scripts/install-dynamorio.ps1
+```
+
+**B. Manual zip** — download `DynamoRIO-Windows-*.zip` from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases), extract, and place so this file exists:
+
+```
+tools/dynamorio/bin64/drrun.exe
+```
+
+Example: extract `DynamoRIO-Windows-11.3.0-1` and rename the folder to `tools/dynamorio`. Randall also auto-detects `tools/DynamoRIO-*` if you keep the versioned folder name.
+
+Optional env var: `DYNAMORIO_HOME=C:\path\to\tools\dynamorio`
+
+### Verify
+
+```powershell
+dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml
+```
+
+Web UI **Dashboard** should show **DynamoRIO: Ready** (not Missing).
+
+### Run with coverage
+
+**File targets** — set `coverageGuided: true` in project YAML, or use the web **Fuzz** tab checkbox.
+
+**TCP lab (vulnserver)** — slower; spawns an instrumented server per iteration:
+
+```powershell
+dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml --coverage --max-iterations 200
+```
+
+Requires `coverageTcpSpawn: true` in `projects/vulnserver.yaml` (already set for the lab target).
+
+See [docs/FUZZING.md](docs/FUZZING.md) and [docs/CRASH_ANALYSIS.md](docs/CRASH_ANALYSIS.md) (`stalkMode`: `auto` | `external` | `native` | `none`).
+
+### Stalk bugs with the session graph (web UI)
+
+1. Start the lab console: `dotnet run --project src/Randall.Server --urls http://127.0.0.1:5000`
+2. Open **http://127.0.0.1:5000** — **Dashboard** should show **DynamoRIO: Ready** when `tools/dynamorio/bin64/drrun.exe` exists.
+3. **Session graph** tab → select **vulnserver** → **Load graph** — Mermaid diagram shows STAT → TRUN branching (where mutation focuses).
+4. **Fuzz** tab → target **vulnserver**, check **Coverage-guided**, Start — live log shows `+N edges` (green) when an input maps new code; **CRASH** when the target dies.
+5. **Crashes** tab → click a row → ASCII payload + **Why** (e.g. `ACCESS_VIOLATION`) + command/mutator lineage.
+
+CLI equivalent:
+
+```powershell
+dotnet run --project src/Randall.Cli -- graph -c projects/vulnserver.yaml
+dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml --coverage --max-iterations 100
+```
+
 ## Quick start — sneak in
 
 Requires [.NET 8 SDK](https://dotnet.microsoft.com/download). Clone, build, start breaking things (legally):
@@ -140,7 +199,9 @@ dotnet run --project src/Randall.Server
 
 ## Status
 
-**Phase 15** — execution journal + crash sidecars. Logging: [docs/EXECUTION_LOGGING.md](docs/EXECUTION_LOGGING.md), [docs/CRASH_LOGGING.md](docs/CRASH_LOGGING.md). Native stalk (Phase 16) replaces optional external coverage later.
+**Phase 15** — execution journal + crash sidecars. Logging: [docs/EXECUTION_LOGGING.md](docs/EXECUTION_LOGGING.md), [docs/CRASH_LOGGING.md](docs/CRASH_LOGGING.md).
+
+**Phase 16** — edge hit counters, `randall analyze`, pluggable stalk backend. See [docs/CRASH_ANALYSIS.md](docs/CRASH_ANALYSIS.md). Native stalk scaffold is in place; DynamoRIO remains the optional external adapter until native lands.
 
 ## Acknowledgments
 
