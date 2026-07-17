@@ -8,39 +8,39 @@
   <em>Stalk code paths. Scream on crash.</em>
 </div>
 
-**A next-generation fuzzer for Windows** — generation + coverage-guided stalking, built in native C#/.NET.
+**A next-generation fuzzer for Windows** — generation, coverage-guided stalking, and crash triage in native C#/.NET.
 
-Randall **unifies capabilities** that teams have historically spread across separate tools: block-based protocol fuzzing ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz)), in-stream traffic work ([CANAPE](https://github.com/foxitcs/canape)), coverage-driven path exploration ([PaiMei pStalker](https://github.com/OpenRCE/paimei)), and fast instrumentation ([DynamoRIO](https://dynamorio.org/)) — in one stack with a CLI, web UI, and portable deploy. We stand on that prior work; Randall is the integrated next step, not a fork or a toy.
+I don't just throw bytes at parsers and hope. I **camouflage** valid-looking traffic, **sneak** into code paths nobody's mapped yet, and **scream** when something breaks — minidump and all. Randall pulls the good stuff from the giants before us ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei pStalker](https://github.com/OpenRCE/paimei), [DynamoRIO](https://dynamorio.org/)) and runs it as **one stack** — CLI, web UI, portable deploy. Respect to the legends; I'm just the chameleon who wired it together.
 
-Named after **Randall Boggs** (*Monsters, Inc.*) — master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. The mascot is parody; the tooling is respectfully inspired by prior art:
+Named after **Randall Boggs** (*Monsters, Inc.*) — master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. Yeah, that's the vibe:
 
-| Randall (mascot) | Fuzzing idea |
+| Randall (mascot) | What I actually do |
 |---------|--------|
-| 🦎 Camouflages — blends in | Valid-looking shells, MITM traffic that looks normal |
-| 🐛 Competitive scarer (film rivalry) | Coverage-guided inputs that reach **new** paths |
-| 🧪 Sneaks the factory | Explore unexplored code with DynamoRIO |
-| 💥 Scream Extractor energy | Crash capture — dumps, dedup, Ghidra export |
-| 🕵️ Another trick up his sleeve | Havoc, dictionaries, session flows, plugins |
+| 🦎 **Camouflage** — blend in | Valid shells, plausible protocols, MITM that looks like normal traffic |
+| 🐛 **Competitive** — always hunting the edge | Coverage-guided inputs that hit **new** paths |
+| 🧪 **Sneak the factory** | Stalk unexplored code with DynamoRIO |
+| 💥 **Scream Extractor energy** | Crash capture — dumps, dedup, Ghidra export |
+| 🕵️ **Another trick up my sleeve** | Havoc, dictionaries, session flows, plugins |
 
 Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
 > *Stalk code paths. Scream on crash.*
 
-## Built on proven ideas
+## Tricks borrowed from the greats
 
-Randall pulls forward the best parts of several fuzzing lineages into a single Windows-native engine. Credit where it is due:
+I'm not here to rewrite history. I'm here to **stop duct-taping six runtimes** every time you fuzz on Windows. These are the shoulders I stand on:
 
-| Tool / tradition | Capabilities Randall integrates |
+| Tool / tradition | What Randall took and ran with |
 |-------------|----------------------|
-| **[Sulley / Boofuzz](https://github.com/jtpereyda/boofuzz)** | Block-based protocol models, sessions, mutations |
-| **[CANAPE](https://github.com/foxitcs/canape)** | MITM capture, parse, inject, fuzz in-stream |
-| **[PaiMei pStalker](https://github.com/OpenRCE/paimei)** | Coverage novelty, crash stalking, path dedup |
-| **[DynamoRIO](https://dynamorio.org/)** | Fast basic-block coverage (drcov) |
-| **Ghidra / triage workflows** | Coverage export for reverse-engineering |
+| **[Sulley / Boofuzz](https://github.com/jtpereyda/boofuzz)** | Block models, sessions, mutations — generation fuzzing done right |
+| **[CANAPE](https://github.com/foxitcs/canape)** | MITM capture, parse, inject — see the wire before you break it |
+| **[PaiMei pStalker](https://github.com/OpenRCE/paimei)** | Color-coded stalking — new edges, first divergence, crash paths |
+| **[DynamoRIO](https://dynamorio.org/)** | Fast drcov instrumentation |
+| **Ghidra / triage** | Export coverage and crashes for the reverse-engineering grind |
 
-The goal is simple: **one fuzzer that does generation, stalking, proxying, and triage** without duct-taping half a dozen runtimes. Boofuzz, AFL, and friends remain great at what they do — Randall is for when you want that full pipeline on Windows in one place.
+Boofuzz and AFL still slap. Randall is for when you want **generation + stalking + proxy + triage** under one roof — next-gen pipeline, same ethics: **authorized targets only**.
 
-## Stalking bugs — coverage map (PaiMei-inspired)
+## Stalking bugs — how I see the factory floor
 
 <div align="center">
   <a href="docs/assets/randal_stalking_bugs.png">
@@ -50,7 +50,7 @@ The goal is simple: **one fuzzer that does generation, stalking, proxying, and t
   <em>I don't just find bugs. I stalk them. I choose them. I crash them.</em>
 </div>
 
-This diagram uses the **color-coded control-flow view** popularized by [PaiMei Process Stalker](https://github.com/OpenRCE/paimei) (Pedram Amini's *pstalker*): a graph where **color shows how an input moved through the target** until something broke. Randall's Leg 4 (Stalk) aims to support a similar mental model when working with DynamoRIO coverage and corpus triage.
+This is the view [PaiMei pStalker](https://github.com/OpenRCE/paimei) made famous — **color tells you where the input went** before the scream. Blue path, green new territory, red crash site. I didn't invent it; I just think every fuzzer should *feel* like this when you're triaging.
 
 ### Color legend (pStalker method)
 
@@ -58,10 +58,10 @@ This diagram uses the **color-coded control-flow view** popularized by [PaiMei P
 |-------|---------|-------------------|
 | **Blue** | Blocks on the **executed path** — code this input actually ran through | Known corpus paths; replayed inputs that hit the same edges |
 | **Green** | **New coverage** — basic blocks or edges seen for the first time | DynamoRIO drcov novelty; corpus entries that expand the frontier (`+N edges` in the fuzz log) |
-| **Gray** | Existing blocks **not taken** on this run | Unexplored branches — the stalker's next hunting ground |
+| **Gray** | Blocks you **didn't take** this run | Unexplored forks — dinner's still on the table |
 | **Red** | **Crash location** (e.g. `ACCESS_VIOLATION`) | `CrashRecord` + minidump + triage tag from RPP `post_crash` |
 
-Solid arrows = **taken** edges. Dashed arrows = **not taken** — forks you haven't fuzzed yet.
+Solid arrows = **taken**. Dashed = **not yet** — that's where I'm going next.
 
 ### What the panels mean
 
@@ -70,16 +70,16 @@ Solid arrows = **taken** edges. Dashed arrows = **not taken** — forks you have
 | **Coverage overview** | How much of the target have we mapped? | Corpus stats, `/api/corpus/{project}`, DynamoRIO edge counts |
 | **Path comparison** | Baseline run vs current run — did we learn anything? | Corpus energy / power schedule; inputs that add edges get kept |
 | **First divergence** | Where did this input peel off from the last known good path? | Crash path dedup + cluster triage (Phase 4) |
-| **Execution timeline** | Last N blocks before the scream | Live fuzz log (web UI + SignalR) — watch green `+edges` moments |
+| **Execution timeline** | Last N blocks before the scream | Live fuzz log — green `+edges` moments are the good stuff |
 | **Crash log** | Which exceptions came with new coverage? | Crashes tab — filter by project, triage tags, export to Ghidra bundle |
 
-**Generation + coverage guidance:** protocol models (Boofuzz-style) produce structured inputs; coverage feedback (pStalker-style) drives corpus ranking and crash triage. The [web UI](docs/LAB_PRACTICE.md#8-web-ui) (`randall serve`) is the operations console — fuzz runs, session graphs, crashes, and coverage in one place.
+**Generation meets stalking:** models get weird bytes through the door; coverage tells me what's worth keeping. Fire up [`randall serve`](docs/LAB_PRACTICE.md#8-web-ui) — my web console for fuzz runs, session graphs, crashes, and coverage. *Chaos is my code*, but at least it's organized chaos.
 
 Leg 4 deep dive: [docs/LEGS.md#leg-4--stalk-coverage](docs/LEGS.md#leg-4--stalk-coverage)
 
-## Eight legs (feature map)
+## Eight legs, zero mercy
 
-Randall has **eight legs** — eight major capability areas in one fuzzer. See [docs/LEGS.md](docs/LEGS.md) for the feature map.
+Eight capability areas. One chameleon. See [docs/LEGS.md](docs/LEGS.md) for the full map.
 
 | Leg | Module | Concept |
 |-----|--------|---------|
@@ -104,9 +104,9 @@ Randall.Contracts     Shared DTOs
 
 Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
-## Lab targets
+## Factory floor (lab targets)
 
-Default profiles: **vulnserver** (TCP lab) plus generic **file-text** / **file-framed** templates. Private targets go in gitignored `projects/local/`.
+Built-in vulnerable targets for practice — **your** factory, **your** permission slip. Default profiles: **vulnserver** (TCP), plus **file-text** / **file-framed** templates. Got something private? `projects/local/` is gitignored.
 
 ```powershell
 dotnet run --project src/Randall.Cli -- targets
@@ -117,9 +117,9 @@ See [docs/TARGETS.md](docs/TARGETS.md) and [targets/README.md](targets/README.md
 
 **Hands-on lab walkthrough:** [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md)
 
-## Quick start (development)
+## Quick start — sneak in
 
-Requires [.NET 8 SDK](https://dotnet.microsoft.com/download).
+Requires [.NET 8 SDK](https://dotnet.microsoft.com/download). Clone, build, start breaking things (legally):
 
 ```powershell
 git clone https://github.com/jinverar/randall.git
@@ -129,22 +129,22 @@ dotnet run --project src/Randall.Cli -- --help
 dotnet run --project src/Randall.Server
 ```
 
-## Deployment modes
+## How I deploy
 
-| Mode | Command | Use case |
-|------|---------|----------|
-| **Lab agent** | `randall agent [--bind 0.0.0.0]` | Fuzz box on LAN — web UI + API |
-| **Web + local** | `randall serve` | Browser UI on localhost |
-| **Headless** | `randall fuzz -c project.yaml` | Scripts, CI |
-| **Standalone** | Self-contained publish → zip folder | Air-gapped / offline VM |
+| Mode | Command | When |
+|------|---------|------|
+| **Lab agent** | `randall agent [--bind 0.0.0.0]` | Fuzz box on the LAN — web UI + API, all interfaces |
+| **Web + local** | `randall serve` | Browser console on localhost |
+| **Headless** | `randall fuzz -c project.yaml` | Scripts, CI, no UI needed |
+| **Standalone** | Self-contained publish → zip folder | Air-gapped VM — I travel light |
 
 ## Status
 
-**Phase 14 complete — web session graph viewer + lab practice guide.** See [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md).
+**Phase 14** — web session graph, stalking diagram, lab practice guide. Still evolving; always hunting. Details: [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md).
 
 ## Acknowledgments
 
-Randall **builds on** excellent prior work — [Sulley](https://github.com/OpenRCE/sulley), [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei](https://github.com/OpenRCE/paimei), AFL/libFuzzer-style mutation strategies, and [DynamoRIO](https://dynamorio.org/). Thank you to the researchers and maintainers who paved the way. We aim to push the state of the art forward respectfully — interoperable imports, shared concepts, and credit where it belongs.
+Massive respect to [Sulley](https://github.com/OpenRCE/sulley), [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei](https://github.com/OpenRCE/paimei), AFL/libFuzzer, and [DynamoRIO](https://dynamorio.org/) — the tools that taught the rest of us how to fuzz. Randall combines their best ideas and pushes forward on Windows. Import your Boofuzz scripts, share your YAML, keep the community sharp.
 
 ## License
 
@@ -152,4 +152,6 @@ MIT — see [LICENSE](LICENSE).
 
 ## Disclaimer
 
-Use only on systems you own or have explicit permission to test. The authors are not responsible for misuse.
+Authorized targets only — systems you own or have **explicit permission** to test. I'm a fuzzer, not a lawyer. The authors aren't responsible for misuse.
+
+*Monsters, Inc. and Randall Boggs are property of Disney/Pixar. This project is an independent parody for security research.*
