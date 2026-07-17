@@ -1,4 +1,4 @@
-# Randall plugins
+# Randfuzz plugins
 
 Drop RPP plugin folders here. Each plugin needs `rpp.yaml` + entry script.
 

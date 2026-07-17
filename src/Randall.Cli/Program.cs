@@ -32,7 +32,7 @@ return args[0].ToLowerInvariant() switch
 static void PrintHelp()
 {
     Console.WriteLine("""
-        Randall — generation + coverage-guided fuzzing for Windows
+        Randfuzz by Randall — generation + coverage-guided fuzzing for Windows
 
         Usage:
           randall targets              List lab project profiles
@@ -80,7 +80,7 @@ static int PrintLegs()
 
 static int PrintVersion()
 {
-    Console.WriteLine("Randall 0.16.0-alpha (Phase 16 — edge counters + crash analyze)");
+    Console.WriteLine("Randfuzz by Randall 0.16.0-alpha (Phase 16 — edge counters + crash analyze)");
     return 0;
 }
 
@@ -284,7 +284,7 @@ static async Task<int> RunPackAsync(string[] args)
     }
 
     var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
-    Console.WriteLine($"Packing portable Randall → {output}");
+    Console.WriteLine($"Packing portable Randfuzz → {output}");
     var result = await PortablePacker.PackAsync(root, output);
     Console.WriteLine($"Done: {result.OutputPath} ({result.SizeBytes / 1024 / 1024} MB)");
     Console.WriteLine($"Included: {result.Included.Length} paths");
@@ -587,7 +587,7 @@ static int RunWebHost(string[] args, string defaultBind, string label)
     }
 
     var urls = $"http://{bind}:{port}";
-    Console.WriteLine($"Starting Randall {label} at {urls}");
+    Console.WriteLine($"Starting Randfuzz {label} at {urls}");
     if (bind is "0.0.0.0" or "*")
         Console.WriteLine($"LAN clients: http://<this-machine-ip>:{port}");
 

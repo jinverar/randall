@@ -4,7 +4,7 @@ blocks:
   - type: string
     name: version
     mutable: true
-    value: "SSH-2.0-RandallFuzz_1.0"
+    value: "SSH-2.0-Randfuzz_1.0"
     maxSize: 4096
   - type: static
     value: "\r\n"

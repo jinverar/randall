@@ -1,4 +1,4 @@
-# Randall lab targets
+# Randfuzz lab targets
 
 Public examples ship with **vulnserver** (TCP) plus generic **file** templates. Real binaries and private profiles stay local — see [targets/README.md](../targets/README.md) and `projects/local/` (gitignored).
 

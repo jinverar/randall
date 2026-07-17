@@ -39,7 +39,7 @@ public static class PortablePacker
 
         var startCmd = """
             @echo off
-            echo Randall portable lab
+            echo Randfuzz portable lab
             echo   fuzz:   cli\Randall.Cli.exe fuzz -c projects\vulnserver.yaml
             echo   serve:  server\Randall.Server.exe --urls http://localhost:5000
             echo   proxy:  cli\Randall.Cli.exe proxy --listen 9998 --target 127.0.0.1:9999
@@ -115,7 +115,7 @@ public static class GhidraExporter
             File.WriteAllLines(edgesPath, edges);
 
         var script = """
-            # Randall → Ghidra triage helper
+            # Randfuzz → Ghidra triage helper
             # Run in Ghidra Script Manager (Python)
             #
             # 1. Import crash_input.bin as a binary (or attach as a file artifact)
@@ -124,7 +124,7 @@ public static class GhidraExporter
             #
             # Dragon Dance: map drcov basic blocks to Ghidra addresses using the module load base.
             
-            print("Randall triage bundle loaded.")
+            print("Randfuzz triage bundle loaded.")
             print("Files: crash_input.bin, sample.drcov.log, coverage_edges.txt")
             """;
         File.WriteAllText(Path.Combine(exportDir, "ghidra_import.py"), script);

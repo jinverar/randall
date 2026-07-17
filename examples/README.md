@@ -1,8 +1,8 @@
-# Examples — Randall for boofuzz users
+# Examples — Randfuzz for boofuzz users
 
 Self-contained YAML projects ported from [boofuzz/examples](https://github.com/jtpereyda/boofuzz/tree/master/examples).
 
-| Example | Boofuzz source | Randall command |
+| Example | Boofuzz source | Randfuzz command |
 |---------|----------------|-----------------|
 | [http-simple](http-simple/) | `http_simple.py` | `randall fuzz -c examples/http-simple/project.yaml --dry-run` |
 | [ftp-simple](ftp-simple/) | `ftp_simple.py` | `randall fuzz -c examples/ftp-simple/project.yaml --dry-run` |

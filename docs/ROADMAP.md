@@ -1,7 +1,7 @@
-# Randall roadmap
+# Randfuzz by Randall — roadmap
 
 <div align="center">
-  <img alt="Randall fuzzer mascot" src="assets/randall.png" width="560" />
+  <img alt="Randall — Randfuzz mascot" src="assets/randall.png" width="560" />
   <br />
   <em>Stalk code paths. Scream on crash.</em>
 </div>

@@ -1,6 +1,6 @@
-# Cursor Automations — Randall nightly lab
+# Cursor Automations — Randfuzz nightly lab
 
-Use a **Cursor Automation** to run Randall smoke campaigns on a schedule without babysitting the fuzz box.
+Use a **Cursor Automation** to run Randfuzz smoke campaigns on a schedule without babysitting the fuzz box.
 
 ## What to automate
 
@@ -22,7 +22,7 @@ Typical nightly flow:
 ## Agent instructions (paste into automation prompt)
 
 ```
-You are the Randall lab autopilot on a Windows fuzz VM.
+You are the Randfuzz lab autopilot on a Windows fuzz VM.
 
 1. cd to the randall repo root.
 2. dotnet build --no-restore if packages exist, else dotnet build.

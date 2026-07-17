@@ -67,7 +67,7 @@ public static class CrashStalker
         }
 
         var manifest = $"""
-            Randall triage bundle
+            Randfuzz triage bundle
             Crash: {crashId}
             Project: {detail.Summary.Project}
             Iteration: {detail.Summary.Iteration}

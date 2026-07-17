@@ -1,6 +1,6 @@
-# Randall Process Plugins (RPP)
+# Randfuzz Process Plugins (RPP)
 
-Polyglot plugins run as **child processes** and talk to Randall over **line-delimited JSON** on stdin/stdout. The C# core owns the fuzz loop; plugins extend mutation, observation, or triage without recompiling Randall.
+Polyglot plugins run as **child processes** and talk to Randfuzz over **line-delimited JSON** on stdin/stdout. The C# core owns the fuzz loop; plugins extend mutation, observation, or triage without recompiling Randfuzz.
 
 ## Manifest (`rpp.yaml`)
 

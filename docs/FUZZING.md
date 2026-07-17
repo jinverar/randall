@@ -1,4 +1,4 @@
-# Fuzzing techniques in Randall
+# Fuzzing techniques in Randfuzz
 
 Randall combines **generation** (Sulley-style block models) with **coverage-guided** mutation strategies borrowed from AFL++, libFuzzer, and research fuzzers.
 

@@ -1,4 +1,4 @@
-# Contributing to Randall
+# Contributing to Randfuzz by Randall
 
 Thanks for helping build a teachable, portable Windows fuzzer.
 
@@ -34,4 +34,4 @@ New features should map to a leg when possible — see [docs/LEGS.md](docs/LEGS.
 
 ## Security
 
-Randall is a security research tool. Do not commit targets, crashes, or corpus data from systems you were not authorized to test.
+Randfuzz is a security research tool. Do not commit targets, crashes, or corpus data from systems you were not authorized to test.

@@ -1,6 +1,6 @@
-# Randall — mascot & lore
+# Randfuzz by Randall — mascot & lore
 
-Randall Boggs (*Monsters, Inc.*) is the spirit animal of this fuzzer: stealthy, competitive, always hunting the edge case nobody else saw.
+**Randfuzz** is the product. **Randall** is the mascot — Randall Boggs (*Monsters, Inc.*) is the spirit animal: stealthy, competitive, always hunting the edge case nobody else saw.
 
 > **Stalk code paths. Scream on crash.**
 
@@ -10,7 +10,7 @@ Randall Boggs (*Monsters, Inc.*) is the spirit animal of this fuzzer: stealthy, 
 
 In the film, Randall is the master of camouflage, obsessed with beating Sulley, and willing to go off-script to win. For vulnerability research, that maps cleanly:
 
-| Randall (film) | Randall (fuzzer) |
+| Randall (film) | Randfuzz (product) |
 |----------------|------------------|
 | 🦎 **Camouflages** like a chameleon — nearly invisible | Blends into normal traffic: valid shells, plausible protocols, MITM proxy |
 | 🐛 **Competitive scarer** — wants to beat Sulley | Coverage-guided corpus: prioritize inputs that **beat** the last best path |
@@ -30,7 +30,7 @@ We are *not* building a Scream Extractor. We are building the thing that finds w
 - **Antagonist arc** — Works with Waternoose; the Scream Extractor plot is the villain beat in the movie.
 - **Kidnaps Boo** — Part of the film's test-the-machine storyline.
 
-**Lab use only:** Randall the fuzzer is for systems you own or have explicit permission to test. The mascot is parody; the ethics are real.
+**Lab use only:** Randfuzz is for systems you own or have explicit permission to test. The mascot is parody; the ethics are real.
 
 ---
 
@@ -41,15 +41,15 @@ We are *not* building a Scream Extractor. We are building the thing that finds w
 | *Stalk code paths. Scream on crash.* | README, roadmap, vulnserver banner |
 | *Eight legs, zero mercy.* | RAND command response on lab vulnserver |
 | *Chaos is my code.* | Web UI roadmap caption |
-| *Master of mayhem.* | Web UI (Randall at the console) |
+| *Master of mayhem.* | Web UI (Randfuzz by Randall at the console) |
 
 ---
 
 ## Sulley & friends (tool genealogy)
 
-| Name | Role in Randall's world |
+| Name | Role in Randfuzz's world |
 |------|-------------------------|
-| **Sulley** | Sulley/Boofuzz — block-based generation fuzzing Randall **complements** with coverage + stalking |
+| **Sulley** | Sulley/Boofuzz — block-based generation fuzzing Randfuzz **complements** with coverage + stalking |
 | **CANAPE** | Leg 6 — see the protocol before you fuzz it |
 | **PaiMei / pStalker** | Leg 4 — coverage novelty, crash stalking, color-coded path maps (see README stalking diagram) |
 | **Boo** | The innocent input that still finds the bug (your seed corpus) |
@@ -58,7 +58,7 @@ We are *not* building a Scream Extractor. We are building the thing that finds w
 
 ## Eight legs
 
-Randall has eight legs — eight feature areas. See [LEGS.md](LEGS.md) for the learning path.
+Randall (the mascot) has eight legs — eight feature areas. See [LEGS.md](LEGS.md) for the learning path.
 
 ```
         ┌── Model

@@ -1,4 +1,4 @@
-# Randall Architecture
+# Randfuzz by Randall — Architecture
 
 ## Design goals
 

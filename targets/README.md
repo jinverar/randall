@@ -6,7 +6,7 @@ Build all lab servers:
 .\scripts\build-all-lab-targets.ps1
 ```
 
-## Randall lab servers
+## Randfuzz lab servers
 
 | Target | Port | Profile | Source |
 |--------|------|---------|--------|
@@ -17,7 +17,7 @@ Build all lab servers:
 
 Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md).
 
-## Randall Vulnserver (included)
+## Randfuzz Vulnserver (included)
 
 Build the custom lab server from source:
 

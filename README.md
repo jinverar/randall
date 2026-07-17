@@ -1,8 +1,8 @@
-# Randall
+# Randfuzz by Randall
 
 <div align="center">
   <a href="docs/assets/randall.png">
-    <img alt="Randall fuzzer mascot" src="docs/assets/randall.png" width="640" />
+    <img alt="Randall — Randfuzz mascot" src="docs/assets/randall.png" width="640" />
   </a>
   <br />
   <em>Stalk code paths. Scream on crash.</em>
@@ -10,11 +10,11 @@
 
 **A next-generation fuzzer for Windows** — generation, coverage-guided stalking, and crash triage in native C#/.NET.
 
-I don't just throw bytes at parsers and hope. I **camouflage** valid-looking traffic, **sneak** into code paths nobody's mapped yet, and **scream** when something breaks — minidump and all. Randall pulls the good stuff from the giants before us ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei pStalker](https://github.com/OpenRCE/paimei), [DynamoRIO](https://dynamorio.org/)) and runs it as **one stack** — CLI, web UI, portable deploy. Respect to the legends; I'm just the chameleon who wired it together.
+I don't just throw bytes at parsers and hope. I **camouflage** valid-looking traffic, **sneak** into code paths nobody's mapped yet, and **scream** when something breaks — minidump and all. Randfuzz pulls the good stuff from the giants before us ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei pStalker](https://github.com/OpenRCE/paimei), [DynamoRIO](https://dynamorio.org/)) and runs it as **one stack** — CLI, web UI, portable deploy. Respect to the legends; I'm just the chameleon who wired it together.
 
-Named after **Randall Boggs** (*Monsters, Inc.*) — master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. Yeah, that's the vibe:
+**Randfuzz** is the product. **Randall** is the mascot — named after **Randall Boggs** (*Monsters, Inc.*): master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. Yeah, that's the vibe:
 
-| Randall (mascot) | What I actually do |
+| Randall (mascot) | What Randfuzz actually does |
 |---------|--------|
 | 🦎 **Camouflage** — blend in | Valid shells, plausible protocols, MITM that looks like normal traffic |
 | 🐛 **Competitive** — always hunting the edge | Coverage-guided inputs that hit **new** paths |
@@ -30,7 +30,7 @@ Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
 I'm not here to rewrite history. I'm here to **stop duct-taping six runtimes** every time you fuzz on Windows. These are the shoulders I stand on:
 
-| Tool / tradition | What Randall took and ran with |
+| Tool / tradition | What Randfuzz took and ran with |
 |-------------|----------------------|
 | **[Sulley / Boofuzz](https://github.com/jtpereyda/boofuzz)** | Block models, sessions, mutations — generation fuzzing done right |
 | **[CANAPE](https://github.com/foxitcs/canape)** | MITM capture, parse, inject — see the wire before you break it |
@@ -38,7 +38,7 @@ I'm not here to rewrite history. I'm here to **stop duct-taping six runtimes** e
 | **[DynamoRIO](https://dynamorio.org/)** | Fast drcov instrumentation |
 | **Ghidra / triage** | Export coverage and crashes for the reverse-engineering grind |
 
-Boofuzz and AFL still slap. Randall is for when you want **generation + stalking + proxy + triage** under one roof — next-gen pipeline, same ethics: **authorized targets only**.
+Boofuzz and AFL still slap. Randfuzz is for when you want **generation + stalking + proxy + triage** under one roof — next-gen pipeline, same ethics: **authorized targets only**.
 
 ## Stalking bugs — how I see the factory floor
 
@@ -54,7 +54,7 @@ This is the view [PaiMei pStalker](https://github.com/OpenRCE/paimei) made famou
 
 ### Color legend (pStalker method)
 
-| Color | Meaning | How Randall uses this |
+| Color | Meaning | How Randfuzz uses this |
 |-------|---------|-------------------|
 | **Blue** | Blocks on the **executed path** — code this input actually ran through | Known corpus paths; replayed inputs that hit the same edges |
 | **Green** | **New coverage** — basic blocks or edges seen for the first time | DynamoRIO drcov novelty; corpus entries that expand the frontier (`+N edges` in the fuzz log) |
@@ -65,7 +65,7 @@ Solid arrows = **taken**. Dashed = **not yet** — that's where I'm going next.
 
 ### What the panels mean
 
-| Panel | Classic idea (pStalker-style) | In Randall |
+| Panel | Classic idea (pStalker-style) | In Randfuzz |
 |-------|---------------|------------|
 | **Coverage overview** | How much of the target have we mapped? | Corpus stats, `/api/corpus/{project}`, DynamoRIO edge counts |
 | **Path comparison** | Baseline run vs current run — did we learn anything? | Corpus energy / power schedule; inputs that add edges get kept |
@@ -119,7 +119,7 @@ See [docs/TARGETS.md](docs/TARGETS.md) and [targets/README.md](targets/README.md
 
 ## Optional — DynamoRIO (coverage-guided stalking)
 
-Coverage is **optional**. Randall finds crashes without it. Install DynamoRIO when you want `+N edges` in the fuzz log and corpus inputs ranked by new basic blocks.
+Coverage is **optional**. Randfuzz finds crashes without it. Install DynamoRIO when you want `+N edges` in the fuzz log and corpus inputs ranked by new basic blocks.
 
 ### Install (pick one)
 
@@ -135,7 +135,7 @@ powershell -File scripts/install-dynamorio.ps1
 tools/dynamorio/bin64/drrun.exe
 ```
 
-Example: extract `DynamoRIO-Windows-11.3.0-1` and rename the folder to `tools/dynamorio`. Randall also auto-detects `tools/DynamoRIO-*` if you keep the versioned folder name.
+Example: extract `DynamoRIO-Windows-11.3.0-1` and rename the folder to `tools/dynamorio`. Randfuzz also auto-detects `tools/DynamoRIO-*` if you keep the versioned folder name.
 
 Optional env var: `DYNAMORIO_HOME=C:\path\to\tools\dynamorio`
 
@@ -205,7 +205,7 @@ dotnet run --project src/Randall.Server
 
 ## Acknowledgments
 
-Massive respect to [Sulley](https://github.com/OpenRCE/sulley), [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei](https://github.com/OpenRCE/paimei), AFL/libFuzzer, and [DynamoRIO](https://dynamorio.org/) — the tools that taught the rest of us how to fuzz. Randall combines their best ideas and pushes forward on Windows. Import your Boofuzz scripts, share your YAML, keep the community sharp.
+Massive respect to [Sulley](https://github.com/OpenRCE/sulley), [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei](https://github.com/OpenRCE/paimei), AFL/libFuzzer, and [DynamoRIO](https://dynamorio.org/) — the tools that taught the rest of us how to fuzz. Randfuzz combines their best ideas and pushes forward on Windows. Import your Boofuzz scripts, share your YAML, keep the community sharp.
 
 ## License
 
