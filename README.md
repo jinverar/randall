@@ -8,33 +8,39 @@
   <em>Stalk code paths. Scream on crash.</em>
 </div>
 
-**Generation + coverage-guided fuzzing for Windows** — a spiritual successor to Sulley/Boofuzz, CANAPE, and PaiMei Process Stalker, built in C#/.NET.
+**Generation + coverage-guided fuzzing for Windows** — built in C#/.NET for lab and research workflows.
 
-Named after **Randall Boggs** (*Monsters, Inc.*) — master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. For fuzzing that's a feature:
+Randall **combines useful ideas** from several well-known fuzzing traditions — block-based protocol modeling ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz)), in-stream traffic analysis ([CANAPE](https://github.com/foxitcs/canape)), and coverage-guided path exploration ([PaiMei pStalker](https://github.com/OpenRCE/paimei)) — alongside modern instrumentation ([DynamoRIO](https://dynamorio.org/)). It is a learning and lab tool, not a replacement for any of the above.
 
-| Randall | Fuzzer |
+Named after **Randall Boggs** (*Monsters, Inc.*) — master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. The mascot is parody; the tooling is respectfully inspired by prior art:
+
+| Randall (mascot) | Fuzzing idea |
 |---------|--------|
-| 🦎 Camouflages — evades detection | Valid-looking shells, MITM blend-in |
-| 🐛 Beats Sulley | Coverage-guided inputs that hit **new** paths |
-| 🧪 Sneaks the factory | Stalk unexplored code with DynamoRIO |
-| 💥 Scream Extractor energy | Scream on crash — dumps, dedup, Ghidra |
+| 🦎 Camouflages — blends in | Valid-looking shells, MITM traffic that looks normal |
+| 🐛 Competitive scarer (film rivalry) | Coverage-guided inputs that reach **new** paths |
+| 🧪 Sneaks the factory | Explore unexplored code with DynamoRIO |
+| 💥 Scream Extractor energy | Crash capture — dumps, dedup, Ghidra export |
 | 🕵️ Another trick up his sleeve | Havoc, dictionaries, session flows, plugins |
 
 Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
 > *Stalk code paths. Scream on crash.*
 
-## Why Randall?
+## What Randall combines
 
-| Legacy tool | What Randall inherits |
+Randall is our attempt to stitch together techniques that teams often run as separate tools — in one Windows-friendly workflow. We are grateful to the communities behind the projects below.
+
+| Tool / tradition | Ideas Randall borrows |
 |-------------|----------------------|
-| **Sulley / Boofuzz** | Block-based protocol models, sessions, mutations |
-| **CANAPE** | MITM capture, parse, inject, fuzz in-stream |
-| **PaiMei pStalker** | Coverage novelty, crash stalking, path dedup |
-| **DynamoRIO** | Fast basic-block coverage (drcov) |
-| **Dragon Dance / Ghidra** | Coverage export for reverse-engineering triage |
+| **[Sulley / Boofuzz](https://github.com/jtpereyda/boofuzz)** | Block-based protocol models, sessions, mutations |
+| **[CANAPE](https://github.com/foxitcs/canape)** | MITM capture, parse, inject, fuzz in-stream |
+| **[PaiMei pStalker](https://github.com/OpenRCE/paimei)** | Coverage novelty, crash stalking, path dedup |
+| **[DynamoRIO](https://dynamorio.org/)** | Fast basic-block coverage (drcov) |
+| **Ghidra / triage workflows** | Coverage export for reverse-engineering |
 
-## Stalking bugs — PaiMei-style coverage map
+If you already use Boofuzz or AFL-family fuzzers daily, keep using them — Randall may still help as a lab sandbox or for teaching how the pieces fit together.
+
+## Stalking bugs — coverage map (PaiMei-inspired)
 
 <div align="center">
   <a href="docs/assets/randal_stalking_bugs.png">
@@ -44,11 +50,11 @@ Full parody mapping: [docs/LORE.md](docs/LORE.md)
   <em>I don't just find bugs. I stalk them. I choose them. I crash them.</em>
 </div>
 
-This diagram is the **visual language Randall inherits from [PaiMei Process Stalker](https://github.com/OpenRCE/paimei)** (Pedram Amini's *pstalker*): a control-flow graph where **color tells the story** of how an input walked through the target until something broke.
+This diagram uses the **color-coded control-flow view** popularized by [PaiMei Process Stalker](https://github.com/OpenRCE/paimei) (Pedram Amini's *pstalker*): a graph where **color shows how an input moved through the target** until something broke. Randall's Leg 4 (Stalk) aims to support a similar mental model when working with DynamoRIO coverage and corpus triage.
 
 ### Color legend (pStalker method)
 
-| Color | Meaning | Randall equivalent |
+| Color | Meaning | How Randall uses this |
 |-------|---------|-------------------|
 | **Blue** | Blocks on the **executed path** — code this input actually ran through | Known corpus paths; replayed inputs that hit the same edges |
 | **Green** | **New coverage** — basic blocks or edges seen for the first time | DynamoRIO drcov novelty; corpus entries that expand the frontier (`+N edges` in the fuzz log) |
@@ -59,7 +65,7 @@ Solid arrows = **taken** edges. Dashed arrows = **not taken** — forks you have
 
 ### What the panels mean
 
-| Panel | pStalker idea | In Randall |
+| Panel | Classic idea (pStalker-style) | In Randall |
 |-------|---------------|------------|
 | **Coverage overview** | How much of the target have we mapped? | Corpus stats, `/api/corpus/{project}`, DynamoRIO edge counts |
 | **Path comparison** | Baseline run vs current run — did we learn anything? | Corpus energy / power schedule; inputs that add edges get kept |
@@ -67,7 +73,7 @@ Solid arrows = **taken** edges. Dashed arrows = **not taken** — forks you have
 | **Execution timeline** | Last N blocks before the scream | Live fuzz log (web UI + SignalR) — watch green `+edges` moments |
 | **Crash log** | Which exceptions came with new coverage? | Crashes tab — filter by project, triage tags, export to Ghidra bundle |
 
-Randall is **generation + stalking**: Boofuzz-style models get bytes in the door; PaiMei-style coverage decides which inputs are worth keeping and which path led to the crash. The [web UI](docs/LAB_PRACTICE.md#8-web-ui) (`randall serve`) is the lab console for that hunt — fuzz control, session graph, crashes, and coverage status on one screen.
+**Generation + coverage guidance:** protocol models (Boofuzz-style) produce structured inputs; coverage feedback (pStalker-style) helps decide what to keep and how to triage crashes. The [web UI](docs/LAB_PRACTICE.md#8-web-ui) (`randall serve`) is a single lab console for fuzz runs, session graphs, crashes, and coverage status.
 
 Leg 4 deep dive: [docs/LEGS.md#leg-4--stalk-coverage](docs/LEGS.md#leg-4--stalk-coverage)
 
@@ -82,7 +88,7 @@ Randall has **eight legs** — each one teaches a fuzzing concept. See [docs/LEG
 | 3 | **Send** | Network, file, and stdin transports |
 | 4 | **Stalk** | DynamoRIO coverage and frontier detection |
 | 5 | **Scream** | Crash capture, dedup, minidumps |
-| 6 | **Proxy** | CANAPE-style MITM and live traffic editing |
+| 6 | **Proxy** | MITM capture and live traffic editing (CANAPE-inspired) |
 | 7 | **Web** | Browser UI + API for lab and remote use |
 | 8 | **Pack** | Portable standalone folders and project bundles |
 
@@ -135,6 +141,10 @@ dotnet run --project src/Randall.Server
 ## Status
 
 **Phase 14 complete — web session graph viewer + lab practice guide.** See [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md).
+
+## Acknowledgments
+
+Randall is a hobby/lab project that **builds on** excellent prior work — especially [Sulley](https://github.com/OpenRCE/sulley), [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei](https://github.com/OpenRCE/paimei), AFL/libFuzzer-style mutation strategies, and [DynamoRIO](https://dynamorio.org/). Thank you to everyone who maintained those tools and documented how to fuzz well. We welcome issues and PRs that improve interoperability (e.g. importing Boofuzz examples) rather than claiming superiority.
 
 ## License
 
