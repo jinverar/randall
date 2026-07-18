@@ -119,24 +119,19 @@ public static class TargetRunner
         byte[]? lastResponse = null;
         try
         {
-            await using var stream = await TcpTransport.ConnectAsync(project.Transport, cancellationToken);
+            await using var tube = await TcpTube.ConnectAsync(project.Transport, cancellationToken);
 
             if (tcpOptions.ReadBanner)
-                lastResponse = await TcpTransport.ReadAvailableAsync(
-                    stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
+                lastResponse = await tube.RecvAsync(project.Transport.ReceiveTimeoutMs, cancellationToken);
 
             if (tcpOptions.Preamble is { Length: > 0 })
             {
-                await stream.WriteAsync(tcpOptions.Preamble, cancellationToken);
-                await stream.FlushAsync(cancellationToken);
-                lastResponse = await TcpTransport.ReadAvailableAsync(
-                    stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
+                await tube.SendAsync(tcpOptions.Preamble, cancellationToken);
+                lastResponse = await tube.RecvAsync(project.Transport.ReceiveTimeoutMs, cancellationToken);
             }
 
-            await stream.WriteAsync(payload, cancellationToken);
-            await stream.FlushAsync(cancellationToken);
-            lastResponse = await TcpTransport.ReadAvailableAsync(
-                stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
+            await tube.SendAsync(payload, cancellationToken);
+            lastResponse = await tube.RecvAsync(project.Transport.ReceiveTimeoutMs, cancellationToken);
 
             if (!ResponseMatcher.Matches(lastResponse, tcpOptions.ExpectResponse))
             {
@@ -164,8 +159,9 @@ public static class TargetRunner
         byte[]? lastResponse,
         CancellationToken cancellationToken)
     {
+        // Remote / network-only targets have no local process handle — connection result is enough.
         if (server is null)
-            return new TargetRunResult(false, null, null, "no server process", lastResponse);
+            return new TargetRunResult(false, null, null, "ok", lastResponse);
 
         for (var attempt = 0; attempt < 5; attempt++)
         {
@@ -205,22 +201,9 @@ public static class TargetRunner
     {
         try
         {
-            using var client = new UdpClient();
-            client.Connect(project.Transport.Host, project.Transport.Port);
-            await client.SendAsync(payload, cancellationToken);
-
-            byte[]? response = null;
-            if (project.Transport.ReceiveTimeoutMs > 0)
-            {
-                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                cts.CancelAfter(project.Transport.ReceiveTimeoutMs);
-                try
-                {
-                    var result = await client.ReceiveAsync(cts.Token);
-                    response = result.Buffer;
-                }
-                catch (OperationCanceledException) { /* no response ok */ }
-            }
+            await using var tube = await UdpTube.ConnectAsync(project.Transport, cancellationToken);
+            await tube.SendAsync(payload, cancellationToken);
+            var response = await tube.RecvAsync(project.Transport.ReceiveTimeoutMs, cancellationToken);
 
             if (server is not null)
             {
@@ -232,7 +215,7 @@ public static class TargetRunner
                 }
             }
 
-            return new TargetRunResult(false, null, null, "ok", response);
+            return new TargetRunResult(false, null, null, "ok", response.Length == 0 ? null : response);
         }
         catch (Exception ex)
         {
@@ -255,29 +238,22 @@ public static class TargetRunner
         byte[]? lastResponse = null;
         try
         {
-            await using var stream = await TcpTransport.ConnectAsync(project.Transport, cancellationToken);
+            await using var tube = await TcpTube.ConnectAsync(project.Transport, cancellationToken);
 
             for (var i = 0; i < steps.Count; i++)
             {
                 var step = steps[i];
                 if (i == 0 && step.Options.ReadBanner)
-                {
-                    lastResponse = await TcpTransport.ReadAvailableAsync(
-                        stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
-                }
+                    lastResponse = await tube.RecvAsync(project.Transport.ReceiveTimeoutMs, cancellationToken);
 
                 if (step.Options.Preamble is { Length: > 0 })
                 {
-                    await stream.WriteAsync(step.Options.Preamble, cancellationToken);
-                    await stream.FlushAsync(cancellationToken);
-                    lastResponse = await TcpTransport.ReadAvailableAsync(
-                        stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
+                    await tube.SendAsync(step.Options.Preamble, cancellationToken);
+                    lastResponse = await tube.RecvAsync(project.Transport.ReceiveTimeoutMs, cancellationToken);
                 }
 
-                await stream.WriteAsync(step.Payload, cancellationToken);
-                await stream.FlushAsync(cancellationToken);
-                lastResponse = await TcpTransport.ReadAvailableAsync(
-                    stream, project.Transport.ReceiveTimeoutMs, cancellationToken);
+                await tube.SendAsync(step.Payload, cancellationToken);
+                lastResponse = await tube.RecvAsync(project.Transport.ReceiveTimeoutMs, cancellationToken);
 
                 if (!ResponseMatcher.Matches(lastResponse, step.Options.ExpectResponse))
                 {

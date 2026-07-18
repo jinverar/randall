@@ -1,0 +1,25 @@
+name: smb2-create
+description: NBSS + SMB2 Create — name/body after 64-byte header is crashable on VulnSmb
+blocks:
+  - type: static
+    name: nbss_type
+    value: "\0"
+    mutable: false
+  - type: bytes
+    name: nbss_len_be
+    mutable: true
+    minSize: 3
+    maxSize: 3
+    seedFile: seeds/smb2_create_nbss_len.bin
+  - type: bytes
+    name: smb2_header
+    mutable: true
+    minSize: 64
+    maxSize: 64
+    seedFile: seeds/smb2_create_hdr.bin
+  - type: bytes
+    name: name
+    mutable: true
+    minSize: 1
+    maxSize: 4096
+    seedFile: seeds/smb2_create_name.bin

@@ -1,0 +1,9 @@
+name: smb2-session-setup
+description: NBSS + SMB2 Session Setup (null/guest lab — no Kerberos)
+blocks:
+  - type: bytes
+    name: pdu
+    mutable: true
+    minSize: 68
+    maxSize: 4096
+    seedFile: seeds/smb2_session_setup.bin

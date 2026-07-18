@@ -1,0 +1,45 @@
+name: vulnrpc
+description: Randall VulnRpc — DCE-shaped bind→request lab (build with scripts/build-vulnrpc.ps1)
+kind: tcp
+target:
+  executable: ../targets/vulnrpc/randall-vulnrpc.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 1355
+  receiveTimeoutMs: 1500
+sessionCommands:
+  - name: BIND
+    model: protocols/dce_bind.yaml
+    readBanner: false
+    expectResponse: BIND_ACK
+  - name: REQUEST
+    model: protocols/dce_request.yaml
+    readBanner: false
+    expectResponse: RPC_OK
+sessionFlows:
+  - name: bind_request
+    steps: [BIND, REQUEST]
+    mutateStep: last
+sessionGraph:
+  start: BIND
+  mutate: REQUEST
+  edges:
+    - { from: BIND, when: "BIND_ACK", to: REQUEST }
+fuzz:
+  maxIterations: 800
+  sessionFlowBias: 0.7
+  sessionGraphBias: 0.3
+  corpusDir: ../data/corpus/vulnrpc
+  crashesDir: ../data/crashes/vulnrpc
+seeds:
+  - seeds/dce_request_overflow.bin
+mutators:
+  - bitflip
+  - havoc
+  - interesting
+  - expand
+  - boundary
+  - insert

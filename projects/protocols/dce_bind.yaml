@@ -1,0 +1,40 @@
+name: dce-bind
+description: DCE/RPC bind (ptype 11) — lab framing, not full Windows RPC
+blocks:
+  - type: static
+    name: rpc_vers
+    value: "\x05\x00"
+    mutable: false
+  - type: static
+    name: ptype_bind
+    value: "\x0b"
+    mutable: false
+  - type: static
+    name: pfc_flags
+    value: "\x03"
+    mutable: false
+  - type: static
+    name: drep
+    value: "\x10\x00\x00\x00"
+    mutable: false
+  - type: word
+    name: frag_length
+    value: "0x0048"
+    mutable: true
+    littleEndian: true
+  - type: word
+    name: auth_length
+    value: "0x0000"
+    mutable: false
+    littleEndian: true
+  - type: dword
+    name: call_id
+    value: "0x00000001"
+    mutable: true
+    littleEndian: true
+  - type: bytes
+    name: bind_body
+    mutable: true
+    minSize: 16
+    maxSize: 512
+    seedFile: seeds/dce_bind_body.bin

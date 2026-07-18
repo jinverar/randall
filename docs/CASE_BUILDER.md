@@ -37,17 +37,17 @@ randall case recipes -p my-parser --load overflow-trun
 4. Prefer **Save exact sample** for large/binary files so the seed matches the original bytes; use **Save as seed** when you edited the recipe.
 5. Campaign → select the Target profile → Start.
 
-### Network session (multi-PDU TCP)
+### Network session (multi-PDU TCP / UDP datagram)
 
-On a **TCP** Target profile, Scare Floor can author a multi-message session (Phase 18):
+On a **TCP** or **UDP** Target profile, Scare Floor can author network PDUs (Phase 18–20):
 
-1. Click **+ PDU** or preset **FTP login flow** (USER → PASS → STOR).
+1. Click **+ PDU**, load a **protocol pack**, or use a flow preset (FTP / SMTP / Redis).
 2. Edit each PDU’s blocks (select PDU in the strip). Choose **Mutate** = last / all / indices.
 3. **Preview all PDUs** — per-message ASCII/hex.
-4. **Apply to Campaign** — writes `seeds/{flow}_{PDU}.bin`, `sessionCommands`, and `sessionFlows` into the project YAML (`sessionFlowBias: 0.5`).
+4. **Apply to Campaign** — TCP writes `sessionCommands` + `sessionFlows`; **UDP** allows a **single** datagram PDU → `sessionCommands` only.
 5. **Save recipe** keeps the session in `recipes/*.json` for reuse.
 
-Single-blob recipes still work (HTTP GET, overflow pad, FTP USER). UDP stays single-datagram for now.
+Single-blob recipes still work (HTTP GET, overflow pad, FTP USER). **Custom protocol wizard** (Build seed sidebar): magic + length prefix + body + optional CRC32 (`crc32` op → promote to `checksum` model).
 
 **Proxy → Scare Floor:** On the **Proxy** tab, select a capture → **Send to Scare Floor** (one PDU) or **All C→S → session** (every `client→target` message as ordered PDUs). Requires a TCP Target profile selected under Scare Floor → Working on project.
 
@@ -75,8 +75,29 @@ Packs live under `projects/protocols/packs/<id>/` (`pack.yaml` + `recipe.json`).
 | `ftp-login` | USER → PASS → STOR |
 | `http-get` | GET + Host |
 | `tlv-frame` | Magic + length + payload |
+| `dns-query` | DNS A query (UDP) |
+| `dce-bind-request` | DCE bind → request (VulnRpc) |
+| `smb2-lab` | NBSS+SMB2 nego → session → tree → create |
+| `smb-pipe-dce` | IPC$ + pipe create + DCE on Write |
+
+**Layers (Phase 23):** Scare Floor **Layers** stack (e.g. `nbss / smb2 / dce`) edits one layer at a time and flattens on Preview/Apply. Templates: NBSS/SMB2, NBSS/SMB2/DCE, TLV. `len-prefix` format `nbss` / `u24be-rest` sizes all following layers. Optional **Field table view**.
 
 **Promote PDU → model** writes `protocols/{name}.yaml` (Sulley-style blocks). Check **Prefer models** on Apply to wire `model:` instead of `seed:`.
+
+**IDL → stub model:** Scare Floor **IDL → stub model**, or:
+
+```powershell
+randall case idl -p vulnrpc --name op2_stub --file examples/idl/op2_stub.idl
+```
+
+**Boofuzz → Scare Floor:**
+
+```powershell
+python scripts/import-boofuzz.py examples/fixtures/ftp_simple.py -o projects/imported/ftp --recipe
+python scripts/import-boofuzz.py examples/fixtures/ftp_simple.py -o projects/protocols/packs/my-ftp --pack
+```
+
+RPC: [RPC_LAB.md](RPC_LAB.md) · SMB: [SMB_LAB.md](SMB_LAB.md).
 
 ### Session graph editor
 
@@ -128,7 +149,8 @@ Coverage-guided BB tracing needs a **local** instrumented binary. Remote-only ca
 | `pad` | align | Pad **next** block to N bytes |
 | `hex` | raw bytes | Spaces/dashes ok |
 | `interesting` | AFL interesting ints | `u8` / `u16le` / `u32be` … |
-| `len-prefix` | size field | Applies to the **next** block |
+| `len-prefix` | size field | Next block — or `nbss` / `u24be-rest` = **all following** layers |
+| `crc32` | checksum | CRC32 over **preceding** bytes (promote → `checksum`) |
 | `cyclic` | unique pattern | Depth triage after a crash |
 | `crlf` / `lf` / `null` | line endings / NUL | Protocol framing |
 | `base64` / `random` | decode / entropy | Binary helpers |

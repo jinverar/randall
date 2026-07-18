@@ -18,6 +18,15 @@ app.MapGet("/randall.png", () => ServeRepoAsset("docs/assets/randall.png", "rand
 app.MapGet("/stalker.png", () => ServeRepoAsset("docs/assets/randal_stalking_bugs.png"));
 
 app.MapGet("/api/health", () => new HealthDto("Randfuzz by Randall", "0.16.0-alpha", "phase16-analyze"));
+
+app.MapGet("/api/ui/prefs", () => Results.Ok(UiPrefsStore.Get()));
+app.MapPut("/api/ui/prefs", (UiPrefsUpdateRequest request) =>
+{
+    if (!UiPrefsStore.IsValidTheme(request.Theme))
+        return Results.BadRequest(new { error = "theme must be dark, light, or cyber" });
+    var saved = UiPrefsStore.Save(new UiPrefsDto(request.Theme));
+    return Results.Ok(saved);
+});
 app.MapGet("/api/doctor", (string configPath) =>
 {
     if (string.IsNullOrWhiteSpace(configPath))
@@ -64,6 +73,180 @@ app.MapGet("/api/campaigns", () => PluginCatalog.ListCampaigns());
 app.MapGet("/api/legs", () => RandallLegs.All.Select(l => new LegInfoDto(l.Id, l.Title, l.Summary)));
 app.MapGet("/api/roadmap", () => RandallRoadmap.Phases);
 app.MapGet("/api/targets", () => CrashCatalog.ListTargets().Where(WebTargetFilter.IsVisible));
+
+// —— Target Runtime (arbitrary exe start/stop/restart; labs are presets on top) ——
+app.MapGet("/api/runtime", async (string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(agent))
+            return Results.Ok(TargetRuntimeService.List());
+        return Results.Ok(await TargetRuntimeClient.ListAsync(agent, ct));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapGet("/api/runtime/{id}", async (string id, string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        var st = string.IsNullOrWhiteSpace(agent)
+            ? TargetRuntimeService.Status(id)
+            : await TargetRuntimeClient.StatusAsync(agent, id, ct);
+        return Results.Ok(st);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapPost("/api/runtime/start", async (TargetRuntimeStartRequest request, string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        var st = string.IsNullOrWhiteSpace(agent)
+            ? TargetRuntimeService.Start(request)
+            : await TargetRuntimeClient.StartAsync(agent, request, ct);
+        return st.Ok ? Results.Ok(st) : Results.BadRequest(st);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapPost("/api/runtime/start-project", async (string yamlPath, string? id, string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(yamlPath))
+            return Results.BadRequest(new { error = "yamlPath required" });
+        var st = string.IsNullOrWhiteSpace(agent)
+            ? TargetRuntimeService.StartFromProject(yamlPath, id)
+            : await TargetRuntimeClient.StartFromProjectAsync(agent, yamlPath, id, ct);
+        return st.Ok ? Results.Ok(st) : Results.BadRequest(st);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapPost("/api/runtime/{id}/stop", async (string id, string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        var st = string.IsNullOrWhiteSpace(agent)
+            ? TargetRuntimeService.Stop(id)
+            : await TargetRuntimeClient.StopAsync(agent, id, ct);
+        return st.Ok ? Results.Ok(st) : Results.BadRequest(st);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapPost("/api/runtime/{id}/restart", async (string id, string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        var st = string.IsNullOrWhiteSpace(agent)
+            ? TargetRuntimeService.Restart(id)
+            : await TargetRuntimeClient.RestartAsync(agent, id, ct);
+        return st.Ok ? Results.Ok(st) : Results.BadRequest(st);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapPost("/api/runtime/stop-all", async (string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        var st = string.IsNullOrWhiteSpace(agent)
+            ? TargetRuntimeService.StopAll()
+            : await TargetRuntimeClient.StopAllAsync(agent, ct);
+        return Results.Ok(st);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/labs", async (string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(agent))
+            return Results.Ok(LabServerManager.List());
+        return Results.Ok(await LabAgentClient.ListAsync(agent, ct));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapGet("/api/labs/ping", async (string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(agent))
+        {
+            return Results.Ok(new LabAgentPingDto(true, "local", "Randfuzz by Randall", "local",
+                Environment.MachineName));
+        }
+
+        return Results.Ok(await LabAgentClient.PingAsync(agent, ct));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapPost("/api/labs/{id}/start", async (string id, string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        var r = string.IsNullOrWhiteSpace(agent)
+            ? LabServerManager.Start(id)
+            : await LabAgentClient.StartAsync(agent, id, ct);
+        return r.Ok ? Results.Ok(r) : Results.BadRequest(r);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapPost("/api/labs/{id}/stop", async (string id, string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        var r = string.IsNullOrWhiteSpace(agent)
+            ? LabServerManager.Stop(id)
+            : await LabAgentClient.StopAsync(agent, id, ct);
+        return r.Ok ? Results.Ok(r) : Results.BadRequest(r);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapPost("/api/labs/stop-all", async (string? agent, CancellationToken ct) =>
+{
+    try
+    {
+        var r = string.IsNullOrWhiteSpace(agent)
+            ? LabServerManager.StopAll()
+            : await LabAgentClient.StopAllAsync(agent, ct);
+        return Results.Ok(r);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 app.MapGet("/api/crashes", (string? project) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))
@@ -84,6 +267,112 @@ app.MapGet("/api/crashes/{id:guid}", (Guid id) =>
     if (!WebTargetFilter.IsVisibleProject(detail.Summary.Project))
         return Results.NotFound();
     return Results.Ok(detail);
+});
+app.MapGet("/api/crashes/{id:guid}/memory", (Guid id) =>
+{
+    var detail = CrashCatalog.GetDetail(id);
+    if (detail is null)
+        return Results.NotFound();
+    if (!WebTargetFilter.IsVisibleProject(detail.Summary.Project))
+        return Results.NotFound();
+
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesDir = Path.Combine(repo, "data", "crashes", detail.Summary.Project);
+    var existing = MemoryLensWriter.TryRead(crashesDir, id);
+    if (existing is not null)
+        return Results.Ok(existing);
+
+    var dump = detail.Summary.MiniDumpPath ?? detail.Analysis?.DumpPath;
+    var report = MemoryLensAnalyzer.AnalyzeDump(dump, detail.Analysis);
+    if (report.Ok || !string.IsNullOrWhiteSpace(dump))
+        MemoryLensWriter.Write(crashesDir, id, report);
+    return report.Ok ? Results.Ok(report) : Results.Ok(report);
+});
+
+// Crash artifact pack — offline backup of dumps + lens; pull from remote agent into laptop console.
+app.MapPost("/api/crashes/pack", (CrashArtifactPackRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Project))
+        return Results.BadRequest(new { error = "project required" });
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        var result = CrashArtifactPack.Export(request.Project, request.OutputPath, request.IncludeRuns);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/crashes/pack/download", (string project, bool? includeRuns) =>
+{
+    if (string.IsNullOrWhiteSpace(project))
+        return Results.BadRequest(new { error = "project required" });
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        var result = CrashArtifactPack.Export(project, outputPath: null, includeRuns: includeRuns ?? true);
+        var stream = File.OpenRead(result.Path);
+        var fileName = Path.GetFileName(result.Path);
+        return Results.File(stream, "application/zip", fileName);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/crashes/pack/import", (CrashArtifactPackImportRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.ZipPath))
+        return Results.BadRequest(new { error = "zipPath required" });
+    try
+    {
+        var result = CrashArtifactPack.Import(Path.GetFullPath(request.ZipPath), overwriteFiles: request.OverwriteFiles);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/crashes/pack/pull", async (CrashArtifactPackPullRequest request, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(request.AgentUrl) || string.IsNullOrWhiteSpace(request.Project))
+        return Results.BadRequest(new { error = "agentUrl and project required" });
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        var result = await CrashArtifactPack.PullFromAgentAsync(
+            request.AgentUrl, request.Project, request.OutputPath, request.IncludeRuns, ct);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/runtime/inspect", async (int? pid, string? agent, CancellationToken ct) =>
+{
+    if (pid is null or <= 0)
+        return Results.BadRequest(new { error = "pid query required" });
+    try
+    {
+        if (string.IsNullOrWhiteSpace(agent))
+            return Results.Ok(MemoryLensAnalyzer.AnalyzeLivePid(pid.Value));
+        return Results.Ok(await TargetRuntimeClient.InspectAsync(agent, pid.Value, ct));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 app.MapGet("/api/coverage/status", () =>
@@ -432,6 +721,20 @@ app.MapPost("/api/case/promote", (CasePromoteRequest request) =>
     try
     {
         return Results.Ok(CaseRecipeStore.PromoteToProtocol(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/idl", (CaseIdlRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.ImportIdl(request));
     }
     catch (Exception ex)
     {

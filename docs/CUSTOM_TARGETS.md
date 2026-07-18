@@ -1,5 +1,7 @@
 # Custom targets — YAML → Target profile
 
+**Stalk your app end-to-end (baseline → fuzz → learn):** [HOWTO_STALK_GENERIC_APP.md](HOWTO_STALK_GENERIC_APP.md).
+
 Once you add a project YAML under `projects/` or `projects/local/`, Randfuzz discovers it and shows the YAML **`name:`** field in the web UI **Target profile** dropdown (and in `randall targets`).
 
 ```
@@ -69,7 +71,7 @@ name: mylocal
 kind: tcp
 target:
   executable: ../targets/local/myapp.exe
-  longLived: true        # Randall starts/restarts the process
+  longLived: true        # Target Runtime starts/restarts the process
   timeoutMs: 5000
 transport:
   type: tcp
@@ -77,6 +79,45 @@ transport:
   port: 9999
 # … seeds + mutators as above
 ```
+
+## Remote long-lived (Target Runtime on agent)
+
+Same checkout on the fuzz VM. Run `randall agent --port 5000` there. On the laptop YAML:
+
+```yaml
+name: myremote
+kind: tcp
+target:
+  executable: ../targets/local/myapp.exe   # path relative to repo (must exist on agent)
+  longLived: true
+  agentUrl: http://192.168.2.10:5000       # private LAN only
+transport:
+  type: tcp
+  host: 192.168.2.10    # where the service listens (agent machine)
+  port: 9999
+```
+
+See [TARGET_RUNTIME.md](TARGET_RUNTIME.md). Labs still bind 127.0.0.1 by default — for LAN fuzz either start labs with a non-loopback host or run the Campaign **on** the agent host.
+
+## Post-start actions (next-gen)
+
+Prefer declarative `target.postStart` over click scripts. Tokens: `{pid}` `{id}` `{exe}` `{host}` `{port}` `{case}`.
+
+```yaml
+target:
+  longLived: true
+  pageHeap: true
+  postStart:
+    - op: wait-port
+      port: 9999
+      timeoutMs: 5000
+    - op: exec
+      command: powershell
+      args: ["-File", "tools/open-testcase.ps1", "{pid}"]
+```
+
+Ops: `wait-port` · `sleep` · `exec` · `tcp-send` · `udp-send` · `http-get`.  
+Full template: [templates/tcp-runtime.yaml](templates/tcp-runtime.yaml).
 
 ## File targets
 

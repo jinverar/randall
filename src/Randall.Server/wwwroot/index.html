@@ -4,6 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Randfuzz by Randall — Fuzzer Lab</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('randfuzz.theme') || 'dark';
+        if (t !== 'dark' && t !== 'light' && t !== 'cyber') t = 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="/css/app.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
@@ -15,7 +26,8 @@
       <img src="/randall.png" alt="Randall" class="brand-img" />
       <div class="brand-text">
         <strong>Randfuzz</strong>
-        <span>by Randall · Camouflage · Stalk · Scream</span>
+        <span id="brand-tagline">by Randall · Camouflage · Stalk · Scream</span>
+        <span id="remote-lab-badge" class="remote-lab-badge hidden" title="This host is the fuzz box — dumps and memory lens live here">Remote lab</span>
       </div>
       <button type="button" id="nav-toggle" class="nav-toggle" aria-label="Hide navigation" title="Hide navigation">⟨</button>
     </div>
@@ -34,6 +46,12 @@
       <button type="button" class="nav-btn" data-view="legs" title="Eight legs">Eight legs</button>
     </nav>
     <div class="sidebar-foot">
+      <div class="theme-picker" role="group" aria-label="Default UI skin">
+        <button type="button" class="theme-btn" data-theme="dark" title="Set Dark as default skin">Dark</button>
+        <button type="button" class="theme-btn" data-theme="light" title="Set Light as default skin">Light</button>
+        <button type="button" class="theme-btn" data-theme="cyber" title="Set Cyber as default skin">Cyber</button>
+      </div>
+      <span id="theme-default-label" class="theme-default-label">Default skin: Dark</span>
       <span id="health-label">—</span>
     </div>
   </aside>
@@ -182,7 +200,13 @@
     <section id="view-stalking" class="view">
       <header class="page-header">
         <h1>Stalking bugs</h1>
-        <p>Baseline → fuzz → crash → compare. Color layers inside Randfuzz, export to IDA / Ghidra.</p>
+        <p>
+          Baseline (normal use) → basic fuzz → advanced rounds → study crashes → repeat.
+          Do this on the machine that runs the binary.
+          Guide for your own app:
+          <button type="button" class="linkish" data-help="HOWTO_STALK_GENERIC_APP.md">How to: stalk a generic application</button>
+          · <button type="button" class="linkish" data-help="STALK_LOOP.md">Stalk loop</button>.
+        </p>
       </header>
       <div class="stalking-layout">
         <aside class="panel stalking-controls">
@@ -255,10 +279,21 @@
         <div class="fuzz-subtabs" role="tablist">
           <button type="button" class="fuzz-subtab active" data-fuzz-tab="campaign">Campaign</button>
           <button type="button" class="fuzz-subtab" data-fuzz-tab="cases" title="Scare Floor — build and reuse case recipes">Scare Floor</button>
+          <button type="button" class="fuzz-subtab" data-fuzz-tab="labs" title="See running labs · start/stop local or remote">
+            Lab servers <span id="labs-tab-badge" class="labs-tab-badge hidden">0</span>
+          </button>
         </div>
       </header>
 
       <div id="fuzz-tab-campaign" class="fuzz-tab-panel">
+      <div id="labs-campaign-strip" class="labs-campaign-strip panel">
+        <div class="labs-campaign-strip-main">
+          <strong>Lab servers</strong>
+          <span id="labs-campaign-summary" class="hint">Checking…</span>
+          <div id="labs-campaign-chips" class="labs-campaign-chips"></div>
+        </div>
+        <button type="button" class="btn" id="labs-open-tab" title="Open Lab servers tab">Manage labs…</button>
+      </div>
       <div class="fuzz-layout">
         <form id="fuzz-form" class="panel fuzz-controls">
           <label>
@@ -318,6 +353,74 @@
           <pre id="fuzz-log" class="log"></pre>
         </div>
       </div>
+      </div>
+
+      <div id="fuzz-tab-labs" class="fuzz-tab-panel hidden">
+        <div class="panel">
+          <h2>Lab servers <span id="labs-scope-label" class="hint-inline">— this machine</span></h2>
+          <p class="hint">
+            Status shows which <code>randall-vuln*</code> processes are running (PID + port).
+            New starts bind <strong>127.0.0.1</strong> on the target machine.
+            Remote control uses <code>randall agent</code> on the fuzz box — not a kernel driver.
+          </p>
+          <div class="labs-agent-row">
+            <label class="case-grow">Remote agent URL
+              <input type="text" id="labs-agent-url" placeholder="leave empty = this machine · e.g. http://192.168.2.10:5000" />
+            </label>
+            <button type="button" class="btn" id="labs-agent-ping">Test agent</button>
+            <button type="button" class="btn" id="labs-agent-clear">Use local</button>
+          </div>
+          <p id="labs-agent-hint" class="hint">On the VM: <code>randall agent --port 5000</code> then paste that host URL here.</p>
+          <div class="btn-row wrap">
+            <button type="button" class="btn primary" id="labs-refresh">Refresh</button>
+            <button type="button" class="btn" id="labs-stop-all" title="Kill every randall-vuln* lab process on the selected host">Stop all labs</button>
+          </div>
+          <p id="labs-status" class="hint"></p>
+          <div class="labs-table-wrap">
+            <table class="labs-table" id="labs-table">
+              <thead>
+                <tr>
+                  <th>Lab</th>
+                  <th>Port</th>
+                  <th>Status</th>
+                  <th>PID</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="labs-tbody">
+                <tr><td colspan="5" class="hint">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h3 class="labs-runtime-heading">Target Runtime slots</h3>
+          <p class="hint">
+            Arbitrary managed processes (not only catalog labs). CLI: <code>randall runtime</code>.
+            For dumps + memory lens, fuzz <strong>on the agent</strong> (open this UI at the agent URL), then
+            <button type="button" class="linkish" data-view-jump="bundles">Bundles → crash pack</button> to pull offline.
+            See <code>docs/TARGET_RUNTIME.md</code>.
+          </p>
+          <div class="btn-row wrap">
+            <button type="button" class="btn" id="runtime-refresh">Refresh runtime</button>
+            <button type="button" class="btn" id="runtime-stop-all">Stop all runtime slots</button>
+          </div>
+          <p id="runtime-status" class="hint"></p>
+          <div class="labs-table-wrap">
+            <table class="labs-table" id="runtime-table">
+              <thead>
+                <tr>
+                  <th>Id</th>
+                  <th>Port</th>
+                  <th>Status</th>
+                  <th>PID</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="runtime-tbody">
+                <tr><td colspan="5" class="hint">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <div id="fuzz-tab-cases" class="fuzz-tab-panel hidden">
@@ -474,7 +577,46 @@
               <button type="button" class="btn" id="case-preset-smtp-flow" title="Multi-PDU: EHLO → MAIL → RCPT → DATA">SMTP send flow</button>
               <button type="button" class="btn" id="case-preset-redis-flow" title="Multi-PDU: AUTH → SET → GET">Redis RESP flow</button>
               <button type="button" class="btn" id="case-preset-binary">Binary frame</button>
+              <button type="button" class="btn" id="case-preset-dns" title="DNS A query (UDP pack shortcut)">DNS query</button>
             </div>
+            <details id="case-idl" class="case-wizard">
+              <summary>IDL → stub model</summary>
+              <p class="hint">Minimal <code>typedef struct</code> → <code>protocols/*.yaml</code> field map (lab NDR stub — not full MIDL).</p>
+              <label>Model name
+                <input type="text" id="case-idl-name" placeholder="op2_stub" />
+              </label>
+              <label>IDL
+                <textarea id="case-idl-text" rows="6" placeholder="typedef struct {&#10;  uint16_t flags;&#10;  uint32_t length;&#10;  byte data[64];&#10;} Op2Stub;"></textarea>
+              </label>
+              <div class="btn-row wrap">
+                <button type="button" class="btn primary" id="case-idl-import">Import IDL → model</button>
+              </div>
+            </details>
+            <details id="case-wizard" class="case-wizard">
+              <summary>Custom protocol wizard</summary>
+              <p class="hint">Magic + length + body (+ optional CRC32). Builds Scare Floor blocks; promote to get a <code>checksum</code> model.</p>
+              <label>Magic
+                <input type="text" id="wiz-magic" value="CUST" placeholder="CUST or deadbeef" />
+              </label>
+              <label class="checkbox"><input type="checkbox" id="wiz-magic-hex" /> Magic is hex</label>
+              <label>Length prefix
+                <select id="wiz-len">
+                  <option value="u16le">u16le</option>
+                  <option value="u16be">u16be</option>
+                  <option value="u32le">u32le</option>
+                  <option value="u32be">u32be</option>
+                  <option value="none">none</option>
+                </select>
+              </label>
+              <label>Body
+                <input type="text" id="wiz-body" value="payload" />
+              </label>
+              <label class="checkbox"><input type="checkbox" id="wiz-body-hex" /> Body is hex</label>
+              <label class="checkbox"><input type="checkbox" id="wiz-crc" /> Trailing CRC32</label>
+              <div class="btn-row wrap">
+                <button type="button" class="btn primary" id="case-wizard-build">Build recipe</button>
+              </div>
+            </details>
             <div id="case-preset-file" class="btn-row wrap case-preset-row hidden">
               <button type="button" class="btn" id="case-preset-xml">Custom XML</button>
               <button type="button" class="btn" id="case-preset-file-framed">Length frame</button>
@@ -511,10 +653,10 @@
             <p class="hint">Order matters. Mark strings as <em>fuzzable</em> so Save dict can harvest tokens.</p>
 
             <div id="case-session-panel" class="case-session-panel case-session-locked">
-              <h3>Network session (PDUs) <span id="case-session-badge" class="case-session-badge">TCP only</span></h3>
+              <h3>Network session (PDUs) <span id="case-session-badge" class="case-session-badge">TCP / UDP</span></h3>
               <p id="case-session-hint" class="hint">
-                Multi-message TCP on one connection. <strong>Working on project</strong> must be a
-                <em>TCP</em> target (not file-format). Create one in Step 1 or switch the dropdown above.
+                Multi-message TCP or single-datagram UDP. <strong>Working on project</strong> must be a
+                <em>TCP</em> or <em>UDP</em> target (not file-format). Create one in Step 1 or switch the dropdown above.
               </p>
               <div id="case-session-body" class="case-session-body">
                 <div id="case-session-steps" class="case-session-steps"></div>
@@ -550,8 +692,23 @@
               </div>
             </div>
 
+            <div id="case-layers-panel" class="case-layers-panel">
+              <h3>Layers <span class="hint-inline">(Scapy-style stack → flattens on Preview/Apply)</span></h3>
+              <div id="case-layers" class="case-layers"></div>
+              <div class="btn-row wrap">
+                <button type="button" class="btn" id="case-layer-add">+ Layer</button>
+                <button type="button" class="btn" id="case-layer-tpl-nbss-smb2" title="nbss + smb2 header">Stack: NBSS/SMB2</button>
+                <button type="button" class="btn" id="case-layer-tpl-nbss-smb2-dce" title="nbss + smb2 write + dce">Stack: NBSS/SMB2/DCE</button>
+                <button type="button" class="btn" id="case-layer-tpl-tlv" title="magic + len + body">Stack: TLV</button>
+                <button type="button" class="btn" id="case-layer-flatten" title="Merge layers into one flat block list">Flatten</button>
+              </div>
+              <p class="hint">Active layer’s blocks edit below. Use <code>len-prefix</code> format <code>nbss</code> / <code>u24be-rest</code> so NBSS length covers following layers.</p>
+            </div>
+
             <h3 id="case-blocks-heading">Blocks <span id="case-active-pdu-label" class="hint-inline"></span></h3>
+            <div id="case-field-table" class="case-field-table hidden"></div>
             <div id="case-steps" class="case-steps"></div>
+            <label class="checkbox"><input type="checkbox" id="case-field-table-toggle" /> Field table view</label>
             <label>
               Seed file name
               <input type="text" id="case-seed-name" placeholder="my_case.bin" />
@@ -836,11 +993,11 @@
     <section id="view-bundles" class="view">
       <header class="page-header">
         <h1>Bundles</h1>
-        <p>Export or import portable project zips — protocols, seeds, and YAML.</p>
+        <p>Project YAML zips, plus crash artifact packs (dumps + memory lens) for remote lab backup / laptop import.</p>
       </header>
       <div class="fuzz-layout">
         <form id="bundle-export-form" class="panel fuzz-controls">
-          <h2>Export</h2>
+          <h2>Project bundle — export</h2>
           <label>
             Project YAML
             <select id="bundle-export-target" required></select>
@@ -849,11 +1006,11 @@
             Output zip (optional)
             <input type="text" id="bundle-export-path" placeholder="bundles/my-target.zip" />
           </label>
-          <button type="submit" class="btn primary">Export bundle</button>
+          <button type="submit" class="btn primary">Export project bundle</button>
           <p id="bundle-export-result" class="status-box">—</p>
         </form>
         <form id="bundle-import-form" class="panel fuzz-controls">
-          <h2>Import</h2>
+          <h2>Project bundle — import</h2>
           <label>
             Zip path
             <input type="text" id="bundle-import-path" placeholder="bundles/vulnserver.zip" required />
@@ -862,8 +1019,61 @@
             Output folder (optional)
             <input type="text" id="bundle-import-out" placeholder="bundles/imported" />
           </label>
-          <button type="submit" class="btn primary">Import bundle</button>
+          <button type="submit" class="btn primary">Import project bundle</button>
           <p id="bundle-import-result" class="status-box">—</p>
+        </form>
+      </div>
+
+      <div class="fuzz-layout" style="margin-top:1.25rem">
+        <form id="crashpack-export-form" class="panel fuzz-controls">
+          <h2>Crash artifact pack — export <span class="hint-inline">(this host)</span></h2>
+          <p class="hint">Zip <code>data/crashes/&lt;project&gt;</code> — inputs, dumps, analysis, memory lens, optional runs. On the agent: export after fuzzing, then pull into the laptop console.</p>
+          <label>
+            Project
+            <select id="crashpack-export-project" required></select>
+          </label>
+          <label>
+            Output zip (optional)
+            <input type="text" id="crashpack-export-path" placeholder="data/exports/vulnserver_artifacts.zip" />
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="crashpack-export-runs" checked />
+            Include linked run journals
+          </label>
+          <button type="submit" class="btn primary">Export crash pack</button>
+          <p id="crashpack-export-result" class="status-box">—</p>
+        </form>
+        <form id="crashpack-import-form" class="panel fuzz-controls">
+          <h2>Crash artifact pack — import</h2>
+          <p class="hint">Merge a pack into local <code>data/crashes</code> (paths rewritten). Use after copying a zip or pulling from an agent.</p>
+          <label>
+            Zip path
+            <input type="text" id="crashpack-import-path" placeholder="data/exports/vulnserver_artifacts.zip" required />
+          </label>
+          <button type="submit" class="btn primary">Import crash pack</button>
+          <p id="crashpack-import-result" class="status-box">—</p>
+        </form>
+        <form id="crashpack-pull-form" class="panel fuzz-controls">
+          <h2>Pull from remote agent</h2>
+          <p class="hint">Laptop console → download pack from <code>randall agent</code> (same URL as Lab servers). Optionally import immediately.</p>
+          <label>
+            Agent URL
+            <input type="text" id="crashpack-pull-agent" placeholder="http://192.168.2.10:5000" required />
+          </label>
+          <label>
+            Project
+            <select id="crashpack-pull-project" required></select>
+          </label>
+          <label>
+            Save zip as (optional)
+            <input type="text" id="crashpack-pull-path" placeholder="data/exports/from_agent.zip" />
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="crashpack-pull-import" checked />
+            Import into this console after download
+          </label>
+          <button type="submit" class="btn primary">Pull crash pack</button>
+          <p id="crashpack-pull-result" class="status-box">—</p>
         </form>
       </div>
     </section>
@@ -880,7 +1090,7 @@
         </aside>
         <article class="panel help-body">
           <h2 id="help-title">Select a topic</h2>
-          <div id="help-content" class="help-markdown"><p class="hint">Pick a guide on the left. Start with <strong>Custom targets</strong> if you want to fuzz your own program.</p></div>
+          <div id="help-content" class="help-markdown"><p class="hint">Pick a guide on the left. Start with <strong>How to: stalk a generic application</strong> for your own app. Use the sidebar theme buttons (Dark / Light / Cyber) if text is hard to read.</p></div>
         </article>
       </div>
     </section>

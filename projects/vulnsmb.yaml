@@ -1,0 +1,73 @@
+name: vulnsmb
+description: Randall VulnSmb — NBSS+SMB2-shaped lab (build with scripts/build-vulnsmb.ps1)
+kind: tcp
+target:
+  executable: ../targets/vulnsmb/randall-vulnsmb.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 4455
+  receiveTimeoutMs: 1500
+sessionCommands:
+  - name: NEGOTIATE
+    model: protocols/smb2_negotiate.yaml
+    readBanner: false
+    expectResponse: SMB_NEGO_OK
+  - name: SESSION_SETUP
+    model: protocols/smb2_session_setup.yaml
+    readBanner: false
+    expectResponse: SMB_SESS_OK
+  - name: TREE_CONNECT
+    model: protocols/smb2_tree_connect.yaml
+    readBanner: false
+    expectResponse: SMB_TREE_OK
+  - name: CREATE
+    model: protocols/smb2_create.yaml
+    readBanner: false
+    expectResponse: SMB_CREATE_OK
+  - name: WRITE
+    model: protocols/smb2_write.yaml
+    readBanner: false
+    expectResponse: SMB_WRITE_OK
+  - name: READ
+    model: protocols/smb2_read.yaml
+    readBanner: false
+    expectResponse: SMB_READ_OK
+sessionFlows:
+  - name: smb2_open
+    steps: [NEGOTIATE, SESSION_SETUP, TREE_CONNECT, CREATE]
+    mutateStep: last
+  - name: smb2_write
+    steps: [NEGOTIATE, SESSION_SETUP, TREE_CONNECT, CREATE, WRITE]
+    mutateStep: last
+  - name: smb2_pipe_dce
+    steps: [NEGOTIATE, SESSION_SETUP, TREE_CONNECT, CREATE, WRITE]
+    mutateStep: last
+sessionGraph:
+  start: NEGOTIATE
+  mutate: CREATE
+  edges:
+    - { from: NEGOTIATE, when: "SMB_NEGO_OK", to: SESSION_SETUP }
+    - { from: SESSION_SETUP, when: "SMB_SESS_OK", to: TREE_CONNECT }
+    - { from: TREE_CONNECT, when: "SMB_TREE_OK", to: CREATE }
+    - { from: CREATE, when: "SMB_CREATE_OK", to: WRITE }
+    - { from: CREATE, when: "SMB_CREATE_OK", to: READ }
+    - { from: WRITE, when: "BIND_ACK", to: WRITE }
+    - { from: WRITE, when: "RPC_OK", to: READ }
+fuzz:
+  maxIterations: 800
+  sessionFlowBias: 0.65
+  sessionGraphBias: 0.35
+  corpusDir: ../data/corpus/vulnsmb
+  crashesDir: ../data/crashes/vulnsmb
+seeds:
+  - seeds/smb2_create_overflow.bin
+mutators:
+  - bitflip
+  - havoc
+  - interesting
+  - expand
+  - boundary
+  - insert

@@ -14,6 +14,9 @@ public sealed class SignalRFuzzProgressSink(IHubContext<FuzzHub> hub) : IFuzzPro
     public void OnIteration(FuzzIterationEvent iteration) =>
         _ = hub.Clients.All.SendAsync("fuzzIteration", iteration);
 
+    public void OnLog(FuzzLogEvent entry) =>
+        _ = hub.Clients.All.SendAsync("fuzzLog", entry);
+
     public void OnCompleted(FuzzRunResult result) =>
         _ = hub.Clients.All.SendAsync("fuzzCompleted", new
         {

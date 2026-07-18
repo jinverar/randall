@@ -14,6 +14,15 @@ const api = {
     if (!r.ok) throw new Error(data?.error || data?.message || `${r.status} ${path}`);
     return data;
   }),
+  put: (path, body) => fetch(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(async (r) => {
+    const data = r.status === 204 ? null : await r.json().catch(() => null);
+    if (!r.ok) throw new Error(data?.error || data?.message || `${r.status} ${path}`);
+    return data;
+  }),
   del: async (path) => {
     const r = await fetch(path, { method: 'DELETE' });
     const data = r.status === 204 ? null : await r.json().catch(() => null);
@@ -37,11 +46,33 @@ const statusEl = document.getElementById('fuzz-status');
 const startBtn = document.getElementById('fuzz-start');
 const stopBtn = document.getElementById('fuzz-stop');
 
-function appendLog(line, cls = '') {
-  const span = document.createElement('div');
-  if (cls) span.className = cls;
-  span.textContent = line;
-  logEl.appendChild(span);
+function formatLogTs(isoOrDate) {
+  try {
+    const d = isoOrDate ? new Date(isoOrDate) : new Date();
+    if (Number.isNaN(d.getTime())) return formatLogTs();
+    const p = (n, w = 2) => String(n).padStart(w, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())},${p(d.getMilliseconds(), 3)}`;
+  } catch {
+    return '----/--/-- --:--:--,---';
+  }
+}
+
+function appendLog(line, cls = '', at = null) {
+  if (!logEl) return;
+  const row = document.createElement('div');
+  row.className = cls ? `log-line log-${cls}` : 'log-line log-info';
+  const ts = document.createElement('span');
+  ts.className = 'log-ts';
+  ts.textContent = `[${formatLogTs(at)}]`;
+  const msg = document.createElement('span');
+  msg.className = 'log-msg';
+  msg.textContent = ` ${line}`;
+  row.appendChild(ts);
+  row.appendChild(msg);
+  logEl.appendChild(row);
+  // Keep the live log snappy — drop oldest lines beyond a soft cap
+  while (logEl.childElementCount > 2000)
+    logEl.removeChild(logEl.firstChild);
   logEl.scrollTop = logEl.scrollHeight;
 }
 
@@ -142,6 +173,51 @@ function initNavToggle() {
     setNavCollapsed(!document.body.classList.contains('nav-collapsed'));
   });
   document.getElementById('nav-reopen')?.addEventListener('click', () => setNavCollapsed(false));
+}
+
+function themeLabel(name) {
+  if (name === 'light') return 'Light';
+  if (name === 'cyber') return 'Cyber';
+  return 'Dark';
+}
+
+function setThemeDefaultLabel(theme) {
+  const el = document.getElementById('theme-default-label');
+  if (el) el.textContent = `Default skin: ${themeLabel(theme)} (saved)`;
+}
+
+function applyTheme(name, { persistServer = false } = {}) {
+  const theme = ['dark', 'light', 'cyber'].includes(name) ? name : 'dark';
+  document.documentElement.setAttribute('data-theme', theme);
+  try { localStorage.setItem('randfuzz.theme', theme); } catch { /* ignore */ }
+  document.querySelectorAll('.theme-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.theme === theme);
+  });
+  setThemeDefaultLabel(theme);
+  if (persistServer) {
+    api.put('/api/ui/prefs', { theme }).catch(() => {
+      /* browser localStorage still holds the default for this client */
+    });
+  }
+}
+
+async function initThemePicker() {
+  let local = null;
+  try { local = localStorage.getItem('randfuzz.theme'); } catch { /* ignore */ }
+
+  let theme = ['dark', 'light', 'cyber'].includes(local) ? local : null;
+  if (!theme) {
+    try {
+      const prefs = await api.get('/api/ui/prefs');
+      if (prefs?.theme && ['dark', 'light', 'cyber'].includes(prefs.theme))
+        theme = prefs.theme;
+    } catch { /* ignore */ }
+  }
+  applyTheme(theme || 'dark', { persistServer: false });
+
+  document.querySelectorAll('.theme-btn').forEach((btn) => {
+    btn.addEventListener('click', () => applyTheme(btn.dataset.theme, { persistServer: true }));
+  });
 }
 
 async function loadHealth() {
@@ -1303,6 +1379,47 @@ function shortFault(c) {
   return f;
 }
 
+async function loadCrashMemoryLens(crashId) {
+  const status = document.getElementById('crash-memory-status');
+  const body = document.getElementById('crash-memory-body');
+  const conf = document.getElementById('crash-memory-conf');
+  if (!body) return;
+  try {
+    const m = await api.get(`/api/crashes/${crashId}/memory`);
+    if (conf) conf.textContent = m.confidence ? `— ${m.confidence}` : '';
+    if (status) {
+      status.textContent = m.ok ? '' : (m.error || 'Lens unavailable');
+      status.classList.toggle('hidden', !!m.ok && (m.summaryLines || []).length > 0);
+    }
+    const lines = (m.summaryLines || []).map((l) => `<p class="memory-summary-line">${escapeAttr(l)}</p>`).join('');
+    const patterns = (m.patternHits || []).slice(0, 8).map((p) =>
+      `<li><code>${escapeAttr(p.patternName)}</code> in ${escapeAttr(p.where)} — ${escapeAttr(p.hint)} <span class="hint">[${escapeAttr(p.confidence)}]</span></li>`).join('');
+    const links = (m.linkHints || []).slice(0, 4).map((l) =>
+      `<li>${escapeAttr(l.where)}: Flink <code>${escapeAttr(l.flink)}</code> Blink <code>${escapeAttr(l.blink)}</code> — ${escapeAttr(l.note)}</li>`).join('');
+    const regions = (m.regions || []).slice(0, 10).map((r) =>
+      `<tr><td><code>${escapeAttr(r.baseAddress)}</code></td><td>${escapeAttr(r.size)}</td><td>${escapeAttr(r.protect)}</td><td>${escapeAttr(r.kind)}</td><td>${escapeAttr(r.label || '')}</td></tr>`).join('');
+    const hood = m.neighborhood
+      ? `<p class="label">Neighborhood <code>${escapeAttr(m.neighborhood.baseAddress)}</code></p>
+         <pre class="hex-preview">${escapeAttr(m.neighborhood.hexPreview || '')}</pre>
+         ${(m.neighborhood.annotations || []).map((a) => `<p class="hint">${escapeAttr(a)}</p>`).join('')}`
+      : '';
+    const heap = (m.heapSummaryLines || []).length
+      ? `<p class="label">Heap ${m.pageHeapLikely ? '(Page Heap likely) ' : ''}· ${escapeAttr(m.heapBackend || '')}</p>
+         <ul class="memory-hit-list">${(m.heapSummaryLines || []).slice(0, 12).map((h) => `<li><code>${escapeAttr(h)}</code></li>`).join('')}</ul>`
+      : '';
+    body.innerHTML = `
+      ${lines}
+      ${patterns ? `<p class="label">Fill / UAF patterns</p><ul class="memory-hit-list">${patterns}</ul>` : ''}
+      ${links ? `<p class="label">Link / unlink hints</p><ul class="memory-hit-list">${links}</ul>` : ''}
+      ${heap}
+      ${regions ? `<p class="label">Regions</p><table class="memory-region-table"><thead><tr><th>Base</th><th>Size</th><th>Prot</th><th>Kind</th><th>Label</th></tr></thead><tbody>${regions}</tbody></table>` : ''}
+      ${hood}`;
+  } catch (err) {
+    if (status) status.textContent = err.message;
+    body.innerHTML = '';
+  }
+}
+
 function renderCrashDetail(detail, title) {
   const box = document.getElementById('crash-detail');
   const metaEl = document.getElementById('crash-invest-meta');
@@ -1384,6 +1501,11 @@ function renderCrashDetail(detail, title) {
         <div><span>RCX</span> <code>${regs.rcx || '—'}</code></div>
         <div><span>RDX</span> <code>${regs.rdx || '—'}</code></div>
       </div></div>` : ''}
+    <div class="triage-box" id="crash-memory-box">
+      <h4>Memory lens <span class="hint-inline" id="crash-memory-conf"></span></h4>
+      <p class="hint" id="crash-memory-status">Loading…</p>
+      <div id="crash-memory-body"></div>
+    </div>
     <p class="hint crash-path"><code>${escapeAttr(detail.summary.inputPath)}</code></p>
     <div class="btn-row tool-cmds wrap">
       <button type="button" class="btn primary" id="export-crash-btn">Export triage</button>
@@ -1394,6 +1516,8 @@ function renderCrashDetail(detail, title) {
       <button type="button" class="btn" id="copy-procdump-btn">Copy ProcDump</button>
     </div>
     <p id="export-result" class="empty"></p>`;
+
+  loadCrashMemoryLens(detail.summary.id).catch(() => {});
 
   document.getElementById('crash-filter-cluster-btn')?.addEventListener('click', () => {
     const key = t?.clusterKey || crashClusterKey(detail.summary) || cluster?.clusterId;
@@ -1938,7 +2062,6 @@ async function connectHub() {
   hub = new signalR.HubConnectionBuilder().withUrl('/hubs/fuzz').withAutomaticReconnect().build();
 
   hub.on('fuzzStarted', (e) => {
-    appendLog(`▶ Started ${e.project} (${e.kind})`);
     setStatus(`Running ${e.project}…`);
     startBtn.disabled = true;
     stalkProject = e.project || stalkProject;
@@ -1947,10 +2070,13 @@ async function connectHub() {
       loadDashboard().catch(() => {});
   });
 
+  hub.on('fuzzLog', (e) => {
+    const kind = (e.kind || 'info').toLowerCase();
+    appendLog(e.message || '', kind, e.at);
+  });
+
   hub.on('fuzzIteration', (e) => {
-    const cls = e.crashed ? 'crash' : e.newCoverage ? 'cov' : '';
-    const tag = e.crashed ? 'CRASH' : e.newCoverage ? `+${e.newEdgeCount} edges` : 'ok';
-    appendLog(`#${e.iteration} ${e.mutator} len=${e.payloadLength} ${tag}`, cls);
+    // Rich lines come from fuzzLog; iteration only updates status / stalker timeline
     setStatus(`iter ${e.iteration} · corpus ${e.corpusSize} · edges ${e.coverageEdgeTotal}`);
     stalkLiveTimeline.push({
       index: stalkLiveTimeline.length,
@@ -1969,7 +2095,7 @@ async function connectHub() {
   });
 
   hub.on('fuzzCompleted', (e) => {
-    appendLog(`■ Done — ${e.iterations} iters, ${e.crashesFound} crashes, +${e.corpusAdded} corpus`);
+    appendLog(`Done — ${e.iterations} iters, ${e.crashesFound} crashes, +${e.corpusAdded} corpus`, 'ok');
     setStatus('Completed');
     startBtn.disabled = false;
     loadDashboard();
@@ -1977,14 +2103,14 @@ async function connectHub() {
   });
 
   hub.on('fuzzStopped', (e) => {
-    appendLog(`■ Stopped: ${e.reason}`);
+    appendLog(`Stopped: ${e.reason}`, 'warn');
     setStatus('Stopped');
     startBtn.disabled = false;
     loadDashboard().catch(() => {});
   });
 
   hub.on('fuzzError', (e) => {
-    appendLog(`✖ Error: ${e.message}`, 'crash');
+    appendLog(`Error!!!! ${e.message}`, 'crash');
     setStatus('Error');
     startBtn.disabled = false;
   });
@@ -2244,8 +2370,40 @@ async function loadModels() {
 async function loadBundlesView() {
   const targets = (await api.get('/api/targets')).filter(isVisibleTarget);
   const sel = document.getElementById('bundle-export-target');
-  sel.innerHTML = targets.map((t) => `<option value="${t.configPath}">${t.name}</option>`).join('');
+  if (sel) {
+    sel.innerHTML = targets.map((t) => `<option value="${t.configPath}">${t.name}</option>`).join('');
+  }
+  const opts = targets.map((t) => `<option value="${t.name}">${t.name}</option>`).join('');
+  const packSel = document.getElementById('crashpack-export-project');
+  const pullSel = document.getElementById('crashpack-pull-project');
+  if (packSel) packSel.innerHTML = opts;
+  if (pullSel) pullSel.innerHTML = opts;
+
+  const agentInput = document.getElementById('labs-agent-url');
+  const pullAgent = document.getElementById('crashpack-pull-agent');
+  if (agentInput && pullAgent && !pullAgent.value.trim() && agentInput.value.trim()) {
+    pullAgent.value = agentInput.value.trim();
+  }
 }
+
+function applyRemoteLabChrome() {
+  const host = (location.hostname || '').toLowerCase();
+  const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  const badge = document.getElementById('remote-lab-badge');
+  const tagline = document.getElementById('brand-tagline');
+  if (!isLoopback) {
+    document.body.classList.add('remote-lab');
+    if (badge) badge.classList.remove('hidden');
+    if (tagline) tagline.textContent = 'Target Runtime lab · fuzz here for dumps + lens';
+  }
+}
+
+document.querySelectorAll('[data-view-jump]').forEach((el) => {
+  el.addEventListener('click', () => {
+    const name = el.getAttribute('data-view-jump');
+    if (name) switchView(name);
+  });
+});
 
 document.getElementById('bundle-export-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -2274,6 +2432,67 @@ document.getElementById('bundle-import-form').addEventListener('submit', async (
     out.textContent = `Imported → ${result.path}`;
     await loadTargets();
     await loadBundlesView();
+  } catch (err) {
+    out.textContent = err.message;
+  }
+});
+
+document.getElementById('crashpack-export-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const out = document.getElementById('crashpack-export-result');
+  try {
+    const body = {
+      project: document.getElementById('crashpack-export-project').value,
+      includeRuns: document.getElementById('crashpack-export-runs').checked,
+    };
+    const customOut = document.getElementById('crashpack-export-path').value.trim();
+    if (customOut) body.outputPath = customOut;
+    const result = await api.post('/api/crashes/pack', body);
+    out.textContent =
+      `Exported ${Math.round((result.sizeBytes || 0) / 1024)} KB → ${result.path}` +
+      ` (crashes=${result.crashCount}, runs=${result.runCount})`;
+  } catch (err) {
+    out.textContent = err.message;
+  }
+});
+
+document.getElementById('crashpack-import-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const out = document.getElementById('crashpack-import-result');
+  try {
+    const result = await api.post('/api/crashes/pack/import', {
+      zipPath: document.getElementById('crashpack-import-path').value.trim(),
+      overwriteFiles: true,
+    });
+    out.textContent = result.message || `Imported ${result.importedCrashes} crash(es) → ${result.crashesDir}`;
+    await loadCrashes(document.getElementById('crash-filter')?.value || '').catch(() => {});
+  } catch (err) {
+    out.textContent = err.message;
+  }
+});
+
+document.getElementById('crashpack-pull-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const out = document.getElementById('crashpack-pull-result');
+  try {
+    const agentUrl = document.getElementById('crashpack-pull-agent').value.trim();
+    const project = document.getElementById('crashpack-pull-project').value;
+    const body = { agentUrl, project, includeRuns: true };
+    const customOut = document.getElementById('crashpack-pull-path').value.trim();
+    if (customOut) body.outputPath = customOut;
+    const pulled = await api.post('/api/crashes/pack/pull', body);
+    let msg =
+      `Pulled ${Math.round((pulled.sizeBytes || 0) / 1024)} KB → ${pulled.path}` +
+      ` (crashes=${pulled.crashCount}, runs=${pulled.runCount})`;
+    if (document.getElementById('crashpack-pull-import').checked) {
+      const imported = await api.post('/api/crashes/pack/import', {
+        zipPath: pulled.path,
+        overwriteFiles: true,
+      });
+      msg += `\n${imported.message || 'Imported.'}`;
+      await loadCrashes(document.getElementById('crash-filter')?.value || '').catch(() => {});
+    }
+    out.textContent = msg;
   } catch (err) {
     out.textContent = err.message;
   }
@@ -2526,9 +2745,66 @@ async function pollStatus() {
 /* —— Scare Floor (case recipes → seeds + dict → Campaign) —— */
 let caseOps = [];
 let caseSteps = [];
-/** @type {null | { name: string, readBanner: boolean, expectResponse: string, blocks: any[] }[]} */
+/** @type {null | { name: string, readBanner: boolean, expectResponse: string, blocks: any[], layers?: {name:string, blocks:any[]}[]|null }[]} */
 let caseSessionSteps = null;
 let caseActivePdu = 0;
+/** @type {null | { name: string, blocks: any[] }[]} */
+let caseLayers = null;
+let caseActiveLayer = 0;
+
+const LABS_AGENT_KEY = 'randall.labsAgentUrl';
+
+function getLabsAgentUrl() {
+  const input = document.getElementById('labs-agent-url');
+  const fromInput = (input?.value || '').trim();
+  if (fromInput) return fromInput;
+  try {
+    return (localStorage.getItem(LABS_AGENT_KEY) || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function labsAgentQuery() {
+  const agent = getLabsAgentUrl();
+  return agent ? `?agent=${encodeURIComponent(agent)}` : '';
+}
+
+function persistLabsAgentUrl() {
+  const input = document.getElementById('labs-agent-url');
+  const v = (input?.value || '').trim();
+  try {
+    if (v) localStorage.setItem(LABS_AGENT_KEY, v);
+    else localStorage.removeItem(LABS_AGENT_KEY);
+  } catch { /* ignore */ }
+  const scope = document.getElementById('labs-scope-label');
+  if (scope) scope.textContent = v ? `— remote ${v}` : '— this machine';
+}
+
+function updateLabsCampaignStrip(labs) {
+  const summary = document.getElementById('labs-campaign-summary');
+  const chips = document.getElementById('labs-campaign-chips');
+  const badge = document.getElementById('labs-tab-badge');
+  const running = (labs || []).filter((l) => l.running);
+  const agent = getLabsAgentUrl();
+  const where = agent ? `remote (${agent})` : 'this machine';
+
+  if (summary) {
+    summary.textContent = running.length
+      ? `${running.length} running on ${where}`
+      : `None running on ${where}`;
+  }
+  if (chips) {
+    chips.innerHTML = running.length
+      ? running.map((l) =>
+        `<span class="labs-chip" title="PID ${l.pid ?? '?'}">${escapeAttr(l.name)} :${l.port}</span>`).join('')
+      : '<span class="labs-chip off">idle</span>';
+  }
+  if (badge) {
+    badge.textContent = String(running.length);
+    badge.classList.toggle('hidden', running.length === 0);
+  }
+}
 
 document.querySelectorAll('.fuzz-subtab').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -2536,8 +2812,217 @@ document.querySelectorAll('.fuzz-subtab').forEach((btn) => {
     const tab = btn.dataset.fuzzTab;
     document.getElementById('fuzz-tab-campaign')?.classList.toggle('hidden', tab !== 'campaign');
     document.getElementById('fuzz-tab-cases')?.classList.toggle('hidden', tab !== 'cases');
+    document.getElementById('fuzz-tab-labs')?.classList.toggle('hidden', tab !== 'labs');
     if (tab === 'cases') loadCaseBuilder().catch(() => {});
+    if (tab === 'labs') {
+      persistLabsAgentUrl();
+      refreshLabs().catch(() => {});
+    }
   });
+});
+
+document.getElementById('labs-open-tab')?.addEventListener('click', () => {
+  document.querySelector('.fuzz-subtab[data-fuzz-tab="labs"]')?.click();
+});
+
+async function refreshLabs() {
+  const tbody = document.getElementById('labs-tbody');
+  const status = document.getElementById('labs-status');
+  const q = labsAgentQuery();
+  try {
+    const labs = await api.get(`/api/labs${q}`);
+    updateLabsCampaignStrip(labs);
+
+    if (!tbody) return;
+    tbody.innerHTML = (labs || []).map((lab) => {
+      const state = !lab.exeExists
+        ? '<span class="lab-badge miss">not built</span>'
+        : lab.running
+          ? (lab.reachable
+            ? '<span class="lab-badge ok">running</span>'
+            : '<span class="lab-badge warn">starting…</span>')
+          : '<span class="lab-badge off">stopped</span>';
+      const pid = lab.pid != null ? lab.pid : '—';
+      const startDis = (!lab.exeExists || lab.running) ? 'disabled' : '';
+      const stopDis = lab.running ? '' : 'disabled';
+      return `<tr data-lab="${escapeAttr(lab.id)}">
+        <td>
+          <strong>${escapeAttr(lab.name)}</strong>
+          <div class="hint">${escapeAttr(lab.description || '')}</div>
+          <div class="hint"><code>${escapeAttr(lab.projectYaml || '')}</code></div>
+        </td>
+        <td><code>${escapeAttr(lab.protocol)}/${lab.port}</code><div class="hint">${escapeAttr(lab.bindHint || '127.0.0.1')}</div></td>
+        <td>${state}${lab.statusNote ? `<div class="hint">${escapeAttr(lab.statusNote)}</div>` : ''}</td>
+        <td>${pid}</td>
+        <td class="labs-actions">
+          <button type="button" class="btn primary" data-lab-start="${escapeAttr(lab.id)}" ${startDis}>Start</button>
+          <button type="button" class="btn" data-lab-stop="${escapeAttr(lab.id)}" ${stopDis}>Stop</button>
+        </td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="5" class="hint">No labs in catalog</td></tr>';
+
+    tbody.querySelectorAll('[data-lab-start]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (status) status.textContent = `Starting ${btn.dataset.labStart}…`;
+        try {
+          const r = await api.post(`/api/labs/${encodeURIComponent(btn.dataset.labStart)}/start${q}`, {});
+          if (status) status.textContent = r.message || 'Started';
+          await refreshLabs();
+        } catch (err) {
+          if (status) status.textContent = err.message;
+        }
+      });
+    });
+    tbody.querySelectorAll('[data-lab-stop]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (status) status.textContent = `Stopping ${btn.dataset.labStop}…`;
+        try {
+          const r = await api.post(`/api/labs/${encodeURIComponent(btn.dataset.labStop)}/stop${q}`, {});
+          if (status) status.textContent = r.message || 'Stopped';
+          await refreshLabs();
+        } catch (err) {
+          if (status) status.textContent = err.message;
+        }
+      });
+    });
+
+    const running = (labs || []).filter((l) => l.running).length;
+    const where = getLabsAgentUrl() || 'local';
+    if (status && !status.textContent.startsWith('Start') && !status.textContent.startsWith('Stop') && !status.textContent.startsWith('Agent'))
+      status.textContent = `${running} running · ${(labs || []).length} labs · host: ${where}`;
+    await refreshRuntime();
+  } catch (err) {
+    updateLabsCampaignStrip([]);
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="hint">${escapeAttr(err.message)}</td></tr>`;
+    if (status) status.textContent = err.message;
+  }
+}
+
+async function refreshRuntime() {
+  const tbody = document.getElementById('runtime-tbody');
+  const status = document.getElementById('runtime-status');
+  const q = labsAgentQuery();
+  if (!tbody) return;
+  try {
+    const data = await api.get(`/api/runtime${q}`);
+    const slots = data?.slots || [];
+    tbody.innerHTML = slots.map((s) => {
+      const state = s.running
+        ? (s.portReachable
+          ? '<span class="lab-badge ok">running</span>'
+          : '<span class="lab-badge warn">started</span>')
+        : '<span class="lab-badge off">stopped</span>';
+      const port = s.waitPort != null ? `${escapeAttr(s.waitHost || '')}:${s.waitPort}` : '—';
+      const stopDis = s.running ? '' : 'disabled';
+      const restartDis = s.executable ? '' : 'disabled';
+      return `<tr>
+        <td>
+          <strong>${escapeAttr(s.id)}</strong>
+          <div class="hint"><code>${escapeAttr(s.executable || '')}</code></div>
+          <div class="hint">${escapeAttr(s.message || '')}</div>
+        </td>
+        <td><code>${port}</code></td>
+        <td>${state}</td>
+        <td>${s.pid != null ? s.pid : '—'}</td>
+        <td class="labs-actions">
+          <button type="button" class="btn" data-rt-restart="${escapeAttr(s.id)}" ${restartDis}>Restart</button>
+          <button type="button" class="btn" data-rt-stop="${escapeAttr(s.id)}" ${stopDis}>Stop</button>
+        </td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="5" class="hint">No runtime slots — <code>randall runtime start -c projects/…yaml</code></td></tr>';
+
+    tbody.querySelectorAll('[data-rt-stop]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (status) status.textContent = `Stopping ${btn.dataset.rtStop}…`;
+        try {
+          const r = await api.post(`/api/runtime/${encodeURIComponent(btn.dataset.rtStop)}/stop${q}`, {});
+          if (status) status.textContent = r.message || 'Stopped';
+          await refreshRuntime();
+        } catch (err) {
+          if (status) status.textContent = err.message;
+        }
+      });
+    });
+    tbody.querySelectorAll('[data-rt-restart]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (status) status.textContent = `Restarting ${btn.dataset.rtRestart}…`;
+        try {
+          const r = await api.post(`/api/runtime/${encodeURIComponent(btn.dataset.rtRestart)}/restart${q}`, {});
+          if (status) status.textContent = r.message || 'Restarted';
+          await refreshRuntime();
+        } catch (err) {
+          if (status) status.textContent = err.message;
+        }
+      });
+    });
+
+    const running = slots.filter((s) => s.running).length;
+    if (status)
+      status.textContent = `${running} running · ${slots.length} slots · ${data?.machineName || 'local'}`;
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="5" class="hint">${escapeAttr(err.message)}</td></tr>`;
+    if (status) status.textContent = err.message;
+  }
+}
+
+document.getElementById('labs-refresh')?.addEventListener('click', () => {
+  persistLabsAgentUrl();
+  refreshLabs().catch(() => {});
+});
+document.getElementById('runtime-refresh')?.addEventListener('click', () => {
+  persistLabsAgentUrl();
+  refreshRuntime().catch(() => {});
+});
+document.getElementById('runtime-stop-all')?.addEventListener('click', async () => {
+  const status = document.getElementById('runtime-status');
+  persistLabsAgentUrl();
+  if (status) status.textContent = 'Stopping all runtime slots…';
+  try {
+    const r = await api.post(`/api/runtime/stop-all${labsAgentQuery()}`, {});
+    if (status) status.textContent = r.message || 'Stopped all';
+    await refreshRuntime();
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  }
+});
+document.getElementById('labs-stop-all')?.addEventListener('click', async () => {
+  const status = document.getElementById('labs-status');
+  persistLabsAgentUrl();
+  if (status) status.textContent = 'Stopping all labs…';
+  try {
+    const r = await api.post(`/api/labs/stop-all${labsAgentQuery()}`, {});
+    if (status) status.textContent = r.message || 'Stopped all';
+    await refreshLabs();
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  }
+});
+document.getElementById('labs-agent-ping')?.addEventListener('click', async () => {
+  const status = document.getElementById('labs-status');
+  const hint = document.getElementById('labs-agent-hint');
+  persistLabsAgentUrl();
+  try {
+    const ping = await api.get(`/api/labs/ping${labsAgentQuery()}`);
+    const msg = ping.ok
+      ? `Agent OK · ${ping.appName || 'Randfuzz'} ${ping.version || ''} @ ${ping.agentUrl}`
+      : 'Agent ping failed';
+    if (status) status.textContent = msg;
+    if (hint) hint.textContent = msg;
+    await refreshLabs();
+  } catch (err) {
+    if (status) status.textContent = err.message;
+    if (hint) hint.textContent = err.message;
+  }
+});
+document.getElementById('labs-agent-clear')?.addEventListener('click', () => {
+  const input = document.getElementById('labs-agent-url');
+  if (input) input.value = '';
+  persistLabsAgentUrl();
+  refreshLabs().catch(() => {});
+});
+document.getElementById('labs-agent-url')?.addEventListener('change', () => {
+  persistLabsAgentUrl();
+  refreshLabs().catch(() => {});
 });
 
 let caseOpsBound = false;
@@ -2603,10 +3088,95 @@ function defaultStep(op) {
   return base;
 }
 
+function flattenCaseLayers(layers) {
+  return (layers || []).flatMap((l) => mapApiSteps(l.blocks || []));
+}
+
+function flushActiveLayer() {
+  if (!caseLayers || !caseLayers[caseActiveLayer]) return;
+  caseLayers[caseActiveLayer].blocks = mapApiSteps(collectCaseSteps());
+}
+
+function renderCaseLayers() {
+  const el = document.getElementById('case-layers');
+  if (!el) return;
+  if (!caseLayers || !caseLayers.length) {
+    el.innerHTML = '<p class="hint">Single flat PDU — add a layer or load a stack template.</p>';
+    return;
+  }
+  el.innerHTML = caseLayers.map((l, i) =>
+    `<div class="case-layer ${i === caseActiveLayer ? 'active' : ''}">
+      <button type="button" class="btn ${i === caseActiveLayer ? 'primary' : ''}" data-layer-go="${i}">${i}</button>
+      <input type="text" data-layer-name="${i}" value="${escapeAttr(l.name)}" title="Layer name" />
+      <button type="button" class="btn" data-layer-del="${i}" title="Remove layer" ${caseLayers.length <= 1 ? 'disabled' : ''}>×</button>
+    </div>`).join('');
+  el.querySelectorAll('[data-layer-go]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      flushActiveLayer();
+      caseActiveLayer = Number(btn.dataset.layerGo);
+      caseSteps = mapApiSteps(caseLayers[caseActiveLayer].blocks);
+      renderCaseLayers();
+      renderCaseSteps();
+    });
+  });
+  el.querySelectorAll('[data-layer-name]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      const i = Number(inp.dataset.layerName);
+      if (caseLayers[i]) caseLayers[i].name = inp.value.trim() || `layer${i + 1}`;
+    });
+  });
+  el.querySelectorAll('[data-layer-del]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.layerDel);
+      if (caseLayers.length <= 1) return;
+      flushActiveLayer();
+      caseLayers.splice(i, 1);
+      caseActiveLayer = Math.min(caseActiveLayer, caseLayers.length - 1);
+      caseSteps = mapApiSteps(caseLayers[caseActiveLayer].blocks);
+      renderCaseLayers();
+      renderCaseSteps();
+    });
+  });
+}
+
+function renderCaseFieldTable() {
+  const el = document.getElementById('case-field-table');
+  const on = !!document.getElementById('case-field-table-toggle')?.checked;
+  if (!el) return;
+  el.classList.toggle('hidden', !on);
+  if (!on) return;
+  const rows = caseSteps.map((s, i) =>
+    `<tr>
+      <td>${i}</td>
+      <td>${escapeAttr(s.op)}</td>
+      <td>${escapeAttr(s.format || '')}</td>
+      <td>${escapeAttr(s.role || '')}</td>
+      <td><code>${escapeAttr((s.value || '').toString().slice(0, 48))}</code></td>
+    </tr>`).join('');
+  el.innerHTML = `<table><thead><tr><th>#</th><th>op</th><th>type/endian</th><th>fuzzable</th><th>value</th></tr></thead><tbody>${rows || '<tr><td colspan="5">No blocks</td></tr>'}</tbody></table>`;
+}
+
+function applyLayerStackTemplate(layers, statusMsg) {
+  caseLayers = layers.map((l) => ({
+    name: l.name,
+    blocks: mapApiSteps(l.blocks),
+  }));
+  caseActiveLayer = Math.max(0, caseLayers.length - 1);
+  caseSteps = mapApiSteps(caseLayers[caseActiveLayer].blocks);
+  if (isCaseSessionMode() && caseSessionSteps[caseActivePdu]) {
+    caseSessionSteps[caseActivePdu].layers = caseLayers;
+    caseSessionSteps[caseActivePdu].blocks = flattenCaseLayers(caseLayers);
+  }
+  renderCaseLayers();
+  renderCaseSteps();
+  document.getElementById('case-save-result').textContent = statusMsg;
+}
+
 function renderCaseSteps() {
   const el = document.getElementById('case-steps');
   if (!caseSteps.length) {
     el.innerHTML = '<p class="hint">No blocks yet — click an op on the left, or use a preset.</p>';
+    renderCaseFieldTable();
     return;
   }
   el.innerHTML = caseSteps.map((s, i) => {
@@ -2654,8 +3224,10 @@ function renderCaseSteps() {
       const i = Number(inp.dataset.i);
       const field = inp.dataset.field;
       caseSteps[i][field] = field === 'count' ? Number(inp.value) : inp.value;
+      renderCaseFieldTable();
     });
   });
+  renderCaseFieldTable();
 }
 
 function escapeAttr(s) {
@@ -2697,7 +3269,17 @@ function mapBlocksForApi(blocks) {
 
 function flushActiveSessionPdu() {
   if (!isCaseSessionMode() || !caseSessionSteps[caseActivePdu]) return;
-  caseSessionSteps[caseActivePdu].blocks = mapApiSteps(collectCaseSteps());
+  flushActiveLayer();
+  if (caseLayers && caseLayers.length) {
+    caseSessionSteps[caseActivePdu].layers = caseLayers.map((l) => ({
+      name: l.name,
+      blocks: mapBlocksForApi(l.blocks),
+    }));
+    caseSessionSteps[caseActivePdu].blocks = flattenCaseLayers(caseLayers);
+  } else {
+    caseSessionSteps[caseActivePdu].blocks = mapApiSteps(collectCaseSteps());
+    caseSessionSteps[caseActivePdu].layers = null;
+  }
   const nameInp = document.querySelector(`#case-session-steps [data-pdu-name="${caseActivePdu}"]`);
   if (nameInp) caseSessionSteps[caseActivePdu].name = nameInp.value.trim() || `PDU${caseActivePdu + 1}`;
   const ban = document.querySelector(`#case-session-steps [data-pdu-banner="${caseActivePdu}"]`);
@@ -2713,6 +3295,9 @@ function collectSessionStepsPayload() {
     readBanner: !!s.readBanner,
     expectResponse: s.expectResponse || null,
     blocks: mapBlocksForApi(s.blocks),
+    layers: (s.layers && s.layers.length)
+      ? s.layers.map((l) => ({ name: l.name, blocks: mapBlocksForApi(l.blocks) }))
+      : null,
   }));
 }
 
@@ -2731,8 +3316,21 @@ function setActivePdu(index) {
   if (!isCaseSessionMode()) return;
   flushActiveSessionPdu();
   caseActivePdu = Math.max(0, Math.min(index, caseSessionSteps.length - 1));
-  caseSteps = mapApiSteps(caseSessionSteps[caseActivePdu].blocks);
+  const pdu = caseSessionSteps[caseActivePdu];
+  if (pdu.layers && pdu.layers.length) {
+    caseLayers = pdu.layers.map((l) => ({
+      name: l.name || 'layer',
+      blocks: mapApiSteps(l.blocks || []),
+    }));
+    caseActiveLayer = Math.max(0, caseLayers.length - 1);
+    caseSteps = mapApiSteps(caseLayers[caseActiveLayer].blocks);
+  } else {
+    caseLayers = [{ name: 'pdu', blocks: mapApiSteps(pdu.blocks || []) }];
+    caseActiveLayer = 0;
+    caseSteps = mapApiSteps(pdu.blocks || []);
+  }
   renderCaseSessionSteps();
+  renderCaseLayers();
   renderCaseSteps();
   const label = document.getElementById('case-active-pdu-label');
   if (label) label.textContent = `— editing ${caseSessionSteps[caseActivePdu].name}`;
@@ -2744,19 +3342,30 @@ function syncCaseSessionPanel() {
   const body = document.getElementById('case-session-body');
   const hint = document.getElementById('case-session-hint');
   const badge = document.getElementById('case-session-badge');
-  const unlocked = kind === 'tcp';
+  const unlocked = kind === 'tcp' || kind === 'udp';
   panel?.classList.toggle('case-session-locked', !unlocked);
   panel?.classList.toggle('case-session-ready', unlocked);
   if (body) body.classList.toggle('hidden', !unlocked);
   if (badge) {
-    badge.textContent = unlocked ? 'TCP ready' : (kind ? `${kind} — switch to TCP` : 'TCP only');
+    badge.textContent = kind === 'tcp'
+      ? 'TCP ready'
+      : kind === 'udp'
+        ? 'UDP datagram'
+        : (kind ? `${kind} — switch to TCP/UDP` : 'TCP / UDP');
     badge.classList.toggle('ok', unlocked);
   }
   if (hint) {
-    hint.innerHTML = unlocked
-      ? 'Multi-message TCP on one connection — each PDU has its own blocks. Use <strong>+ PDU</strong> or <em>FTP login flow</em>, then <strong>Apply to Campaign</strong>.'
-      : `Multi-message TCP needs a <em>TCP</em> Target profile. You are on <strong>${escapeAttr(caseProfile?.project || kind || '—')} [${escapeAttr(kind || '?')}]</strong>.
-         In Step 1: create <strong>TCP network</strong> → Create target, or change <em>Working on project</em> to a <code>[tcp]</code> entry.`;
+    if (kind === 'tcp') {
+      hint.innerHTML =
+        'Multi-message TCP on one connection — each PDU has its own blocks. Use <strong>+ PDU</strong>, load a <em>protocol pack</em>, then <strong>Apply to Campaign</strong>.';
+    } else if (kind === 'udp') {
+      hint.innerHTML =
+        'UDP single-datagram mode — load pack <code>dns-query</code> (or one PDU), then <strong>Apply to Campaign</strong> (writes <code>sessionCommands</code> only).';
+    } else {
+      hint.innerHTML =
+        `Network session needs a <em>TCP</em> or <em>UDP</em> Target profile. You are on <strong>${escapeAttr(caseProfile?.project || kind || '—')} [${escapeAttr(kind || '?')}]</strong>.
+         In Step 1: create <strong>TCP/UDP network</strong> → Create target, or change <em>Working on project</em>.`;
+    }
   }
   if (!unlocked) {
     caseSessionSteps = null;
@@ -3784,6 +4393,11 @@ document.getElementById('case-save-recipe')?.addEventListener('click', async () 
 document.getElementById('case-pdu-add')?.addEventListener('click', () => {
   ensureCaseSessionMode();
   flushActiveSessionPdu();
+  if ((caseProfile?.kind || '').toLowerCase() === 'udp' && caseSessionSteps.length >= 1) {
+    document.getElementById('case-save-result').textContent =
+      'UDP Apply allows one datagram PDU — remove extras or switch to a TCP project for multi-PDU flows.';
+    return;
+  }
   const n = caseSessionSteps.length + 1;
   caseSessionSteps.push({
     name: `PDU${n}`,
@@ -3901,40 +4515,66 @@ document.getElementById('case-pack-load')?.addEventListener('click', async () =>
     document.getElementById('case-save-result').textContent = 'Pick a protocol pack first.';
     return;
   }
-  if ((caseProfile?.kind || '').toLowerCase() !== 'tcp' && id !== 'tlv-frame') {
-    // allow loading into session UI hint
-  }
   try {
     const r = await api.get(`/api/case/packs/${encodeURIComponent(id)}`);
     const session = r.sessionSteps || [];
+    const kind = (caseProfile?.kind || '').toLowerCase();
     if (session.length > 0) {
-      if ((caseProfile?.kind || '').toLowerCase() !== 'tcp') {
-        document.getElementById('case-save-result').textContent =
-          'Pack loaded as session — switch Working on project to TCP to Apply.';
-      }
-      caseSessionSteps = session.map((s, i) => ({
+      let steps = session.map((s, i) => ({
         name: s.name || `m${i + 1}`,
         readBanner: !!s.readBanner,
         expectResponse: s.expectResponse || '',
         blocks: mapApiSteps(s.blocks),
+        layers: (s.layers && s.layers.length)
+          ? s.layers.map((l) => ({
+            name: l.name || 'layer',
+            blocks: mapApiSteps(l.blocks),
+          }))
+          : null,
       }));
+      if (kind === 'udp' && steps.length > 1) {
+        steps = [steps[0]];
+        document.getElementById('case-save-result').textContent =
+          `Pack “${r.name || id}” has ${session.length} PDUs — UDP keeps the first datagram only.`;
+      } else if (kind && kind !== 'tcp' && kind !== 'udp') {
+        document.getElementById('case-save-result').textContent =
+          'Pack loaded as session — switch Working on project to TCP or UDP to Apply.';
+      }
+      caseSessionSteps = steps;
       caseActivePdu = Math.max(0, caseSessionSteps.length - 1);
-      caseSteps = mapApiSteps(caseSessionSteps[caseActivePdu].blocks);
+      const pdu = caseSessionSteps[caseActivePdu];
+      if (pdu.layers && pdu.layers.length) {
+        caseLayers = pdu.layers;
+        caseActiveLayer = Math.max(0, caseLayers.length - 1);
+        caseSteps = mapApiSteps(caseLayers[caseActiveLayer].blocks);
+      } else {
+        caseLayers = [{ name: 'pdu', blocks: mapApiSteps(pdu.blocks) }];
+        caseActiveLayer = 0;
+        caseSteps = mapApiSteps(pdu.blocks);
+      }
       const mut = document.getElementById('case-mutate-step');
       if (mut && r.mutateStep) mut.value = r.mutateStep;
+      renderCaseSessionSteps();
+      renderCaseLayers();
+      renderCaseSteps();
     } else {
       caseSessionSteps = null;
+      caseLayers = null;
       caseSteps = mapApiSteps(r.steps);
+      renderCaseSessionSteps();
+      renderCaseLayers();
+      renderCaseSteps();
     }
     const nameEl = document.getElementById('case-recipe-name');
     if (nameEl) nameEl.value = r.name || id;
     const descEl = document.getElementById('case-recipe-desc');
     if (descEl) descEl.value = r.description || '';
-    renderCaseSessionSteps();
-    renderCaseSteps();
-    document.getElementById('case-save-result').textContent =
-      `Loaded pack “${r.name || id}”` +
-      (session.length ? ` (${session.length} PDUs)` : ` (${caseSteps.length} blocks)`);
+    const existing = document.getElementById('case-save-result').textContent || '';
+    if (!existing.startsWith('Pack')) {
+      document.getElementById('case-save-result').textContent =
+        `Loaded pack “${r.name || id}”` +
+        (session.length ? ` (${Math.min(session.length, caseSessionSteps?.length || session.length)} PDUs)` : ` (${caseSteps.length} blocks)`);
+    }
     focusCaseSessionPanel();
   } catch (err) {
     document.getElementById('case-save-result').textContent = err.message;
@@ -3975,10 +4615,13 @@ document.getElementById('case-save-exact')?.addEventListener('click', async () =
 document.getElementById('case-clear')?.addEventListener('click', () => {
   caseSteps = [];
   caseSessionSteps = null;
+  caseLayers = null;
   caseActivePdu = 0;
+  caseActiveLayer = 0;
   const prev = document.getElementById('case-session-preview');
   if (prev) prev.innerHTML = '';
   renderCaseSessionSteps();
+  renderCaseLayers();
   renderCaseSteps();
 });
 
@@ -4019,6 +4662,163 @@ document.getElementById('case-preset-binary')?.addEventListener('click', () => {
   renderCaseSteps();
 });
 
+document.getElementById('case-idl-import')?.addEventListener('click', async () => {
+  const project = document.getElementById('case-project')?.value;
+  const name = document.getElementById('case-idl-name')?.value?.trim();
+  const idl = document.getElementById('case-idl-text')?.value || '';
+  if (!project) {
+    document.getElementById('case-save-result').textContent = 'Pick a Target profile first (Step 1).';
+    return;
+  }
+  if (!name) {
+    document.getElementById('case-save-result').textContent = 'IDL model name required.';
+    return;
+  }
+  try {
+    const r = await api.post('/api/case/idl', { project, name, idl });
+    document.getElementById('case-save-result').textContent =
+      r.message + (r.fields?.length ? ` · ${r.fields.join(', ')}` : '');
+    await refreshCaseProject();
+  } catch (err) {
+    document.getElementById('case-save-result').textContent = err.message;
+  }
+});
+
+document.getElementById('case-field-table-toggle')?.addEventListener('change', () => renderCaseFieldTable());
+
+document.getElementById('case-layer-add')?.addEventListener('click', () => {
+  flushActiveLayer();
+  if (!caseLayers || !caseLayers.length) {
+    caseLayers = [{ name: 'pdu', blocks: mapApiSteps(collectCaseSteps()) }];
+  }
+  caseLayers.push({
+    name: `layer${caseLayers.length + 1}`,
+    blocks: [{ op: 'hex', value: '00', role: 'fuzzable' }],
+  });
+  caseActiveLayer = caseLayers.length - 1;
+  caseSteps = mapApiSteps(caseLayers[caseActiveLayer].blocks);
+  renderCaseLayers();
+  renderCaseSteps();
+});
+
+document.getElementById('case-layer-flatten')?.addEventListener('click', () => {
+  flushActiveLayer();
+  const flat = flattenCaseLayers(caseLayers || [{ name: 'pdu', blocks: caseSteps }]);
+  caseLayers = [{ name: 'pdu', blocks: flat }];
+  caseActiveLayer = 0;
+  caseSteps = mapApiSteps(flat);
+  if (isCaseSessionMode() && caseSessionSteps[caseActivePdu]) {
+    caseSessionSteps[caseActivePdu].layers = null;
+    caseSessionSteps[caseActivePdu].blocks = flat;
+  }
+  renderCaseLayers();
+  renderCaseSteps();
+  document.getElementById('case-save-result').textContent = `Flattened to ${flat.length} blocks.`;
+});
+
+document.getElementById('case-layer-tpl-nbss-smb2')?.addEventListener('click', () => {
+  applyLayerStackTemplate([
+    {
+      name: 'nbss',
+      blocks: [
+        { op: 'hex', value: '00', role: 'static' },
+        { op: 'len-prefix', format: 'nbss' },
+      ],
+    },
+    {
+      name: 'smb2',
+      blocks: [
+        { op: 'hex', value: 'fe 53 4d 42 40 00 01 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00', role: 'fuzzable' },
+      ],
+    },
+  ], 'Stack template: NBSS / SMB2 — edit smb2 layer, Preview recalculates NBSS length.');
+});
+
+document.getElementById('case-layer-tpl-nbss-smb2-dce')?.addEventListener('click', () => {
+  applyLayerStackTemplate([
+    {
+      name: 'nbss',
+      blocks: [
+        { op: 'hex', value: '00', role: 'static' },
+        { op: 'len-prefix', format: 'nbss' },
+      ],
+    },
+    {
+      name: 'smb2',
+      blocks: [
+        { op: 'hex', value: 'fe 53 4d 42 40 00 01 00 00 00 00 00 09 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00', role: 'static' },
+      ],
+    },
+    {
+      name: 'dce',
+      blocks: [
+        { op: 'hex', value: '05 00 0b 03 10 00 00 00 48 00 00 00 01 00 00 00', role: 'fuzzable' },
+      ],
+    },
+  ], 'Stack template: NBSS / SMB2 Write / DCE — pipe bridge shape for VulnSmb.');
+});
+
+document.getElementById('case-layer-tpl-tlv')?.addEventListener('click', () => {
+  applyLayerStackTemplate([
+    {
+      name: 'magic',
+      blocks: [{ op: 'static', value: 'CUST', role: 'static' }],
+    },
+    {
+      name: 'len',
+      blocks: [{ op: 'len-prefix', format: 'u16le' }],
+    },
+    {
+      name: 'body',
+      blocks: [{ op: 'text', value: 'payload', role: 'fuzzable' }],
+    },
+  ], 'Stack template: TLV (magic / len / body).');
+});
+
+document.getElementById('case-wizard-build')?.addEventListener('click', () => {
+  const magic = (document.getElementById('wiz-magic')?.value || 'CUST').trim();
+  const magicHex = !!document.getElementById('wiz-magic-hex')?.checked;
+  const lenFmt = document.getElementById('wiz-len')?.value || 'u16le';
+  const body = document.getElementById('wiz-body')?.value ?? 'payload';
+  const bodyHex = !!document.getElementById('wiz-body-hex')?.checked;
+  const crc = !!document.getElementById('wiz-crc')?.checked;
+  const steps = [];
+  if (magic) {
+    steps.push(magicHex
+      ? { op: 'hex', value: magic, role: 'static' }
+      : { op: 'static', value: magic, role: 'static' });
+  }
+  if (lenFmt && lenFmt !== 'none') {
+    steps.push({ op: 'len-prefix', format: lenFmt });
+  }
+  steps.push(bodyHex
+    ? { op: 'hex', value: body || '00', role: 'fuzzable' }
+    : { op: 'text', value: body, role: 'fuzzable' });
+  if (crc) {
+    steps.push({ op: 'crc32', format: 'u32le', role: 'static' });
+  }
+  caseSessionSteps = null;
+  caseSteps = steps;
+  renderCaseSessionSteps();
+  renderCaseSteps();
+  document.getElementById('case-save-result').textContent =
+    `Wizard built ${steps.length} blocks` + (crc ? ' (CRC32 over preceding bytes)' : '') +
+    '. Preview, Save as seed, or Promote PDU → model.';
+});
+
+document.getElementById('case-preset-dns')?.addEventListener('click', async () => {
+  const sel = document.getElementById('case-pack-select');
+  if (sel) {
+    const opt = [...sel.options].find((o) => o.value === 'dns-query');
+    if (opt) sel.value = 'dns-query';
+  }
+  if ((caseProfile?.kind || '').toLowerCase() !== 'udp') {
+    document.getElementById('case-save-result').textContent =
+      'DNS query pack works best on a UDP Target profile (e.g. dns-lab). Loading pack anyway…';
+  }
+  document.getElementById('case-pack-load')?.click();
+});
+
 document.getElementById('case-preset-ftp')?.addEventListener('click', () => {
   caseSessionSteps = null;
   caseSteps = [
@@ -4044,12 +4844,15 @@ function requireTcpForSessionPreset(label) {
 function activateSessionPreset(steps, recipeName, statusMsg, activeIndex) {
   caseSessionSteps = steps;
   caseActivePdu = Math.min(activeIndex ?? steps.length - 1, steps.length - 1);
+  caseLayers = [{ name: 'pdu', blocks: mapApiSteps(caseSessionSteps[caseActivePdu].blocks) }];
+  caseActiveLayer = 0;
   caseSteps = mapApiSteps(caseSessionSteps[caseActivePdu].blocks);
   const nameEl = document.getElementById('case-recipe-name');
   if (nameEl && !nameEl.value) nameEl.value = recipeName;
   const mut = document.getElementById('case-mutate-step');
   if (mut) mut.value = 'last';
   renderCaseSessionSteps();
+  renderCaseLayers();
   renderCaseSteps();
   document.getElementById('case-save-result').textContent = statusMsg;
   focusCaseSessionPanel();
@@ -4328,6 +5131,8 @@ document.getElementById('case-preset-wav')?.addEventListener('click', () => {
 
 async function init() {
   initNavToggle();
+  await initThemePicker();
+  applyRemoteLabChrome();
   await loadHealth();
   await loadTargets();
   await loadDashboard();
@@ -4338,7 +5143,15 @@ async function init() {
   await loadBundlesView();
   await loadCrashes();
   await connectHub();
+  try {
+    const savedAgent = localStorage.getItem(LABS_AGENT_KEY) || '';
+    const agentInput = document.getElementById('labs-agent-url');
+    if (agentInput && savedAgent) agentInput.value = savedAgent;
+  } catch { /* ignore */ }
+  persistLabsAgentUrl();
+  refreshLabs().catch(() => {});
   setInterval(pollStatus, 3000);
+  setInterval(() => refreshLabs().catch(() => {}), 4000);
   setInterval(() => {
     if (document.getElementById('view-proxy').classList.contains('visible'))
       loadProxy().catch(() => {});

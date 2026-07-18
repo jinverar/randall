@@ -1,0 +1,132 @@
+{
+  "name": "smb-pipe-dce",
+  "description": "SMB2 IPC$ + pipe create + DCE bind/request on Write (VulnSmb pipe bridge)",
+  "kind": "session",
+  "mutateStep": "last",
+  "updatedAt": "2026-07-18T00:00:00Z",
+  "steps": [],
+  "sessionSteps": [
+    {
+      "name": "NEGOTIATE",
+      "readBanner": false,
+      "expectResponse": "SMB_NEGO_OK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "00 00 00 40 fe 53 4d 42 40 00 01 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+          "role": "fuzzable"
+        }
+      ]
+    },
+    {
+      "name": "SESSION_SETUP",
+      "readBanner": false,
+      "expectResponse": "SMB_SESS_OK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "00 00 00 40 fe 53 4d 42 40 00 01 00 00 00 00 00 01 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+          "role": "fuzzable"
+        }
+      ]
+    },
+    {
+      "name": "TREE_CONNECT",
+      "readBanner": false,
+      "expectResponse": "SMB_TREE_OK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "00 00 00 60 fe 53 4d 42 40 00 01 00 00 00 00 00 03 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 5c 00 5c 00 31 00 32 00 37 00 2e 00 30 00 2e 00 30 00 2e 00 31 00 5c 00 49 00 50 00 43 00 24 00",
+          "role": "fuzzable"
+        }
+      ]
+    },
+    {
+      "name": "CREATE",
+      "readBanner": false,
+      "expectResponse": "SMB_CREATE_OK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "00 00 00 5e fe 53 4d 42 40 00 01 00 00 00 00 00 05 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 5c 00 5c 00 70 00 69 00 70 00 65 00 5c 00 5c 00 72 00 61 00 6e 00 64 00 61 00 6c 00 6c 00",
+          "role": "fuzzable"
+        }
+      ]
+    },
+    {
+      "name": "WRITE_BIND",
+      "readBanner": false,
+      "expectResponse": "BIND_ACK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "00",
+          "role": "static"
+        },
+        {
+          "op": "len-prefix",
+          "format": "nbss"
+        },
+        {
+          "op": "hex",
+          "value": "fe 53 4d 42 40 00 01 00 00 00 00 00 09 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+          "role": "static"
+        },
+        {
+          "op": "hex",
+          "value": "05 00 0b 03 10 00 00 00 48 00 00 00 01 00 00 00 ff ff ff ff 00 00 00 00 01 00 00 00 00 00 01 00 aa aa aa aa bb bb cc cc dd dd ee ee ee ee ee ee 00 00 00 00 04 5d 88 8a eb 1c c9 11 9f e8 08 00 2b 10 48 60 02 00 00 00",
+          "role": "fuzzable"
+        }
+      ],
+      "layers": [
+        {
+          "name": "nbss",
+          "blocks": [
+            {
+              "op": "hex",
+              "value": "00",
+              "role": "static"
+            },
+            {
+              "op": "len-prefix",
+              "format": "nbss"
+            }
+          ]
+        },
+        {
+          "name": "smb2",
+          "blocks": [
+            {
+              "op": "hex",
+              "value": "fe 53 4d 42 40 00 01 00 00 00 00 00 09 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+              "role": "static"
+            }
+          ]
+        },
+        {
+          "name": "dce",
+          "blocks": [
+            {
+              "op": "hex",
+              "value": "05 00 0b 03 10 00 00 00 48 00 00 00 01 00 00 00 ff ff ff ff 00 00 00 00 01 00 00 00 00 00 01 00 aa aa aa aa bb bb cc cc dd dd ee ee ee ee ee ee 00 00 00 00 04 5d 88 8a eb 1c c9 11 9f e8 08 00 2b 10 48 60 02 00 00 00",
+              "role": "fuzzable"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "WRITE_REQUEST",
+      "readBanner": false,
+      "expectResponse": "RPC_OK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "00 00 00 60 fe 53 4d 42 40 00 01 00 00 00 00 00 09 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 05 00 00 03 10 00 00 00 20 00 00 00 02 00 00 00 08 00 00 00 00 00 02 00 41 41 41 41 41 41 41 41",
+          "role": "fuzzable"
+        }
+      ]
+    }
+  ]
+}

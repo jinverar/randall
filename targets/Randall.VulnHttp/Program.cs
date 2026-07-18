@@ -9,15 +9,29 @@ internal static class Program
 {
     public static int Main(string[] args)
     {
+        
         var port = 8080;
-        for (var i = 0; i < args.Length - 1; i++)
+        var host = IPAddress.Loopback;
+        for (var i = 0; i < args.Length; i++)
         {
-            if (args[i] is "-p" or "--port" && int.TryParse(args[i + 1], out var p))
+            if ((args[i] is "-p" or "--port") && i + 1 < args.Length && int.TryParse(args[i + 1], out var p))
+            {
                 port = p;
+                i++;
+            }
+            else if ((args[i] is "-h" or "--host") && i + 1 < args.Length)
+            {
+                var h = args[++i];
+                if (h is "0.0.0.0" or "*" or "any" or "all")
+                    host = IPAddress.Any;
+                else if (!IPAddress.TryParse(h, out host!))
+                    host = IPAddress.Loopback;
+            }
         }
 
-        Console.WriteLine($"Randall VulnHttp listening on 0.0.0.0:{port}");
-        using var listener = new TcpListener(IPAddress.Any, port);
+
+        Console.WriteLine($"Randall VulnHttp listening on {host}:{port} (use --host 0.0.0.0 to expose all interfaces)");
+        using var listener = new TcpListener(host, port);
         listener.Start();
 
         while (true)

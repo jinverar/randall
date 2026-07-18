@@ -1,0 +1,49 @@
+name: dns-query
+description: Lab DNS A query (UDP :53 / mDNS :5353) — field-aware header + QNAME
+blocks:
+  - type: word
+    name: txid
+    value: "0x1234"
+    mutable: true
+    littleEndian: false
+  - type: word
+    name: flags
+    value: "0x0100"
+    mutable: true
+    littleEndian: false
+  - type: word
+    name: qdcount
+    value: "0x0001"
+    mutable: false
+    littleEndian: false
+  - type: word
+    name: ancount
+    value: "0x0000"
+    mutable: false
+    littleEndian: false
+  - type: word
+    name: nscount
+    value: "0x0000"
+    mutable: false
+    littleEndian: false
+  - type: word
+    name: arcount
+    value: "0x0000"
+    mutable: false
+    littleEndian: false
+  - type: bytes
+    name: qname
+    mutable: true
+    minSize: 1
+    maxSize: 255
+    seedFile: seeds/dns_qname.bin
+  - type: word
+    name: qtype
+    value: "0x0001"
+    mutable: true
+    littleEndian: false
+  - type: word
+    name: qclass
+    value: "0x0001"
+    mutable: true
+    littleEndian: false

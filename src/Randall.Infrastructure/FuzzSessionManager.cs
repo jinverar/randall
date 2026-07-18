@@ -158,6 +158,8 @@ internal sealed class MultiplexFuzzProgressSink(
         outer?.OnIteration(iteration);
     }
 
+    public void OnLog(FuzzLogEvent entry) => outer?.OnLog(entry);
+
     public void OnCompleted(FuzzRunResult result) => outer?.OnCompleted(result);
     public void OnStopped(string reason) => outer?.OnStopped(reason);
     public void OnError(string message) => outer?.OnError(message);

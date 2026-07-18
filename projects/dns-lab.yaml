@@ -1,0 +1,27 @@
+name: dns-lab
+description: Lab DNS/mDNS A-query fuzz — point host/port at your VM resolver (UDP)
+kind: udp
+target:
+  executable: ""
+  timeoutMs: 3000
+transport:
+  type: udp
+  host: 127.0.0.1
+  port: 53
+  receiveTimeoutMs: 500
+sessionCommands:
+  - name: QUERY
+    model: protocols/dns_query.yaml
+    readBanner: false
+fuzz:
+  maxIterations: 500
+  corpusDir: ../data/corpus/dns-lab
+  crashesDir: ../data/crashes/dns-lab
+seeds:
+  - seeds/dns_query.bin
+mutators:
+  - bitflip
+  - havoc
+  - interesting
+  - boundary
+  - expand

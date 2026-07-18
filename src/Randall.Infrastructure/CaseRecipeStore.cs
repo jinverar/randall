@@ -732,14 +732,20 @@ public static class CaseRecipeStore
         repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
         var profile = GetProfile(request.Project, repoRoot)
                       ?? throw new ArgumentException($"Unknown project: {request.Project}");
-        if (!profile.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase))
+        var isTcp = profile.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase);
+        var isUdp = profile.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase);
+        if (!isTcp && !isUdp)
             return new CaseSaveResultDto(false,
-                "Apply session recipe requires a TCP Target profile (UDP multi-PDU comes later).",
+                "Apply session recipe requires a TCP or UDP Target profile.",
                 null, 0);
 
         var steps = NormalizeSessionSteps(request.SessionSteps);
         if (steps.Count == 0)
             return new CaseSaveResultDto(false, "No session steps to apply", null, 0);
+        if (isUdp && steps.Count > 1)
+            return new CaseSaveResultDto(false,
+                "UDP Apply supports a single datagram PDU (multi-PDU UDP comes later). Keep one PDU or switch to TCP.",
+                null, 0);
 
         var flowName = SanitizeName(string.IsNullOrWhiteSpace(request.FlowName)
             ? "scare-flow"
@@ -791,38 +797,45 @@ public static class CaseRecipeStore
                 cmdLines.Add($"    expectResponse: {YamlQuote(step.ExpectResponse)}");
         }
 
-        var flowLines = new List<string>
-        {
-            "sessionFlows:",
-            $"  - name: {flowName}",
-            $"    steps: [{string.Join(", ", flowStepNames)}]",
-            $"    mutateStep: {mutate}",
-        };
-
         var yaml = File.ReadAllText(profile.ConfigPath);
         yaml = UpsertYamlTopBlock(yaml, "sessionCommands", string.Join("\n", cmdLines) + "\n");
-        yaml = UpsertYamlTopBlock(yaml, "sessionFlows", string.Join("\n", flowLines) + "\n");
-        File.WriteAllText(profile.ConfigPath, yaml);
 
         var bias = request.SessionFlowBias;
         if (bias < 0) bias = 0;
         if (bias > 1) bias = 1;
-        try
+
+        if (isTcp)
         {
-            yaml = File.ReadAllText(profile.ConfigPath);
-            if (Regex.IsMatch(yaml, @"^\s*sessionFlowBias:", RegexOptions.Multiline))
-                yaml = ReplaceYamlKey(yaml, "sessionFlowBias",
-                    bias.ToString(System.Globalization.CultureInfo.InvariantCulture), quote: false);
-            else if (Regex.IsMatch(yaml, @"^fuzz:\s*$", RegexOptions.Multiline))
+            var flowLines = new List<string>
             {
-                var fuzzRx = new Regex(@"^fuzz:\s*$", RegexOptions.Multiline);
-                yaml = fuzzRx.Replace(yaml,
-                    $"fuzz:\n  sessionFlowBias: {bias.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
-                    1);
+                "sessionFlows:",
+                $"  - name: {flowName}",
+                $"    steps: [{string.Join(", ", flowStepNames)}]",
+                $"    mutateStep: {mutate}",
+            };
+            yaml = UpsertYamlTopBlock(yaml, "sessionFlows", string.Join("\n", flowLines) + "\n");
+            File.WriteAllText(profile.ConfigPath, yaml);
+            try
+            {
+                yaml = File.ReadAllText(profile.ConfigPath);
+                if (Regex.IsMatch(yaml, @"^\s*sessionFlowBias:", RegexOptions.Multiline))
+                    yaml = ReplaceYamlKey(yaml, "sessionFlowBias",
+                        bias.ToString(System.Globalization.CultureInfo.InvariantCulture), quote: false);
+                else if (Regex.IsMatch(yaml, @"^fuzz:\s*$", RegexOptions.Multiline))
+                {
+                    var fuzzRx = new Regex(@"^fuzz:\s*$", RegexOptions.Multiline);
+                    yaml = fuzzRx.Replace(yaml,
+                        $"fuzz:\n  sessionFlowBias: {bias.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                        1);
+                }
+                File.WriteAllText(profile.ConfigPath, yaml);
             }
+            catch { /* best effort */ }
+        }
+        else
+        {
             File.WriteAllText(profile.ConfigPath, yaml);
         }
-        catch { /* best effort */ }
 
         // Keep seeds: list usable for single-blob fallback — register last PDU
         TryEnsureSeedInYaml(profile.ConfigPath, $"seeds/{flowName}_{SanitizeName(steps[^1].Name)}.bin");
@@ -831,6 +844,14 @@ public static class CaseRecipeStore
             SaveDict(new CaseSaveDictRequest(request.Project, allHints.Distinct().ToList(), true), repoRoot);
 
         ProjectLoader.Load(profile.ConfigPath);
+        if (isUdp)
+        {
+            return new CaseSaveResultDto(true,
+                $"Applied UDP datagram '{flowName}' ({totalBytes} bytes) → sessionCommands. Single-PDU UDP — Campaign picks this command each iteration.",
+                profile.ConfigPath,
+                totalBytes);
+        }
+
         return new CaseSaveResultDto(true,
             $"Applied flow '{flowName}' ({steps.Count} PDUs, {totalBytes} bytes) → sessionCommands + sessionFlows. Campaign will use sessionFlowBias={bias.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
             profile.ConfigPath,
@@ -848,7 +869,10 @@ public static class CaseRecipeStore
         foreach (var s in steps)
         {
             i++;
-            var blocks = (s.Blocks ?? []).ToList();
+            var layers = (s.Layers ?? []).Where(l => l.Blocks is { Count: > 0 }).ToList();
+            var blocks = layers.Count > 0
+                ? CaseRecipeEngine.FlattenLayers(layers).ToList()
+                : (s.Blocks ?? []).ToList();
             if (blocks.Count == 0)
                 continue;
             var raw = string.IsNullOrWhiteSpace(s.Name) ? $"step{i}" : s.Name.Trim();
@@ -859,7 +883,9 @@ public static class CaseRecipeStore
             var n = 2;
             while (!used.Add(name))
                 name = $"{baseName}{n++}";
-            list.Add(new CaseSessionStepDto(name, blocks, s.ReadBanner, s.ExpectResponse));
+            list.Add(new CaseSessionStepDto(
+                name, blocks, s.ReadBanner, s.ExpectResponse,
+                layers.Count > 0 ? layers : null));
         }
         return list;
     }
@@ -1010,6 +1036,49 @@ public static class CaseRecipeStore
             return new CasePromoteResultDto(false, "Protocol name required", null, null);
 
         var def = CaseRecipeEngine.StepsToProtocol(name, request.Description, steps, out var seedFiles);
+        return WriteProtocolDefinition(profile, name, def, seedFiles, request.SessionStepName);
+    }
+
+    public static CaseIdlResultDto ImportIdl(CaseIdlRequest request, string? repoRoot = null)
+    {
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var profile = GetProfile(request.Project, repoRoot)
+                      ?? throw new ArgumentException($"Unknown project: {request.Project}");
+        var name = SanitizeName(request.Name);
+        if (string.IsNullOrWhiteSpace(name))
+            return new CaseIdlResultDto(false, "Protocol name required", null, null, null, [], []);
+
+        IdlStubMapper.ParseResult parsed;
+        try
+        {
+            parsed = IdlStubMapper.Parse(request.Idl, name, request.Description);
+        }
+        catch (Exception ex)
+        {
+            return new CaseIdlResultDto(false, ex.Message, null, null, null, [], []);
+        }
+
+        var written = WriteProtocolDefinition(profile, name, parsed.Definition, parsed.SeedFiles, null);
+        return new CaseIdlResultDto(
+            written.Ok,
+            written.Ok
+                ? $"IDL struct {parsed.StructName} → {written.RelativePath} ({parsed.Definition.Blocks.Count} fields). " +
+                  string.Join("; ", parsed.Notes.Take(2))
+                : written.Message,
+            written.RelativePath,
+            written.AbsolutePath,
+            parsed.StructName,
+            parsed.FieldSummary,
+            parsed.Notes);
+    }
+
+    private static CasePromoteResultDto WriteProtocolDefinition(
+        CaseProjectProfileDto profile,
+        string name,
+        ProtocolDefinition def,
+        List<(string RelativeSeed, byte[] Bytes)> seedFiles,
+        string? sessionStepName)
+    {
         var projectDir = Path.GetDirectoryName(profile.ConfigPath)!;
         var protoDir = Path.Combine(projectDir, "protocols");
         Directory.CreateDirectory(protoDir);
@@ -1026,7 +1095,6 @@ public static class CaseRecipeStore
         var yaml = ProtocolYamlSerializer.Serialize(def);
         File.WriteAllText(yamlPath, yaml);
 
-        // Validate load
         try
         {
             ProtocolLoader.Load(profile.ConfigPath, $"protocols/{name}.yaml");
@@ -1038,9 +1106,9 @@ public static class CaseRecipeStore
                 $"protocols/{name}.yaml", yamlPath);
         }
 
-        var label = string.IsNullOrWhiteSpace(request.SessionStepName)
+        var label = string.IsNullOrWhiteSpace(sessionStepName)
             ? name
-            : $"{request.SessionStepName} → {name}";
+            : $"{sessionStepName} → {name}";
         return new CasePromoteResultDto(true,
             $"Promoted {label} → protocols/{name}.yaml ({def.Blocks.Count} model blocks)",
             $"protocols/{name}.yaml",

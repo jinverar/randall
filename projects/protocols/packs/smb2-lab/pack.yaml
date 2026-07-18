@@ -1,0 +1,12 @@
+id: smb2-lab
+name: SMB2 lab flow
+description: NBSS + SMB2 Negotiate → Session Setup → Tree Connect → Create (VulnSmb :4455)
+kind: session
+recipe: recipe.json
+protocols:
+  - ../../smb2_negotiate.yaml
+  - ../../smb2_session_setup.yaml
+  - ../../smb2_tree_connect.yaml
+  - ../../smb2_create.yaml
+  - ../../smb2_write.yaml
+  - ../../smb2_read.yaml

@@ -7,13 +7,17 @@ public static class DocsCatalog
 {
     public static readonly (string Path, string Title, string Group)[] Index =
     [
+        ("HOWTO_STALK_GENERIC_APP.md", "How to: stalk a generic application", "Getting started"),
         ("CUSTOM_TARGETS.md", "Custom targets (YAML → Target profile)", "Getting started"),
         ("CASE_BUILDER.md", "Scare Floor — recipes, seeds & dictionaries", "Getting started"),
         ("LORE.md", "Mascot lore (Randall)", "Project"),
         ("TARGETS.md", "Lab targets", "Getting started"),
         ("FUZZING.md", "Fuzzing techniques & mutators", "Fuzzing"),
-        ("STALKING.md", "Stalking bugs", "Stalk & scream"),
+        ("STALK_LOOP.md", "Stalk loop (baseline → fuzz → learn)", "Stalk & scream"),
+        ("STALKING.md", "Stalking bugs reference", "Stalk & scream"),
         ("CRASH_ANALYSIS.md", "Crash analysis", "Stalk & scream"),
+        ("TARGET_RUNTIME.md", "Target Runtime + remote lab", "Stalk & scream"),
+        ("LAB_AGENT.md", "Lab agent (remote UI)", "Lab"),
         ("LAB_PRACTICE.md", "Lab practice walkthrough", "Lab"),
         ("MODEL.md", "Protocol models", "Lab"),
         ("ROADMAP.md", "Roadmap", "Project"),

@@ -1,0 +1,43 @@
+name: op2_stub
+description: IDL stub map from struct Op2Stub
+blocks:
+- type: word
+  name: flags
+  value: 0
+  mutable: true
+  minSize: 1
+  maxSize: 4096
+  values: []
+  lengthBytes: 4
+  littleEndian: true
+  lengthMutable: true
+- type: dword
+  name: length
+  value: 0
+  mutable: true
+  minSize: 1
+  maxSize: 4096
+  values: []
+  lengthBytes: 4
+  littleEndian: true
+  lengthMutable: true
+- type: bytes
+  name: pad
+  mutable: true
+  minSize: 4
+  maxSize: 4096
+  seedFile: seeds/idl_op2_stub_pad.bin
+  values: []
+  lengthBytes: 4
+  littleEndian: true
+  lengthMutable: true
+- type: bytes
+  name: data
+  mutable: true
+  minSize: 64
+  maxSize: 4096
+  seedFile: seeds/idl_op2_stub_data.bin
+  values: []
+  lengthBytes: 4
+  littleEndian: true
+  lengthMutable: true

@@ -1,0 +1,37 @@
+{
+  "name": "dce-bind-request",
+  "description": "DCE/RPC-shaped bind then request (opnum 2 overflow on VulnRpc)",
+  "kind": "session",
+  "mutateStep": "last",
+  "updatedAt": "2026-07-18T00:00:00Z",
+  "steps": [],
+  "sessionSteps": [
+    {
+      "name": "BIND",
+      "readBanner": false,
+      "expectResponse": "BIND_ACK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "05 00 0b 03 10 00 00 00 48 00 00 00 01 00 00 00 ff ff ff ff 00 00 00 00 01 00 00 00 00 00 01 00 aa aa aa aa bb bb cc cc dd dd ee ee ee ee ee ee 00 00 00 00 04 5d 88 8a eb 1c c9 11 9f e8 08 00 2b 10 48 60 02 00 00 00",
+          "role": "fuzzable"
+        }
+      ]
+    },
+    {
+      "name": "REQUEST",
+      "readBanner": false,
+      "expectResponse": "RPC_OK",
+      "blocks": [
+        { "op": "hex", "value": "05 00 00 03 10 00 00 00", "role": "static" },
+        { "op": "hex", "value": "20 00", "role": "fuzzable" },
+        { "op": "hex", "value": "00 00", "role": "static" },
+        { "op": "hex", "value": "02 00 00 00", "role": "fuzzable" },
+        { "op": "hex", "value": "08 00 00 00", "role": "fuzzable" },
+        { "op": "hex", "value": "00 00", "role": "static" },
+        { "op": "hex", "value": "02 00", "role": "fuzzable" },
+        { "op": "repeat", "value": "A", "count": 8, "role": "fuzzable" }
+      ]
+    }
+  ]
+}

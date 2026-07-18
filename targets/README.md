@@ -6,6 +6,10 @@ Build all lab servers:
 .\scripts\build-all-lab-targets.ps1
 ```
 
+**Bind address:** Labs listen on **127.0.0.1** by default (safe on public Wi‑Fi). Pass `--host 0.0.0.0` only on a private lab network.
+
+**UI:** Fuzz → **Lab servers** — see running PIDs, Start / Stop / Stop all (no Process Explorer required).
+
 ## Randfuzz lab servers
 
 | Target | Port | Profile | Source |
@@ -14,8 +18,11 @@ Build all lab servers:
 | **VulnHttp** | 8080 | `projects/vulnhttp.yaml` | [Randall.VulnHttp](Randall.VulnHttp/) |
 | **VulnFtp** | 2121 | `projects/vulnftp.yaml` | [Randall.VulnFtp](Randall.VulnFtp/) |
 | **VulnSsh** | 2222 | `projects/vulnssh.yaml` | [Randall.VulnSsh](Randall.VulnSsh/) (stub, not real crypto) |
+| **VulnTftp** | 6969 | `projects/vulntftp.yaml` | [Randall.VulnTftp](Randall.VulnTftp/) |
+| **VulnRpc** | 1355 | `projects/vulnrpc.yaml` | [Randall.VulnRpc](Randall.VulnRpc/) (DCE-shaped lab) |
+| **VulnSmb** | 4455 | `projects/vulnsmb.yaml` | [Randall.VulnSmb](Randall.VulnSmb/) (NBSS+SMB2-shaped lab) |
 
-Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md).
+Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md). Labs: [RPC_LAB.md](../docs/RPC_LAB.md) · [SMB_LAB.md](../docs/SMB_LAB.md).
 
 ## Randfuzz Vulnserver (included)
 

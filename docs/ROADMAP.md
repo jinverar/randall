@@ -365,7 +365,7 @@ Scare Floor → kind: tcp → host:port
 
 ---
 
-## Phase 20 — Protocol packs (useful before SMB) 🔄
+## Phase 20 — Protocol packs (useful before SMB) ✅
 
 **Goal:** Ship reusable PDU packs so users aren’t hand-hexing common services.
 
@@ -375,58 +375,58 @@ Scare Floor → kind: tcp → host:port
 | HTTP/1.1 request pack | ✅ | `packs/http-get` |
 | FTP full login → STOR flow pack | ✅ | `packs/ftp-login` |
 | Generic **TLV / length-prefixed** pack | ✅ | `packs/tlv-frame` |
-| DNS / mDNS UDP query pack (lab) | 🔲 | Short datagram |
-| Import boofuzz example → Scare Floor recipe | 🔲 | Extend `import-boofuzz.py` |
-| Community: “custom protocol” wizard | 🔲 | Magic + len + body + CRC |
+| DNS / mDNS UDP query pack (lab) | ✅ | `packs/dns-query` + UDP Apply (1 PDU) |
+| Import boofuzz example → Scare Floor recipe | ✅ | `import-boofuzz.py --recipe` / `--pack` |
+| Community: “custom protocol” wizard | ✅ | Scare Floor: magic + len + body + CRC32 |
 
 ---
 
-## Phase 21 — RPC / DCE-RPC (first real hard protocol) 🔲
+## Phase 21 — RPC / DCE-RPC (first real hard protocol) ✅
 
 **Goal:** Fuzz RPC-shaped services without pretending we have full IDL/NDR yet.
 
 | Item | Status | Notes |
 |------|--------|-------|
-| DCE/RPC **bind** + **request** framing model | 🔲 | Fixed / call_id / opnum fields |
-| NDR stub as hex + sized fields (manual IDL) | 🔲 | User supplies layout |
-| Optional: parse simple IDL → stub field map | 🔲 | Later stretch |
-| Session: bind → alter_context? → request* | 🔲 | `sessionFlows` |
-| Lab: tiny RPC stub server (crashable opnum) | 🔲 | Like vulnserver for RPC |
-| Docs: “fuzz RPC with a known stub layout” | 🔲 | Honest limits vs Impacket |
+| DCE/RPC **bind** + **request** framing model | ✅ | `dce_bind.yaml` / `dce_request.yaml` |
+| NDR stub as hex + sized fields (manual IDL) | ✅ | Stub `bytes` + opnum/call_id fields |
+| Optional: parse simple IDL → stub field map | ✅ | `randall case idl` / Scare Floor IDL panel |
+| Session: bind → alter_context? → request* | ✅ | bind → request (`sessionFlows` + pack) |
+| Lab: tiny RPC stub server (crashable opnum) | ✅ | VulnRpc :1355 / `projects/vulnrpc.yaml` |
+| Docs: “fuzz RPC with a known stub layout” | ✅ | `docs/RPC_LAB.md` |
 
 **Honest limit:** Full Windows RPC + auth + complex NDR is months; start with **unauthenticated lab stub + known opnum layouts**.
 
 ---
 
-## Phase 22 — SMB (session-aware, lab-first) 🔲
+## Phase 22 — SMB (session-aware, lab-first) ✅
 
 **Goal:** Real SMB fuzzing path for lab VMs — negotiate → session → tree → command — not “hex dump at 445”.
 
 | Item | Status | Notes |
 |------|--------|-------|
-| NetBIOS session service (NBT) framing | 🔲 | When needed for 139/445 |
-| SMB2 **Negotiate** + **Session Setup** (null/guest lab) | 🔲 | No full Kerberos v1 |
-| Tree Connect + Create + Read/Write models | 🔲 | Field-aware sizes |
-| sessionGraph: response status → next command | 🔲 | Error paths matter |
-| Lab target guidance (vulnerable SMB in VM) | 🔲 | Never default-scan production |
-| Crash signal: TCP reset / process death / agent | 🔲 | Remote = agent or peer-down |
-| Optional: named-pipe → DCERPC reuse (Phase 21) | 🔲 | IPC$ bridge |
+| NetBIOS session service (NBT) framing | ✅ | NBSS prefix on SMB2 lab PDUs |
+| SMB2 **Negotiate** + **Session Setup** (null/guest lab) | ✅ | `smb2_negotiate` / `smb2_session_setup` |
+| Tree Connect + Create + Read/Write models | ✅ | `smb2_tree_connect` / create / read / write |
+| sessionGraph: response status → next command | ✅ | `vulnsmb.yaml` ASCII status edges |
+| Lab target guidance (vulnerable SMB in VM) | ✅ | VulnSmb :4455 + `docs/SMB_LAB.md` |
+| Crash signal: TCP reset / process death / agent | ✅ | longLived process death (existing) |
+| Optional: named-pipe → DCERPC reuse (Phase 21) | ✅ | pack `smb-pipe-dce` + VulnSmb Write→DCE |
 
 **Honest limit:** Production SMB + signing + modern auth is a research product of its own. Phase 22 targets **lab parsers / legacy / intentionally weak services**.
 
 ---
 
-## Phase 23 — Layered PDU builder (Scapy workflow, Randall-owned) 🔲
+## Phase 23 — Layered PDU builder (Scapy workflow, Randall-owned) ✅
 
 **Goal:** In-house layered crafting for **application stacks** first — same mental model as Scapy (`A / B / C`), implemented in Scare Floor + YAML, not a Python sidecar.
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Layered PDU builder in Scare Floor | 🔲 | e.g. `nbss / smb2 / ioctl` |
-| Field table edit (name, type, endian, fuzzable) | 🔲 | Not only free hex |
-| Stack templates (“SMB2 write”, “RPC request”) | 🔲 | From packs |
-| Recipe JSON as interchange (CLI + UI + optional scripts) | 🔲 | Own format; Scapy import optional later |
-| Autocalc length / checksum fields across layers | 🔲 | Like Scapy post-build |
+| Layered PDU builder in Scare Floor | ✅ | Layers panel; flattens on Preview/Apply |
+| Field table edit (name, type, endian, fuzzable) | ✅ | Field table view toggle |
+| Stack templates (“SMB2 write”, “RPC request”) | ✅ | NBSS/SMB2, NBSS/SMB2/DCE, TLV |
+| Recipe JSON as interchange (CLI + UI + optional scripts) | ✅ | `layers` on sessionSteps in recipe.json |
+| Autocalc length/checksum across layers | ✅ | `len-prefix` `nbss`/`u24be-rest` + `crc32` |
 
 ```
 Phase 23:     TCP socket  / NBSS / SMB2 / fields
@@ -461,11 +461,12 @@ Users should **not** need Scapy for normal Randfuzz work. Scapy remains an optio
 
 1. **Phase 18** — highest leverage (Scare Floor already exists; sessions already exist in YAML)
 2. **Phase 19** — glue so UI authors what the engine runs
-3. **Phase 20** — packs make demos/teaching fast
-4. **Phase 21** — RPC before SMB (smaller state machine; reusable under SMB pipes)
-5. **Phase 22** — SMB lab path
-6. **Phase 23** — layered app-PDU UX (Scapy workflow, our stack)
+3. **Phase 20** — packs make demos/teaching fast ✅
+4. **Phase 21** — RPC before SMB (smaller state machine; reusable under SMB pipes) ✅
+5. **Phase 22** — SMB lab path ✅
+6. **Phase 23** — layered app-PDU UX (Scapy workflow, our stack) ✅
 7. **Phase 24** — in-house L2–L4 packet forge
+8. **Target Runtime** ✅ — local/remote lifecycle, tubes, postStart, Page Heap, memory/heap lens; see [TARGET_RUNTIME.md](TARGET_RUNTIME.md)
 
 ### Near-term caution (not “never”)
 
@@ -480,4 +481,4 @@ These are **deferred product goals**, not permanent non-goals:
 
 **Policy:** Prefer Randall-native builders and transports. External tools (Scapy, Wireshark, Impacket) are for *optional import/compare*, not the primary workflow.
 
-Related: [BOOFUZZ_PARITY.md](BOOFUZZ_PARITY.md) · [MODEL.md](MODEL.md) · [CASE_BUILDER.md](CASE_BUILDER.md) · [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md)
+Related: [BOOFUZZ_PARITY.md](BOOFUZZ_PARITY.md) · [MODEL.md](MODEL.md) · [CASE_BUILDER.md](CASE_BUILDER.md) · [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · [TARGET_RUNTIME.md](TARGET_RUNTIME.md) · [LAB_AGENT.md](LAB_AGENT.md)

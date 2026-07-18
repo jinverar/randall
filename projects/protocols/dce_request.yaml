@@ -1,0 +1,55 @@
+name: dce-request
+description: DCE/RPC request (ptype 0) + NDR stub hex — opnum 2 crashes VulnRpc
+blocks:
+  - type: static
+    name: rpc_vers
+    value: "\x05\x00"
+    mutable: false
+  - type: static
+    name: ptype_request
+    value: "\x00"
+    mutable: false
+  - type: static
+    name: pfc_flags
+    value: "\x03"
+    mutable: false
+  - type: static
+    name: drep
+    value: "\x10\x00\x00\x00"
+    mutable: false
+  - type: word
+    name: frag_length
+    value: "0x0020"
+    mutable: true
+    littleEndian: true
+  - type: word
+    name: auth_length
+    value: "0x0000"
+    mutable: false
+    littleEndian: true
+  - type: dword
+    name: call_id
+    value: "0x00000002"
+    mutable: true
+    littleEndian: true
+  - type: dword
+    name: alloc_hint
+    value: "0x00000008"
+    mutable: true
+    littleEndian: true
+  - type: word
+    name: p_cont_id
+    value: "0x0000"
+    mutable: false
+    littleEndian: true
+  - type: word
+    name: opnum
+    value: "0x0002"
+    mutable: true
+    littleEndian: true
+  - type: bytes
+    name: stub
+    mutable: true
+    minSize: 1
+    maxSize: 4096
+    seedFile: seeds/dce_stub.bin

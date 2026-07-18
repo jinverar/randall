@@ -1,0 +1,8 @@
+id: dce-bind-request
+name: DCE/RPC bind → request
+description: Lab DCE-shaped session (bind then request) for VulnRpc / known stub layouts
+kind: session
+recipe: recipe.json
+protocols:
+  - ../../dce_bind.yaml
+  - ../../dce_request.yaml

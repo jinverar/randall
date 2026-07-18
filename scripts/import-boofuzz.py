@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Convert simple boofuzz example scripts to Randall YAML skeletons.
+"""Convert simple boofuzz example scripts to Randall YAML + Scare Floor recipes.
 
 Usage:
-  python scripts/import-boofuzz.py examples/ftp_simple.py -o projects/imported/ftp
+  python scripts/import-boofuzz.py examples/fixtures/ftp_simple.py -o projects/imported/ftp
+  python scripts/import-boofuzz.py path/to/ftp_simple.py -o projects/imported/ftp --recipe
+  python scripts/import-boofuzz.py path/to/ftp_simple.py -o projects/protocols/packs/my-ftp --pack
 
-Supports Request(...) children with String/Delim/Static blocks and session.connect() chains.
+Emits:
+  protocols/*.yaml + project.yaml  (always)
+  recipe.json                      (--recipe or --pack)
+  pack.yaml                        (--pack)
 """
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import textwrap
 from pathlib import Path
@@ -17,7 +23,7 @@ from pathlib import Path
 def parse_requests(source: str) -> dict[str, list[dict]]:
     requests: dict[str, list[dict]] = {}
     for match in re.finditer(
-        r'Request\(\s*"([^"]+)"\s*,\s*children=\(\s*(.*?)\s*\)\s*\)',
+        r'Request\(\s*"([^"]+)"\s*,\s*children=\(\s*(.*?)\s*\)\s*,?\s*\)',
         source,
         re.DOTALL,
     ):
@@ -53,14 +59,13 @@ def parse_requests(source: str) -> dict[str, list[dict]]:
 
 def parse_connects(source: str) -> list[list[str]]:
     flows: list[list[str]] = []
-    pending: list[str] = []
     for line in source.splitlines():
         m = re.search(r'session\.connect\(([^)]+)\)', line)
         if not m:
             continue
         parts = [p.strip().strip('"') for p in m.group(1).split(",")]
         if len(parts) == 1:
-            pending = [parts[0]]
+            flows.append([parts[0]])
         else:
             flows.append([parts[0], parts[1]])
     return flows
@@ -96,7 +101,8 @@ def emit_project(requests: dict[str, list[dict]], flows: list[list[str]], host: 
     if flows:
         flow_yaml = "sessionFlows:\n"
         for i, flow in enumerate(flows):
-            flow_yaml += f"  - name: flow_{i}\n    steps: [{', '.join(flow)}]\n"
+            steps = ", ".join(n.upper() for n in flow)
+            flow_yaml += f"  - name: flow_{i}\n    steps: [{steps}]\n"
     return textwrap.dedent(
         f"""\
         name: imported-boofuzz
@@ -122,12 +128,68 @@ def emit_project(requests: dict[str, list[dict]], flows: list[list[str]], host: 
     )
 
 
+def block_to_recipe_op(b: dict) -> dict:
+    t = b["type"]
+    if t == "static":
+        val = b["value"]
+        if val == "\r\n":
+            return {"op": "crlf", "role": "static"}
+        if val == "\n":
+            return {"op": "lf", "role": "static"}
+        if val == "\0":
+            return {"op": "null", "role": "static"}
+        return {"op": "static", "value": val.replace("\r", "\\r").replace("\n", "\\n"), "role": "static"}
+    if t == "delim":
+        return {"op": "delim", "value": b.get("value") or " ", "role": "static"}
+    if t == "choices":
+        vals = b.get("values") or [""]
+        return {"op": "text", "value": vals[0], "role": "fuzzable"}
+    return {"op": "text", "value": b.get("value") or "", "role": "fuzzable"}
+
+
+def emit_recipe(requests: dict[str, list[dict]], name: str = "imported-boofuzz") -> dict:
+    session_steps = []
+    for req_name, blocks in requests.items():
+        session_steps.append({
+            "name": req_name.upper(),
+            "readBanner": True,
+            "expectResponse": "",
+            "blocks": [block_to_recipe_op(b) for b in blocks],
+        })
+    return {
+        "name": name,
+        "description": "Imported from boofuzz -> Scare Floor session recipe",
+        "kind": "session",
+        "mutateStep": "last",
+        "steps": [],
+        "sessionSteps": session_steps,
+    }
+
+
+def emit_pack_yaml(pack_id: str, name: str, proto_names: list[str]) -> str:
+    refs = "\n".join(f"  - protocols/{n.lower()}.yaml" for n in proto_names)
+    return textwrap.dedent(
+        f"""\
+        id: {pack_id}
+        name: {name}
+        description: Imported from boofuzz (Scare Floor pack)
+        kind: session
+        recipe: recipe.json
+        protocols:
+        {refs}
+        """
+    )
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Boofuzz → Randall YAML importer")
+    ap = argparse.ArgumentParser(description="Boofuzz → Randall YAML / Scare Floor recipe importer")
     ap.add_argument("input", type=Path, help="boofuzz .py example")
     ap.add_argument("-o", "--output", type=Path, required=True, help="output directory")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=9999)
+    ap.add_argument("--recipe", action="store_true", help="also write recipe.json for Scare Floor")
+    ap.add_argument("--pack", action="store_true",
+                    help="write pack.yaml + recipe.json + protocols/ (protocol pack layout)")
     args = ap.parse_args()
 
     source = args.input.read_text(encoding="utf-8")
@@ -142,12 +204,36 @@ def main() -> None:
     for name, blocks in requests.items():
         (proto_dir / f"{name.lower()}.yaml").write_text(emit_protocol(name, blocks), encoding="utf-8")
 
-    flow_steps = [[n.upper() for n in f] for f in flows]
-    (out / "project.yaml").write_text(
-        emit_project(requests, flow_steps, args.host, args.port),
-        encoding="utf-8",
-    )
-    print(f"Wrote {len(requests)} protocol(s) + project.yaml → {out}")
+    if not args.pack:
+        flow_steps = [[n.upper() for n in f] for f in flows]
+        (out / "project.yaml").write_text(
+            emit_project(requests, flow_steps, args.host, args.port),
+            encoding="utf-8",
+        )
+
+    write_recipe = args.recipe or args.pack
+    if write_recipe:
+        recipe = emit_recipe(requests, name=out.name or "imported-boofuzz")
+        (out / "recipe.json").write_text(json.dumps(recipe, indent=2) + "\n", encoding="utf-8")
+
+    if args.pack:
+        pack_id = re.sub(r"[^a-z0-9\-]+", "-", out.name.lower()).strip("-") or "imported"
+        (out / "pack.yaml").write_text(
+            emit_pack_yaml(pack_id, pack_id, list(requests.keys())),
+            encoding="utf-8",
+        )
+
+    bits = [f"{len(requests)} protocol(s)"]
+    if not args.pack:
+        bits.append("project.yaml")
+    if write_recipe:
+        bits.append("recipe.json")
+    if args.pack:
+        bits.append("pack.yaml")
+    print(f"Wrote {', '.join(bits)} -> {out}")
+    if write_recipe:
+        print("Tip: Scare Floor -> Protocol pack -> Load pack (if under projects/protocols/packs/),")
+        print("     or copy recipe.json into a project's recipes/ folder.")
 
 
 if __name__ == "__main__":

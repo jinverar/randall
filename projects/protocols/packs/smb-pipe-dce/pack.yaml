@@ -1,0 +1,10 @@
+id: smb-pipe-dce
+name: SMB pipe → DCE/RPC
+description: IPC$ tree + pipe create + DCE bind/request on SMB2 Write (Phase 22 pipe bridge)
+kind: session
+recipe: recipe.json
+protocols:
+  - ../../smb2_negotiate.yaml
+  - ../../smb2_session_setup.yaml
+  - ../../dce_bind.yaml
+  - ../../dce_request.yaml

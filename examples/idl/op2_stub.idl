@@ -1,0 +1,9 @@
+// Minimal lab IDL for VulnRpc opnum 2 stub layout (not MIDL / not full NDR).
+// Import: randall case idl -p vulnrpc --name op2_stub --file examples/idl/op2_stub.idl
+
+typedef struct {
+    uint16_t flags;
+    uint32_t length;
+    byte     pad[4];
+    byte     data[64];
+} Op2Stub;

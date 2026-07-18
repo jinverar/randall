@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 using Randall.Contracts;
+using Randall.Core;
 
 namespace Randall.Infrastructure;
 
@@ -42,7 +43,9 @@ public static class CaseRecipeEngine
             ["count", "value"]),
         new("cyclic", "Cyclic pattern", "Unique pattern length N (depth triage)", "binary",
             ["count"]),
-        new("len-prefix", "Length prefix", "u8/u16/u32 LE|BE of the following payload size", "binary",
+        new("len-prefix", "Length prefix", "u8/u16/u32/u24 LE|BE of next block — or u24be-rest / nbss for all following", "binary",
+            ["format"]),
+        new("crc32", "CRC32", "CRC32 over preceding bytes (ISO/Ethernet) — promote → checksum block", "binary",
             ["format"]),
     ];
 
@@ -72,14 +75,38 @@ public static class CaseRecipeEngine
         var notes = new List<string>();
         var pendingLenFormat = (string?)null;
         var pendingPad = ((int Count, byte Fill)?)null;
+        var list = steps?.ToList() ?? [];
 
-        foreach (var step in steps)
+        for (var si = 0; si < list.Count; si++)
         {
+            var step = list[si];
             var op = (step.Op ?? "").Trim().ToLowerInvariant();
             if (op is "len-prefix" or "length" or "size")
             {
-                pendingLenFormat = string.IsNullOrWhiteSpace(step.Format) ? "u16le" : step.Format!;
-                notes.Add($"Length prefix ({pendingLenFormat}) applies to the next block.");
+                var fmt = string.IsNullOrWhiteSpace(step.Format) ? "u16le" : step.Format!.Trim();
+                if (IsRestLengthFormat(fmt))
+                {
+                    // Length covers all remaining blocks (NBSS / cross-layer fixup)
+                    var restParts = new List<byte[]>();
+                    for (var j = si + 1; j < list.Count; j++)
+                    {
+                        var (chunk, stepHints, stepNotes) = RenderSingleContent(list[j], notes);
+                        if (chunk is null) continue;
+                        restParts.Add(chunk);
+                        hints.AddRange(stepHints);
+                        notes.AddRange(stepNotes);
+                    }
+
+                    var restLen = restParts.Sum(p => p.Length);
+                    parts.Add(EncodeLength(restLen, NormalizeLengthFormat(fmt)));
+                    parts.AddRange(restParts);
+                    notes.Add($"Length prefix ({fmt}) = {restLen} (all following layers/blocks).");
+                    si = list.Count; // done
+                    continue;
+                }
+
+                pendingLenFormat = fmt;
+                notes.Add($"Length prefix ({fmt}) applies to the next block.");
                 continue;
             }
 
@@ -91,27 +118,47 @@ public static class CaseRecipeEngine
                 continue;
             }
 
-            var chunk = RenderStep(step);
+            if (op is "crc32" or "checksum" or "crc")
+            {
+                var coveredLen = parts.Sum(p => p.Length);
+                var covered = new byte[coveredLen];
+                var co = 0;
+                foreach (var p in parts)
+                {
+                    Buffer.BlockCopy(p, 0, covered, co, p.Length);
+                    co += p.Length;
+                }
+
+                var crc = Crc32.Compute(covered);
+                var le = !(step.Format?.Contains("be", StringComparison.OrdinalIgnoreCase) ?? false);
+                var crcBytes = new byte[4];
+                Crc32.Write(crcBytes, crc, le);
+                parts.Add(crcBytes);
+                notes.Add($"CRC32 over {coveredLen} preceding bytes ({(le ? "LE" : "BE")}).");
+                continue;
+            }
+
+            var content = RenderStep(step);
             if (pendingLenFormat is not null)
             {
-                parts.Add(EncodeLength(chunk.Length, pendingLenFormat));
+                parts.Add(EncodeLength(content.Length, NormalizeLengthFormat(pendingLenFormat)));
                 pendingLenFormat = null;
             }
 
             if (pendingPad is not null)
             {
                 var (padTo, fill) = pendingPad.Value;
-                if (chunk.Length < padTo)
+                if (content.Length < padTo)
                 {
                     var padded = new byte[padTo];
-                    Buffer.BlockCopy(chunk, 0, padded, 0, chunk.Length);
-                    Array.Fill(padded, fill, chunk.Length, padTo - chunk.Length);
-                    chunk = padded;
+                    Buffer.BlockCopy(content, 0, padded, 0, content.Length);
+                    Array.Fill(padded, fill, content.Length, padTo - content.Length);
+                    content = padded;
                 }
                 pendingPad = null;
             }
 
-            parts.Add(chunk);
+            parts.Add(content);
 
             var role = (step.Role ?? "fuzzable").Trim().ToLowerInvariant();
             if ((role is "fuzzable" or "string") &&
@@ -141,6 +188,64 @@ public static class CaseRecipeEngine
             notes.Add("Tip: mark string/delim blocks as fuzzable to harvest dictionary tokens.");
 
         return (buf, hints.Distinct(StringComparer.Ordinal).ToList(), notes);
+    }
+
+    /// <summary>Flatten named layers (Scapy-style stack) into one block list for Render/Apply.</summary>
+    public static IReadOnlyList<CaseStepDto> FlattenLayers(IReadOnlyList<CaseLayerDto>? layers)
+    {
+        if (layers is null || layers.Count == 0)
+            return [];
+        return layers.SelectMany(l => l.Blocks ?? []).ToList();
+    }
+
+    private static bool IsRestLengthFormat(string format)
+    {
+        var f = format.Trim().ToLowerInvariant();
+        return f is "nbss" or "u24be-rest" or "u24be_rest" or "rest"
+               || f.EndsWith("-rest", StringComparison.Ordinal)
+               || f.EndsWith("_rest", StringComparison.Ordinal);
+    }
+
+    private static string NormalizeLengthFormat(string format)
+    {
+        var f = format.Trim().ToLowerInvariant();
+        if (f is "nbss" or "u24be-rest" or "u24be_rest" or "rest")
+            return "u24be";
+        if (f.EndsWith("-rest", StringComparison.Ordinal) || f.EndsWith("_rest", StringComparison.Ordinal))
+            return f[..^5];
+        return f;
+    }
+
+    private static (byte[]? Chunk, List<string> Hints, List<string> Notes) RenderSingleContent(
+        CaseStepDto step, List<string> parentNotes)
+    {
+        var op = (step.Op ?? "").Trim().ToLowerInvariant();
+        var hints = new List<string>();
+        var notes = new List<string>();
+        if (op is "len-prefix" or "length" or "size" or "pad" or "align")
+        {
+            notes.Add($"Skipped nested {op} inside rest-length span.");
+            return (null, hints, notes);
+        }
+
+        if (op is "crc32" or "checksum" or "crc")
+        {
+            notes.Add("Skipped crc32 inside rest-length span — place CRC after the span.");
+            return (null, hints, notes);
+        }
+
+        var chunk = RenderStep(step);
+        var role = (step.Role ?? "fuzzable").Trim().ToLowerInvariant();
+        if ((role is "fuzzable" or "string") &&
+            (op is "text" or "string" or "delim" or "quote" or "utf16") &&
+            !string.IsNullOrWhiteSpace(step.Value) &&
+            step.Value!.Length is > 0 and < 200)
+        {
+            hints.Add(step.Value!);
+        }
+
+        _ = parentNotes;
+        return (chunk, hints, notes);
     }
 
     /// <summary>Max bytes kept in editable hex body steps (rest noted; use Save exact sample).</summary>
@@ -723,6 +828,18 @@ public static class CaseRecipeEngine
             "u8" => [(byte)length],
             "u16be" => [(byte)(length >> 8), (byte)length],
             "u16le" => [(byte)length, (byte)(length >> 8)],
+            "u24be" or "nbss-len" =>
+            [
+                (byte)((length >> 16) & 0xFF),
+                (byte)((length >> 8) & 0xFF),
+                (byte)(length & 0xFF),
+            ],
+            "u24le" =>
+            [
+                (byte)(length & 0xFF),
+                (byte)((length >> 8) & 0xFF),
+                (byte)((length >> 16) & 0xFF),
+            ],
             "u32be" => [(byte)(length >> 24), (byte)(length >> 16), (byte)(length >> 8), (byte)length],
             "u32le" => [(byte)length, (byte)(length >> 8), (byte)(length >> 16), (byte)(length >> 24)],
             _ => [(byte)length, (byte)(length >> 8)],
@@ -876,6 +993,18 @@ public static class CaseRecipeEngine
                         Value = "0",
                         Mutable = true,
                         LittleEndian = !(s.Format?.Contains("be", StringComparison.OrdinalIgnoreCase) ?? false),
+                    });
+                    break;
+                case "crc32":
+                case "checksum":
+                case "crc":
+                    blocks.Add(new ProtocolBlockDefinition
+                    {
+                        Type = "checksum",
+                        Name = "frame_crc",
+                        LengthBytes = 4,
+                        LittleEndian = !(s.Format?.Contains("be", StringComparison.OrdinalIgnoreCase) ?? false),
+                        Mutable = true,
                     });
                     break;
                 default:

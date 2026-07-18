@@ -16,7 +16,7 @@ return args[0].ToLowerInvariant() switch
     "serve" => RunServe(args.Skip(1).ToArray()),
     "agent" => RunAgent(args.Skip(1).ToArray()),
     "fuzz" => await RunFuzzAsync(args.Skip(1).ToArray()),
-    "crashes" => ListCrashes(args.Skip(1).ToArray()),
+    "crashes" => await RunCrashesAsync(args.Skip(1).ToArray()),
     "replay" => await ReplayCrashAsync(args.Skip(1).ToArray()),
     "proxy" => await RunProxyAsync(args.Skip(1).ToArray()),
     "campaign" => await RunCampaignAsync(args.Skip(1).ToArray()),
@@ -26,10 +26,13 @@ return args[0].ToLowerInvariant() switch
     "doctor" => RunDoctor(args.Skip(1).ToArray()),
     "graph" => RunGraph(args.Skip(1).ToArray()),
     "analyze" => RunAnalyze(args.Skip(1).ToArray()),
+    "memory" or "lens" => RunMemoryLens(args.Skip(1).ToArray()),
     "stalk" => RunStalk(args.Skip(1).ToArray()),
     "debug" => RunDebug(args.Skip(1).ToArray()),
     "scream" => await RunScream(args.Skip(1).ToArray()),
     "case" => RunCase(args.Skip(1).ToArray()),
+    "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
+    "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
     _ => Unknown(args[0]),
 };
 
@@ -43,6 +46,9 @@ static void PrintHelp()
           randall fuzz -c <project>    Fuzz a project profile (see targets)
           randall fuzz -c <project> --dry-run
           randall crashes [-p name]    List saved crashes
+          randall crashes pack -p name [-o zip] [--no-runs]   Offline crash/dump/lens pack
+          randall crashes unpack -i zip   Import pack into data/crashes
+          randall crashes pull -a http://vm:5000 -p name [-o zip]  Pull pack from agent
           randall replay -c <project> -i <crash.bin>
           randall proxy [--listen N] [--target host:port]
           randall campaign -c campaigns/lab-smoke.yaml
@@ -52,6 +58,8 @@ static void PrintHelp()
           randall doctor -c <project>     Preflight lab checks before fuzzing
           randall graph -c <project>        Validate sessionGraph + print Mermaid
           randall analyze -i <crash-guid>   Minidump triage (registers, fault PC)
+          randall memory -i <crash-guid>    Memory lens (UAF fill, regions, neighborhood)
+          randall memory --pid N            Live VirtualQueryEx sample
           randall stalk layers -p <project>              List stalk layers
           randall stalk compare -p <project> [layerIds…] Diff layered coverage
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
@@ -63,6 +71,14 @@ static void PrintHelp()
           randall debug attach -p <pid> | -t <project> [--kind …]
           randall fuzz -c <project> --debugger wait|attach|both [--open-on-crash]
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
+          randall labs                     List lab servers (running / stopped)
+          randall labs start|stop <id>     Start/stop one lab (127.0.0.1)
+          randall labs stop-all            Stop every randall-vuln* lab
+          randall runtime                  Target Runtime slots (start/stop/restart)
+          randall runtime start -c <yaml>  Start project exe via Target Runtime
+          randall runtime start --id X --exe path [--arg a]* [--port N]
+          randall runtime stop|restart <id>
+          randall runtime stop-all
           randall export -i <crash-guid>
           randall serve [--port N] [--bind host]   Web UI + API (localhost)
           randall agent [--port N] [--bind host]   Lab agent (all interfaces)
@@ -185,6 +201,22 @@ static async Task<int> RunFuzzAsync(string[] args)
     return 0;
 }
 
+static async Task<int> RunCrashesAsync(string[] args)
+{
+    if (args.Length > 0)
+    {
+        return args[0].ToLowerInvariant() switch
+        {
+            "pack" => RunCrashesPack(args.Skip(1).ToArray()),
+            "unpack" or "import" => RunCrashesUnpack(args.Skip(1).ToArray()),
+            "pull" => await RunCrashesPullAsync(args.Skip(1).ToArray()),
+            _ => ListCrashes(args),
+        };
+    }
+
+    return ListCrashes(args);
+}
+
 static int ListCrashes(string[] args)
 {
     string? projectFilter = null;
@@ -205,6 +237,127 @@ static int ListCrashes(string[] args)
             Console.WriteLine($"             {c.ExceptionHint ?? ""} @ {c.FaultAddress ?? "?"}");
     }
     return 0;
+}
+
+static int RunCrashesPack(string[] args)
+{
+    string? project = null;
+    string? output = null;
+    var includeRuns = true;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "-o" or "--output" && i + 1 < args.Length)
+            output = args[++i];
+        else if (args[i] is "--no-runs")
+            includeRuns = false;
+    }
+
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("Usage: randall crashes pack -p <project> [-o data/exports/pack.zip] [--no-runs]");
+        return 1;
+    }
+
+    try
+    {
+        var result = CrashArtifactPack.Export(project, output, includeRuns);
+        Console.WriteLine(
+            $"Crash pack exported: {result.Path} ({result.SizeBytes / 1024} KB) " +
+            $"crashes={result.CrashCount} runs={result.RunCount}");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
+static int RunCrashesUnpack(string[] args)
+{
+    string? zip = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-i" or "--input" or "--zip" && i + 1 < args.Length)
+            zip = args[++i];
+        else if (!args[i].StartsWith('-') && zip is null)
+            zip = args[i];
+    }
+
+    if (string.IsNullOrWhiteSpace(zip))
+    {
+        Console.Error.WriteLine("Usage: randall crashes unpack -i <pack.zip>");
+        return 1;
+    }
+
+    try
+    {
+        var result = CrashArtifactPack.Import(Path.GetFullPath(zip));
+        Console.WriteLine(result.Message);
+        Console.WriteLine($"  project={result.Project}");
+        Console.WriteLine($"  crashesDir={result.CrashesDir}");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
+static async Task<int> RunCrashesPullAsync(string[] args)
+{
+    string? agent = null;
+    string? project = null;
+    string? output = null;
+    var includeRuns = true;
+    var doImport = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-a" or "--agent" && i + 1 < args.Length)
+            agent = args[++i];
+        else if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "-o" or "--output" && i + 1 < args.Length)
+            output = args[++i];
+        else if (args[i] is "--no-runs")
+            includeRuns = false;
+        else if (args[i] is "--import")
+            doImport = true;
+    }
+
+    if (string.IsNullOrWhiteSpace(agent) || string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine(
+            "Usage: randall crashes pull -a http://192.168.x.x:5000 -p <project> [-o zip] [--import] [--no-runs]");
+        return 1;
+    }
+
+    try
+    {
+        var result = await CrashArtifactPack.PullFromAgentAsync(agent, project, output, includeRuns);
+        Console.WriteLine(
+            $"Pulled from agent: {result.Path} ({result.SizeBytes / 1024} KB) " +
+            $"crashes={result.CrashCount} runs={result.RunCount}");
+        if (doImport)
+        {
+            var imported = CrashArtifactPack.Import(result.Path);
+            Console.WriteLine(imported.Message);
+        }
+        else
+        {
+            Console.WriteLine("Tip: randall crashes unpack -i <zip>  (or add --import)");
+        }
+
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
 }
 
 static async Task<int> ReplayCrashAsync(string[] args)
@@ -612,6 +765,75 @@ static int RunAnalyze(string[] args)
     }
 
     return 0;
+}
+
+static int RunMemoryLens(string[] args)
+{
+    Guid? id = null;
+    string? dumpPath = null;
+    int? pid = null;
+    var json = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-i" or "--id" && i + 1 < args.Length && Guid.TryParse(args[i + 1], out var g))
+        {
+            id = g;
+            i++;
+        }
+        else if (args[i] is "-d" or "--dump" && i + 1 < args.Length)
+            dumpPath = Path.GetFullPath(args[++i]);
+        else if (args[i] is "--pid" && i + 1 < args.Length && int.TryParse(args[i + 1], out var p))
+        {
+            pid = p;
+            i++;
+        }
+        else if (args[i] is "--json")
+            json = true;
+    }
+
+    MemoryLensReportDto report;
+    if (pid is not null && id is null && dumpPath is null)
+    {
+        report = MemoryLensAnalyzer.AnalyzeLivePid(pid.Value);
+    }
+    else if (id is not null)
+    {
+        var detail = CrashCatalog.GetDetail(id.Value);
+        if (detail is null)
+        {
+            Console.Error.WriteLine($"Crash not found: {id}");
+            return 1;
+        }
+
+        var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var crashesDir = Path.Combine(repo, "data", "crashes", detail.Summary.Project);
+        report = MemoryLensWriter.TryRead(crashesDir, id.Value)
+                 ?? MemoryLensAnalyzer.AnalyzeDump(
+                     detail.Summary.MiniDumpPath ?? dumpPath, detail.Analysis, pid);
+        if (report.Ok)
+            MemoryLensWriter.Write(crashesDir, id.Value, report);
+    }
+    else if (dumpPath is not null)
+    {
+        report = MemoryLensAnalyzer.AnalyzeDump(dumpPath, null, pid);
+    }
+    else
+    {
+        Console.Error.WriteLine("Usage: randall memory -i <crash-guid> [--json]");
+        Console.Error.WriteLine("       randall memory -d path/to/crash.dmp [--json]");
+        Console.Error.WriteLine("       randall memory --pid <pid>");
+        return 1;
+    }
+
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        return report.Ok ? 0 : 2;
+    }
+
+    Console.WriteLine(MemoryLensWriter.FormatText(report));
+    return report.Ok ? 0 : 2;
 }
 
 static int RunStalk(string[] args)
@@ -1102,6 +1324,8 @@ static int RunCase(string[] args)
                     Materialize a saved session recipe into sessionCommands/Flows
               randall case promote -p <project> --name proto [--recipe NAME | --static …]
                     Promote Scare Floor blocks → projects/.../protocols/*.yaml
+              randall case idl -p <project> --name stub --file iface.idl
+                    Minimal typedef struct → protocols/*.yaml stub field map
               randall case packs                              List protocol packs
               randall case packs --load ID -p <project>       Load pack recipe into project recipes/
               randall case recipes -p <project>               List Scare Floor recipes
@@ -1130,6 +1354,7 @@ static int RunCase(string[] args)
             "from-stream" or "stream" => CaseFromStream(rest),
             "apply-session" or "apply" => CaseApplySession(rest),
             "promote" => CasePromote(rest),
+            "idl" => CaseIdl(rest),
             "packs" or "pack" => CasePacks(rest),
             "recipes" or "recipe" => CaseRecipes(rest),
             "mutators" or "mutator" => CaseMutators(rest),
@@ -1431,6 +1656,42 @@ static int CaseApplySession(string[] args)
     return r.Ok ? 0 : 1;
 }
 
+static int CaseIdl(string[] args)
+{
+    string? project = null, name = null, file = null, desc = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if ((args[i] is "-p" or "--project") && i + 1 < args.Length)
+            project = args[++i];
+        else if ((args[i] is "--name" or "-n") && i + 1 < args.Length)
+            name = args[++i];
+        else if ((args[i] is "--file" or "-f") && i + 1 < args.Length)
+            file = args[++i];
+        else if ((args[i] is "--desc" or "--description") && i + 1 < args.Length)
+            desc = args[++i];
+    }
+
+    if (string.IsNullOrWhiteSpace(project) || string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(file))
+    {
+        Console.Error.WriteLine("Usage: randall case idl -p <project> --name stub --file iface.idl");
+        return 1;
+    }
+
+    if (!File.Exists(file))
+    {
+        Console.Error.WriteLine($"IDL file not found: {file}");
+        return 1;
+    }
+
+    var r = CaseRecipeStore.ImportIdl(new CaseIdlRequest(project, name, File.ReadAllText(file), desc));
+    Console.WriteLine(r.Message);
+    foreach (var f in r.Fields)
+        Console.WriteLine($"  - {f}");
+    if (r.AbsolutePath is not null)
+        Console.WriteLine(r.AbsolutePath);
+    return r.Ok ? 0 : 1;
+}
+
 static int CasePromote(string[] args)
 {
     string? project = null, name = null, recipe = null, desc = null;
@@ -1645,6 +1906,160 @@ static List<CaseStepDto> ParseCaseSteps(string[] args)
         }
     }
     return steps;
+}
+
+static int RunLabs(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help" or "list" or "status")
+    {
+        foreach (var lab in LabServerManager.List())
+        {
+            var state = !lab.ExeExists ? "not-built" : lab.Running ? (lab.Reachable ? "running" : "starting") : "stopped";
+            Console.WriteLine(
+                $"{lab.Id,-12} {lab.Protocol}/{lab.Port,-5} {state,-10} pid={(lab.Pid?.ToString() ?? "-"),-6} {lab.Name}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Tips: labs start on 127.0.0.1 only. UI: Fuzz → Lab servers. Rebuild: .\\scripts\\build-all-lab-targets.ps1");
+        Console.WriteLine("Target Runtime (arbitrary exe): randall runtime — see docs/TARGET_RUNTIME.md");
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    if (sub is "stop-all" or "stopall")
+    {
+        var r = LabServerManager.StopAll();
+        Console.WriteLine(r.Message);
+        return r.Ok ? 0 : 1;
+    }
+
+    if ((sub is "start" or "stop") && args.Length >= 2)
+    {
+        var id = args[1];
+        var r = sub == "start" ? LabServerManager.Start(id) : LabServerManager.Stop(id);
+        Console.WriteLine(r.Message);
+        return r.Ok ? 0 : 1;
+    }
+
+    Console.Error.WriteLine("Usage: randall labs | labs start <id> | labs stop <id> | labs stop-all");
+    return 1;
+}
+
+static int RunRuntime(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help" or "list" or "status")
+    {
+        var list = TargetRuntimeService.List();
+        Console.WriteLine($"Target Runtime on {list.MachineName} — {list.Slots.Count} slot(s)");
+        if (list.Slots.Count == 0)
+        {
+            Console.WriteLine("(empty — start with: randall runtime start -c projects/vulnserver.yaml)");
+            return 0;
+        }
+
+        foreach (var s in list.Slots)
+        {
+            var state = s.Running ? (s.PortReachable == true ? "running" : "started") : "stopped";
+            var port = s.WaitPort is int p ? $":{p}" : "";
+            Console.WriteLine(
+                $"{s.Id,-20} {state,-10} pid={(s.Pid?.ToString() ?? "-"),-6} {port,-6} {s.Message}");
+        }
+
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    if (sub is "stop-all" or "stopall")
+    {
+        var r = TargetRuntimeService.StopAll();
+        Console.WriteLine(r.Message);
+        return r.Ok ? 0 : 1;
+    }
+
+    if ((sub is "stop" or "restart") && args.Length >= 2)
+    {
+        var id = args[1];
+        var r = sub == "stop" ? TargetRuntimeService.Stop(id) : TargetRuntimeService.Restart(id);
+        Console.WriteLine(r.Message);
+        return r.Ok ? 0 : 1;
+    }
+
+    if (sub == "start")
+    {
+        string? yaml = null;
+        string? id = null;
+        string? exe = null;
+        var startArgs = new List<string>();
+        int? port = null;
+        string host = "127.0.0.1";
+        var pageHeap = false;
+        for (var i = 1; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case "-c":
+                case "--config":
+                case "--project":
+                    if (i + 1 < args.Length) yaml = args[++i];
+                    break;
+                case "--id":
+                    if (i + 1 < args.Length) id = args[++i];
+                    break;
+                case "--exe":
+                case "--executable":
+                    if (i + 1 < args.Length) exe = args[++i];
+                    break;
+                case "--arg":
+                    if (i + 1 < args.Length) startArgs.Add(args[++i]);
+                    break;
+                case "--port":
+                    if (i + 1 < args.Length && int.TryParse(args[++i], out var p)) port = p;
+                    break;
+                case "--host":
+                    if (i + 1 < args.Length) host = args[++i];
+                    break;
+                case "--page-heap":
+                    pageHeap = true;
+                    break;
+            }
+        }
+
+        TargetRuntimeStatusDto st;
+        if (!string.IsNullOrWhiteSpace(yaml))
+            st = TargetRuntimeService.StartFromProject(yaml, id);
+        else if (!string.IsNullOrWhiteSpace(exe) && !string.IsNullOrWhiteSpace(id))
+        {
+            st = TargetRuntimeService.Start(new TargetRuntimeStartRequest(
+                Id: id!,
+                Executable: exe!,
+                Args: startArgs,
+                WaitPort: port,
+                WaitHost: host,
+                PageHeap: pageHeap));
+        }
+        else
+        {
+            Console.Error.WriteLine(
+                "Usage:\n  randall runtime start -c <project.yaml> [--id name]\n  randall runtime start --id name --exe path [--arg a]* [--port N] [--host H]");
+            return 1;
+        }
+
+        Console.WriteLine(st.Message);
+        if (st.Running)
+            Console.WriteLine($"  id={st.Id} pid={st.Pid} port={st.WaitHost}:{st.WaitPort} reachable={st.PortReachable}");
+        return st.Ok ? 0 : 1;
+    }
+
+    if (sub == "get" && args.Length >= 2)
+    {
+        var st = TargetRuntimeService.Status(args[1]);
+        Console.WriteLine($"{st.Id}: running={st.Running} pid={st.Pid} — {st.Message}");
+        return st.Ok ? 0 : 1;
+    }
+
+    Console.Error.WriteLine(
+        "Usage: randall runtime | runtime start -c <yaml> | runtime start --id X --exe path | runtime stop|restart <id> | runtime stop-all");
+    return 1;
 }
 
 static int Unknown(string command)

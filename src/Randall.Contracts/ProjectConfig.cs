@@ -74,6 +74,35 @@ public sealed class TargetConfig
     /// <summary>For TCP targets: keep server process alive between iterations.</summary>
     public bool LongLived { get; set; }
     public string WorkingDirectory { get; set; } = "";
+    /// <summary>
+    /// Optional <c>randall agent</c> base URL. When set, Target Runtime starts/stops/restarts
+    /// the process on that host instead of locally (private LAN / localhost only).
+    /// </summary>
+    public string? AgentUrl { get; set; }
+    /// <summary>Request Page Heap / stronger UAF signals when starting via Target Runtime (lab).</summary>
+    public bool PageHeap { get; set; }
+    /// <summary>
+    /// Declarative post-start actions (wait-port, sleep, exec, tcp-send, …).
+    /// Prefer these over brittle UI clicks; use <c>exec</c> for AutoIt/pywinauto when needed.
+    /// </summary>
+    public List<PostStartActionConfig> PostStart { get; set; } = [];
+}
+
+/// <summary>One Target Runtime post-start step. <see cref="Op"/> selects the action.</summary>
+public sealed class PostStartActionConfig
+{
+    /// <summary>wait-port | sleep | exec | tcp-send | udp-send | http-get</summary>
+    public string Op { get; set; } = "";
+    public string? Host { get; set; }
+    public int? Port { get; set; }
+    public int? Ms { get; set; }
+    public int? TimeoutMs { get; set; }
+    public string? Command { get; set; }
+    public List<string> Args { get; set; } = [];
+    public string? WorkingDirectory { get; set; }
+    public string? DataHex { get; set; }
+    public string? DataText { get; set; }
+    public string? Url { get; set; }
 }
 
 public sealed class TransportConfig

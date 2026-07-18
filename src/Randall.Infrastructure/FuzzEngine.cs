@@ -72,7 +72,11 @@ public sealed class FuzzEngine
                              project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) &&
                              !string.IsNullOrWhiteSpace(project.Target.Executable);
 
-        options.Progress?.OnStarted(project.Name, project.Kind);
+        var progress = options.Progress;
+        progress?.OnStarted(project.Name, project.Kind);
+        FuzzAnalystLog.Info(progress,
+            $"Fuzzing '{project.Name}' ({project.Kind}) — max {maxIterations} iterations" +
+            (dryRun ? " [dry-run]" : ""));
 
         var debuggerMode = (options.DebuggerMode ?? project.Fuzz.DebuggerMode ?? "none")
             .Trim().ToLowerInvariant();
@@ -91,21 +95,32 @@ public sealed class FuzzEngine
             var pml = Path.Combine(runDir, "fuzz.pml");
             procmon = ProcmonCapture.TryStart(pml);
             if (procmon?.IsRunning == true)
-                Console.WriteLine($"Procmon capture → {procmon.PmlPath}");
+                FuzzAnalystLog.Info(progress, $"Procmon capture → {procmon.PmlPath}");
             else
-                Console.WriteLine($"Procmon capture skipped: {procmon?.LastError ?? "Procmon not found (tools/ or PATH)"}");
+                FuzzAnalystLog.Warn(progress,
+                    $"Procmon capture skipped: {procmon?.LastError ?? "Procmon not found (tools/ or PATH)"}");
         }
 
         var crashes = new List<CrashRecord>();
-        ProcessMonitor? monitor = null;
+        TargetRuntimeBridge? runtime = null;
         Process? longLived = null;
         if (!useCoverageTcp && project.Target.LongLived &&
             (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) ||
              project.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase)))
         {
-            monitor = new ProcessMonitor(project, yamlPath);
-            longLived = monitor.Start();
-            await ArmDebuggerAsync(longLived);
+            FuzzAnalystLog.Step(progress, "Starting target (Target Runtime)");
+            runtime = new TargetRuntimeBridge(project, yamlPath);
+            var (proc, st) = await runtime.StartAsync(cancellationToken);
+            if (!st.Ok && !st.Running)
+                throw new InvalidOperationException($"Target Runtime start failed: {st.Message}");
+            longLived = proc;
+            FuzzAnalystLog.Info(progress, runtime.IsRemote
+                ? $"Target Runtime (agent {runtime.AgentUrl}): {st.Message}"
+                : $"Target Runtime (local): {st.Message}");
+            if (runtime.IsRemote)
+                FuzzAnalystLog.Info(progress, "Debugger attach skipped on remote agent (dumps stay on agent host)");
+            else
+                await ArmDebuggerAsync(longLived);
         }
 
         async Task ArmDebuggerAsync(Process? proc)
@@ -352,15 +367,19 @@ public sealed class FuzzEngine
 
                 if (dryRun)
                 {
+                    var dryLabel = $"{commandName}/{mutator.Name}";
+                    FuzzAnalystLog.Case(progress, iterations, dryLabel);
+                    FuzzAnalystLog.Step(progress, $"Fuzzing node '{commandName}'", iterations);
+                    FuzzAnalystLog.Tx(progress, payload, iterations);
                     sw.Stop();
                     journal?.LogIteration(new IterationLogEntry(
                         iterations, DateTimeOffset.UtcNow, commandName, mutator.Name, mutatorChain,
                         parentInputHash, seedSource, payload.Length, InputHash.StackHash(payload),
                         false, 0, coverage.TotalEdges, sw.ElapsedMilliseconds, "dry-run", null,
                         stalkBackend, null, journal?.RunId ?? "", true));
-                    options.Progress?.OnIteration(new FuzzIterationEvent(
-                        iterations, $"{commandName}/{mutator.Name}", payload.Length, false, false, 0, corpus.SeenCount, coverage.TotalEdges, "dry-run"));
-                    Console.WriteLine($"[dry-run] #{iterations} {commandName}/{mutator.Name} len={payload.Length}");
+                    progress?.OnIteration(new FuzzIterationEvent(
+                        iterations, dryLabel, payload.Length, false, false, 0, corpus.SeenCount, coverage.TotalEdges, "dry-run"));
+                    FuzzAnalystLog.Ok(progress, "Check OK: dry-run (not sent).", iterations);
                     continue;
                 }
 
@@ -370,6 +389,18 @@ public sealed class FuzzEngine
                     longLived = stalk.StartLongLivedTarget(project, yamlPath, traceDir);
                     await Task.Delay(500, cancellationToken);
                 }
+
+                var caseLabel = $"{commandName}/{mutator.Name}";
+                FuzzAnalystLog.Case(progress, iterations, caseLabel);
+                if (project.Kind is "tcp" or "udp")
+                {
+                    FuzzAnalystLog.Info(progress,
+                        $"Opening target connection to {project.Transport.Host}:{project.Transport.Port}…",
+                        iterations);
+                }
+
+                FuzzAnalystLog.Step(progress, $"Fuzzing node '{commandName}'", iterations);
+                FuzzAnalystLog.Tx(progress, payload, iterations);
 
                 TargetRunResult result;
                 if (useResponseGraph && project.SessionGraph is not null)
@@ -382,6 +413,7 @@ public sealed class FuzzEngine
                     result = graphRun.Run;
                     payload = graphRun.LastPayload;
                     commandName = $"graph/{graphRun.PathLabel}";
+                    caseLabel = $"{commandName}/{mutator.Name}";
                 }
                 else
                 {
@@ -396,6 +428,19 @@ public sealed class FuzzEngine
                     project, yamlPath, payload, result.ResponseBytes, cancellationToken);
                 if (pluginAbort is not null && !result.Crashed)
                     result = result with { Detail = $"post_receive: {pluginAbort}" };
+
+                // Remote agent: no local Process handle — poll Target Runtime for death.
+                if (runtime is { IsRemote: true } && !result.Crashed &&
+                    await runtime.HasExitedAsync(longLived, cancellationToken))
+                {
+                    var st = await runtime.StatusAsync(cancellationToken);
+                    result = result with
+                    {
+                        Crashed = true,
+                        ExitCode = st.LastExitCode,
+                        Detail = "remote target exited (Target Runtime)",
+                    };
+                }
 
                 // Scream holds the process at second-chance before Kill — detect dump even if
                 // TargetRunner still saw HasExited == false for a moment.
@@ -477,8 +522,11 @@ public sealed class FuzzEngine
                     coverage.TotalEdges,
                     result.Detail));
 
+                FuzzAnalystLog.Step(progress, "Monitor / checkAlive", iterations);
+
                 if (result.Crashed)
                 {
+                    FuzzAnalystLog.Crash(progress, iterations, $"{caseLabel} — {result.Detail}");
                     crashCount++;
                     var crashDump = await TakeWaitDumpAsync(result.MiniDumpPath);
                     var crashTag = await RppCrashHook.RunAsync(
@@ -567,6 +615,20 @@ public sealed class FuzzEngine
                         {
                             Console.WriteLine($"  analysis skipped: {analysis.Error}");
                         }
+
+                        try
+                        {
+                            var lens = MemoryLensAnalyzer.AnalyzeDump(
+                                saved.MiniDumpPath, analysis, longLived?.Id);
+                            var (lensJson, _) = MemoryLensWriter.Write(crashesDir, saved.Id, lens);
+                            foreach (var line in lens.SummaryLines.Take(4))
+                                FuzzAnalystLog.Info(progress, $"[memory] {line}", iterations);
+                            Console.WriteLine($"  memory lens → {lensJson}");
+                        }
+                        catch (Exception lensEx)
+                        {
+                            Console.WriteLine($"  memory lens skipped: {lensEx.Message}");
+                        }
                     }
 
                     if ((debuggerOpenOnCrash || debuggerMode is "both") && saved.MiniDumpPath is not null)
@@ -606,19 +668,25 @@ public sealed class FuzzEngine
                         saved.MiniDumpPath,
                         newEdges));
 
-                    if (!useCoverageTcp && project.Target.LongLived &&
-                        (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) ||
-                         project.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase)))
+                    if (runtime is not null)
                     {
-                        monitor?.Stop();
+                        FuzzAnalystLog.Warn(progress,
+                            "Cannot reach target or process died; restarting via Target Runtime…",
+                            iterations);
+                        FuzzAnalystLog.Step(progress, "Restarting target", iterations);
                         await Task.Delay(300, cancellationToken);
-                        longLived = monitor?.Start();
-                        await ArmDebuggerAsync(longLived);
+                        var (proc, rst) = await runtime.RestartAsync(cancellationToken);
+                        longLived = proc;
+                        FuzzAnalystLog.Info(progress, $"Target Runtime restart: {rst.Message}", iterations);
+                        if (!runtime.IsRemote)
+                            await ArmDebuggerAsync(longLived);
                     }
                 }
-                else if (iterations % 50 == 0)
+                else
                 {
-                    Console.WriteLine($"iter={iterations} ok len={payload.Length} corpus={corpus.SeenCount} edges={coverage.TotalEdges}");
+                    FuzzAnalystLog.Ok(progress, iteration: iterations);
+                    if (result.Detail is not null and not "ok" and not "")
+                        FuzzAnalystLog.Info(progress, $"Info: {result.Detail}", iterations);
                 }
             }
         }
@@ -634,7 +702,7 @@ public sealed class FuzzEngine
                     Console.WriteLine($"Procmon saved: {procmon.PmlPath}");
                 procmon.Dispose();
             }
-            monitor?.Dispose();
+            runtime?.Dispose();
             options.Progress?.OnTargetPid(null);
             journal?.Complete(iterations, crashCount, coverage.GetTopHotEdges());
         }

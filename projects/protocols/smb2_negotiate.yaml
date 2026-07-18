@@ -1,0 +1,9 @@
+name: smb2-negotiate
+description: NBSS + SMB2 Negotiate (lab) — VulnSmb :4455
+blocks:
+  - type: bytes
+    name: pdu
+    mutable: true
+    minSize: 68
+    maxSize: 4096
+    seedFile: seeds/smb2_negotiate.bin

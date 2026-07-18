@@ -33,6 +33,10 @@ targets/vulnssh/*
 !targets/vulnssh/.gitkeep
 targets/vulntftp/*
 !targets/vulntftp/.gitkeep
+targets/vulnrpc/*
+!targets/vulnrpc/.gitkeep
+targets/vulnsmb/*
+!targets/vulnsmb/.gitkeep
 targets/screamcrash/*
 !targets/screamcrash/.gitkeep
 targets/local/

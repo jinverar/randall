@@ -1,0 +1,41 @@
+# Next-gen Target Runtime profile — copy to projects/local/ and edit.
+name: my-runtime-target
+description: Long-lived TCP target owned by Target Runtime (local or agent)
+kind: tcp
+target:
+  executable: ../targets/vulnserver/randall-vulnserver.exe
+  args: ["-p", "9999", "--host", "127.0.0.1"]
+  longLived: true
+  pageHeap: false          # true = gflags /p /enable <image> /full (needs Debugging Tools)
+  # agentUrl: http://192.168.2.10:5000
+  postStart:
+    - op: wait-port
+      host: 127.0.0.1
+      port: 9999
+      timeoutMs: 5000
+    - op: sleep
+      ms: 150
+    # Optional: drive a GUI / custom harness after start
+    # - op: exec
+    #   command: powershell
+    #   args: ["-File", "tools/open-testcase.ps1", "{pid}", "{case}"]
+    # Optional: priming traffic
+    # - op: tcp-send
+    #   host: 127.0.0.1
+    #   port: 9999
+    #   dataText: "HELP\r\n"
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 9999
+  receiveTimeoutMs: 1500
+fuzz:
+  maxIterations: 500
+  debuggerMode: scream
+mutators:
+  - bitflip
+  - havoc
+  - dictionary
+  - expand
+seeds:
+  - seeds/placeholder.bin

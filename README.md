@@ -129,6 +129,8 @@ See [docs/TARGETS.md](docs/TARGETS.md) and [targets/README.md](targets/README.md
 
 **Hands-on lab walkthrough:** [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md)
 
+**Working on next — Target Runtime** (local/remote start·stop·restart + human-readable memory/heap lens): [docs/TARGET_RUNTIME.md](docs/TARGET_RUNTIME.md) · quick text: [TARGET_RUNTIME_README.txt](TARGET_RUNTIME_README.txt)
+
 ## Optional — DynamoRIO (coverage-guided stalking)
 
 Coverage is **optional**. Randfuzz finds crashes without it. Install DynamoRIO when you want `+N edges` in the fuzz log and corpus inputs ranked by new basic blocks.
@@ -206,7 +208,7 @@ Open **http://127.0.0.1:5000** for the lab console.
 
 | Mode | Command | When |
 |------|---------|------|
-| **Lab agent** | `randall agent [--bind 0.0.0.0]` | Fuzz box on the LAN — web UI + API, all interfaces |
+| **Lab agent** | `randall agent [--port 5000]` | Remote fuzz box — start/stop/watch labs from your laptop ([docs/LAB_AGENT.md](docs/LAB_AGENT.md)) |
 | **Web + local** | `randall serve` | Browser console on localhost |
 | **Headless** | `randall fuzz -c project.yaml` | Scripts, CI, no UI needed |
 | **Standalone** | Self-contained publish → zip folder | Air-gapped VM — I travel light |

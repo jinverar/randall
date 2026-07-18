@@ -1,0 +1,58 @@
+{
+  "name": "smb2-lab",
+  "description": "NBSS+SMB2 lab flow: Negotiate \u2192 SessionSetup \u2192 TreeConnect \u2192 Create (VulnSmb)",
+  "kind": "session",
+  "mutateStep": "last",
+  "updatedAt": "2026-07-18T00:00:00Z",
+  "steps": [],
+  "sessionSteps": [
+    {
+      "name": "NEGOTIATE",
+      "readBanner": false,
+      "expectResponse": "SMB_NEGO_OK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "00 00 00 40 fe 53 4d 42 40 00 01 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+          "role": "fuzzable"
+        }
+      ]
+    },
+    {
+      "name": "SESSION_SETUP",
+      "readBanner": false,
+      "expectResponse": "SMB_SESS_OK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "00 00 00 40 fe 53 4d 42 40 00 01 00 00 00 00 00 01 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+          "role": "fuzzable"
+        }
+      ]
+    },
+    {
+      "name": "TREE_CONNECT",
+      "readBanner": false,
+      "expectResponse": "SMB_TREE_OK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "00 00 00 40 fe 53 4d 42 40 00 01 00 00 00 00 00 03 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00",
+          "role": "fuzzable"
+        }
+      ]
+    },
+    {
+      "name": "CREATE",
+      "readBanner": false,
+      "expectResponse": "SMB_CREATE_OK",
+      "blocks": [
+        {
+          "op": "hex",
+          "value": "00 00 00 50 fe 53 4d 42 40 00 01 00 00 00 00 00 05 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 66 00 69 00 6c 00 65 00 2e 00 74 00 78 00 74 00",
+          "role": "fuzzable"
+        }
+      ]
+    }
+  ]
+}

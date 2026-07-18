@@ -1,0 +1,7 @@
+id: dns-query
+name: DNS / mDNS query
+description: Lab DNS A query datagram (UDP :53 or mDNS :5353) — single PDU
+kind: session
+recipe: recipe.json
+protocols:
+  - ../../dns_query.yaml

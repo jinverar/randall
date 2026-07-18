@@ -116,12 +116,18 @@ public sealed record CaseSaveRawSeedRequest(
     string Base64,
     bool AlsoImportRecipe = true);
 
+/// <summary>Named layer in a Scapy-style PDU stack (flattens to Blocks on Apply).</summary>
+public sealed record CaseLayerDto(
+    string Name,
+    IReadOnlyList<CaseStepDto> Blocks);
+
 /// <summary>One PDU / message in a multi-step network recipe (maps to sessionCommands).</summary>
 public sealed record CaseSessionStepDto(
     string Name,
     IReadOnlyList<CaseStepDto> Blocks,
     bool ReadBanner = false,
-    string? ExpectResponse = null);
+    string? ExpectResponse = null,
+    IReadOnlyList<CaseLayerDto>? Layers = null);
 
 /// <summary>Saved Scare Floor recipe (editable block list — not the rendered seed bytes).</summary>
 public sealed record CaseRecipeInfoDto(
@@ -206,6 +212,21 @@ public sealed record CasePromoteResultDto(
     string Message,
     string? RelativePath,
     string? AbsolutePath);
+
+public sealed record CaseIdlRequest(
+    string Project,
+    string Name,
+    string Idl,
+    string? Description = null);
+
+public sealed record CaseIdlResultDto(
+    bool Ok,
+    string Message,
+    string? RelativePath,
+    string? AbsolutePath,
+    string? StructName,
+    IReadOnlyList<string> Fields,
+    IReadOnlyList<string> Notes);
 
 public sealed record CasePackInfoDto(
     string Id,

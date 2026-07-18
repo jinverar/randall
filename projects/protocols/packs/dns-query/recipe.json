@@ -1,0 +1,23 @@
+{
+  "name": "dns-query-a",
+  "description": "DNS A query for lab.local — UDP single datagram",
+  "kind": "session",
+  "mutateStep": "last",
+  "updatedAt": "2026-07-18T00:00:00Z",
+  "steps": [],
+  "sessionSteps": [
+    {
+      "name": "QUERY",
+      "readBanner": false,
+      "expectResponse": "",
+      "blocks": [
+        { "op": "hex", "value": "12 34", "role": "fuzzable" },
+        { "op": "hex", "value": "01 00", "role": "static" },
+        { "op": "hex", "value": "00 01 00 00 00 00 00 00", "role": "static" },
+        { "op": "hex", "value": "03 6c 61 62 05 6c 6f 63 61 6c 00", "role": "fuzzable" },
+        { "op": "hex", "value": "00 01", "role": "fuzzable" },
+        { "op": "hex", "value": "00 01", "role": "static" }
+      ]
+    }
+  ]
+}

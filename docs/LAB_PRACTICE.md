@@ -36,7 +36,9 @@ Compiles the vulnerable lab servers (gitignored `.exe` files under `targets/`).
 .\scripts\build-all-lab-targets.ps1
 ```
 
-**Expect:** Five targets built:
+Labs listen on **127.0.0.1** by default. Manage them from **Fuzz → Lab servers** (status + PID in the table; running count also on the Campaign strip). CLI: `randall labs` / `randall labs stop-all`. For a remote fuzz VM use `randall agent` — see [LAB_AGENT.md](LAB_AGENT.md).
+
+**Expect:** Lab targets built:
 
 | Target | Port | Profile |
 |--------|------|---------|
@@ -45,6 +47,8 @@ Compiles the vulnerable lab servers (gitignored `.exe` files under `targets/`).
 | vulnftp | 2121 | `projects/vulnftp.yaml` |
 | vulnssh | 2222 | `projects/vulnssh.yaml` |
 | vulntftp | 6969 | `projects/vulntftp.yaml` |
+| vulnrpc | 1355 | `projects/vulnrpc.yaml` |
+| vulnsmb | 4455 | `projects/vulnsmb.yaml` |
 
 ---
 
