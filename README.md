@@ -115,6 +115,8 @@ dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml --dry-r
 
 See [docs/TARGETS.md](docs/TARGETS.md) and [targets/README.md](targets/README.md).
 
+**Fuzz your own program:** write a YAML under `projects/` or `projects/local/` — the `name:` field becomes the **Target profile** in the UI. Build seeds in **Fuzz → Case builder** or `randall case …`. Guides: [docs/CUSTOM_TARGETS.md](docs/CUSTOM_TARGETS.md), [docs/CASE_BUILDER.md](docs/CASE_BUILDER.md), templates in [docs/templates/](docs/templates/).
+
 **Hands-on lab walkthrough:** [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md)
 
 ## Optional — DynamoRIO (coverage-guided stalking)

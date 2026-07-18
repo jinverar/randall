@@ -23,3 +23,6 @@ mutators:
   - truncate
   - boundary
   - insert
+  - dictionary
+
+dictionaryFile: dictionaries/file-framed.txt

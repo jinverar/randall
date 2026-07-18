@@ -14,19 +14,8 @@ var app = builder.Build();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.MapGet("/randall.png", () =>
-{
-    var repoRoot = CrashCatalog.FindRepoRoot();
-    if (repoRoot is null)
-        return Results.NotFound();
-    foreach (var relative in new[] { "docs/assets/randall.png", "randall.png" })
-    {
-        var path = Path.Combine(repoRoot, relative);
-        if (File.Exists(path))
-            return Results.File(path, "image/png");
-    }
-    return Results.NotFound();
-});
+app.MapGet("/randall.png", () => ServeRepoAsset("docs/assets/randall.png", "randall.png"));
+app.MapGet("/stalker.png", () => ServeRepoAsset("docs/assets/randal_stalking_bugs.png"));
 
 app.MapGet("/api/health", () => new HealthDto("Randfuzz by Randall", "0.16.0-alpha", "phase16-analyze"));
 app.MapGet("/api/doctor", (string configPath) =>
@@ -62,13 +51,27 @@ app.MapGet("/api/protocols", () => ProtocolCatalog.ListAll());
 app.MapGet("/api/campaigns", () => PluginCatalog.ListCampaigns());
 app.MapGet("/api/legs", () => RandallLegs.All.Select(l => new LegInfoDto(l.Id, l.Title, l.Summary)));
 app.MapGet("/api/roadmap", () => RandallRoadmap.Phases);
-app.MapGet("/api/targets", () => CrashCatalog.ListTargets());
-app.MapGet("/api/crashes", (string? project) => CrashCatalog.ListAll(projectFilter: project));
-app.MapGet("/api/crashes/clusters", (string? project) => CrashCatalog.ListClusters(projectFilter: project));
+app.MapGet("/api/targets", () => CrashCatalog.ListTargets().Where(WebTargetFilter.IsVisible));
+app.MapGet("/api/crashes", (string? project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.Ok(Array.Empty<CrashSummaryDto>());
+    return Results.Ok(CrashCatalog.ListAll(projectFilter: project).Where(c => WebTargetFilter.IsVisibleProject(c.Project)));
+});
+app.MapGet("/api/crashes/clusters", (string? project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.Ok(Array.Empty<CrashClusterDto>());
+    return Results.Ok(CrashCatalog.ListClusters(projectFilter: project).Where(c => WebTargetFilter.IsVisibleProject(c.Project)));
+});
 app.MapGet("/api/crashes/{id:guid}", (Guid id) =>
 {
     var detail = CrashCatalog.GetDetail(id);
-    return detail is null ? Results.NotFound() : Results.Ok(detail);
+    if (detail is null)
+        return Results.NotFound();
+    if (!WebTargetFilter.IsVisibleProject(detail.Summary.Project))
+        return Results.NotFound();
+    return Results.Ok(detail);
 });
 
 app.MapGet("/api/coverage/status", () =>
@@ -82,6 +85,273 @@ app.MapGet("/api/coverage/status", () =>
 });
 
 app.MapGet("/api/corpus/{project}", (string project) => CorpusStats.ForProject(project));
+
+app.MapGet("/api/stalk/{project}", (string project, FuzzSessionManager sessions) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    var dash = StalkDashboard.ForProject(project, sessions.Status);
+    return dash is null ? Results.NotFound(new { error = "project not found" }) : Results.Ok(dash);
+});
+
+app.MapGet("/api/stalking/{project}", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    return Results.Ok(StalkCampaignStore.Workspace(project));
+});
+
+app.MapGet("/api/stalking/{project}/layers", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    return Results.Ok(StalkCampaignStore.ListLayers(project));
+});
+
+app.MapPost("/api/stalking/layers", (StalkLayerCreateRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(StalkCampaignStore.AddLayer(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/stalking/layers/from-crash", (StalkLayerFromCrashRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.CrashId) || !Guid.TryParse(request.CrashId, out var id))
+        return Results.BadRequest(new { error = "crashId required (guid)" });
+    var detail = CrashCatalog.GetDetail(id);
+    if (detail is null)
+        return Results.NotFound(new { error = "crash not found" });
+    if (WebTargetFilter.IsHiddenProject(detail.Summary.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        var layer = StalkCampaignStore.AddLayer(new StalkLayerCreateRequest(
+            detail.Summary.Project,
+            string.IsNullOrWhiteSpace(request.Tag) ? "crash" : request.Tag!,
+            request.Label ?? $"crash {detail.Summary.Id.ToString("N")[..8]}",
+            null,
+            null,
+            null,
+            detail.Summary.Id.ToString(),
+            detail.Triage?.Summary));
+        return Results.Ok(layer);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/stalking/layers/from-corpus", (StalkLayerFromCorpusRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        var layer = StalkCampaignStore.AddLayer(new StalkLayerCreateRequest(
+            request.Project,
+            string.IsNullOrWhiteSpace(request.Tag) ? "fuzzed" : request.Tag!,
+            request.Label ?? $"{request.Tag ?? "fuzzed"} corpus edges",
+            null,
+            null,
+            null,
+            null,
+            "Imported from data/corpus/<project>/edges.txt"));
+        return Results.Ok(layer);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapDelete("/api/stalking/{project}/layers/{layerId}", (string project, string layerId) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    return StalkCampaignStore.DeleteLayer(project, layerId) ? Results.NoContent() : Results.NotFound();
+});
+
+app.MapGet("/api/stalking/{project}/compare", (string project, string? layers) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    var ids = string.IsNullOrWhiteSpace(layers)
+        ? Array.Empty<string>()
+        : layers.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    return Results.Ok(StalkCampaignStore.Compare(project, ids));
+});
+
+app.MapPost("/api/stalking/export", (StalkExportRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(StalkCoverageExport.Export(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/stalking/tools", () => StalkCampaignStore.ProbeTools());
+
+app.MapGet("/api/debug/tools", () => DebuggerTools.Probe());
+
+app.MapPost("/api/debug/open", (DebuggerOpenRequest request) =>
+{
+    if (request.CrashId is { } id)
+    {
+        var result = DebuggerSession.OpenCrash(id, request.Kind);
+        return result.Ok ? Results.Ok(result) : Results.BadRequest(result);
+    }
+
+    if (!string.IsNullOrWhiteSpace(request.DumpPath))
+    {
+        var result = DebuggerSession.OpenDump(request.DumpPath, request.Kind);
+        return result.Ok ? Results.Ok(result) : Results.BadRequest(result);
+    }
+
+    return Results.BadRequest(new { error = "crashId or dumpPath required" });
+});
+
+app.MapPost("/api/debug/attach", (DebuggerAttachRequest request, FuzzSessionManager sessions) =>
+{
+    var pid = request.Pid ?? sessions.Status.TargetPid;
+    if (pid is null && !string.IsNullOrWhiteSpace(request.Project))
+        pid = DebuggerSession.FindProjectPid(request.Project);
+    if (pid is null)
+        return Results.BadRequest(new { error = "pid, project, or running fuzz target required" });
+
+    var result = DebuggerSession.Attach(pid.Value, request.Kind, request.Go);
+    return result.Ok ? Results.Ok(result) : Results.BadRequest(result);
+});
+
+app.MapGet("/api/case/ops", () => CaseRecipeEngine.ListOps());
+
+app.MapGet("/api/case/project/{project}", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    var profile = CaseRecipeStore.GetProfile(project);
+    return profile is null ? Results.NotFound(new { error = "project not found" }) : Results.Ok(profile);
+});
+
+app.MapPost("/api/case/preview", (CasePreviewRequest request) =>
+{
+    try
+    {
+        return Results.Ok(CaseRecipeEngine.Preview(request.Steps ?? []));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/save-seed", (CaseSaveSeedRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.SaveSeed(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/save-dict", (CaseSaveDictRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.SaveDict(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/case/load-seed/{project}/{fileName}", (string project, string fileName) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.LoadSeed(project, fileName));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/import", (CaseImportBytesRequest request) =>
+{
+    try
+    {
+        return Results.Ok(CaseRecipeEngine.Import(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/mutators", (CaseMutatorsRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.SetMutators(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/new-project", (CaseNewProjectRequest request) =>
+{
+    try
+    {
+        return Results.Ok(CaseRecipeStore.CreateProject(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/update-project", (CaseUpdateProjectRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.UpdateProject(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 
 app.MapGet("/api/fuzz/status", (FuzzSessionManager sessions) => sessions.Status);
 
@@ -191,6 +461,54 @@ app.MapPost("/api/bundle/import", (BundleImportRequest request) =>
     }
 });
 
+app.MapGet("/api/docs", () => DocsCatalog.List());
+app.MapGet("/api/docs/{*path}", (string path) =>
+{
+    var doc = DocsCatalog.Read(path);
+    return doc is null ? Results.NotFound(new { error = "doc not found" }) : Results.Ok(doc);
+});
+
+app.MapGet("/api/remote/tools", () => StalkCampaignStore.ProbeTools());
+app.MapGet("/api/remote/procmon", () => RemoteStalkAgent.Status());
+app.MapPost("/api/remote/procmon/start", (RemoteProcmonStartRequest? request) =>
+    Results.Ok(RemoteStalkAgent.Start(request?.BackingFile)));
+app.MapPost("/api/remote/procmon/stop", () => Results.Ok(RemoteStalkAgent.Stop()));
+
 app.MapHub<FuzzHub>("/hubs/fuzz");
 
 app.Run();
+
+static IResult ServeRepoAsset(params string[] relatives)
+{
+    var repoRoot = CrashCatalog.FindRepoRoot();
+    if (repoRoot is null)
+        return Results.NotFound();
+    foreach (var relative in relatives)
+    {
+        var path = Path.Combine(repoRoot, relative);
+        if (File.Exists(path))
+            return Results.File(path, "image/png");
+    }
+    return Results.NotFound();
+}
+
+sealed record RemoteProcmonStartRequest(string? BackingFile);
+
+static class WebTargetFilter
+{
+    private static readonly HashSet<string> Hidden = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "cfpass",
+    };
+
+    public static bool IsHiddenProject(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && Hidden.Contains(name);
+
+    public static bool IsVisibleProject(string? name) =>
+        string.IsNullOrWhiteSpace(name) || !Hidden.Contains(name);
+
+    public static bool IsVisible(TargetProfileDto t) =>
+        IsVisibleProject(t.Name) &&
+        t.Name.IndexOf("cfpass", StringComparison.OrdinalIgnoreCase) < 0 &&
+        t.ConfigPath.IndexOf("cfpass", StringComparison.OrdinalIgnoreCase) < 0;
+}

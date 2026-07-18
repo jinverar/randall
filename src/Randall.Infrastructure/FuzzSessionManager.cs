@@ -24,8 +24,10 @@ public sealed class FuzzSessionManager
 
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
+            var dbgMode = request.DebuggerMode;
             _status = new FuzzSessionStatusDto(
-                true, "starting", request.ConfigPath, 0, 0, 0, 0, request.CoverageGuided, null);
+                true, "starting", request.ConfigPath, 0, 0, 0, 0, request.CoverageGuided, null,
+                null, dbgMode);
 
             _task = Task.Run(async () =>
             {
@@ -36,7 +38,7 @@ public sealed class FuzzSessionManager
                     if (request.MaxIterations is > 0)
                         project.Fuzz.MaxIterations = request.MaxIterations.Value;
 
-                    var progress = new MultiplexFuzzProgressSink(sink, UpdateFromEvent);
+                    var progress = new MultiplexFuzzProgressSink(sink, UpdateFromEvent, UpdatePid);
                     progress.OnStarted(project.Name, project.Kind);
 
                     var engine = new FuzzEngine();
@@ -47,7 +49,11 @@ public sealed class FuzzSessionManager
                             request.DryRun,
                             request.CoverageGuided,
                             request.MaxIterations,
-                            progress),
+                            progress,
+                            request.DebuggerMode,
+                            request.DebuggerKind,
+                            request.DebuggerOpenOnCrash,
+                            request.ProcmonCapture),
                         token);
 
                     progress.OnCompleted(result);
@@ -123,11 +129,28 @@ public sealed class FuzzSessionManager
             };
         }
     }
+
+    private void UpdatePid(int? pid)
+    {
+        lock (_gate)
+        {
+            _status = _status with { TargetPid = pid };
+        }
+    }
 }
 
-internal sealed class MultiplexFuzzProgressSink(IFuzzProgressSink? outer, Action<FuzzIterationEvent>? local) : IFuzzProgressSink
+internal sealed class MultiplexFuzzProgressSink(
+    IFuzzProgressSink? outer,
+    Action<FuzzIterationEvent>? local,
+    Action<int?>? onPid = null) : IFuzzProgressSink
 {
     public void OnStarted(string project, string kind) => outer?.OnStarted(project, kind);
+
+    public void OnTargetPid(int? pid)
+    {
+        onPid?.Invoke(pid);
+        outer?.OnTargetPid(pid);
+    }
 
     public void OnIteration(FuzzIterationEvent iteration)
     {

@@ -6,7 +6,8 @@ $Scripts = @(
     "build-vulnhttp.ps1",
     "build-vulnftp.ps1",
     "build-vulnssh.ps1",
-    "build-vulntftp.ps1"
+    "build-vulntftp.ps1",
+    "build-screamcrash.ps1"
 )
 foreach ($s in $Scripts) {
     Write-Host "`n=== $s ===" -ForegroundColor Cyan

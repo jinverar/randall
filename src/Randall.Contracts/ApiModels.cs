@@ -18,7 +18,7 @@ public static class RandallLegs
         (Send, "Leg 3 — Send", "TCP, UDP, file, and stdin transports"),
         (Stalk, "Leg 4 — Stalk", "DynamoRIO coverage and frontier detection"),
         (Scream, "Leg 5 — Scream", "Crash capture, dedup, and replay"),
-        (Proxy, "Leg 6 — Proxy", "CANAPE-style MITM and live editing"),
+        (Proxy, "Leg 6 — Proxy", "MITM capture and live traffic editing"),
         (Web, "Leg 7 — Web", "Browser UI and remote lab agent"),
         (Pack, "Leg 8 — Pack", "Standalone portable project bundles"),
     ];
@@ -32,7 +32,11 @@ public sealed record FuzzStartRequest(
     string ConfigPath,
     bool DryRun = false,
     bool CoverageGuided = false,
-    int? MaxIterations = null);
+    int? MaxIterations = null,
+    string? DebuggerMode = null,
+    string? DebuggerKind = null,
+    bool? DebuggerOpenOnCrash = null,
+    bool? ProcmonCapture = null);
 
 public sealed record FuzzSessionStatusDto(
     bool Running,
@@ -43,7 +47,9 @@ public sealed record FuzzSessionStatusDto(
     int CorpusAdded,
     int CoverageEdges,
     bool? CoverageGuided,
-    string? LastMessage);
+    string? LastMessage,
+    int? TargetPid = null,
+    string? DebuggerMode = null);
 
 public sealed record CorpusStatsDto(
     string Project,

@@ -1,0 +1,26 @@
+# Copy to projects/local/myparser.yaml — name: becomes Target profile
+name: myparser
+description: Template file-input target (parser / CLI tool)
+kind: file
+target:
+  executable: ../targets/local/app.exe
+  args:
+    - "{file}"
+  timeoutMs: 8000
+transport:
+  type: file
+  extension: .bin
+fuzz:
+  maxIterations: 500
+  coverageGuided: false
+  corpusDir: ../data/corpus/myparser
+  crashesDir: ../data/crashes/myparser
+mutators:
+  - bitflip
+  - havoc
+  - interesting
+  - dictionary
+  - splice
+seeds:
+  - seeds/myparser_seed.bin
+dictionaryFile: dictionaries/myparser.txt

@@ -96,3 +96,19 @@ public sealed record CrashAnalysisDto(
     RegisterSnapshotDto? Registers,
     IReadOnlyList<string> LoadedModules,
     string? Error);
+
+/// <summary>Research-oriented crash taxonomy (severity / class — not exploit tooling).</summary>
+public sealed record CrashTriageDto(
+    string Class,
+    string Severity,
+    string Summary,
+    bool IpLooksControlled,
+    bool StackLooksSmashed,
+    string ClusterKey,
+    string? ExceptionHint,
+    string? FaultAddress,
+    string? FaultModule,
+    string? Rip,
+    string? Rsp,
+    int? PatternDepthBytes = null,
+    string? PatternNote = null);

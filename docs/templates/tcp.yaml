@@ -1,0 +1,37 @@
+# Copy to projects/local/myservice.yaml (or projects/myservice.yaml)
+# The name: field is what appears in the UI "Target profile" dropdown.
+# Docs: docs/CUSTOM_TARGETS.md · docs/CASE_BUILDER.md
+name: myservice
+description: Template TCP target — edit host/port/seeds then fuzz
+kind: tcp
+target:
+  # Leave empty for remote-only (no local process started)
+  executable: ""
+  longLived: false
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 8080
+  receiveTimeoutMs: 2000
+fuzz:
+  maxIterations: 500
+  powerSchedule: true
+  havocDepth: 8
+  corpusDir: ../data/corpus/myservice
+  crashesDir: ../data/crashes/myservice
+  debuggerMode: none
+mutators:
+  - bitflip
+  - havoc
+  - interesting
+  - dictionary
+  - expand
+  - truncate
+seeds:
+  - seeds/myservice_seed.bin
+dictionaryFile: dictionaries/myservice.txt
+dictionary:
+  - "%s%s%s%s"
+  - "../"
+  - "admin"

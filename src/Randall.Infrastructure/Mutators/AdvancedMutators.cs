@@ -53,3 +53,17 @@ internal sealed class ArithMutator(Random rng) : IMutator
     public ReadOnlyMemory<byte> Mutate(ReadOnlyMemory<byte> input) =>
         MutationOps.Arith(input.ToArray(), rng);
 }
+
+internal sealed class DuplicateMutator(Random rng) : IMutator
+{
+    public string Name => "duplicate";
+    public ReadOnlyMemory<byte> Mutate(ReadOnlyMemory<byte> input) =>
+        MutationOps.DuplicateChunk(input.ToArray(), rng);
+}
+
+internal sealed class ShuffleMutator(Random rng) : IMutator
+{
+    public string Name => "shuffle";
+    public ReadOnlyMemory<byte> Mutate(ReadOnlyMemory<byte> input) =>
+        MutationOps.ShuffleSpans(input.ToArray(), rng);
+}

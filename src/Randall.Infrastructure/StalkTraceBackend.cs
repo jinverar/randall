@@ -41,14 +41,15 @@ public static class StalkTraceBackendFactory
         var native = new NativeStalkRunner();
         var external = new ExternalDrcovStalkBackend(DynamoRioRunner.Discover());
 
+        // Prefer DynamoRIO (full BB) over native PC sampling when both exist.
         return mode switch
         {
             "native" when native.IsAvailable => native,
             "native" => native,
             "external" => external,
             "none" => NullStalkTraceBackend.Instance,
-            "auto" when native.IsAvailable => native,
             "auto" when external.IsAvailable => external,
+            "auto" when native.IsAvailable => native,
             _ => NullStalkTraceBackend.Instance,
         };
     }
@@ -58,9 +59,36 @@ public static class StalkTraceBackendFactory
         var backend = Create(project);
         if (backend.IsAvailable)
             return backend.BackendId;
-        if (backend.BackendId == StalkBackend.Native)
+
+        var mode = (project.Fuzz.StalkMode ?? "auto").Trim().ToLowerInvariant();
+        if (mode is "native" or "auto")
+        {
+            var external = new ExternalDrcovStalkBackend(DynamoRioRunner.Discover());
+            if (external.IsAvailable)
+                return StalkBackend.External;
+            var native = new NativeStalkRunner();
+            if (native.IsAvailable)
+                return StalkBackend.Native;
             return StalkBackend.None;
+        }
+
         return backend.BackendId;
+    }
+
+    /// <summary>Human-readable note when requested mode cannot be honored.</summary>
+    public static string? ResolveFallbackNote(ProjectConfig project)
+    {
+        var mode = (project.Fuzz.StalkMode ?? "auto").Trim().ToLowerInvariant();
+        if (mode == "native" && !new NativeStalkRunner().IsAvailable)
+        {
+            var external = new ExternalDrcovStalkBackend(DynamoRioRunner.Discover());
+            return external.IsAvailable
+                ? "stalkMode: native unavailable — using DynamoRIO (external)"
+                : "stalkMode: native unavailable — coverage disabled";
+        }
+        if (mode == "auto" && !DynamoRioRunner.Discover().IsAvailable && new NativeStalkRunner().IsAvailable)
+            return "stalkMode: auto — using native PC stalk (install DynamoRIO for full BB coverage)";
+        return null;
     }
 }
 

@@ -9,25 +9,29 @@
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
-  <aside class="sidebar">
+  <button type="button" id="nav-reopen" class="nav-reopen" aria-label="Show navigation" title="Show navigation">☰</button>
+  <aside class="sidebar" id="sidebar">
     <div class="brand">
       <img src="/randall.png" alt="Randall" class="brand-img" />
-      <div>
+      <div class="brand-text">
         <strong>Randfuzz</strong>
         <span>by Randall · Camouflage · Stalk · Scream</span>
       </div>
+      <button type="button" id="nav-toggle" class="nav-toggle" aria-label="Hide navigation" title="Hide navigation">⟨</button>
     </div>
     <nav class="nav">
-      <button type="button" class="nav-btn active" data-view="dashboard">Dashboard</button>
-      <button type="button" class="nav-btn" data-view="fuzz">Fuzz</button>
-      <button type="button" class="nav-btn" data-view="proxy">Proxy</button>
-      <button type="button" class="nav-btn" data-view="campaign">Campaign</button>
-      <button type="button" class="nav-btn" data-view="crashes">Crashes</button>
-      <button type="button" class="nav-btn" data-view="models">Models</button>
-      <button type="button" class="nav-btn" data-view="graph">Session graph</button>
-      <button type="button" class="nav-btn" data-view="bundles">Bundles</button>
-      <button type="button" class="nav-btn" data-view="roadmap">Roadmap</button>
-      <button type="button" class="nav-btn" data-view="legs">Eight legs</button>
+      <button type="button" class="nav-btn active" data-view="dashboard" title="Dashboard">Dashboard</button>
+      <button type="button" class="nav-btn" data-view="stalking" title="Stalking bugs">Stalking bugs</button>
+      <button type="button" class="nav-btn" data-view="fuzz" title="Fuzz">Fuzz</button>
+      <button type="button" class="nav-btn" data-view="proxy" title="Proxy">Proxy</button>
+      <button type="button" class="nav-btn" data-view="campaign" title="Campaign">Campaign</button>
+      <button type="button" class="nav-btn" data-view="crashes" title="Crashes">Crashes</button>
+      <button type="button" class="nav-btn" data-view="models" title="Models">Models</button>
+      <button type="button" class="nav-btn" data-view="graph" title="Session graph">Session graph</button>
+      <button type="button" class="nav-btn" data-view="bundles" title="Bundles">Bundles</button>
+      <button type="button" class="nav-btn" data-view="help" title="Help">Help</button>
+      <button type="button" class="nav-btn" data-view="roadmap" title="Roadmap">Roadmap</button>
+      <button type="button" class="nav-btn" data-view="legs" title="Eight legs">Eight legs</button>
     </nav>
     <div class="sidebar-foot">
       <span id="health-label">—</span>
@@ -36,28 +40,232 @@
 
   <main class="main">
     <section id="view-dashboard" class="view visible">
+      <div class="stalker">
+        <header class="stalker-header">
+          <div class="stalker-title-row">
+            <div class="stalker-brand">
+              <img src="/randall.png" alt="Randfuzz" />
+              <div>
+                <strong>Randfuzz stalker</strong>
+                <span>BUG STALKER — CONTROL FLOW GRAPH</span>
+              </div>
+            </div>
+            <div class="stalker-tabs" id="stalker-tabs"></div>
+          </div>
+          <div class="stalker-meta" id="stalker-meta">
+            <span><em>TARGET</em> <strong id="stalk-target">—</strong></span>
+            <span><em>PID</em> <strong id="stalk-pid">—</strong></span>
+            <span><em>ARCH</em> <strong id="stalk-arch">—</strong></span>
+            <span><em>MODE</em> <strong id="stalk-mode">—</strong></span>
+            <span><em>STATUS</em> <strong id="stalk-status" class="status-idle">Idle</strong></span>
+          </div>
+        </header>
+
+        <div class="stalker-body">
+          <aside class="stalker-col left">
+            <section class="stalk-panel">
+              <h3>Current session</h3>
+              <dl id="stalk-session" class="stalk-dl"></dl>
+            </section>
+            <section class="stalk-panel">
+              <h3>Coverage overview</h3>
+              <div class="coverage-ring-wrap">
+                <div class="coverage-ring" id="stalk-coverage-ring" style="--pct:0">
+                  <span id="stalk-coverage-pct">0%</span>
+                </div>
+                <div>
+                  <div class="coverage-label" id="stalk-coverage-label">—</div>
+                  <ul class="stalk-stats" id="stalk-coverage-stats"></ul>
+                  <p class="coverage-detail" id="stalk-coverage-detail"></p>
+                </div>
+              </div>
+            </section>
+            <section class="stalk-panel">
+              <h3>Crash summary</h3>
+              <dl id="stalk-crash-summary" class="stalk-dl"></dl>
+            </section>
+            <section class="stalk-panel">
+              <h3>Top new blocks</h3>
+              <ol id="stalk-hot-blocks" class="stalk-hot"></ol>
+            </section>
+            <figure class="stalk-mascot">
+              <img src="/randall.png" alt="Randall" />
+              <figcaption>I don't just find bugs. I stalk them. I choose them. I crash them.</figcaption>
+            </figure>
+          </aside>
+
+          <section class="stalker-col center">
+            <div class="stalk-panel stalk-graph-panel">
+              <div class="stalk-graph-head">
+                <h3>Stalker graph <span>(basic blocks)</span></h3>
+                <div class="stalk-graph-tools">
+                  <button type="button" class="btn" id="stalk-zoom-out" title="Zoom out">−</button>
+                  <button type="button" class="btn" id="stalk-zoom-fit" title="Fit graph in view">Fit</button>
+                  <button type="button" class="btn" id="stalk-zoom-reset" title="Reset zoom 100%">1:1</button>
+                  <button type="button" class="btn" id="stalk-zoom-in" title="Zoom in">+</button>
+                  <span class="stalk-zoom-label" id="stalk-zoom-label">100%</span>
+                  <button type="button" class="btn" id="stalk-refresh">Refresh</button>
+                </div>
+              </div>
+              <p class="hint stalk-graph-hint">Click a block to inspect · right-click for RE actions · drag empty space to pan · Ctrl+wheel zoom</p>
+              <div id="stalker-graph" class="stalker-graph" tabindex="0" aria-label="Control flow graph — drag to pan, click blocks to inspect"></div>
+              <aside id="stalk-block-inspector" class="stalk-block-inspector hidden" aria-live="polite">
+                <div class="stalk-insp-head">
+                  <h3 id="stalk-insp-title">Block</h3>
+                  <button type="button" class="btn" id="stalk-insp-close" title="Close">×</button>
+                </div>
+                <div id="stalk-insp-body" class="stalk-insp-body"></div>
+              </aside>
+            </div>
+          </section>
+          <div id="stalk-ctx-menu" class="stalk-ctx-menu hidden" role="menu"></div>
+
+          <aside class="stalker-col right">
+            <section class="stalk-panel stalk-minimap-panel">
+              <h3>Minimap</h3>
+              <div id="stalk-minimap" class="stalk-minimap"></div>
+            </section>
+            <section class="stalk-panel">
+              <h3>Legend</h3>
+              <ul class="stalk-legend">
+                <li><i class="swatch unexplored"></i> Not hit</li>
+                <li><i class="swatch hit"></i> Hit before</li>
+                <li><i class="swatch novel"></i> New this input</li>
+                <li><i class="swatch crash"></i> Crash site</li>
+                <li><i class="swatch edge-taken"></i> Taken edge</li>
+                <li><i class="swatch edge-miss"></i> Not taken</li>
+              </ul>
+            </section>
+            <section class="stalk-panel">
+              <h3>Path comparison</h3>
+              <table class="stalk-compare" id="stalk-compare">
+                <thead><tr><th></th><th>Baseline</th><th>Current</th><th>Diff</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </section>
+            <section class="stalk-panel">
+              <h3>First divergence</h3>
+              <p class="stalk-divergence" id="stalk-divergence">—</p>
+            </section>
+            <section class="stalk-panel">
+              <h3>Notes</h3>
+              <ul id="stalk-notes" class="stalk-notes"></ul>
+            </section>
+            <section class="stalk-panel">
+              <h3>Quick actions</h3>
+              <div class="stalk-actions">
+                <button type="button" class="btn" data-stalk-action="fuzz">Open fuzz</button>
+                <button type="button" class="btn" data-stalk-action="crashes">Crash log</button>
+                <button type="button" class="btn" data-stalk-action="export">Export latest</button>
+                <button type="button" class="btn" data-stalk-action="graph">Session graph</button>
+              </div>
+            </section>
+          </aside>
+        </div>
+
+        <section class="stalk-panel stalk-timeline-panel">
+          <h3>Execution timeline <span>(last 200 blocks)</span></h3>
+          <div id="stalk-timeline" class="stalk-timeline"></div>
+          <div class="stalk-timeline-axis">
+            <span>−200</span>
+            <span id="stalk-timeline-end">NOW</span>
+          </div>
+        </section>
+
+        <section class="stalk-panel stalk-crashlog-panel">
+          <h3>Crash log <span>(recent)</span></h3>
+          <div id="stalk-crash-log" class="table-wrap"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-stalking" class="view">
       <header class="page-header">
-        <h1>Dashboard</h1>
-        <p>Lab overview — targets, corpus, coverage backend.</p>
+        <h1>Stalking bugs</h1>
+        <p>Baseline → fuzz → crash → compare. Color layers inside Randfuzz, export to IDA / Ghidra.</p>
       </header>
-      <div class="cards" id="dashboard-cards"></div>
-      <div class="panel">
-        <h2>Targets</h2>
-        <div id="dashboard-targets" class="table-wrap"></div>
+      <div class="stalking-layout">
+        <aside class="panel stalking-controls">
+          <label>
+            Project
+            <select id="stalking-project"></select>
+          </label>
+          <p id="stalking-hint" class="hex"></p>
+          <h2>Add layer</h2>
+          <label>
+            Tag
+            <select id="stalking-tag">
+              <option value="baseline">baseline (normal use)</option>
+              <option value="fuzzed">fuzzed</option>
+              <option value="fuzzier">fuzzier</option>
+              <option value="crash">crash</option>
+              <option value="custom">custom</option>
+            </select>
+          </label>
+          <label>
+            Label (optional)
+            <input type="text" id="stalking-label" placeholder="browser baseline" />
+          </label>
+          <label>
+            drcov log path (optional)
+            <input type="text" id="stalking-drcov" placeholder="C:\path\to\drcov.*.log" />
+          </label>
+          <label>
+            Crash id (optional — import crash trace)
+            <input type="text" id="stalking-crash" placeholder="guid" />
+          </label>
+          <p class="hex">Leave paths empty to import current corpus edges.txt for this project.</p>
+          <div class="btn-row">
+            <button type="button" class="btn primary" id="stalking-add">Record layer</button>
+            <button type="button" class="btn" id="stalking-from-corpus">From corpus edges</button>
+            <button type="button" class="btn" id="stalking-refresh">Refresh</button>
+          </div>
+          <h2>Export</h2>
+          <div class="btn-row">
+            <button type="button" class="btn" id="stalking-export-idc">IDA IDC</button>
+            <button type="button" class="btn" id="stalking-export-ghidra">Ghidra</button>
+            <button type="button" class="btn" id="stalking-export-edges">Edges</button>
+          </div>
+          <div id="stalking-export-result" class="status-box">—</div>
+          <h2>Tooling</h2>
+          <div id="stalking-tools" class="stalking-tools"></div>
+        </aside>
+        <div class="stalking-main">
+          <div class="panel">
+            <h2>Layers</h2>
+            <div id="stalking-layers" class="table-wrap"></div>
+          </div>
+          <div class="panel">
+            <h2>Compare <span class="hex" id="stalking-compare-meta"></span></h2>
+            <div id="stalking-deltas" class="table-wrap"></div>
+          </div>
+          <div class="panel">
+            <h2>Block map <span class="hex">(union of selected layers)</span></h2>
+            <div id="stalking-block-graph" class="stalking-block-graph"></div>
+            <div id="stalking-blocks" class="table-wrap" style="margin-top:0.75rem"></div>
+          </div>
+        </div>
       </div>
     </section>
 
     <section id="view-fuzz" class="view">
       <header class="page-header">
         <h1>Fuzz</h1>
-        <p>Start a campaign from the web UI — live events via SignalR.</p>
+        <p>Run campaigns against local or remote services — build seeds like CyberChef / Sulley blocks.</p>
+        <div class="fuzz-subtabs" role="tablist">
+          <button type="button" class="fuzz-subtab active" data-fuzz-tab="campaign">Campaign</button>
+          <button type="button" class="fuzz-subtab" data-fuzz-tab="cases">Case builder</button>
+        </div>
       </header>
+
+      <div id="fuzz-tab-campaign" class="fuzz-tab-panel">
       <div class="fuzz-layout">
         <form id="fuzz-form" class="panel fuzz-controls">
           <label>
             Target profile
             <select id="fuzz-target" required></select>
           </label>
+          <p id="fuzz-target-tip" class="hint">Pick a profile — remote TCP/UDP needs only host:port.</p>
           <label>
             Max iterations
             <input type="number" id="fuzz-iterations" min="1" max="100000" value="500" />
@@ -70,10 +278,37 @@
             <input type="checkbox" id="fuzz-coverage" />
             Coverage-guided (file targets + DynamoRIO)
           </label>
+          <label>
+            Debugger
+            <select id="fuzz-debugger">
+              <option value="none">None (minidump only)</option>
+              <option value="wait">Wait — Scream dump on exception</option>
+              <option value="attach">Attach — WinDbg / Preview live</option>
+              <option value="both">Both — Scream wait + open dump after crash</option>
+            </select>
+          </label>
+          <label>
+            Debugger kind
+            <select id="fuzz-debugger-kind">
+              <option value="auto">Auto</option>
+              <option value="windbg-preview">WinDbg Preview</option>
+              <option value="windbg">WinDbg classic</option>
+              <option value="cdb">cdb</option>
+            </select>
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="fuzz-open-on-crash" />
+            Open dump in debugger after crash
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="fuzz-procmon" />
+            Procmon capture (.pml bookend — needs Procmon in PATH or tools/)
+          </label>
           <div class="btn-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>
             <button type="button" class="btn" id="fuzz-stop">Stop</button>
             <button type="button" class="btn" id="fuzz-doctor">Doctor</button>
+            <button type="button" class="btn" id="fuzz-attach-dbg">Attach debugger</button>
           </div>
           <div id="fuzz-doctor-result" class="status-box hidden"></div>
           <div id="fuzz-status" class="status-box">Idle</div>
@@ -83,12 +318,225 @@
           <pre id="fuzz-log" class="log"></pre>
         </div>
       </div>
+      </div>
+
+      <div id="fuzz-tab-cases" class="fuzz-tab-panel hidden">
+        <div class="case-guide panel">
+          <h2>How to use Case builder</h2>
+          <ol class="case-guide-steps">
+            <li><strong>Create or pick a target</strong> — the project <code>name</code> becomes the entry in
+              <em>Fuzz → Campaign → Target profile</em> (the campaign dropdown). After you create one, refresh/look there — it will be listed by that name.</li>
+            <li><strong>Build a seed</strong> — stack blocks (or use a preset / import). Think Sulley: static pieces stay put; fuzzable text becomes dictionary hints.</li>
+            <li><strong>Preview → Save as seed</strong> — writes into that project’s <code>seeds/</code> folder and registers it in the YAML.</li>
+            <li><strong>Tune mutators</strong> — turn on <code>dictionary</code> if you saved tokens, then switch to <strong>Campaign</strong>, select your Target profile, and Start.</li>
+          </ol>
+          <p class="hint">Network targets talk to host:port. File-format targets feed a temp file to an executable (no host/port).
+            More detail: <button type="button" class="linkish" data-help="CASE_BUILDER.md">Case builder help</button>
+            · <button type="button" class="linkish" data-help="CUSTOM_TARGETS.md">Custom targets</button></p>
+        </div>
+
+        <!-- Step 1: Target -->
+        <div class="panel case-step-panel">
+          <div class="case-step-heading">
+            <span class="case-step-num">1</span>
+            <div>
+              <h2>Target profile</h2>
+              <p class="hint">This is the campaign name. Creating a project here adds it to the Campaign Target profile list.</p>
+            </div>
+          </div>
+          <div class="case-target-row">
+            <label class="case-grow">
+              Working on project
+              <select id="case-project"></select>
+            </label>
+            <button type="button" class="btn" id="case-goto-campaign" title="Jump to Campaign tab">Open Campaign tab</button>
+          </div>
+          <p id="case-project-tip" class="hint"></p>
+          <p id="case-campaign-banner" class="case-campaign-banner hidden"></p>
+
+          <details class="case-new-project" id="case-create-details" open>
+            <summary>Create new target (shows up under Campaign → Target profile)</summary>
+            <p class="hint">Choose network or file format. File format greys out host/port — the fuzzer writes a temp file and runs your parser.</p>
+
+            <div class="case-kind-cards" role="radiogroup" aria-label="Target kind">
+              <label class="case-kind-card">
+                <input type="radio" name="case-new-kind" value="tcp" checked />
+                <span class="case-kind-title">TCP network</span>
+                <span class="case-kind-desc">Remote or local TCP service</span>
+              </label>
+              <label class="case-kind-card">
+                <input type="radio" name="case-new-kind" value="udp" />
+                <span class="case-kind-title">UDP network</span>
+                <span class="case-kind-desc">Datagram service</span>
+              </label>
+              <label class="case-kind-card">
+                <input type="radio" name="case-new-kind" value="file" />
+                <span class="case-kind-title">File format</span>
+                <span class="case-kind-desc">Custom parser / CLI file input</span>
+              </label>
+            </div>
+            <!-- keep id for JS compat -->
+            <select id="case-new-kind" class="hidden" aria-hidden="true">
+              <option value="tcp">tcp</option>
+              <option value="udp">udp</option>
+              <option value="file">file</option>
+            </select>
+
+            <div class="case-create-grid">
+              <label>Name (Target profile label)
+                <input type="text" id="case-new-name" placeholder="my-parser" />
+              </label>
+              <label>Description
+                <input type="text" id="case-new-desc" placeholder="My custom target" />
+              </label>
+            </div>
+
+            <fieldset id="case-new-network" class="case-fieldset">
+              <legend>Network</legend>
+              <div class="case-create-grid">
+                <label>Host <input type="text" id="case-new-host" value="127.0.0.1" /></label>
+                <label>Port <input type="number" id="case-new-port" value="8080" min="1" max="65535" /></label>
+              </div>
+              <label>Executable <span class="hint-inline">(optional — leave empty for remote-only)</span>
+                <input type="text" id="case-new-exe-net" placeholder="../targets/local/server.exe" />
+              </label>
+            </fieldset>
+
+            <fieldset id="case-new-file" class="case-fieldset case-fieldset-disabled" disabled>
+              <legend>File format</legend>
+              <p class="hint">Host/port are not used. Randfuzz writes each case to a temp file and passes it as <code>{file}</code>.</p>
+              <label>Parser / executable
+                <input type="text" id="case-new-exe" placeholder="../targets/local/myparser.exe" />
+              </label>
+              <div class="case-create-grid">
+                <label>File extension
+                  <input type="text" id="case-new-ext" value=".bin" placeholder=".bin / .xml / .custom" />
+                </label>
+                <label>Starter format
+                  <select id="case-new-file-format">
+                    <option value="file-blank">Custom blank (edit seed yourself)</option>
+                    <option value="file-xml">XML / text document</option>
+                    <option value="file-framed">Length-prefixed binary frame</option>
+                    <option value="file-magic">Magic header + body</option>
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+
+            <label class="checkbox">
+              <input type="checkbox" id="case-new-local" checked />
+              Save under <code>projects/local/</code> (gitignored — good for private lab targets)
+            </label>
+            <div class="btn-row wrap">
+              <button type="button" class="btn primary" id="case-new-create">Create target</button>
+            </div>
+            <p id="case-create-result" class="hint"></p>
+          </details>
+
+          <details class="case-new-project" id="case-edit-details">
+            <summary>Edit selected target</summary>
+            <label>Description <input type="text" id="case-edit-desc" /></label>
+            <fieldset id="case-edit-network" class="case-fieldset">
+              <legend>Network</legend>
+              <div class="case-create-grid">
+                <label>Host <input type="text" id="case-edit-host" /></label>
+                <label>Port <input type="number" id="case-edit-port" min="1" max="65535" /></label>
+              </div>
+            </fieldset>
+            <label>Executable <input type="text" id="case-edit-exe" placeholder="empty = remote only (network) or parser path (file)" /></label>
+            <label class="checkbox" id="case-edit-longlived-wrap">
+              <input type="checkbox" id="case-edit-longlived" />
+              longLived (keep process between iterations — network servers)
+            </label>
+            <button type="button" class="btn" id="case-edit-save">Save project YAML</button>
+          </details>
+        </div>
+
+        <!-- Step 2 + 3 -->
+        <div class="case-layout">
+          <aside class="panel case-ops">
+            <div class="case-step-heading compact">
+              <span class="case-step-num">2</span>
+              <div>
+                <h2>Build seed</h2>
+                <p class="hint">Add blocks left → recipe center. Presets jump-start common shapes.</p>
+              </div>
+            </div>
+            <div id="case-preset-network" class="btn-row wrap case-preset-row">
+              <button type="button" class="btn" id="case-preset-http">HTTP GET</button>
+              <button type="button" class="btn" id="case-preset-overflow">Overflow pad</button>
+              <button type="button" class="btn" id="case-preset-ftp">FTP USER</button>
+              <button type="button" class="btn" id="case-preset-binary">Binary frame</button>
+            </div>
+            <div id="case-preset-file" class="btn-row wrap case-preset-row hidden">
+              <button type="button" class="btn" id="case-preset-xml">Custom XML</button>
+              <button type="button" class="btn" id="case-preset-file-framed">Length frame</button>
+              <button type="button" class="btn" id="case-preset-file-magic">Magic + body</button>
+              <button type="button" class="btn" id="case-preset-file-blank">Blank custom</button>
+            </div>
+            <button type="button" class="btn" id="case-clear">Clear recipe</button>
+            <h3>Blocks</h3>
+            <div id="case-op-buttons" class="case-op-buttons"></div>
+            <h3>Import bytes</h3>
+            <label>Paste hex or text
+              <textarea id="case-import-text" rows="3" placeholder="Valid sample of your format…"></textarea>
+            </label>
+            <div class="btn-row wrap">
+              <button type="button" class="btn" id="case-import-hex">Import as hex</button>
+              <button type="button" class="btn" id="case-import-text-btn">Import as text</button>
+            </div>
+          </aside>
+
+          <div class="panel case-recipe">
+            <h2>Recipe</h2>
+            <p class="hint">Order matters. Mark strings as <em>fuzzable</em> so Save dict can harvest tokens.</p>
+            <div id="case-steps" class="case-steps"></div>
+            <label>
+              Seed file name
+              <input type="text" id="case-seed-name" placeholder="my_case.bin" />
+            </label>
+            <div class="btn-row wrap">
+              <button type="button" class="btn primary" id="case-preview">Preview</button>
+              <button type="button" class="btn primary" id="case-save-seed">Save as seed</button>
+              <button type="button" class="btn" id="case-save-dict">Save dict tokens</button>
+            </div>
+            <p id="case-save-result" class="hint"></p>
+            <h3>Seeds on this project</h3>
+            <p class="hint">Click a seed to load it back into the recipe for editing.</p>
+            <div id="case-seed-list" class="case-seed-list"></div>
+          </div>
+
+          <div class="panel case-preview">
+            <div class="case-step-heading compact">
+              <span class="case-step-num">3</span>
+              <div>
+                <h2>Preview &amp; mutators</h2>
+                <p class="hint">After saving a seed, open Campaign and pick this Target profile to fuzz it.</p>
+              </div>
+            </div>
+            <p id="case-preview-meta" class="hint">Add blocks, then Preview.</p>
+            <p class="label">ASCII</p>
+            <pre id="case-preview-ascii" class="ascii-preview"></pre>
+            <p class="label">Hex</p>
+            <pre id="case-preview-hex" class="hex-preview"></pre>
+            <p class="label">Dictionary hints (from recipe)</p>
+            <ul id="case-preview-hints" class="case-hints"></ul>
+            <p class="label">Dictionary on project</p>
+            <ul id="case-dict-sample" class="case-hints"></ul>
+            <h3>Mutators</h3>
+            <p class="hint">These engines mutate your seeds during Campaign. Enable <code>dictionary</code> after saving tokens.</p>
+            <div id="case-mutator-checks" class="case-mutator-checks"></div>
+            <button type="button" class="btn" id="case-save-mutators">Save mutators</button>
+            <p id="case-mutators" class="hint"></p>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section id="view-proxy" class="view">
       <header class="page-header">
         <h1>Proxy</h1>
-        <p>CANAPE-style TCP MITM — capture, inspect, replay through the proxy.</p>
+        <p>TCP MITM — capture, inspect, and replay through the proxy.</p>
       </header>
       <div class="fuzz-layout">
         <form id="proxy-form" class="panel fuzz-controls">
@@ -138,29 +586,96 @@
     </section>
 
     <section id="view-crashes" class="view">
-      <header class="page-header">
+      <header class="page-header crash-page-header">
         <h1>Crashes</h1>
-        <p>Saved inputs and minidumps from fuzz runs. <strong>Click a row</strong> to see the payload and why it crashed.</p>
+        <p>Scan density → isolate a signature → open the best unique hit and read <em>why</em>.</p>
       </header>
-      <div class="panel">
-        <label>
-          Filter project
-          <select id="crash-filter"><option value="">All</option></select>
-        </label>
-        <div id="crashes-table" class="table-wrap"></div>
-        <div class="panel" style="margin-top:1rem">
-          <h2>Crash clusters</h2>
-          <p class="hex">Grouped by input hash prefix + length — triage duplicates first.</p>
-          <div id="crash-clusters" class="table-wrap"></div>
+
+      <div class="crash-investigate">
+        <div class="panel crash-timeline-panel">
+          <div class="crash-toolbar">
+            <label>
+              Project
+              <select id="crash-filter"><option value="">All</option></select>
+            </label>
+            <label>
+              Severity
+              <select id="crash-sev-filter">
+                <option value="">All</option>
+                <option value="critical">critical</option>
+                <option value="high">high</option>
+                <option value="medium">medium</option>
+                <option value="low">low</option>
+              </select>
+            </label>
+            <label>
+              Sort
+              <select id="crash-sort">
+                <option value="best">Best first</option>
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="cluster">Largest cluster</option>
+              </select>
+            </label>
+            <label class="crash-toggle" title="Show one representative per fault cluster (recommended)">
+              <input type="checkbox" id="crash-unique-only" checked />
+              Unique only
+            </label>
+            <div class="crash-stats" id="crash-stats">—</div>
+            <button type="button" class="btn" id="crash-clear-filters" title="Clear facet filters">Clear</button>
+            <button type="button" class="btn" id="crash-refresh">Refresh</button>
+          </div>
+          <div id="crash-active-filters" class="crash-active-filters"></div>
+          <div class="crash-meta-row">
+            <div class="crash-timeline-wrap">
+              <div class="crash-section-head">
+                <h3>Timeline</h3>
+                <span class="hex" id="crash-timeline-hint">density · click to brush</span>
+              </div>
+              <div id="crash-timeline" class="crash-timeline" role="listbox" aria-label="Crash timeline"></div>
+              <div class="crash-timeline-axis" id="crash-timeline-axis"></div>
+            </div>
+            <div>
+              <div class="crash-section-head">
+                <h3>By class</h3>
+                <span class="hex">signatures</span>
+              </div>
+              <div id="crash-class-bars" class="crash-class-bars"></div>
+            </div>
+          </div>
+          <div id="crash-clusters" class="crash-cluster-chips"></div>
         </div>
-        <div id="crash-detail" class="crash-detail hidden"></div>
+
+        <div class="crash-split">
+          <div class="panel crash-list-panel">
+            <div class="crash-list-head">
+              <h2>Events</h2>
+              <div class="btn-row">
+                <button type="button" class="btn" id="crash-prev" title="Previous (k / ↑)">↑</button>
+                <button type="button" class="btn" id="crash-next" title="Next (j / ↓)">↓</button>
+                <button type="button" class="btn" id="crash-next-unique" title="Next unique cluster (n)">Next unique</button>
+                <span class="hint" id="crash-nav-label">0 / 0</span>
+              </div>
+            </div>
+            <div id="crashes-table" class="table-wrap crash-events"></div>
+          </div>
+          <div class="panel crash-investigate-panel">
+            <div class="crash-list-head">
+              <h2>Investigation</h2>
+              <span class="hint" id="crash-invest-meta"></span>
+            </div>
+            <div id="crash-detail" class="crash-detail crash-detail-pane">
+              <p class="empty">Brush the timeline or pick an event to investigate.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
     <section id="view-models" class="view">
       <header class="page-header">
         <h1>Models</h1>
-        <p>Leg 1 — Sulley-style block protocols with field-aware mutation.</p>
+        <p>Leg 1 — Block protocols with field-aware mutation.</p>
       </header>
       <div id="models-list" class="panel"></div>
     </section>
@@ -168,7 +683,7 @@
     <section id="view-graph" class="view">
       <header class="page-header">
         <h1>Session graph</h1>
-        <p>boofuzz s_switch — visualize response-driven branching (Phase 14).</p>
+        <p>Visualize response-driven session branching.</p>
       </header>
       <div class="fuzz-layout">
         <form id="graph-form" class="panel fuzz-controls">
@@ -229,6 +744,23 @@
       </div>
     </section>
 
+    <section id="view-help" class="view">
+      <header class="page-header">
+        <h1>Help</h1>
+        <p>How to fuzz custom programs, build seeds, stalk, and scream — from the repo docs.</p>
+      </header>
+      <div class="help-layout">
+        <aside class="panel help-toc">
+          <h2>Topics</h2>
+          <div id="help-index"></div>
+        </aside>
+        <article class="panel help-body">
+          <h2 id="help-title">Select a topic</h2>
+          <div id="help-content" class="help-markdown"><p class="hint">Pick a guide on the left. Start with <strong>Custom targets</strong> if you want to fuzz your own program.</p></div>
+        </article>
+      </div>
+    </section>
+
     <section id="view-roadmap" class="view">
       <header class="page-header">
         <h1>Roadmap</h1>
@@ -250,6 +782,7 @@
     </section>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
   <script type="module" src="/js/app.js"></script>
 </body>
 </html>

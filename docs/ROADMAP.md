@@ -8,7 +8,7 @@
 
 **Mission:** Intelligent, tricky fuzzing — not raw exec/s speed.
 
-**Lab targets:** [vulnserver](TARGETS.md#vulnserver) · generic [file templates](TARGETS.md) · private configs in `projects/local/`
+**Lab targets:** [vulnserver](TARGETS.md#vulnserver-notes) · generic [file templates](TARGETS.md) · private configs in `projects/local/`
 
 View live status: `randall serve` → http://localhost:5000 → **Roadmap** tab, or `GET /api/roadmap`.
 
@@ -285,3 +285,34 @@ randall doctor -c projects/vulnftp.yaml
 dotnet run --project src/Randall.Server
 # Open http://127.0.0.1:5000 → Session graph → vulnftp → Load graph
 ```
+
+---
+
+## Phase 15 — Deep logging ✅
+
+| Item | Status |
+|------|--------|
+| Execution journal (`iterations.jsonl`, `run.json`) | ✅ |
+| Crash sidecars + trace copies | ✅ |
+| Pluggable stalk backend IDs | ✅ |
+
+## Phase 16 — Native stalk 🔄
+
+| Item | Status |
+|------|--------|
+| Edge hit counters / hot spots | ✅ |
+| `randall analyze` registers from dump | ✅ |
+| Native PC stalk (debug events → drcov) | ✅ coarse — prefer DynamoRIO for full BB |
+| Doctor / auto prefer external when present | ✅ |
+
+## Phase 17 — Pentest stalker + case builder 🔄
+
+| Item | Status |
+|------|--------|
+| Layered stalk compare + IDA/Ghidra export | ✅ |
+| WinDbg attach / open dump + Scream watcher | ✅ |
+| Case builder + Help tab (served docs) | ✅ |
+| Procmon bookends (`fuzz.procmonCapture` / UI checkbox) | ✅ |
+| Remote stalk APIs on `randall agent` | ✅ `/api/remote/procmon` · `/api/remote/tools` |
+
+Custom targets: [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · Case builder: [CASE_BUILDER.md](CASE_BUILDER.md)

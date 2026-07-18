@@ -38,22 +38,33 @@ dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml
 | `dictionary` | Inject project tokens / format strings |
 | `splice` | Crossover two corpus inputs |
 | `arith` | Small integer delta on one byte |
+| `duplicate` | Repeat a random chunk of the seed |
+| `shuffle` | Swap two short spans in the seed |
 
 See [FUZZING.md](FUZZING.md) for technique details and research references.
 
-## Private targets
+## Private / custom targets
 
 Copy your own YAML + seeds into `projects/local/` and binaries into `targets/local/`. Neither path is committed.
 
+The YAML **`name:`** field is the label in the web UI **Target profile** list (and `randall targets`).
+
 ```powershell
+# UI: Fuzz → Case builder → New project
+# Or copy the template:
+copy docs\templates\tcp.yaml projects\local\my-target.yaml
+
+randall case new --name my-target --kind tcp --host 127.0.0.1 --port 8080
 randall fuzz -c projects/local/my-target.yaml
 ```
+
+Step-by-step: [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · seeds/dicts: [CASE_BUILDER.md](CASE_BUILDER.md).
 
 ## vulnserver notes
 
 - Build: `.\scripts\build-vulnserver.ps1` → `targets/vulnserver/randall-vulnserver.exe`
 - Port **9999**, session graph (TRUN, GMON, GTER, RAND, …)
-- Randall restarts vulnserver after each crash when `long_lived: true`
+- Randall restarts vulnserver after each crash when `longLived: true`
 - Known crash: TRUN with ~2000+ byte payload (iteration count may vary)
 
 ## File target notes

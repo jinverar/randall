@@ -121,6 +121,45 @@ internal static class MutationOps
         return result;
     }
 
+    /// <summary>Duplicate a random slice of the seed (AFL-style chunk repeat).</summary>
+    public static byte[] DuplicateChunk(byte[] buf, Random rng)
+    {
+        if (buf.Length == 0)
+            return buf;
+        var start = rng.Next(buf.Length);
+        var len = rng.Next(1, Math.Min(64, buf.Length - start) + 1);
+        var times = rng.Next(2, 8);
+        var chunk = buf.AsSpan(start, len);
+        var result = new byte[buf.Length + chunk.Length * (times - 1)];
+        var o = 0;
+        buf.AsSpan(0, start + len).CopyTo(result);
+        o = start + len;
+        for (var t = 1; t < times; t++)
+        {
+            chunk.CopyTo(result.AsSpan(o));
+            o += chunk.Length;
+        }
+        buf.AsSpan(start + len).CopyTo(result.AsSpan(o));
+        return result;
+    }
+
+    /// <summary>Swap two random spans inside the seed (local shuffle).</summary>
+    public static byte[] ShuffleSpans(byte[] buf, Random rng)
+    {
+        if (buf.Length < 4)
+            return BitFlip(buf.ToArray(), rng);
+        var a = rng.Next(buf.Length - 1);
+        var b = rng.Next(buf.Length - 1);
+        if (a == b) b = (b + 1) % buf.Length;
+        if (a > b) (a, b) = (b, a);
+        var len = Math.Min(rng.Next(1, 8), Math.Min(b - a, buf.Length - b));
+        if (len <= 0)
+            return buf;
+        for (var i = 0; i < len; i++)
+            (buf[a + i], buf[b + i]) = (buf[b + i], buf[a + i]);
+        return buf;
+    }
+
     public static byte[] Havoc(byte[] input, Random rng, int depth)
     {
         var buf = input.ToArray();
@@ -128,6 +167,7 @@ internal static class MutationOps
         ReadOnlySpan<Func<byte[], Random, byte[]>> ops =
         [
             BitFlip, Arith, InterestingByte, Truncate, Expand, InsertRandom,
+            DuplicateChunk, ShuffleSpans,
         ];
 
         for (var i = 0; i < rounds; i++)

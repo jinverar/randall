@@ -1,0 +1,39 @@
+name: screamcrash
+description: Lab target that AV-crashes on token SCREAM — Scream watcher regression (scripts/build-screamcrash.ps1)
+kind: tcp
+target:
+  executable: ../targets/screamcrash/randall-screamcrash.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 19999
+  receiveTimeoutMs: 1500
+  prefix: ""
+sessionCommands:
+  - name: CRASH
+    seed: seeds/screamcrash.txt
+    readBanner: true
+  - name: PING
+    seed: seeds/screamcrash_ping.txt
+    readBanner: true
+fuzz:
+  maxIterations: 20
+  debuggerMode: wait
+  debuggerKind: windbg-preview
+  debuggerOpenOnCrash: false
+  autoAnalyzeCrash: true
+  coverageGuided: false
+  corpusDir: ../data/corpus/screamcrash
+  crashesDir: ../data/crashes/screamcrash
+mutators:
+  - bitflip
+  - expand
+  - truncate
+seeds:
+  - seeds/screamcrash.txt
+  - seeds/screamcrash_ping.txt
+dictionary:
+  - "SCREAM"
+  - "PING"

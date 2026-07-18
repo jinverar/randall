@@ -4,18 +4,22 @@ Randall combines **generation** (Sulley-style block models) with **coverage-guid
 
 ## Built-in mutators
 
+Enable via project YAML `mutators:` or **Fuzz → Case builder** checkboxes. New seeds/dicts: [CASE_BUILDER.md](CASE_BUILDER.md). Custom programs: [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md).
+
 | Mutator | Technique | Origin / inspiration |
 |---------|-----------|---------------------|
 | `bitflip` | Single-bit flip at random offset | AFL bitflip stage |
 | `arith` | Add small delta (-35…+35) to one byte | AFL arith stage |
 | `boundary` | Replace byte with 0, 1, 0x7F, 0x80, 0xFF | Classic boundary testing |
 | `interesting` | Inject known-dangerous integers at 1/2/4/8-byte alignment | libFuzzer `ExtractAndExecuteOne` |
-| `havoc` | Stack 2–N random ops (flip, arith, truncate, expand, insert) | AFL havoc stage |
+| `havoc` | Stack 2–N random ops (flip, arith, truncate, expand, insert, duplicate, shuffle) | AFL havoc stage |
 | `dictionary` | Overwrite or insert project tokens | AFL `-x` / Boofuzz `s_string` |
 | `splice` | Crossover two corpus inputs at random split | AFL splice / genetic fuzzing |
 | `expand` | Append large run (length / buffer stress) | Generation fuzzers |
 | `truncate` | Cut input mid-record | Parser state confusion |
 | `insert` | Append random blob tail | Tail parser bugs |
+| `duplicate` | Repeat a random slice of the seed | AFL chunk duplication |
+| `shuffle` | Swap two short spans inside the seed | Local reorder / confusion |
 
 Enable in project YAML:
 

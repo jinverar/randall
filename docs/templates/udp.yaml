@@ -1,0 +1,25 @@
+# Copy to projects/local/myudp.yaml — name: becomes Target profile
+name: myudp
+description: Template UDP datagram target
+kind: udp
+target:
+  executable: ""
+  longLived: false
+  timeoutMs: 3000
+transport:
+  type: udp
+  host: 127.0.0.1
+  port: 69
+  receiveTimeoutMs: 1500
+fuzz:
+  maxIterations: 500
+  corpusDir: ../data/corpus/myudp
+  crashesDir: ../data/crashes/myudp
+mutators:
+  - bitflip
+  - havoc
+  - dictionary
+  - expand
+seeds:
+  - seeds/myudp_seed.bin
+dictionaryFile: dictionaries/myudp.txt

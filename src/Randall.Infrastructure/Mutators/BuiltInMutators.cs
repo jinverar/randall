@@ -29,6 +29,8 @@ public static class BuiltInMutators
                 "interesting" or "ints" => new InterestingMutator(rng),
                 "dictionary" or "dict" => new DictionaryMutator(rng, context.DictionaryTokens),
                 "arith" => new ArithMutator(rng),
+                "duplicate" or "dup" => new DuplicateMutator(rng),
+                "shuffle" => new ShuffleMutator(rng),
                 "splice" when context.PickAlternateSeed is not null =>
                     new SpliceMutator(rng, context.PickAlternateSeed),
                 _ => null,

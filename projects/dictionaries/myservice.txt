@@ -1,0 +1,7 @@
+# Dictionary tokens for dictionary mutator — one per line
+# Use hex:DEADBEEF for raw bytes
+%s%s%s%s
+../
+admin
+index.html
+HTTP/1.1

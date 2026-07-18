@@ -92,6 +92,63 @@ public static class LabDoctor
         Add("dynamorio", dr.IsAvailable ? "ok" : "warn",
             dr.IsAvailable ? dr.DrrunPath! : "Not found — coverage-guided file fuzz disabled");
 
+        var stalkMode = (project.Fuzz.StalkMode ?? "auto").Trim().ToLowerInvariant();
+        var native = new NativeStalkRunner();
+        if (stalkMode == "external" && !dr.IsAvailable)
+        {
+            Add("stalkMode", "warn", "stalkMode: external but DynamoRIO not found");
+        }
+        else if (stalkMode == "native" && native.IsAvailable)
+        {
+            Add("stalkMode", "ok",
+                "native PC stalk (debug-event samples) — coarser than DynamoRIO BB coverage");
+        }
+        else if (stalkMode == "native" && !native.IsAvailable)
+        {
+            Add("stalkMode", "warn", "stalkMode: native requires Windows");
+        }
+        else
+        {
+            var resolved = StalkTraceBackendFactory.ResolveBackendId(project);
+            Add("stalkMode", "ok", $"requested={stalkMode}, resolved={resolved}");
+        }
+
+        var procmonExe = ProcmonCapture.DiscoverExecutable();
+        if (project.Fuzz.ProcmonCapture)
+        {
+            Add("procmon", procmonExe is not null ? "ok" : "warn",
+                procmonExe is not null
+                    ? $"ProcmonCapture enabled → {procmonExe}"
+                    : "ProcmonCapture enabled but Procmon not found (tools/ or PATH)");
+        }
+        else
+        {
+            Add("procmon", procmonExe is not null ? "ok" : "warn",
+                procmonExe is not null
+                    ? $"{procmonExe} (set fuzz.procmonCapture: true to bookend runs)"
+                    : "Procmon not found — optional .pml bookends disabled");
+        }
+
+        var dbg = DebuggerTools.Probe();
+        foreach (var t in dbg.Tools)
+        {
+            Add($"debugger:{t.Id}", t.Available ? "ok" : "warn",
+                t.Available ? (t.Path ?? t.Name) : $"{t.Name} not found");
+        }
+        if (!string.IsNullOrWhiteSpace(project.Fuzz.DebuggerMode) &&
+            !project.Fuzz.DebuggerMode.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            var mode = project.Fuzz.DebuggerMode.ToLowerInvariant();
+            if (mode is "wait" or "both")
+                Add("debuggerMode", "ok", "Scream watcher (built-in) will debug-attach for dumps");
+            if (mode is "attach" && dbg.PreferredGui is null)
+                Add("debuggerMode", "warn", "debuggerMode attach needs WinDbg or WinDbg Preview");
+            if (mode is "both" && dbg.PreferredGui is null)
+                Add("debuggerMode", "warn", "both opens dumps after crash — install WinDbg Preview for GUI");
+            if (!project.Target.LongLived)
+                Add("debuggerMode", "warn", "attach/wait work best with target.longLived: true");
+        }
+
         if (!string.IsNullOrWhiteSpace(project.Target.Executable))
         {
             var exe = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);

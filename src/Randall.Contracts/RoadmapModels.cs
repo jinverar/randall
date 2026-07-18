@@ -26,7 +26,12 @@ public sealed record CrashSummaryDto(
     string? TriageTag,
     string? SidecarPath,
     string? RunId,
-    DateTimeOffset ObservedAt);
+    DateTimeOffset ObservedAt,
+    string? CrashClass = null,
+    string? Severity = null,
+    string? FaultAddress = null,
+    string? ExceptionHint = null,
+    string? ClusterKey = null);
 
 public sealed record CrashDetailDto(
     CrashSummaryDto Summary,
@@ -34,7 +39,8 @@ public sealed record CrashDetailDto(
     string HexPreview,
     string AsciiPreview,
     CrashSidecarDto? Sidecar,
-    CrashAnalysisDto? Analysis);
+    CrashAnalysisDto? Analysis,
+    CrashTriageDto? Triage = null);
 
 public sealed record SessionGraphReportDto(
     string Project,
@@ -58,7 +64,11 @@ public sealed record CrashClusterDto(
     Guid RepresentativeId,
     string RepresentativeHash,
     string RepresentativeMutator,
-    int LengthBucket);
+    int LengthBucket,
+    string? CrashClass = null,
+    string? Severity = null,
+    string? ExceptionHint = null,
+    string? FaultAddress = null);
 
 public sealed record DoctorCheckDto(string Id, string Status, string Message);
 

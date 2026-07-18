@@ -48,9 +48,17 @@ public sealed class FuzzEngine
         crashStore.Ensure();
         var crashesDir = ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir);
 
-        var stalk = StalkTraceBackendFactory.Create(project);
         var stalkBackend = StalkTraceBackendFactory.ResolveBackendId(project);
-        var stalkNote = stalk.AvailabilityNote;
+        IStalkTraceBackend stalk = stalkBackend switch
+        {
+            StalkBackend.External => new ExternalDrcovStalkBackend(DynamoRioRunner.Discover()),
+            StalkBackend.Native => new NativeStalkRunner(),
+            _ => NullStalkTraceBackend.Instance,
+        };
+        var fallbackWarn = StalkTraceBackendFactory.ResolveFallbackNote(project);
+        var stalkNote = fallbackWarn ?? stalk.AvailabilityNote;
+        if (fallbackWarn is not null)
+            Console.WriteLine($"Warning: {fallbackWarn}");
         FuzzRunJournal? journal = null;
         if (project.Fuzz.ExecutionLog)
         {
@@ -66,6 +74,28 @@ public sealed class FuzzEngine
 
         options.Progress?.OnStarted(project.Name, project.Kind);
 
+        var debuggerMode = (options.DebuggerMode ?? project.Fuzz.DebuggerMode ?? "none")
+            .Trim().ToLowerInvariant();
+        var debuggerKind = options.DebuggerKind ?? project.Fuzz.DebuggerKind ?? "auto";
+        var debuggerOpenOnCrash = options.DebuggerOpenOnCrash ?? project.Fuzz.DebuggerOpenOnCrash;
+        DebuggerWaitHandle? debuggerWait = null;
+
+        ProcmonCapture? procmon = null;
+        var wantProcmon = options.ProcmonCapture ?? project.Fuzz.ProcmonCapture;
+        if (!dryRun && wantProcmon)
+        {
+            var runDir = journal?.RunDirectory
+                         ?? Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir),
+                             $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
+            Directory.CreateDirectory(runDir);
+            var pml = Path.Combine(runDir, "fuzz.pml");
+            procmon = ProcmonCapture.TryStart(pml);
+            if (procmon?.IsRunning == true)
+                Console.WriteLine($"Procmon capture → {procmon.PmlPath}");
+            else
+                Console.WriteLine($"Procmon capture skipped: {procmon?.LastError ?? "Procmon not found (tools/ or PATH)"}");
+        }
+
         var crashes = new List<CrashRecord>();
         ProcessMonitor? monitor = null;
         Process? longLived = null;
@@ -75,6 +105,71 @@ public sealed class FuzzEngine
         {
             monitor = new ProcessMonitor(project, yamlPath);
             longLived = monitor.Start();
+            await ArmDebuggerAsync(longLived);
+        }
+
+        async Task ArmDebuggerAsync(Process? proc)
+        {
+            debuggerWait?.Dispose();
+            debuggerWait = null;
+            if (proc is null || proc.HasExited || dryRun)
+                return;
+
+            options.Progress?.OnTargetPid(proc.Id);
+            Console.WriteLine($"Target PID: {proc.Id}");
+
+            // Only one debugger can attach. "both" = scream wait + open GUI after crash (not live dual-attach).
+            if (debuggerMode is "attach")
+            {
+                var attach = DebuggerSession.Attach(proc.Id, debuggerKind, go: true);
+                Console.WriteLine(attach.Ok
+                    ? $"  debugger attach: {attach.Message}"
+                    : $"  debugger attach skipped: {attach.Message}");
+            }
+
+            if (debuggerMode is "wait" or "both")
+            {
+                var dumpsDir = Path.Combine(crashesDir, "dumps");
+                debuggerWait = DebuggerSession.StartWaitWatcher(proc.Id, dumpsDir, preferred: "scream");
+                if (debuggerWait?.Scream is { } scream)
+                {
+                    var attached = await scream.WaitUntilAttachedAsync(TimeSpan.FromSeconds(5), cancellationToken);
+                    Console.WriteLine(attached
+                        ? $"  scream ready ({(scream.IsWow64 ? "wow64" : "x64")}) → {scream.DumpPath}"
+                        : $"  scream attach/ready failed: {scream.LastError ?? scream.Phase}");
+                    if (!attached)
+                    {
+                        debuggerWait.Dispose();
+                        debuggerWait = null;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("  scream wait skipped");
+                }
+            }
+        }
+
+        async Task<string?> TakeWaitDumpAsync(string? existingDump)
+        {
+            if (debuggerWait is null)
+                return existingDump;
+            try
+            {
+                var dump = await DebuggerSession.WaitForDumpAsync(
+                    debuggerWait, Math.Max(project.Target.TimeoutMs, 5000), cancellationToken);
+                if (dump is not null)
+                {
+                    Console.WriteLine($"  debugger dump: {dump}");
+                    return dump;
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  debugger wait: {ex.Message}");
+            }
+            return existingDump;
         }
 
         var sessionCommands = SessionGraph.LoadCommands(project, yamlPath);
@@ -302,6 +397,28 @@ public sealed class FuzzEngine
                 if (pluginAbort is not null && !result.Crashed)
                     result = result with { Detail = $"post_receive: {pluginAbort}" };
 
+                // Scream holds the process at second-chance before Kill — detect dump even if
+                // TargetRunner still saw HasExited == false for a moment.
+                if (debuggerWait is not null &&
+                    (debuggerWait.Completion?.IsCompleted == true ||
+                     debuggerWait.TryExistingDump() is not null ||
+                     longLived is { HasExited: true }))
+                {
+                    var screamDump = await TakeWaitDumpAsync(result.MiniDumpPath);
+                    if (screamDump is not null || debuggerWait.Scream?.ExceptionInfo is not null)
+                    {
+                        var hint = debuggerWait.Scream?.ExceptionInfo?.ExceptionHint ?? "scream exception";
+                        result = result with
+                        {
+                            Crashed = true,
+                            MiniDumpPath = screamDump ?? result.MiniDumpPath,
+                            Detail = result.Crashed ? result.Detail : $"scream: {hint}",
+                            ExitCode = result.ExitCode ??
+                                       (int?)debuggerWait.Scream?.ExceptionInfo?.ExceptionCode,
+                        };
+                    }
+                }
+
                 var newEdges = 0;
                 var newCoverage = false;
                 if (useCoverageTcp)
@@ -363,6 +480,7 @@ public sealed class FuzzEngine
                 if (result.Crashed)
                 {
                     crashCount++;
+                    var crashDump = await TakeWaitDumpAsync(result.MiniDumpPath);
                     var crashTag = await RppCrashHook.RunAsync(
                         project, yamlPath, payload, result, cancellationToken);
 
@@ -376,7 +494,7 @@ public sealed class FuzzEngine
                         mutatorLabel,
                         payload,
                         result.ExitCode,
-                        result.MiniDumpPath,
+                        crashDump,
                         crashTag,
                         journal?.RunId,
                         buildSidecar: id =>
@@ -405,7 +523,7 @@ public sealed class FuzzEngine
                                 stalkBackend,
                                 iterTracePath,
                                 traceCopy,
-                                result.MiniDumpPath,
+                                crashDump,
                                 CrashSidecarWriter.HexPreview(result.ResponseBytes),
                                 new TransportSnapshotDto(
                                     project.Kind, project.Transport.Host, project.Transport.Port, project.Transport.Tls),
@@ -423,6 +541,20 @@ public sealed class FuzzEngine
                     if (project.Fuzz.AutoAnalyzeCrash && saved.MiniDumpPath is not null)
                     {
                         var analysis = CrashAnalysisWriter.AnalyzeDump(saved.MiniDumpPath);
+                        if (!analysis.Ok && debuggerWait?.Scream?.ExceptionInfo is { } screamEx)
+                        {
+                            analysis = new CrashAnalysisDto(
+                                true,
+                                saved.MiniDumpPath,
+                                $"0x{screamEx.ExceptionCode:X8}",
+                                screamEx.ExceptionHint,
+                                screamEx.FaultAddress,
+                                null,
+                                screamEx.Registers,
+                                [],
+                                null);
+                        }
+
                         var analysisPath = CrashAnalysisWriter.Write(crashesDir, saved.Id, analysis);
                         if (analysis.Ok)
                         {
@@ -436,6 +568,35 @@ public sealed class FuzzEngine
                             Console.WriteLine($"  analysis skipped: {analysis.Error}");
                         }
                     }
+
+                    if ((debuggerOpenOnCrash || debuggerMode is "both") && saved.MiniDumpPath is not null)
+                    {
+                        var opened = DebuggerSession.OpenDump(saved.MiniDumpPath, debuggerKind);
+                        Console.WriteLine(opened.Ok
+                            ? $"  debugger open: {opened.Message}"
+                            : $"  debugger open skipped: {opened.Message}");
+                    }
+
+                    // Auto-record a stalk "crash" layer when coverage edges/trace exist.
+                    try
+                    {
+                        var stalkLayer = StalkCampaignStore.AddLayer(new StalkLayerCreateRequest(
+                            project.Name,
+                            "crash",
+                            $"crash {saved.Id.ToString("N")[..8]} iter={iterations}",
+                            null,
+                            null,
+                            null,
+                            saved.Id.ToString(),
+                            crashTag ?? result.Detail));
+                        Console.WriteLine(
+                            $"  stalk layer: {stalkLayer.Tag} blocks={stalkLayer.BlockCount} id={stalkLayer.Id}");
+                    }
+                    catch (Exception stalkEx)
+                    {
+                        Console.WriteLine($"  stalk layer skipped: {stalkEx.Message}");
+                    }
+
                     crashes.Add(new CrashRecord(
                         saved.Id,
                         payload,
@@ -452,6 +613,7 @@ public sealed class FuzzEngine
                         monitor?.Stop();
                         await Task.Delay(300, cancellationToken);
                         longLived = monitor?.Start();
+                        await ArmDebuggerAsync(longLived);
                     }
                 }
                 else if (iterations % 50 == 0)
@@ -462,9 +624,18 @@ public sealed class FuzzEngine
         }
         finally
         {
+            debuggerWait?.Dispose();
             if (useCoverageTcp)
                 stalk.StopLongLivedAsync(longLived, cancellationToken).GetAwaiter().GetResult();
+            if (procmon is not null)
+            {
+                procmon.Stop();
+                if (File.Exists(procmon.PmlPath))
+                    Console.WriteLine($"Procmon saved: {procmon.PmlPath}");
+                procmon.Dispose();
+            }
             monitor?.Dispose();
+            options.Progress?.OnTargetPid(null);
             journal?.Complete(iterations, crashCount, coverage.GetTopHotEdges());
         }
 

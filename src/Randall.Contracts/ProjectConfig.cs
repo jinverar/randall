@@ -124,4 +124,16 @@ public sealed class FuzzConfig
     public string StalkMode { get; set; } = "auto";
     /// <summary>Write *_analysis.json from minidump when a crash is saved.</summary>
     public bool AutoAnalyzeCrash { get; set; } = true;
+    /// <summary>
+    /// Debugger integration: none | attach | wait.
+    /// attach = launch WinDbg/Preview on the long-lived target PID (with g).
+    /// wait = ProcDump/cdb headless dump-on-exception, then auto-analyze.
+    /// </summary>
+    public string DebuggerMode { get; set; } = "none";
+    /// <summary>auto | windbg | windbg-preview | cdb</summary>
+    public string DebuggerKind { get; set; } = "auto";
+    /// <summary>After a crash dump is saved, open it in the GUI debugger.</summary>
+    public bool DebuggerOpenOnCrash { get; set; }
+    /// <summary>Start Sysinternals Procmon .pml capture for the duration of the fuzz run.</summary>
+    public bool ProcmonCapture { get; set; }
 }

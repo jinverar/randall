@@ -51,9 +51,18 @@ public static class ProjectLoader
         if (!Directory.Exists(dir))
             yield break;
         foreach (var file in Directory.EnumerateFiles(dir, "*.yaml"))
+        {
+            // Skip copy-templates (_TEMPLATE_tcp.yaml) — not live Target profiles
+            if (Path.GetFileName(file).StartsWith("_", StringComparison.Ordinal))
+                continue;
             yield return file;
+        }
         foreach (var file in Directory.EnumerateFiles(dir, "*.yml"))
+        {
+            if (Path.GetFileName(file).StartsWith("_", StringComparison.Ordinal))
+                continue;
             yield return file;
+        }
     }
 
     /// <summary>Discover example projects under examples/*/project.yaml.</summary>

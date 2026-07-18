@@ -51,6 +51,18 @@ public static class CrashCatalog
             var store = new CrashStore(dir);
             foreach (var c in store.List())
             {
+                var analysisPath = CrashAnalysisWriter.AnalysisPathFor(dir, c.Id);
+                var analysis = CrashAnalysisWriter.TryRead(analysisPath);
+                var sidecar = CrashSidecarWriter.TryRead(c.SidecarPath);
+                var hint = analysis?.ExceptionHint
+                    ?? sidecar?.ExceptionHint
+                    ?? WindowsExceptionHints.Describe(
+                        int.TryParse(c.TargetExitCode, out var ec) ? ec : null);
+                var summary = new CrashSummaryDto(
+                    c.Id, c.Project, c.Iteration, c.Mutator, c.InputHash, c.InputPath,
+                    c.MiniDumpPath, c.TargetExitCode, c.TriageTag, c.SidecarPath, c.RunId, c.At);
+                var triage = CrashTriage.Classify(analysis, sidecar, summary);
+
                 results.Add(new CrashSummaryDto(
                     c.Id,
                     c.Project,
@@ -63,7 +75,12 @@ public static class CrashCatalog
                     c.TriageTag,
                     c.SidecarPath,
                     c.RunId,
-                    c.At));
+                    c.At,
+                    triage.Class,
+                    triage.Severity,
+                    triage.FaultAddress ?? analysis?.FaultAddress,
+                    triage.ExceptionHint ?? hint,
+                    triage.ClusterKey));
             }
         }
 
@@ -73,7 +90,7 @@ public static class CrashCatalog
     public static IReadOnlyList<CrashClusterDto> ListClusters(string? repoRoot = null, string? projectFilter = null)
     {
         var crashes = ListAll(repoRoot, projectFilter);
-        return CrashCluster.Build(crashes)
+        return CrashCluster.Build(crashes, repoRoot)
             .Select(c => new CrashClusterDto(
                 c.ClusterId,
                 c.Project,
@@ -81,7 +98,11 @@ public static class CrashCatalog
                 c.RepresentativeId,
                 c.RepresentativeHash,
                 c.RepresentativeMutator,
-                c.LengthBucket))
+                c.LengthBucket,
+                c.CrashClass,
+                c.Severity,
+                c.ExceptionHint,
+                c.FaultAddress))
             .ToList();
     }
 
@@ -92,7 +113,10 @@ public static class CrashCatalog
             if (summary.Id != id)
                 continue;
             if (!File.Exists(summary.InputPath))
-                return new CrashDetailDto(summary, 0, "(file missing)", "(file missing)", null, null);
+            {
+                var missingTriage = CrashTriage.Classify(null, null, summary);
+                return new CrashDetailDto(summary, 0, "(file missing)", "(file missing)", null, null, missingTriage);
+            }
 
             var bytes = File.ReadAllBytes(summary.InputPath);
             var previewLen = Math.Min(bytes.Length, 256);
@@ -107,7 +131,8 @@ public static class CrashCatalog
                 ?? (summary.MiniDumpPath is not null
                     ? CrashAnalysisWriter.AnalyzeDump(summary.MiniDumpPath)
                     : null);
-            return new CrashDetailDto(summary, bytes.Length, hex, ascii, sidecar, analysis);
+            var triage = CrashTriage.Classify(analysis, sidecar, summary, bytes);
+            return new CrashDetailDto(summary, bytes.Length, hex, ascii, sidecar, analysis, triage);
         }
         return null;
     }
