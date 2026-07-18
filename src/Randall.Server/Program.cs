@@ -46,6 +46,18 @@ app.MapGet("/api/graph", (string configPath) =>
         return Results.BadRequest(new { error = ex.Message });
     }
 });
+
+app.MapPost("/api/graph", (SessionGraphSaveRequest request) =>
+{
+    try
+    {
+        return Results.Ok(CaseRecipeStore.SaveSessionGraph(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
 app.MapGet("/api/plugins", () => PluginCatalog.ListAll());
 app.MapGet("/api/protocols", () => ProtocolCatalog.ListAll());
 app.MapGet("/api/campaigns", () => PluginCatalog.ListCampaigns());
@@ -392,6 +404,52 @@ app.MapPost("/api/case/apply-session", (CaseApplySessionRequest request) =>
     try
     {
         return Results.Ok(CaseRecipeStore.ApplySessionRecipe(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/from-stream", (CaseFromStreamRequest request) =>
+{
+    if (!string.IsNullOrWhiteSpace(request.Project) && WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.FromStream(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/promote", (CasePromoteRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.PromoteToProtocol(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/case/packs", () => Results.Ok(CaseRecipeStore.ListPacks()));
+
+app.MapGet("/api/case/packs/{id}", (string id) =>
+{
+    try
+    {
+        return Results.Ok(CaseRecipeStore.LoadPack(id));
+    }
+    catch (FileNotFoundException)
+    {
+        return Results.NotFound();
     }
     catch (Exception ex)
     {

@@ -331,8 +331,9 @@ Custom targets: [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · Case builder: [CASE_BU
 | **Apply to Campaign** → `sessionCommands` / `sessionFlows` | ✅ | `/api/case/apply-session` |
 | FTP login flow multi-PDU preset | ✅ | USER → PASS → STOR |
 | Import **Proxy capture** → network recipe | ✅ | Proxy → Send to Scare Floor / All C→S |
-| Import hex/pcap **application payload** (TCP stream) | 🔲 | Not full pcap dissect; stream bytes → steps |
-| More network presets (SMTP, Redis RESP, custom binary) | 🔲 | Beside HTTP/FTP |
+| Import hex/pcap **application payload** (TCP stream) | ✅ | Import as session / `from-stream` (not full pcap) |
+| More network presets (SMTP, Redis RESP, custom binary) | ✅ | SMTP + Redis multi-PDU flows |
+| expectResponse per PDU | ✅ | Written on Apply |
 | Docs: “fuzz a remote TCP service from Scare Floor” | ✅ | CASE_BUILDER |
 
 **Not in this phase (comes later):** Ethernet/IP/TCP-flag crafting and raw sockets — see Phase 24 (in-house packet forge). Phase 18 stays app-PDU on connected sockets so network Scare Floor ships sooner.
@@ -349,31 +350,31 @@ Scare Floor → kind: tcp → host:port
 
 ---
 
-## Phase 19 — Wire Scare Floor ↔ sessions/models 🔲
+## Phase 19 — Wire Scare Floor ↔ sessions/models 🔄
 
 **Goal:** Scare Floor stops being “seed-only”; it authors the same YAML the engine already runs.
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Save recipe → `sessionFlows` / `sessionCommands` | 🔲 | Round-trip with `projects/*.yaml` |
-| Visual sessionGraph edges from UI (edit, not just view) | 🔲 | Build on Phase 14 graph tab |
-| `expectResponse` per step in Scare Floor | 🔲 | Camouflage / Phase 11 |
-| Promote step fields → `projects/protocols/*.yaml` model | 🔲 | Field-aware mutate |
-| Dictionary harvest across session steps | 🔲 | Tokens from fuzzable fields |
-| `randall case from-proxy` / `from-stream` CLI | 🔲 | Parity with `from-file` |
+| Save recipe → `sessionFlows` / `sessionCommands` | ✅ | Apply to Campaign |
+| Visual sessionGraph edges from UI (edit, not just view) | ✅ | Session graph → Save graph |
+| `expectResponse` per step in Scare Floor | ✅ | PDU expect field |
+| Promote step fields → `projects/protocols/*.yaml` model | ✅ | Promote PDU + Prefer models |
+| Dictionary harvest across session steps | ✅ | Tokens from fuzzable fields |
+| `randall case from-stream` / `apply-session` CLI | ✅ | + `promote` / `packs` |
 
 ---
 
-## Phase 20 — Protocol packs (useful before SMB) 🔲
+## Phase 20 — Protocol packs (useful before SMB) 🔄
 
 **Goal:** Ship reusable PDU packs so users aren’t hand-hexing common services.
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Pack format: recipe + protocol YAML + example project | 🔲 | `projects/protocols/packs/` |
-| HTTP/1.1 request pack (headers as fields) | 🔲 | Upgrade simple GET |
-| FTP full login → STOR/RETR flow pack | 🔲 | From vulnftp |
-| Generic **TLV / length-prefixed** pack | 🔲 | Scapy-ish structure without L2 |
+| Pack format: recipe + protocol YAML | ✅ | `projects/protocols/packs/` |
+| HTTP/1.1 request pack | ✅ | `packs/http-get` |
+| FTP full login → STOR flow pack | ✅ | `packs/ftp-login` |
+| Generic **TLV / length-prefixed** pack | ✅ | `packs/tlv-frame` |
 | DNS / mDNS UDP query pack (lab) | 🔲 | Short datagram |
 | Import boofuzz example → Scare Floor recipe | 🔲 | Extend `import-boofuzz.py` |
 | Community: “custom protocol” wizard | 🔲 | Magic + len + body + CRC |

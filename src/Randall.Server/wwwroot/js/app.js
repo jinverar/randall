@@ -2056,39 +2056,108 @@ async function loadGraphView() {
   }
 }
 
-async function renderGraph(configPath) {
+let graphEditState = { commands: [], edges: [], start: '', mutate: '', configPath: '' };
+
+function fillGraphSelect(sel, commands, selected, allowEmpty) {
+  if (!sel) return;
+  const opts = [];
+  if (allowEmpty) opts.push('<option value="">—</option>');
+  opts.push(...(commands || []).map((c) =>
+    `<option value="${escapeAttr(c)}" ${c === selected ? 'selected' : ''}>${escapeAttr(c)}</option>`));
+  sel.innerHTML = opts.join('');
+}
+
+function renderGraphEdgeEditor() {
+  const edgesEl = document.getElementById('graph-edges');
+  const cmds = graphEditState.commands || [];
+  if (!edgesEl) return;
+  if (!cmds.length) {
+    edgesEl.innerHTML = '<p class="hint">No sessionCommands — add a TCP session (Scare Floor Apply) first.</p>';
+    return;
+  }
+  const cmdOpts = (selected) => cmds.map((c) =>
+    `<option value="${escapeAttr(c)}" ${c === selected ? 'selected' : ''}>${escapeAttr(c)}</option>`).join('');
+  const edges = graphEditState.edges.length
+    ? graphEditState.edges
+    : [{ from: cmds[0], when: '', to: cmds[0] }];
+  graphEditState.edges = edges;
+  edgesEl.innerHTML = `<table><thead><tr><th>From</th><th>When (contains)</th><th>To</th><th></th></tr></thead>
+    <tbody>${edges.map((e, i) => `<tr>
+      <td><select data-ge-from="${i}">${cmdOpts(e.from)}</select></td>
+      <td><input data-ge-when="${i}" value="${escapeAttr(e.when || '')}" placeholder="331" /></td>
+      <td><select data-ge-to="${i}">${cmdOpts(e.to)}</select></td>
+      <td><button type="button" class="btn" data-ge-del="${i}">×</button></td>
+    </tr>`).join('')}</tbody></table>`;
+
+  edgesEl.querySelectorAll('[data-ge-from]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      graphEditState.edges[Number(sel.dataset.geFrom)].from = sel.value;
+    });
+  });
+  edgesEl.querySelectorAll('[data-ge-to]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      graphEditState.edges[Number(sel.dataset.geTo)].to = sel.value;
+    });
+  });
+  edgesEl.querySelectorAll('[data-ge-when]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      graphEditState.edges[Number(inp.dataset.geWhen)].when = inp.value;
+    });
+  });
+  edgesEl.querySelectorAll('[data-ge-del]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      graphEditState.edges.splice(Number(btn.dataset.geDel), 1);
+      renderGraphEdgeEditor();
+    });
+  });
+}
+
+async function renderGraph(configPath, reportOverride) {
   const status = document.getElementById('graph-status');
   const meta = document.getElementById('graph-meta');
   const diagram = document.getElementById('graph-diagram');
-  const edgesEl = document.getElementById('graph-edges');
   const yamlEl = document.getElementById('graph-yaml');
 
   status.textContent = 'Loading…';
-  const report = await api.get(`/api/graph?configPath=${encodeURIComponent(configPath)}`);
+  const report = reportOverride
+    || await api.get(`/api/graph?configPath=${encodeURIComponent(configPath)}`);
 
-  if (!report.hasGraph) {
-    status.textContent = `${report.project}: no sessionGraph — use sessionFlows for linear chains.`;
+  graphEditState = {
+    configPath,
+    commands: report.commands || [],
+    edges: (report.edges || []).map((e) => ({ from: e.from, when: e.when || '', to: e.to })),
+    start: report.start || (report.commands || [])[0] || '',
+    mutate: report.mutate || '',
+  };
+  fillGraphSelect(document.getElementById('graph-start'), graphEditState.commands, graphEditState.start, false);
+  fillGraphSelect(document.getElementById('graph-mutate'), graphEditState.commands, graphEditState.mutate, true);
+
+  if (!report.hasGraph && !(report.commands || []).length) {
+    status.textContent = `${report.project}: no sessionCommands / sessionGraph yet.`;
     status.className = 'status-box warn';
-    meta.innerHTML = `<p>Session commands: ${(report.commands || []).map((c) => `<code>${c}</code>`).join(' ') || '—'}</p>`;
+    meta.innerHTML = '<p class="hint">Create a TCP session on Scare Floor (Apply to Campaign), then edit the graph here.</p>';
     diagram.innerHTML = '';
-    edgesEl.innerHTML = '';
+    renderGraphEdgeEditor();
     yamlEl.value = '';
     return;
   }
 
-  status.className = `status-box ${report.valid ? 'ok' : 'crash'}`;
-  status.textContent = report.valid
-    ? `Valid graph — start=${report.start}, mutate=${report.mutate}`
-    : `Invalid graph — fix errors below`;
+  status.className = `status-box ${report.valid || !report.hasGraph ? 'ok' : 'crash'}`;
+  status.textContent = report.hasGraph
+    ? (report.valid
+      ? `Valid graph — start=${report.start}, mutate=${report.mutate || '—'}`
+      : 'Invalid graph — fix errors, then Save')
+    : `${report.project}: no sessionGraph yet — add edges below and Save`;
 
-  const warnHtml = (report.warnings || []).map((w) => `<div class="warn">⚠ ${w}</div>`).join('');
-  const errHtml = (report.errors || []).map((e) => `<div class="crash">✗ ${e}</div>`).join('');
+  const warnHtml = (report.warnings || []).map((w) => `<div class="warn">⚠ ${escapeAttr(w)}</div>`).join('');
+  const errHtml = (report.errors || []).map((e) => `<div class="crash">✗ ${escapeAttr(e)}</div>`).join('');
   meta.innerHTML = `
-    <p><strong>${report.project}</strong> · start <code>${report.start}</code> · mutate <code>${report.mutate || '—'}</code></p>
+    <p><strong>${escapeAttr(report.project)}</strong> · edit edges → <strong>Save graph</strong></p>
     ${errHtml}${warnHtml}
-    <p class="hex">Commands: ${(report.commands || []).map((c) => `<code>${c}</code>`).join(' ')}</p>`;
+    <p class="hex">Commands: ${(report.commands || []).map((c) => `<code>${escapeAttr(c)}</code>`).join(' ')}</p>`;
 
   yamlEl.value = report.yamlSnippet || '';
+  renderGraphEdgeEditor();
 
   if (report.mermaid) {
     diagram.innerHTML = `<pre class="mermaid">${report.mermaid}</pre>`;
@@ -2097,19 +2166,7 @@ async function renderGraph(configPath) {
       await mermaid.run({ nodes: diagram.querySelectorAll('.mermaid') });
     }
   } else {
-    diagram.innerHTML = '<p class="empty">No edges defined.</p>';
-  }
-
-  const edges = report.edges || [];
-  if (!edges.length) {
-    edgesEl.innerHTML = '';
-  } else {
-    edgesEl.innerHTML = `<table><thead><tr><th>From</th><th>When (response contains)</th><th>To</th></tr></thead>
-      <tbody>${edges.map((e) => `<tr class="${e.to === report.mutate ? 'mutate-row' : ''}">
-        <td><code>${e.from}</code></td>
-        <td><code>${e.when || '?'}</code></td>
-        <td><code>${e.to}</code>${e.to === report.mutate ? ' ★ mutate' : ''}</td>
-      </tr>`).join('')}</tbody></table>`;
+    diagram.innerHTML = '<p class="empty">No edges yet — add some and Save.</p>';
   }
 }
 
@@ -2117,6 +2174,39 @@ document.getElementById('graph-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   try {
     await renderGraph(document.getElementById('graph-target').value);
+  } catch (err) {
+    document.getElementById('graph-status').textContent = err.message;
+  }
+});
+
+document.getElementById('graph-edge-add')?.addEventListener('click', () => {
+  const cmds = graphEditState.commands || [];
+  if (!cmds.length) return;
+  graphEditState.edges.push({ from: cmds[0], when: '', to: cmds[Math.min(1, cmds.length - 1)] });
+  renderGraphEdgeEditor();
+});
+
+document.getElementById('graph-save')?.addEventListener('click', async () => {
+  const configPath = document.getElementById('graph-target')?.value || graphEditState.configPath;
+  if (!configPath) return;
+  const start = document.getElementById('graph-start')?.value || graphEditState.start;
+  const mutate = document.getElementById('graph-mutate')?.value || null;
+  // Flush edge inputs
+  document.querySelectorAll('#graph-edges [data-ge-when]').forEach((inp) => {
+    const i = Number(inp.dataset.geWhen);
+    if (graphEditState.edges[i]) graphEditState.edges[i].when = inp.value;
+  });
+  try {
+    const report = await api.post('/api/graph', {
+      configPath,
+      start,
+      mutate: mutate || null,
+      edges: graphEditState.edges,
+    });
+    await renderGraph(configPath, report);
+    document.getElementById('graph-status').textContent =
+      (report.valid ? 'Saved — valid graph. ' : 'Saved — check errors. ') +
+      `start=${report.start}, mutate=${report.mutate || '—'}`;
   } catch (err) {
     document.getElementById('graph-status').textContent = err.message;
   }
@@ -2473,7 +2563,24 @@ async function loadCaseBuilder() {
   if (fuzzName && caseSel && [...caseSel.options].some((o) => o.value === fuzzName))
     caseSel.value = fuzzName;
   await refreshCaseProject();
+  await refreshCasePacks();
   renderCaseSteps();
+}
+
+async function refreshCasePacks() {
+  const sel = document.getElementById('case-pack-select');
+  if (!sel) return;
+  try {
+    const packs = await api.get('/api/case/packs');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— load a pack —</option>' +
+      (packs || []).map((p) =>
+        `<option value="${escapeAttr(p.id)}">${escapeAttr(p.name)}${p.sessionStepCount ? ` (${p.sessionStepCount} PDUs)` : ''}</option>`
+      ).join('');
+    if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  } catch {
+    sel.innerHTML = '<option value="">(packs unavailable)</option>';
+  }
 }
 
 function defaultStep(op) {
@@ -2595,6 +2702,8 @@ function flushActiveSessionPdu() {
   if (nameInp) caseSessionSteps[caseActivePdu].name = nameInp.value.trim() || `PDU${caseActivePdu + 1}`;
   const ban = document.querySelector(`#case-session-steps [data-pdu-banner="${caseActivePdu}"]`);
   if (ban) caseSessionSteps[caseActivePdu].readBanner = !!ban.checked;
+  const exp = document.querySelector(`#case-session-steps [data-pdu-expect="${caseActivePdu}"]`);
+  if (exp) caseSessionSteps[caseActivePdu].expectResponse = exp.value.trim();
 }
 
 function collectSessionStepsPayload() {
@@ -2678,6 +2787,8 @@ function renderCaseSessionSteps() {
       <button type="button" class="btn case-pdu-select ${i === caseActivePdu ? 'primary' : ''}" data-pdu-go="${i}">${i}</button>
       <input type="text" data-pdu-name="${i}" value="${escapeAttr(s.name)}" title="PDU / sessionCommands name" />
       <label class="checkbox"><input type="checkbox" data-pdu-banner="${i}" ${s.readBanner ? 'checked' : ''}/> banner</label>
+      <input type="text" class="case-pdu-expect" data-pdu-expect="${i}" value="${escapeAttr(s.expectResponse || '')}"
+        placeholder="expect…" title="expectResponse substring (optional)" />
       <button type="button" class="btn" data-pdu-up="${i}" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
       <button type="button" class="btn" data-pdu-down="${i}" title="Move down" ${i >= caseSessionSteps.length - 1 ? 'disabled' : ''}>↓</button>
       <button type="button" class="btn" data-pdu-del="${i}" title="Remove PDU" ${caseSessionSteps.length <= 1 ? 'disabled' : ''}>×</button>
@@ -2700,6 +2811,12 @@ function renderCaseSessionSteps() {
     inp.addEventListener('change', () => {
       const i = Number(inp.dataset.pduBanner);
       if (caseSessionSteps[i]) caseSessionSteps[i].readBanner = !!inp.checked;
+    });
+  });
+  el.querySelectorAll('[data-pdu-expect]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      const i = Number(inp.dataset.pduExpect);
+      if (caseSessionSteps[i]) caseSessionSteps[i].expectResponse = inp.value.trim();
     });
   });
   el.querySelectorAll('[data-pdu-up]').forEach((btn) => {
@@ -3738,9 +3855,87 @@ document.getElementById('case-apply-session')?.addEventListener('click', async (
       sessionSteps,
       mutateStep: document.getElementById('case-mutate-step')?.value || 'last',
       sessionFlowBias: 0.5,
+      preferModels: !!document.getElementById('case-prefer-models')?.checked,
     });
     document.getElementById('case-save-result').textContent = r.message;
     await refreshCaseProject();
+  } catch (err) {
+    document.getElementById('case-save-result').textContent = err.message;
+  }
+});
+
+document.getElementById('case-promote-pdu')?.addEventListener('click', async () => {
+  const project = document.getElementById('case-project')?.value;
+  if (!project) {
+    document.getElementById('case-save-result').textContent = 'Pick a Target profile first.';
+    return;
+  }
+  flushActiveSessionPdu();
+  const steps = collectCaseSteps();
+  if (!steps.length) {
+    document.getElementById('case-save-result').textContent = 'Active PDU has no blocks.';
+    return;
+  }
+  const pduName = isCaseSessionMode()
+    ? (caseSessionSteps[caseActivePdu]?.name || 'pdu')
+    : (document.getElementById('case-recipe-name')?.value?.trim() || 'promoted');
+  const name = `${document.getElementById('case-recipe-name')?.value?.trim() || 'scare'}_${pduName}`
+    .toLowerCase().replace(/[^a-z0-9_\-]+/g, '-');
+  try {
+    const r = await api.post('/api/case/promote', {
+      project,
+      name,
+      description: `Promoted from Scare Floor PDU ${pduName}`,
+      sessionStepName: pduName,
+      steps,
+    });
+    document.getElementById('case-save-result').textContent = r.message;
+  } catch (err) {
+    document.getElementById('case-save-result').textContent = err.message;
+  }
+});
+
+document.getElementById('case-pack-load')?.addEventListener('click', async () => {
+  const id = document.getElementById('case-pack-select')?.value;
+  if (!id) {
+    document.getElementById('case-save-result').textContent = 'Pick a protocol pack first.';
+    return;
+  }
+  if ((caseProfile?.kind || '').toLowerCase() !== 'tcp' && id !== 'tlv-frame') {
+    // allow loading into session UI hint
+  }
+  try {
+    const r = await api.get(`/api/case/packs/${encodeURIComponent(id)}`);
+    const session = r.sessionSteps || [];
+    if (session.length > 0) {
+      if ((caseProfile?.kind || '').toLowerCase() !== 'tcp') {
+        document.getElementById('case-save-result').textContent =
+          'Pack loaded as session — switch Working on project to TCP to Apply.';
+      }
+      caseSessionSteps = session.map((s, i) => ({
+        name: s.name || `m${i + 1}`,
+        readBanner: !!s.readBanner,
+        expectResponse: s.expectResponse || '',
+        blocks: mapApiSteps(s.blocks),
+      }));
+      caseActivePdu = Math.max(0, caseSessionSteps.length - 1);
+      caseSteps = mapApiSteps(caseSessionSteps[caseActivePdu].blocks);
+      const mut = document.getElementById('case-mutate-step');
+      if (mut && r.mutateStep) mut.value = r.mutateStep;
+    } else {
+      caseSessionSteps = null;
+      caseSteps = mapApiSteps(r.steps);
+    }
+    const nameEl = document.getElementById('case-recipe-name');
+    if (nameEl) nameEl.value = r.name || id;
+    const descEl = document.getElementById('case-recipe-desc');
+    if (descEl) descEl.value = r.description || '';
+    renderCaseSessionSteps();
+    renderCaseSteps();
+    document.getElementById('case-save-result').textContent =
+      `Loaded pack “${r.name || id}”` +
+      (session.length ? ` (${session.length} PDUs)` : ` (${caseSteps.length} blocks)`);
+    focusCaseSessionPanel();
   } catch (err) {
     document.getElementById('case-save-result').textContent = err.message;
   }
@@ -3836,18 +4031,37 @@ document.getElementById('case-preset-ftp')?.addEventListener('click', () => {
   renderCaseSteps();
 });
 
-function loadFtpLoginFlowPreset() {
+function requireTcpForSessionPreset(label) {
   if ((caseProfile?.kind || '').toLowerCase() !== 'tcp') {
     document.getElementById('case-save-result').textContent =
-      'FTP login flow needs a TCP Target profile — create/select one in Step 1 first.';
+      `${label} needs a TCP Target profile — create/select one in Step 1 first.`;
     focusCaseSessionPanel();
-    return;
+    return false;
   }
-  caseSessionSteps = [
+  return true;
+}
+
+function activateSessionPreset(steps, recipeName, statusMsg, activeIndex) {
+  caseSessionSteps = steps;
+  caseActivePdu = Math.min(activeIndex ?? steps.length - 1, steps.length - 1);
+  caseSteps = mapApiSteps(caseSessionSteps[caseActivePdu].blocks);
+  const nameEl = document.getElementById('case-recipe-name');
+  if (nameEl && !nameEl.value) nameEl.value = recipeName;
+  const mut = document.getElementById('case-mutate-step');
+  if (mut) mut.value = 'last';
+  renderCaseSessionSteps();
+  renderCaseSteps();
+  document.getElementById('case-save-result').textContent = statusMsg;
+  focusCaseSessionPanel();
+}
+
+function loadFtpLoginFlowPreset() {
+  if (!requireTcpForSessionPreset('FTP login flow')) return;
+  activateSessionPreset([
     {
       name: 'USER',
       readBanner: true,
-      expectResponse: '',
+      expectResponse: '331',
       blocks: [
         { op: 'static', value: 'USER', role: 'static' },
         { op: 'delim', value: ' ', role: 'static' },
@@ -3858,7 +4072,7 @@ function loadFtpLoginFlowPreset() {
     {
       name: 'PASS',
       readBanner: false,
-      expectResponse: '',
+      expectResponse: '230',
       blocks: [
         { op: 'static', value: 'PASS', role: 'static' },
         { op: 'delim', value: ' ', role: 'static' },
@@ -3877,22 +4091,172 @@ function loadFtpLoginFlowPreset() {
         { op: 'repeat', value: 'A', count: 64, role: 'fuzzable' },
       ],
     },
-  ];
-  caseActivePdu = 2;
-  caseSteps = mapApiSteps(caseSessionSteps[caseActivePdu].blocks);
-  const nameEl = document.getElementById('case-recipe-name');
-  if (nameEl && !nameEl.value) nameEl.value = 'ftp-login-stor';
-  const mut = document.getElementById('case-mutate-step');
-  if (mut) mut.value = 'last';
-  renderCaseSessionSteps();
-  renderCaseSteps();
-  document.getElementById('case-save-result').textContent =
-    'FTP login flow — 3 PDUs. Preview all PDUs, then Apply to Campaign.';
-  focusCaseSessionPanel();
+  ], 'ftp-login-stor', 'FTP login flow — 3 PDUs (expect 331/230). Preview → Apply to Campaign.', 2);
+}
+
+function loadSmtpSendFlowPreset() {
+  if (!requireTcpForSessionPreset('SMTP send flow')) return;
+  activateSessionPreset([
+    {
+      name: 'EHLO',
+      readBanner: true,
+      expectResponse: '250',
+      blocks: [
+        { op: 'static', value: 'EHLO ', role: 'static' },
+        { op: 'text', value: 'randfuzz.local', role: 'fuzzable' },
+        { op: 'crlf', role: 'static' },
+      ],
+    },
+    {
+      name: 'MAIL',
+      readBanner: false,
+      expectResponse: '250',
+      blocks: [
+        { op: 'static', value: 'MAIL FROM:<', role: 'static' },
+        { op: 'text', value: 'fuzz@example.com', role: 'fuzzable' },
+        { op: 'static', value: '>', role: 'static' },
+        { op: 'crlf', role: 'static' },
+      ],
+    },
+    {
+      name: 'RCPT',
+      readBanner: false,
+      expectResponse: '250',
+      blocks: [
+        { op: 'static', value: 'RCPT TO:<', role: 'static' },
+        { op: 'text', value: 'victim@example.com', role: 'fuzzable' },
+        { op: 'static', value: '>', role: 'static' },
+        { op: 'crlf', role: 'static' },
+      ],
+    },
+    {
+      name: 'DATA',
+      readBanner: false,
+      expectResponse: '354',
+      blocks: [
+        { op: 'static', value: 'DATA', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: 'Subject: ', role: 'static' },
+        { op: 'text', value: 'randfuzz', role: 'fuzzable' },
+        { op: 'crlf', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'text', value: 'hello', role: 'fuzzable' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: '.', role: 'static' },
+        { op: 'crlf', role: 'static' },
+      ],
+    },
+  ], 'smtp-send', 'SMTP send flow — 4 PDUs. Preview → Apply to Campaign.', 3);
+}
+
+function loadRedisRespFlowPreset() {
+  if (!requireTcpForSessionPreset('Redis RESP flow')) return;
+  activateSessionPreset([
+    {
+      name: 'AUTH',
+      readBanner: false,
+      expectResponse: '+OK',
+      blocks: [
+        { op: 'static', value: '*2', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: '$4', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: 'AUTH', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: '$8', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'text', value: 'password', role: 'fuzzable' },
+        { op: 'crlf', role: 'static' },
+      ],
+    },
+    {
+      name: 'SET',
+      readBanner: false,
+      expectResponse: '+OK',
+      blocks: [
+        { op: 'static', value: '*3', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: '$3', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: 'SET', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: '$3', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'text', value: 'key', role: 'fuzzable' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: '$5', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'text', value: 'value', role: 'fuzzable' },
+        { op: 'crlf', role: 'static' },
+      ],
+    },
+    {
+      name: 'GET',
+      readBanner: false,
+      expectResponse: '',
+      blocks: [
+        { op: 'static', value: '*2', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: '$3', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: 'GET', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'static', value: '$3', role: 'static' },
+        { op: 'crlf', role: 'static' },
+        { op: 'text', value: 'key', role: 'fuzzable' },
+        { op: 'crlf', role: 'static' },
+      ],
+    },
+  ], 'redis-resp', 'Redis RESP flow — 3 PDUs. Preview → Apply to Campaign.', 1);
 }
 
 document.getElementById('case-preset-ftp-flow')?.addEventListener('click', () => loadFtpLoginFlowPreset());
 document.getElementById('case-preset-ftp-flow-inline')?.addEventListener('click', () => loadFtpLoginFlowPreset());
+document.getElementById('case-preset-smtp-flow')?.addEventListener('click', () => loadSmtpSendFlowPreset());
+document.getElementById('case-preset-smtp-flow-inline')?.addEventListener('click', () => loadSmtpSendFlowPreset());
+document.getElementById('case-preset-redis-flow')?.addEventListener('click', () => loadRedisRespFlowPreset());
+document.getElementById('case-preset-redis-flow-inline')?.addEventListener('click', () => loadRedisRespFlowPreset());
+
+document.getElementById('case-import-session')?.addEventListener('click', async () => {
+  const text = document.getElementById('case-import-text')?.value || '';
+  if (!text.trim()) {
+    document.getElementById('case-save-result').textContent =
+      'Paste a capture first — separate PDUs with a blank line or ---';
+    return;
+  }
+  if ((caseProfile?.kind || '').toLowerCase() !== 'tcp') {
+    document.getElementById('case-save-result').textContent =
+      'Import as session needs a TCP Target profile selected.';
+    focusCaseSessionPanel();
+    return;
+  }
+  try {
+    const r = await api.post('/api/case/from-stream', { text, asHex: false, apply: false });
+    caseSessionSteps = (r.sessionSteps || []).map((s, i) => ({
+      name: s.name || `m${i + 1}`,
+      readBanner: !!s.readBanner,
+      expectResponse: s.expectResponse || '',
+      blocks: mapApiSteps(s.blocks),
+    }));
+    if (!caseSessionSteps.length) {
+      document.getElementById('case-save-result').textContent = 'No PDUs parsed from paste.';
+      return;
+    }
+    caseActivePdu = 0;
+    caseSteps = mapApiSteps(caseSessionSteps[0].blocks);
+    const nameEl = document.getElementById('case-recipe-name');
+    if (nameEl && !nameEl.value) nameEl.value = 'from-stream';
+    renderCaseSessionSteps();
+    renderCaseSteps();
+    document.getElementById('case-save-result').textContent =
+      `Imported ${caseSessionSteps.length} PDU(s) from stream` +
+      ((r.notes || []).length ? ` — ${r.notes[0]}` : '') +
+      '. Preview all PDUs → Apply to Campaign.';
+    focusCaseSessionPanel();
+  } catch (err) {
+    document.getElementById('case-save-result').textContent = err.message;
+  }
+});
 
 document.getElementById('case-preset-xml')?.addEventListener('click', () => {
   caseSteps = [

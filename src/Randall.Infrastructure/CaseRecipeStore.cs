@@ -4,6 +4,8 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Randall.Contracts;
 using Randall.Infrastructure.Mutators;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace Randall.Infrastructure;
 
@@ -769,7 +771,21 @@ public static class CaseRecipeStore
             flowStepNames.Add(step.Name);
 
             cmdLines.Add($"  - name: {step.Name}");
-            cmdLines.Add($"    seed: seeds/{seedFile}");
+            if (request.PreferModels)
+            {
+                var modelName = SanitizeName($"{flowName}_{step.Name}");
+                var promoted = PromoteToProtocol(new CasePromoteRequest(
+                    request.Project, modelName, step.Blocks,
+                    $"Scare Floor PDU {step.Name}", step.Name), repoRoot);
+                if (promoted.Ok && promoted.RelativePath is not null)
+                    cmdLines.Add($"    model: {promoted.RelativePath.Replace('\\', '/')}");
+                else
+                    cmdLines.Add($"    seed: seeds/{seedFile}");
+            }
+            else
+            {
+                cmdLines.Add($"    seed: seeds/{seedFile}");
+            }
             cmdLines.Add($"    readBanner: {(step.ReadBanner ? "true" : "false")}");
             if (!string.IsNullOrWhiteSpace(step.ExpectResponse))
                 cmdLines.Add($"    expectResponse: {YamlQuote(step.ExpectResponse)}");
@@ -870,6 +886,306 @@ public static class CaseRecipeStore
             return fuzz.Replace(yaml, normalized + "fuzz:\n", 1);
 
         return yaml.TrimEnd() + "\n\n" + normalized;
+    }
+
+    /// <summary>
+    /// Split a pasted TCP stream / capture into session PDUs.
+    /// Separators: blank line(s), or a line that is only --- / === / ###.
+    /// </summary>
+    public static CaseFromStreamDto FromStream(CaseFromStreamRequest request, string? repoRoot = null)
+    {
+        var notes = new List<string>();
+        var chunks = SplitStreamChunks(request.Text ?? "");
+        if (chunks.Count == 0)
+            throw new ArgumentException("No message chunks found — paste text/hex separated by blank lines or ---");
+
+        notes.Add($"Split into {chunks.Count} chunk(s)" + (request.AsHex ? " (hex mode)" : " (auto text/hex)"));
+        var steps = new List<CaseSessionStepDto>();
+        for (var i = 0; i < chunks.Count; i++)
+        {
+            var chunk = chunks[i];
+            var asHex = request.AsHex || LooksLikeHexChunk(chunk);
+            List<CaseStepDto> blocks;
+            if (asHex)
+            {
+                var hex = Regex.Replace(chunk, @"[^0-9a-fA-F]", "");
+                if (hex.Length < 2)
+                {
+                    notes.Add($"Chunk {i + 1}: skipped (no hex digits)");
+                    continue;
+                }
+                if (hex.Length % 2 != 0)
+                    hex = hex[..^1];
+                var spaced = string.Join(' ', Enumerable.Range(0, hex.Length / 2)
+                    .Select(j => hex.Substring(j * 2, 2)));
+                blocks = [new CaseStepDto("hex", spaced, Role: "fuzzable")];
+            }
+            else
+            {
+                // Preserve line endings as CRLF blocks when present
+                blocks = TextChunkToBlocks(chunk);
+            }
+
+            steps.Add(new CaseSessionStepDto(
+                $"m{i + 1}",
+                blocks,
+                ReadBanner: i == 0));
+        }
+
+        if (steps.Count == 0)
+            throw new ArgumentException("No usable chunks after parsing");
+
+        CaseSaveResultDto? applied = null;
+        if (request.Apply)
+        {
+            if (string.IsNullOrWhiteSpace(request.Project))
+                throw new ArgumentException("--apply / Apply requires a project");
+            applied = ApplySessionRecipe(new CaseApplySessionRequest(
+                request.Project!,
+                string.IsNullOrWhiteSpace(request.FlowName) ? "from-stream" : request.FlowName!,
+                steps,
+                string.IsNullOrWhiteSpace(request.MutateStep) ? "last" : request.MutateStep,
+                0.5), repoRoot);
+            notes.Add(applied.Message);
+        }
+
+        return new CaseFromStreamDto(steps.Count, steps, notes, applied);
+    }
+
+    private static List<string> SplitStreamChunks(string text)
+    {
+        var normalized = text.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
+        if (string.IsNullOrEmpty(normalized))
+            return [];
+
+        var parts = Regex.Split(normalized, @"\n[ \t]*(?:---+|===+|###+)[ \t]*\n|\n[ \t]*\n+");
+        return parts
+            .Select(p => p.Trim())
+            .Where(p => p.Length > 0)
+            .ToList();
+    }
+
+    private static bool LooksLikeHexChunk(string chunk)
+    {
+        var compact = Regex.Replace(chunk, @"\s+", "");
+        if (compact.Length < 4)
+            return false;
+        var hex = compact.Count(c => Uri.IsHexDigit(c));
+        return hex >= compact.Length * 0.85;
+    }
+
+    private static List<CaseStepDto> TextChunkToBlocks(string chunk)
+    {
+        var blocks = new List<CaseStepDto>();
+        var lines = chunk.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        foreach (var line in lines)
+        {
+            if (line.Length > 0)
+                blocks.Add(new CaseStepDto("text", line, Role: "fuzzable"));
+            // Network line protocols: always terminate with CRLF
+            blocks.Add(new CaseStepDto("crlf", Role: "static"));
+        }
+
+        if (blocks.Count == 0)
+            blocks.Add(new CaseStepDto("text", chunk, Role: "fuzzable"));
+        return blocks;
+    }
+
+    private static readonly ISerializer ProtocolYamlSerializer = new SerializerBuilder()
+        .WithNamingConvention(CamelCaseNamingConvention.Instance)
+        .ConfigureDefaultValuesHandling(DefaultValuesHandling.OmitDefaults)
+        .Build();
+
+    public static CasePromoteResultDto PromoteToProtocol(CasePromoteRequest request, string? repoRoot = null)
+    {
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var profile = GetProfile(request.Project, repoRoot)
+                      ?? throw new ArgumentException($"Unknown project: {request.Project}");
+        var steps = request.Steps ?? [];
+        if (steps.Count == 0)
+            return new CasePromoteResultDto(false, "No blocks to promote", null, null);
+
+        var name = SanitizeName(request.Name);
+        if (string.IsNullOrWhiteSpace(name))
+            return new CasePromoteResultDto(false, "Protocol name required", null, null);
+
+        var def = CaseRecipeEngine.StepsToProtocol(name, request.Description, steps, out var seedFiles);
+        var projectDir = Path.GetDirectoryName(profile.ConfigPath)!;
+        var protoDir = Path.Combine(projectDir, "protocols");
+        Directory.CreateDirectory(protoDir);
+        Directory.CreateDirectory(Path.Combine(projectDir, "seeds"));
+
+        foreach (var (rel, bytes) in seedFiles)
+        {
+            var seedPath = Path.Combine(projectDir, rel.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(seedPath)!);
+            File.WriteAllBytes(seedPath, bytes);
+        }
+
+        var yamlPath = Path.Combine(protoDir, name + ".yaml");
+        var yaml = ProtocolYamlSerializer.Serialize(def);
+        File.WriteAllText(yamlPath, yaml);
+
+        // Validate load
+        try
+        {
+            ProtocolLoader.Load(profile.ConfigPath, $"protocols/{name}.yaml");
+        }
+        catch (Exception ex)
+        {
+            return new CasePromoteResultDto(false,
+                $"Wrote protocols/{name}.yaml but load failed: {ex.Message}",
+                $"protocols/{name}.yaml", yamlPath);
+        }
+
+        var label = string.IsNullOrWhiteSpace(request.SessionStepName)
+            ? name
+            : $"{request.SessionStepName} → {name}";
+        return new CasePromoteResultDto(true,
+            $"Promoted {label} → protocols/{name}.yaml ({def.Blocks.Count} model blocks)",
+            $"protocols/{name}.yaml",
+            yamlPath);
+    }
+
+    public static SessionGraphReportDto SaveSessionGraph(SessionGraphSaveRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ConfigPath))
+            throw new ArgumentException("configPath required");
+        var yamlPath = Path.GetFullPath(request.ConfigPath);
+        if (!File.Exists(yamlPath))
+            throw new FileNotFoundException("Project YAML not found", yamlPath);
+
+        var start = (request.Start ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(start))
+            throw new ArgumentException("start command required");
+
+        var lines = new List<string>
+        {
+            "sessionGraph:",
+            $"  start: {start}",
+        };
+        if (!string.IsNullOrWhiteSpace(request.Mutate))
+            lines.Add($"  mutate: {request.Mutate.Trim()}");
+        var edges = (request.Edges ?? [])
+            .Where(e => !string.IsNullOrWhiteSpace(e.From) && !string.IsNullOrWhiteSpace(e.To))
+            .ToList();
+        if (edges.Count == 0)
+        {
+            lines.Add("  edges: []");
+        }
+        else
+        {
+            lines.Add("  edges:");
+            foreach (var e in edges)
+            {
+                var when = (e.When ?? "").Replace("\"", "");
+                lines.Add($"    - {{ from: {e.From.Trim()}, when: \"{when}\", to: {e.To.Trim()} }}");
+            }
+        }
+
+        var yaml = File.ReadAllText(yamlPath);
+        yaml = UpsertYamlTopBlock(yaml, "sessionGraph", string.Join("\n", lines) + "\n");
+        File.WriteAllText(yamlPath, yaml);
+        var project = ProjectLoader.Load(yamlPath);
+        return SessionGraphValidator.Validate(project, yamlPath);
+    }
+
+    private static string PacksRoot(string? repoRoot = null)
+    {
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        return Path.Combine(repoRoot, "projects", "protocols", "packs");
+    }
+
+    public static IReadOnlyList<CasePackInfoDto> ListPacks(string? repoRoot = null)
+    {
+        var root = PacksRoot(repoRoot);
+        if (!Directory.Exists(root))
+            return [];
+
+        var list = new List<CasePackInfoDto>();
+        foreach (var dir in Directory.EnumerateDirectories(root))
+        {
+            var id = Path.GetFileName(dir);
+            var packYaml = Path.Combine(dir, "pack.yaml");
+            if (!File.Exists(packYaml))
+                continue;
+            try
+            {
+                var info = ReadPackInfo(id, dir, packYaml);
+                list.Add(info);
+            }
+            catch { /* skip broken packs */ }
+        }
+
+        return list.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    public static CaseRecipeDto LoadPack(string packId, string? repoRoot = null)
+    {
+        var root = PacksRoot(repoRoot);
+        var safe = SanitizeName(packId);
+        var dir = Path.Combine(root, safe);
+        var recipePath = Path.Combine(dir, "recipe.json");
+        if (!File.Exists(recipePath))
+            throw new FileNotFoundException($"Pack recipe not found: {safe}");
+
+        var dto = JsonSerializer.Deserialize<CaseRecipeDto>(File.ReadAllText(recipePath), RecipeJson)
+                  ?? throw new InvalidOperationException("Invalid pack recipe.json");
+        var session = NormalizeSessionSteps(dto.SessionSteps);
+        return dto with
+        {
+            Name = string.IsNullOrWhiteSpace(dto.Name) ? safe : dto.Name,
+            Steps = dto.Steps?.Count > 0 ? dto.Steps : session.FirstOrDefault()?.Blocks ?? [],
+            SessionSteps = session.Count > 0 ? session : null,
+            Kind = session.Count > 0 ? "session" : (dto.Kind ?? "blob"),
+            MutateStep = string.IsNullOrWhiteSpace(dto.MutateStep) ? "last" : dto.MutateStep,
+        };
+    }
+
+    private static CasePackInfoDto ReadPackInfo(string id, string dir, string packYamlPath)
+    {
+        var text = File.ReadAllText(packYamlPath);
+        string Pick(string key, string fallback)
+        {
+            var m = Regex.Match(text, $@"^{key}:\s*(.+)$", RegexOptions.Multiline);
+            return m.Success ? m.Groups[1].Value.Trim().Trim('"') : fallback;
+        }
+
+        var name = Pick("name", id);
+        var desc = Pick("description", "");
+        var kind = Pick("kind", "session");
+        var protocols = new List<string>();
+        var inProto = false;
+        foreach (var line in text.Split('\n'))
+        {
+            if (Regex.IsMatch(line, @"^protocols:\s*$"))
+            {
+                inProto = true;
+                continue;
+            }
+            if (inProto)
+            {
+                var m = Regex.Match(line, @"^\s+-\s+(.+)$");
+                if (m.Success)
+                    protocols.Add(m.Groups[1].Value.Trim());
+                else if (line.Length > 0 && !char.IsWhiteSpace(line[0]))
+                    inProto = false;
+            }
+        }
+
+        var recipePath = Path.Combine(dir, "recipe.json");
+        var sessionCount = 0;
+        if (File.Exists(recipePath))
+        {
+            try
+            {
+                var recipe = JsonSerializer.Deserialize<CaseRecipeDto>(File.ReadAllText(recipePath), RecipeJson);
+                sessionCount = recipe?.SessionSteps?.Count ?? 0;
+            }
+            catch { /* ignore */ }
+        }
+
+        return new CasePackInfoDto(id, name, string.IsNullOrWhiteSpace(desc) ? null : desc, kind, sessionCount, protocols);
     }
 
     public static CaseSaveResultDto DeleteRecipe(string projectName, string recipeName, string? repoRoot = null)

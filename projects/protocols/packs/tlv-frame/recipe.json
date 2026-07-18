@@ -1,0 +1,20 @@
+{
+  "name": "tlv-frame",
+  "description": "Magic CUST + u16le length + payload",
+  "kind": "session",
+  "mutateStep": "last",
+  "updatedAt": "2026-07-18T00:00:00Z",
+  "steps": [],
+  "sessionSteps": [
+    {
+      "name": "FRAME",
+      "readBanner": false,
+      "expectResponse": "",
+      "blocks": [
+        { "op": "static", "value": "CUST", "role": "static" },
+        { "op": "hex", "value": "08 00", "role": "fuzzable" },
+        { "op": "text", "value": "PAYLOAD!", "role": "fuzzable" }
+      ]
+    }
+  ]
+}

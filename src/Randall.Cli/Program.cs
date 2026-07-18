@@ -1096,6 +1096,14 @@ static int RunCase(string[] args)
               randall case save-seed -p <project> [--file name.bin] [same preview flags…]
               randall case from-file -p <project> --file sample.bin [--exact]
                     Upload a sample → print template recipe; --exact also saves the raw seed
+              randall case from-stream -p <project> --file capture.txt [--hex] [--apply]
+                    Split blank-line / --- separated capture into session PDUs
+              randall case apply-session -p <project> --recipe NAME [--flow id] [--mutate last|all] [--models]
+                    Materialize a saved session recipe into sessionCommands/Flows
+              randall case promote -p <project> --name proto [--recipe NAME | --static …]
+                    Promote Scare Floor blocks → projects/.../protocols/*.yaml
+              randall case packs                              List protocol packs
+              randall case packs --load ID -p <project>       Load pack recipe into project recipes/
               randall case recipes -p <project>               List Scare Floor recipes
               randall case recipes -p <project> --load NAME   Print a saved recipe
               randall case mutators -p <project>              List mutators
@@ -1119,6 +1127,10 @@ static int RunCase(string[] args)
             "preview" => CasePreview(rest),
             "save-seed" or "seed" => CaseSaveSeed(rest),
             "from-file" or "import-file" or "template" => CaseFromFile(rest),
+            "from-stream" or "stream" => CaseFromStream(rest),
+            "apply-session" or "apply" => CaseApplySession(rest),
+            "promote" => CasePromote(rest),
+            "packs" or "pack" => CasePacks(rest),
             "recipes" or "recipe" => CaseRecipes(rest),
             "mutators" or "mutator" => CaseMutators(rest),
             _ => Unknown($"case {args[0]}"),
@@ -1319,6 +1331,196 @@ static int CaseFromFile(string[] args)
     return saved.Ok ? 0 : 1;
 }
 
+static int CaseFromStream(string[] args)
+{
+    string? project = null, file = null, flow = null, mutate = "last";
+    var asHex = false;
+    var apply = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if ((args[i] is "-p" or "--project") && i + 1 < args.Length)
+            project = args[++i];
+        else if ((args[i] is "--file" or "-f" or "-i") && i + 1 < args.Length)
+            file = args[++i];
+        else if ((args[i] is "--flow" or "--name") && i + 1 < args.Length)
+            flow = args[++i];
+        else if (args[i] is "--mutate" && i + 1 < args.Length)
+            mutate = args[++i];
+        else if (args[i] is "--hex")
+            asHex = true;
+        else if (args[i] is "--apply")
+            apply = true;
+    }
+
+    if (string.IsNullOrWhiteSpace(file) || !File.Exists(file))
+    {
+        Console.Error.WriteLine(
+            "Usage: randall case from-stream -p <project> --file capture.txt [--hex] [--apply] [--flow name]");
+        return 1;
+    }
+
+    if (apply && string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("--apply requires -p <project>");
+        return 1;
+    }
+
+    var text = File.ReadAllText(file);
+    var result = CaseRecipeStore.FromStream(new CaseFromStreamRequest(
+        text, asHex, project, apply, flow, mutate));
+    Console.WriteLine($"Session: {result.StepCount} PDU(s)");
+    foreach (var n in result.Notes)
+        Console.WriteLine($"  note: {n}");
+    foreach (var s in result.SessionSteps)
+    {
+        Console.WriteLine($"  [{s.Name}] blocks={s.Blocks.Count}" +
+                          (s.ReadBanner ? " readBanner" : "") +
+                          (!string.IsNullOrWhiteSpace(s.ExpectResponse) ? $" expect={s.ExpectResponse}" : ""));
+    }
+
+    if (result.Applied is not null)
+        Console.WriteLine(result.Applied.Message);
+    else if (!apply)
+        Console.WriteLine("Tip: add --apply to write sessionCommands/Flows into the project YAML.");
+    return result.Applied is { Ok: false } ? 1 : 0;
+}
+
+static int CaseApplySession(string[] args)
+{
+    string? project = null, recipe = null, flow = null, mutate = "last";
+    var preferModels = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if ((args[i] is "-p" or "--project") && i + 1 < args.Length)
+            project = args[++i];
+        else if ((args[i] is "--recipe" or "-r" or "--load") && i + 1 < args.Length)
+            recipe = args[++i];
+        else if ((args[i] is "--flow" or "--name") && i + 1 < args.Length)
+            flow = args[++i];
+        else if (args[i] is "--mutate" && i + 1 < args.Length)
+            mutate = args[++i];
+        else if (args[i] is "--models" or "--prefer-models")
+            preferModels = true;
+    }
+
+    if (string.IsNullOrWhiteSpace(project) || string.IsNullOrWhiteSpace(recipe))
+    {
+        Console.Error.WriteLine(
+            "Usage: randall case apply-session -p <project> --recipe NAME [--flow id] [--mutate last|all] [--models]");
+        return 1;
+    }
+
+    var loaded = CaseRecipeStore.LoadRecipe(project, recipe);
+    var steps = loaded.SessionSteps;
+    if (steps is null || steps.Count == 0)
+    {
+        steps =
+        [
+            new CaseSessionStepDto(loaded.Name, loaded.Steps, ReadBanner: true),
+        ];
+    }
+
+    var r = CaseRecipeStore.ApplySessionRecipe(new CaseApplySessionRequest(
+        project,
+        string.IsNullOrWhiteSpace(flow) ? loaded.Name : flow!,
+        steps,
+        string.IsNullOrWhiteSpace(mutate) ? (loaded.MutateStep ?? "last") : mutate,
+        0.5,
+        preferModels));
+    Console.WriteLine(r.Message);
+    return r.Ok ? 0 : 1;
+}
+
+static int CasePromote(string[] args)
+{
+    string? project = null, name = null, recipe = null, desc = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if ((args[i] is "-p" or "--project") && i + 1 < args.Length)
+            project = args[++i];
+        else if ((args[i] is "--name" or "-n") && i + 1 < args.Length)
+            name = args[++i];
+        else if ((args[i] is "--recipe" or "-r") && i + 1 < args.Length)
+            recipe = args[++i];
+        else if ((args[i] is "--desc" or "--description") && i + 1 < args.Length)
+            desc = args[++i];
+    }
+
+    if (string.IsNullOrWhiteSpace(project) || string.IsNullOrWhiteSpace(name))
+    {
+        Console.Error.WriteLine("Usage: randall case promote -p <project> --name proto [--recipe NAME]");
+        return 1;
+    }
+
+    IReadOnlyList<CaseStepDto> steps;
+    if (!string.IsNullOrWhiteSpace(recipe))
+    {
+        var loaded = CaseRecipeStore.LoadRecipe(project, recipe);
+        if (loaded.SessionSteps is { Count: > 0 })
+            steps = loaded.SessionSteps[^1].Blocks;
+        else
+            steps = loaded.Steps;
+    }
+    else
+    {
+        steps = ParseCaseSteps(args);
+    }
+
+    if (steps.Count == 0)
+    {
+        Console.Error.WriteLine("No blocks — pass --recipe NAME or --static/--text flags");
+        return 1;
+    }
+
+    var r = CaseRecipeStore.PromoteToProtocol(new CasePromoteRequest(project, name, steps, desc));
+    Console.WriteLine(r.Message);
+    if (r.AbsolutePath is not null)
+        Console.WriteLine(r.AbsolutePath);
+    return r.Ok ? 0 : 1;
+}
+
+static int CasePacks(string[] args)
+{
+    string? load = null, project = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if ((args[i] is "--load" or "-l") && i + 1 < args.Length)
+            load = args[++i];
+        else if ((args[i] is "-p" or "--project") && i + 1 < args.Length)
+            project = args[++i];
+    }
+
+    if (string.IsNullOrWhiteSpace(load))
+    {
+        foreach (var p in CaseRecipeStore.ListPacks())
+            Console.WriteLine(
+                $"{p.Id,-16} {p.Name,-28} {p.SessionStepCount,2} PDUs  {p.Description}");
+        return 0;
+    }
+
+    var recipe = CaseRecipeStore.LoadPack(load);
+    Console.WriteLine($"{recipe.Name} — {(recipe.SessionSteps?.Count ?? 0)} PDU(s)");
+    if (!string.IsNullOrWhiteSpace(project))
+    {
+        var saved = CaseRecipeStore.SaveRecipe(new CaseSaveRecipeRequest(
+            project,
+            recipe.Name,
+            recipe.Steps,
+            recipe.Description,
+            recipe.SuggestedSeedName,
+            recipe.SessionSteps,
+            recipe.MutateStep,
+            recipe.Kind));
+        Console.WriteLine(saved.Message);
+        return saved.Ok ? 0 : 1;
+    }
+
+    foreach (var s in recipe.SessionSteps ?? [])
+        Console.WriteLine($"  [{s.Name}] blocks={s.Blocks.Count}");
+    Console.WriteLine("Tip: add -p <project> to save the pack into that project's recipes/");
+    return 0;
+}
+
 static int CaseRecipes(string[] args)
 {
     string? project = null, load = null;
@@ -1339,6 +1541,25 @@ static int CaseRecipes(string[] args)
     if (!string.IsNullOrWhiteSpace(load))
     {
         var recipe = CaseRecipeStore.LoadRecipe(project, load);
+        var session = recipe.SessionSteps;
+        if (session is { Count: > 0 })
+        {
+            Console.WriteLine(
+                $"{recipe.Name} — session {session.Count} PDU(s) mutate={recipe.MutateStep ?? "last"} — {recipe.UpdatedAt:u}");
+            if (!string.IsNullOrWhiteSpace(recipe.Description))
+                Console.WriteLine(recipe.Description);
+            foreach (var pdu in session)
+            {
+                Console.WriteLine(
+                    $"  [{pdu.Name}] blocks={pdu.Blocks.Count}" +
+                    (pdu.ReadBanner ? " readBanner" : "") +
+                    (!string.IsNullOrWhiteSpace(pdu.ExpectResponse) ? $" expect={pdu.ExpectResponse}" : ""));
+                foreach (var s in pdu.Blocks)
+                    Console.WriteLine($"    {s.Op} {(s.Value ?? "")} role={s.Role}");
+            }
+            return 0;
+        }
+
         Console.WriteLine($"{recipe.Name} — {recipe.Steps.Count} blocks — {recipe.UpdatedAt:u}");
         if (!string.IsNullOrWhiteSpace(recipe.Description))
             Console.WriteLine(recipe.Description);
@@ -1348,7 +1569,10 @@ static int CaseRecipes(string[] args)
     }
 
     foreach (var r in CaseRecipeStore.ListRecipes(project))
-        Console.WriteLine($"{r.Name,-24} {r.StepCount,3} blocks  {r.UpdatedAt:yyyy-MM-dd HH:mm}  {r.Description}");
+    {
+        var kind = r.SessionStepCount > 0 ? $"{r.SessionStepCount} PDUs" : $"{r.StepCount} blocks";
+        Console.WriteLine($"{r.Name,-24} {kind,10}  {r.UpdatedAt:yyyy-MM-dd HH:mm}  {r.Description}");
+    }
     return 0;
 }
 

@@ -1,0 +1,19 @@
+name: tlv-frame
+description: Magic + length-prefixed payload (promote-friendly TLV starter)
+blocks:
+  - type: static
+    name: magic
+    value: "CUST"
+    mutable: false
+  - type: sized
+    lengthName: frame_len
+    lengthBytes: 2
+    littleEndian: true
+    lengthMutable: true
+    child:
+      type: bytes
+      name: payload
+      mutable: true
+      minSize: 1
+      maxSize: 8192
+      seedFile: seeds/tlv_payload.bin

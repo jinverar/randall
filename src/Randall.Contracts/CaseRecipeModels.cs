@@ -176,4 +176,47 @@ public sealed record CaseApplySessionRequest(
     string FlowName,
     IReadOnlyList<CaseSessionStepDto> SessionSteps,
     string MutateStep = "last",
-    double SessionFlowBias = 0.5);
+    double SessionFlowBias = 0.5,
+    bool PreferModels = false);
+
+/// <summary>Split pasted capture text into session PDUs (blank line or --- separators).</summary>
+public sealed record CaseFromStreamRequest(
+    string Text,
+    bool AsHex = false,
+    string? Project = null,
+    bool Apply = false,
+    string? FlowName = null,
+    string MutateStep = "last");
+
+public sealed record CaseFromStreamDto(
+    int StepCount,
+    IReadOnlyList<CaseSessionStepDto> SessionSteps,
+    IReadOnlyList<string> Notes,
+    CaseSaveResultDto? Applied);
+
+public sealed record CasePromoteRequest(
+    string Project,
+    string Name,
+    IReadOnlyList<CaseStepDto> Steps,
+    string? Description = null,
+    string? SessionStepName = null);
+
+public sealed record CasePromoteResultDto(
+    bool Ok,
+    string Message,
+    string? RelativePath,
+    string? AbsolutePath);
+
+public sealed record CasePackInfoDto(
+    string Id,
+    string Name,
+    string? Description,
+    string Kind,
+    int SessionStepCount,
+    IReadOnlyList<string> ProtocolRefs);
+
+public sealed record SessionGraphSaveRequest(
+    string ConfigPath,
+    string Start,
+    string? Mutate,
+    IReadOnlyList<SessionGraphEdgeDto> Edges);

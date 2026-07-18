@@ -1,0 +1,43 @@
+{
+  "name": "ftp-login-stor",
+  "description": "FTP login then STOR — from protocol pack",
+  "kind": "session",
+  "mutateStep": "last",
+  "updatedAt": "2026-07-18T00:00:00Z",
+  "steps": [],
+  "sessionSteps": [
+    {
+      "name": "USER",
+      "readBanner": true,
+      "expectResponse": "331",
+      "blocks": [
+        { "op": "static", "value": "USER", "role": "static" },
+        { "op": "delim", "value": " ", "role": "static" },
+        { "op": "text", "value": "anonymous", "role": "fuzzable" },
+        { "op": "crlf", "role": "static" }
+      ]
+    },
+    {
+      "name": "PASS",
+      "readBanner": false,
+      "expectResponse": "230",
+      "blocks": [
+        { "op": "static", "value": "PASS", "role": "static" },
+        { "op": "delim", "value": " ", "role": "static" },
+        { "op": "text", "value": "ftp", "role": "fuzzable" },
+        { "op": "crlf", "role": "static" }
+      ]
+    },
+    {
+      "name": "STOR",
+      "readBanner": false,
+      "expectResponse": "",
+      "blocks": [
+        { "op": "static", "value": "STOR ", "role": "static" },
+        { "op": "text", "value": "file.bin", "role": "fuzzable" },
+        { "op": "crlf", "role": "static" },
+        { "op": "repeat", "value": "A", "count": 64, "role": "fuzzable" }
+      ]
+    }
+  ]
+}

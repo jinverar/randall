@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using Randall.Contracts;
 
 namespace Randall.Infrastructure;
@@ -764,5 +765,148 @@ public static class CaseRecipeEngine
             chars[i] = b is >= 32 and <= 126 ? (char)b : '.';
         }
         return new string(chars);
+    }
+
+    /// <summary>
+    /// Map Scare Floor blocks → ProtocolDefinition (Sulley/boofuzz YAML models).
+    /// Hex/binary ops emit companion seed files listed in <paramref name="seedFiles"/>.
+    /// </summary>
+    public static ProtocolDefinition StepsToProtocol(
+        string name,
+        string? description,
+        IReadOnlyList<CaseStepDto> steps,
+        out List<(string RelativeSeed, byte[] Bytes)> seedFiles)
+    {
+        seedFiles = [];
+        var blocks = new List<ProtocolBlockDefinition>();
+        var i = 0;
+        foreach (var s in steps ?? [])
+        {
+            i++;
+            var op = (s.Op ?? "").Trim().ToLowerInvariant();
+            var mutable = !string.Equals(s.Role, "static", StringComparison.OrdinalIgnoreCase);
+            switch (op)
+            {
+                case "static":
+                    blocks.Add(new ProtocolBlockDefinition
+                    {
+                        Type = "static",
+                        Name = $"s{i}",
+                        Value = s.Value ?? "",
+                        Mutable = false,
+                    });
+                    break;
+                case "crlf":
+                    blocks.Add(new ProtocolBlockDefinition
+                    {
+                        Type = "static",
+                        Name = $"crlf{i}",
+                        Value = "\r\n",
+                        Mutable = false,
+                    });
+                    break;
+                case "lf":
+                    blocks.Add(new ProtocolBlockDefinition
+                    {
+                        Type = "static",
+                        Name = $"lf{i}",
+                        Value = "\n",
+                        Mutable = false,
+                    });
+                    break;
+                case "null":
+                    blocks.Add(new ProtocolBlockDefinition
+                    {
+                        Type = "static",
+                        Name = $"nul{i}",
+                        Value = "\0",
+                        Mutable = false,
+                    });
+                    break;
+                case "delim":
+                    blocks.Add(new ProtocolBlockDefinition
+                    {
+                        Type = "delim",
+                        Name = $"d{i}",
+                        Value = string.IsNullOrEmpty(s.Value) ? " " : s.Value,
+                        Mutable = mutable,
+                    });
+                    break;
+                case "text":
+                case "string":
+                case "quote":
+                case "utf16":
+                    blocks.Add(new ProtocolBlockDefinition
+                    {
+                        Type = "string",
+                        Name = string.IsNullOrWhiteSpace(s.Value) ? $"f{i}" : SanitizeFieldName(s.Value!, i),
+                        Value = s.Value ?? "",
+                        Mutable = mutable,
+                        MaxSize = 4096,
+                    });
+                    break;
+                case "hex":
+                case "random":
+                case "repeat":
+                case "fill":
+                case "cyclic":
+                case "interesting":
+                case "base64":
+                {
+                    var (bytes, _, _) = Render([s]);
+                    var seedRel = $"seeds/proto_{SanitizeFieldName(name, 0)}_{i}.bin";
+                    seedFiles.Add((seedRel, bytes));
+                    blocks.Add(new ProtocolBlockDefinition
+                    {
+                        Type = "bytes",
+                        Name = $"b{i}",
+                        Mutable = mutable,
+                        MinSize = 1,
+                        MaxSize = Math.Max(4096, bytes.Length * 4),
+                        SeedFile = seedRel,
+                    });
+                    break;
+                }
+                case "len-prefix":
+                    // Alone — keep as dword size field; paired promote is best-effort later
+                    blocks.Add(new ProtocolBlockDefinition
+                    {
+                        Type = "dword",
+                        Name = $"len{i}",
+                        Value = "0",
+                        Mutable = true,
+                        LittleEndian = !(s.Format?.Contains("be", StringComparison.OrdinalIgnoreCase) ?? false),
+                    });
+                    break;
+                default:
+                    if (!string.IsNullOrEmpty(s.Value))
+                    {
+                        blocks.Add(new ProtocolBlockDefinition
+                        {
+                            Type = "string",
+                            Name = $"x{i}",
+                            Value = s.Value,
+                            Mutable = mutable,
+                        });
+                    }
+                    break;
+            }
+        }
+
+        return new ProtocolDefinition
+        {
+            Name = name,
+            Description = description ?? $"Promoted from Scare Floor ({steps?.Count ?? 0} blocks)",
+            Blocks = blocks,
+        };
+    }
+
+    private static string SanitizeFieldName(string raw, int i)
+    {
+        var s = Regex.Replace(raw.Trim().ToLowerInvariant(), @"[^a-z0-9_\-]+", "_");
+        s = s.Trim('_');
+        if (string.IsNullOrEmpty(s) || s.Length > 24)
+            return $"f{i}";
+        return s;
     }
 }

@@ -51,6 +51,37 @@ Single-blob recipes still work (HTTP GET, overflow pad, FTP USER). UDP stays sin
 
 **Proxy → Scare Floor:** On the **Proxy** tab, select a capture → **Send to Scare Floor** (one PDU) or **All C→S → session** (every `client→target` message as ordered PDUs). Requires a TCP Target profile selected under Scare Floor → Working on project.
 
+**Paste → session:** In Scare Floor, paste a multi-message capture (blank line or `---` between messages) → **Import as session**.
+
+**expectResponse:** Each PDU can set an optional expect substring (e.g. `331`, `250`, `+OK`) — written into `sessionCommands` on Apply.
+
+**Presets (TCP):** FTP login flow · SMTP send flow · Redis RESP flow.
+
+```powershell
+randall case from-stream -p myservice --file capture.txt --apply
+randall case apply-session -p myservice --recipe ftp-login-stor
+randall case apply-session -p myservice --recipe ftp-login-stor --models
+randall case promote -p myservice --name my-pdu --static USER --delim " " --text anon --crlf
+randall case packs
+randall case packs --load ftp-login -p myservice
+```
+
+### Protocol packs (Phase 20)
+
+Packs live under `projects/protocols/packs/<id>/` (`pack.yaml` + `recipe.json`). In Scare Floor: **Protocol pack → Load pack**.
+
+| Pack | PDUs |
+|------|------|
+| `ftp-login` | USER → PASS → STOR |
+| `http-get` | GET + Host |
+| `tlv-frame` | Magic + length + payload |
+
+**Promote PDU → model** writes `protocols/{name}.yaml` (Sulley-style blocks). Check **Prefer models** on Apply to wire `model:` instead of `seed:`.
+
+### Session graph editor
+
+**Session graph** tab: Load a TCP project → edit start/mutate/edges → **Save graph** (writes `sessionGraph:` into the YAML).
+
 ### Byte editor (Step 3)
 
 After **Preview**, the Scare Floor editor loads the full buffer (ASCII or Hex):

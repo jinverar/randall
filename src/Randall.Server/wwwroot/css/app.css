@@ -605,6 +605,12 @@ code, .mono {
   font-size: 0.8rem;
 }
 
+.case-pdu input.case-pdu-expect {
+  flex: 1 1 4.5rem;
+  min-width: 4rem;
+  max-width: 8rem;
+}
+
 .case-mutate-label {
   display: inline-flex;
   align-items: center;
@@ -614,6 +620,66 @@ code, .mono {
 }
 
 .case-mutate-label select {
+  padding: 0.3rem 0.4rem;
+  background: #111820;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.case-pack-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: end;
+  margin: 0.45rem 0;
+}
+
+.case-pack-row label {
+  flex: 1 1 12rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.case-pack-row select {
+  width: 100%;
+  margin-top: 0.2rem;
+  padding: 0.35rem 0.45rem;
+  background: #111820;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.graph-edit-bar {
+  margin: 0.5rem 0;
+  align-items: end;
+}
+
+.graph-edit-bar label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.graph-edit-bar select {
+  display: block;
+  margin-top: 0.2rem;
+  min-width: 7rem;
+  padding: 0.35rem 0.45rem;
+  background: #111820;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+#graph-edges select,
+#graph-edges input {
+  width: 100%;
   padding: 0.3rem 0.4rem;
   background: #111820;
   border: 1px solid var(--border);

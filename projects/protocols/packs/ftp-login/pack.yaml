@@ -1,0 +1,9 @@
+id: ftp-login
+name: FTP login → STOR
+description: Multi-PDU FTP session (USER/PASS/STOR) — Scare Floor recipe + shared protocol models
+kind: session
+recipe: recipe.json
+protocols:
+  - ../../ftp_user.yaml
+  - ../../ftp_pass.yaml
+  - ../../ftp_stor.yaml

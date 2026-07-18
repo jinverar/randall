@@ -471,6 +471,8 @@
               <button type="button" class="btn" id="case-preset-overflow">Overflow pad</button>
               <button type="button" class="btn" id="case-preset-ftp">FTP USER</button>
               <button type="button" class="btn" id="case-preset-ftp-flow" title="Multi-PDU: USER → PASS → STOR">FTP login flow</button>
+              <button type="button" class="btn" id="case-preset-smtp-flow" title="Multi-PDU: EHLO → MAIL → RCPT → DATA">SMTP send flow</button>
+              <button type="button" class="btn" id="case-preset-redis-flow" title="Multi-PDU: AUTH → SET → GET">Redis RESP flow</button>
               <button type="button" class="btn" id="case-preset-binary">Binary frame</button>
             </div>
             <div id="case-preset-file" class="btn-row wrap case-preset-row hidden">
@@ -495,11 +497,12 @@
             </div>
             <h3>Or paste bytes</h3>
             <label>Paste hex or text
-              <textarea id="case-import-text" rows="3" placeholder="Valid sample of your format…"></textarea>
+              <textarea id="case-import-text" rows="3" placeholder="Valid sample… or multi-PDU: separate messages with a blank line or ---"></textarea>
             </label>
             <div class="btn-row wrap">
               <button type="button" class="btn" id="case-import-hex">Import as hex</button>
               <button type="button" class="btn" id="case-import-text-btn">Import as text</button>
+              <button type="button" class="btn" id="case-import-session" title="Split on blank lines / --- into Network session PDUs (TCP)">Import as session</button>
             </div>
           </aside>
 
@@ -518,6 +521,8 @@
                 <div class="btn-row wrap">
                   <button type="button" class="btn" id="case-pdu-add">+ PDU</button>
                   <button type="button" class="btn" id="case-preset-ftp-flow-inline" title="USER → PASS → STOR">FTP login flow</button>
+                  <button type="button" class="btn" id="case-preset-smtp-flow-inline" title="EHLO → MAIL → RCPT → DATA">SMTP flow</button>
+                  <button type="button" class="btn" id="case-preset-redis-flow-inline" title="AUTH → SET → GET">Redis flow</button>
                   <label class="case-mutate-label">Mutate
                     <select id="case-mutate-step">
                       <option value="last">last PDU</option>
@@ -530,6 +535,16 @@
                 <div class="btn-row wrap">
                   <button type="button" class="btn" id="case-preview-session">Preview all PDUs</button>
                   <button type="button" class="btn primary" id="case-apply-session" title="Write seeds + sessionFlows into project YAML">Apply to Campaign</button>
+                  <label class="checkbox" title="Promote each PDU to protocols/*.yaml and wire model: refs">
+                    <input type="checkbox" id="case-prefer-models" /> Prefer models
+                  </label>
+                  <button type="button" class="btn" id="case-promote-pdu" title="Promote active PDU blocks → protocols/*.yaml">Promote PDU → model</button>
+                </div>
+                <div class="case-pack-row">
+                  <label>Protocol pack
+                    <select id="case-pack-select"><option value="">— load a pack —</option></select>
+                  </label>
+                  <button type="button" class="btn" id="case-pack-load">Load pack</button>
                 </div>
                 <div id="case-session-preview" class="case-session-preview"></div>
               </div>
@@ -790,8 +805,9 @@
             Project profile
             <select id="graph-target" required></select>
           </label>
-          <div class="btn-row">
+          <div class="btn-row wrap">
             <button type="submit" class="btn primary">Load graph</button>
+            <button type="button" class="btn primary" id="graph-save" title="Write sessionGraph into project YAML">Save graph</button>
             <button type="button" class="btn" id="graph-copy-yaml">Copy YAML</button>
           </div>
           <div id="graph-status" class="status-box">Select a project with sessionGraph (e.g. vulnftp).</div>
@@ -799,9 +815,18 @@
         <div class="panel graph-panel">
           <div id="graph-meta" class="graph-meta"></div>
           <div id="graph-diagram" class="graph-diagram"></div>
+          <div class="graph-edit-bar btn-row wrap">
+            <label>Start
+              <select id="graph-start"></select>
+            </label>
+            <label>Mutate
+              <select id="graph-mutate"></select>
+            </label>
+            <button type="button" class="btn" id="graph-edge-add">+ Edge</button>
+          </div>
           <div id="graph-edges" class="table-wrap"></div>
           <label class="graph-yaml-label">
-            YAML snippet (edit on disk, then reload)
+            YAML snippet (updates when you Save)
             <textarea id="graph-yaml" rows="8" readonly class="hex-edit"></textarea>
           </label>
         </div>

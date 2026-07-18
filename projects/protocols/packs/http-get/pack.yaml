@@ -1,0 +1,7 @@
+id: http-get
+name: HTTP GET
+description: Single-request HTTP/1.1 GET — good starter for web parsers
+kind: session
+recipe: recipe.json
+protocols:
+  - ../../http_get.yaml

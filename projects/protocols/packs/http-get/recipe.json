@@ -1,0 +1,28 @@
+{
+  "name": "http-get",
+  "description": "HTTP GET request line + Host",
+  "kind": "session",
+  "mutateStep": "last",
+  "updatedAt": "2026-07-18T00:00:00Z",
+  "steps": [],
+  "sessionSteps": [
+    {
+      "name": "GET",
+      "readBanner": false,
+      "expectResponse": "HTTP",
+      "blocks": [
+        { "op": "static", "value": "GET", "role": "static" },
+        { "op": "delim", "value": " ", "role": "fuzzable" },
+        { "op": "static", "value": "/", "role": "static" },
+        { "op": "text", "value": "index.html", "role": "fuzzable" },
+        { "op": "delim", "value": " ", "role": "fuzzable" },
+        { "op": "static", "value": "HTTP/1.1", "role": "static" },
+        { "op": "crlf", "role": "static" },
+        { "op": "static", "value": "Host: ", "role": "static" },
+        { "op": "text", "value": "127.0.0.1", "role": "fuzzable" },
+        { "op": "crlf", "role": "static" },
+        { "op": "crlf", "role": "static" }
+      ]
+    }
+  ]
+}

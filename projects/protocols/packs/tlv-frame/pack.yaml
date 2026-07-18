@@ -1,0 +1,7 @@
+id: tlv-frame
+name: TLV / length frame
+description: Magic + u16le length + payload — classic binary frame for custom parsers
+kind: session
+recipe: recipe.json
+protocols:
+  - protocols/tlv_frame.yaml
