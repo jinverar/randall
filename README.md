@@ -26,6 +26,16 @@ Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
 > *Stalk code paths. Scream on crash.*
 
+## Start the web UI
+
+Requires [.NET 8 SDK](https://dotnet.microsoft.com/download). From the repo root:
+
+```powershell
+dotnet run --project src/Randall.Server --urls http://127.0.0.1:5000
+```
+
+Then open **[http://127.0.0.1:5000](http://127.0.0.1:5000)** — Dashboard (stalker CFG), Fuzz, Crashes, Case builder, Help.
+
 ## Tricks borrowed from the greats
 
 I'm not here to rewrite history. I'm here to **stop duct-taping six runtimes** every time you fuzz on Windows. These are the shoulders I stand on:
@@ -187,8 +197,10 @@ git clone https://github.com/jinverar/randall.git
 cd randall
 dotnet build
 dotnet run --project src/Randall.Cli -- --help
-dotnet run --project src/Randall.Server
+dotnet run --project src/Randall.Server --urls http://127.0.0.1:5000
 ```
+
+Open **http://127.0.0.1:5000** for the lab console.
 
 ## How I deploy
 
