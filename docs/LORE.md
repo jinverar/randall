@@ -18,8 +18,9 @@ In the film, Randall is the master of camouflage, obsessed with beating Sulley, 
 | 💥 **Triggers chaos** — Scream Extractor, kidnaps Boo | **Scream** — crash capture, minidumps, triage bundles, Ghidra export |
 | 🕵️ **Another trick up his sleeve** | Havoc stages, dictionary tokens, session flows, RPP plugins |
 | 🏭 **Factory floor** — Monsters, Inc. pipeline | Eight legs: Model → Mutate → Send → Stalk → Scream → Proxy → Web → Pack |
+| 🚪 **Scare Floor** — prep doors / scare attempts | **Scare Floor** UI — case recipes, seeds, dictionaries → Campaign queue |
 
-We are *not* building a Scream Extractor. We are building the thing that finds why your parser would need one.
+We are *not* building a Scream Extractor. We are building the thing that finds why your parser would need one. The **Scare Floor** is where test-case recipes get staged before the fuzz shift — homage naming, not an official Disney/Pixar product.
 
 ---
 
@@ -42,6 +43,7 @@ We are *not* building a Scream Extractor. We are building the thing that finds w
 | *Eight legs, zero mercy.* | RAND command response on lab vulnserver |
 | *Chaos is my code.* | Web UI roadmap caption |
 | *Master of mayhem.* | Web UI (Randfuzz by Randall at the console) |
+| *Scare Floor* | Fuzz tab — case recipes / seed queue (not affiliated with Disney/Pixar) |
 
 ---
 

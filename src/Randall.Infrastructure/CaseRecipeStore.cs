@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Randall.Contracts;
 using Randall.Infrastructure.Mutators;
@@ -115,7 +117,43 @@ public static class CaseRecipeStore
             throw new FileNotFoundException($"Seed not found: {safe}");
 
         var bytes = File.ReadAllBytes(path);
-        return CaseRecipeEngine.SuggestFromBytes(bytes);
+        return CaseRecipeEngine.SuggestFromBytes(bytes, safe);
+    }
+
+    /// <summary>Write an uploaded sample exactly (byte-for-byte) as a project seed.</summary>
+    public static CaseSaveResultDto SaveRawSeed(CaseSaveRawSeedRequest request, string? repoRoot = null)
+    {
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var profile = GetProfile(request.Project, repoRoot)
+                      ?? throw new ArgumentException($"Unknown project: {request.Project}");
+
+        var b64 = request.Base64.Trim();
+        var comma = b64.IndexOf("base64,", StringComparison.OrdinalIgnoreCase);
+        if (comma >= 0)
+            b64 = b64[(comma + "base64,".Length)..];
+        var bytes = Convert.FromBase64String(b64);
+        if (bytes.Length == 0)
+            return new CaseSaveResultDto(false, "Empty sample", null, 0);
+        if (bytes.Length > 16_000_000)
+            return new CaseSaveResultDto(false, "Sample too large (max 16 MB)", null, 0);
+
+        var fileName = string.IsNullOrWhiteSpace(request.FileName)
+            ? $"sample_{DateTime.UtcNow:yyyyMMdd_HHmmss}.bin"
+            : Path.GetFileName(request.FileName);
+        if (!Path.HasExtension(fileName))
+            fileName += ".bin";
+
+        var projectDir = Path.GetDirectoryName(profile.ConfigPath)!;
+        var seedsDir = Path.Combine(projectDir, "seeds");
+        Directory.CreateDirectory(seedsDir);
+        var path = Path.Combine(seedsDir, fileName);
+        File.WriteAllBytes(path, bytes);
+        TryEnsureSeedInYaml(profile.ConfigPath, $"seeds/{fileName}");
+
+        return new CaseSaveResultDto(true,
+            $"Saved exact sample ({bytes.Length} bytes) as seeds/{fileName} for '{request.Project}'",
+            path,
+            bytes.Length);
     }
 
     public static CaseSaveResultDto SaveSeed(CaseSaveSeedRequest request, string? repoRoot = null)
@@ -326,6 +364,16 @@ public static class CaseRecipeStore
                 (byte)'p', (byte)'a', (byte)'y', (byte)'l', (byte)'o', (byte)'a', (byte)'d',
             ],
             "file-magic" or "magic" => Encoding.ASCII.GetBytes("CUST\x00\x00\x00\x08CUSTOM!!"),
+            "file-wav" or "wav" =>
+            [
+                // Minimal PCM WAV (44 bytes): RIFF/WAVE + fmt + 4 bytes silence
+                0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00,
+                0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74, 0x20,
+                0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+                0x44, 0xAC, 0x00, 0x00, 0x88, 0x58, 0x01, 0x00,
+                0x02, 0x00, 0x10, 0x00, 0x64, 0x61, 0x74, 0x61,
+                0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            ],
             _ => Encoding.UTF8.GetBytes("RANDFUZZ_CUSTOM_SEED\n"),
         };
 
@@ -507,6 +555,333 @@ public static class CaseRecipeStore
         if (!pattern.IsMatch(yaml))
             throw new InvalidOperationException($"YAML key '{key}:' not found — edit the file manually");
         return pattern.Replace(yaml, m => $"{m.Groups[1].Value}{key}: {rendered}", 1);
+    }
+
+    private static readonly JsonSerializerOptions RecipeJson = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private static string RecipesDir(string configPath) =>
+        Path.Combine(Path.GetDirectoryName(configPath)!, "recipes");
+
+    public static IReadOnlyList<CaseRecipeInfoDto> ListRecipes(string projectName, string? repoRoot = null)
+    {
+        var profile = GetProfile(projectName, repoRoot)
+                      ?? throw new ArgumentException($"Unknown project: {projectName}");
+        var dir = RecipesDir(profile.ConfigPath);
+        if (!Directory.Exists(dir))
+            return [];
+
+        return Directory.EnumerateFiles(dir, "*.json")
+            .Select(path =>
+            {
+                try
+                {
+                    var dto = JsonSerializer.Deserialize<CaseRecipeDto>(File.ReadAllText(path), RecipeJson);
+                    if (dto is null) return null;
+                    var name = string.IsNullOrWhiteSpace(dto.Name)
+                        ? Path.GetFileNameWithoutExtension(path)
+                        : dto.Name;
+                    var sessionCount = dto.SessionSteps?.Count ?? 0;
+                    var blockCount = sessionCount > 0
+                        ? dto.SessionSteps!.Sum(s => s.Blocks?.Count ?? 0)
+                        : dto.Steps?.Count ?? 0;
+                    var kind = !string.IsNullOrWhiteSpace(dto.Kind)
+                        ? dto.Kind
+                        : sessionCount > 0 ? "session" : "blob";
+                    return new CaseRecipeInfoDto(
+                        name,
+                        dto.Description,
+                        blockCount,
+                        dto.UpdatedAt == default
+                            ? File.GetLastWriteTimeUtc(path)
+                            : dto.UpdatedAt,
+                        $"recipes/{Path.GetFileName(path)}",
+                        sessionCount,
+                        kind);
+                }
+                catch
+                {
+                    return null;
+                }
+            })
+            .Where(x => x is not null)
+            .Cast<CaseRecipeInfoDto>()
+            .OrderByDescending(r => r.UpdatedAt)
+            .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public static CaseRecipeDto LoadRecipe(string projectName, string recipeName, string? repoRoot = null)
+    {
+        var profile = GetProfile(projectName, repoRoot)
+                      ?? throw new ArgumentException($"Unknown project: {projectName}");
+        var safe = SanitizeName(Path.GetFileNameWithoutExtension(recipeName));
+        var path = Path.Combine(RecipesDir(profile.ConfigPath), safe + ".json");
+        if (!File.Exists(path))
+            throw new FileNotFoundException($"Recipe not found: {safe}");
+
+        var dto = JsonSerializer.Deserialize<CaseRecipeDto>(File.ReadAllText(path), RecipeJson)
+                  ?? throw new InvalidOperationException("Invalid recipe JSON");
+        var sessionSteps = NormalizeSessionSteps(dto.SessionSteps);
+        var steps = dto.Steps ?? [];
+        if (steps.Count == 0 && sessionSteps.Count > 0)
+            steps = sessionSteps[0].Blocks;
+        var kind = !string.IsNullOrWhiteSpace(dto.Kind)
+            ? dto.Kind
+            : sessionSteps.Count > 0 ? "session" : "blob";
+        return dto with
+        {
+            Name = string.IsNullOrWhiteSpace(dto.Name) ? safe : dto.Name,
+            Steps = steps,
+            SessionSteps = sessionSteps.Count > 0 ? sessionSteps : null,
+            MutateStep = string.IsNullOrWhiteSpace(dto.MutateStep) ? "last" : dto.MutateStep,
+            Kind = kind,
+        };
+    }
+
+    public static CaseSaveResultDto SaveRecipe(CaseSaveRecipeRequest request, string? repoRoot = null)
+    {
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var profile = GetProfile(request.Project, repoRoot)
+                      ?? throw new ArgumentException($"Unknown project: {request.Project}");
+
+        var sessionSteps = NormalizeSessionSteps(request.SessionSteps);
+        var steps = request.Steps ?? [];
+        if (sessionSteps.Count > 0 && steps.Count == 0)
+            steps = sessionSteps.SelectMany(s => s.Blocks).ToList();
+        if (steps.Count == 0 && sessionSteps.Count == 0)
+            return new CaseSaveResultDto(false, "Recipe has no blocks", null, 0);
+
+        var name = SanitizeName(request.Name);
+        if (string.IsNullOrWhiteSpace(name))
+            return new CaseSaveResultDto(false, "Recipe name required", null, 0);
+
+        var kind = !string.IsNullOrWhiteSpace(request.Kind)
+            ? request.Kind!.Trim().ToLowerInvariant()
+            : sessionSteps.Count > 0 ? "session" : "blob";
+        var mutate = string.IsNullOrWhiteSpace(request.MutateStep) ? "last" : request.MutateStep!.Trim();
+
+        var dir = RecipesDir(profile.ConfigPath);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, name + ".json");
+        var dto = new CaseRecipeDto(
+            name,
+            request.Description,
+            steps,
+            DateTimeOffset.UtcNow,
+            request.SuggestedSeedName,
+            sessionSteps.Count > 0 ? sessionSteps : null,
+            sessionSteps.Count > 0 ? mutate : null,
+            kind);
+        File.WriteAllText(path, JsonSerializer.Serialize(dto, RecipeJson));
+
+        var summary = sessionSteps.Count > 0
+            ? $"{sessionSteps.Count} PDU(s), {steps.Count} blocks"
+            : $"{steps.Count} blocks";
+        return new CaseSaveResultDto(true,
+            $"Saved Scare Floor recipe '{name}' ({summary}) → recipes/{name}.json",
+            path,
+            steps.Count);
+    }
+
+    public static CaseSessionPreviewDto PreviewSession(IReadOnlyList<CaseSessionStepDto> sessionSteps)
+    {
+        var normalized = NormalizeSessionSteps(sessionSteps);
+        if (normalized.Count == 0)
+            throw new ArgumentException("No session steps");
+
+        var previews = new List<CaseSessionStepPreviewDto>();
+        var allHints = new List<string>();
+        var notes = new List<string>();
+        var total = 0;
+        foreach (var step in normalized)
+        {
+            var preview = CaseRecipeEngine.Preview(step.Blocks);
+            total += preview.Length;
+            allHints.AddRange(preview.DictionaryHints);
+            previews.Add(new CaseSessionStepPreviewDto(
+                step.Name,
+                preview.Length,
+                preview.HexPreview,
+                preview.AsciiPreview,
+                preview.HexFull,
+                preview.DictionaryHints));
+            if (step.ReadBanner)
+                notes.Add($"{step.Name}: readBanner");
+            if (!string.IsNullOrWhiteSpace(step.ExpectResponse))
+                notes.Add($"{step.Name}: expect {step.ExpectResponse}");
+        }
+
+        return new CaseSessionPreviewDto(
+            previews.Count,
+            total,
+            previews,
+            allHints.Distinct(StringComparer.Ordinal).ToList(),
+            notes);
+    }
+
+    public static CaseSaveResultDto ApplySessionRecipe(CaseApplySessionRequest request, string? repoRoot = null)
+    {
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var profile = GetProfile(request.Project, repoRoot)
+                      ?? throw new ArgumentException($"Unknown project: {request.Project}");
+        if (!profile.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase))
+            return new CaseSaveResultDto(false,
+                "Apply session recipe requires a TCP Target profile (UDP multi-PDU comes later).",
+                null, 0);
+
+        var steps = NormalizeSessionSteps(request.SessionSteps);
+        if (steps.Count == 0)
+            return new CaseSaveResultDto(false, "No session steps to apply", null, 0);
+
+        var flowName = SanitizeName(string.IsNullOrWhiteSpace(request.FlowName)
+            ? "scare-flow"
+            : request.FlowName);
+        if (string.IsNullOrWhiteSpace(flowName))
+            flowName = "scare-flow";
+
+        var mutate = string.IsNullOrWhiteSpace(request.MutateStep) ? "last" : request.MutateStep.Trim();
+        var projectDir = Path.GetDirectoryName(profile.ConfigPath)!;
+        var seedsDir = Path.Combine(projectDir, "seeds");
+        Directory.CreateDirectory(seedsDir);
+
+        var cmdLines = new List<string> { "sessionCommands:" };
+        var flowStepNames = new List<string>();
+        var totalBytes = 0;
+        var allHints = new List<string>();
+
+        foreach (var step in steps)
+        {
+            var (bytes, hints, _) = CaseRecipeEngine.Render(step.Blocks);
+            if (bytes.Length == 0)
+                return new CaseSaveResultDto(false, $"Step '{step.Name}' rendered 0 bytes", null, 0);
+
+            var seedFile = $"{flowName}_{SanitizeName(step.Name)}.bin";
+            var seedPath = Path.Combine(seedsDir, seedFile);
+            File.WriteAllBytes(seedPath, bytes);
+            totalBytes += bytes.Length;
+            allHints.AddRange(hints);
+            flowStepNames.Add(step.Name);
+
+            cmdLines.Add($"  - name: {step.Name}");
+            cmdLines.Add($"    seed: seeds/{seedFile}");
+            cmdLines.Add($"    readBanner: {(step.ReadBanner ? "true" : "false")}");
+            if (!string.IsNullOrWhiteSpace(step.ExpectResponse))
+                cmdLines.Add($"    expectResponse: {YamlQuote(step.ExpectResponse)}");
+        }
+
+        var flowLines = new List<string>
+        {
+            "sessionFlows:",
+            $"  - name: {flowName}",
+            $"    steps: [{string.Join(", ", flowStepNames)}]",
+            $"    mutateStep: {mutate}",
+        };
+
+        var yaml = File.ReadAllText(profile.ConfigPath);
+        yaml = UpsertYamlTopBlock(yaml, "sessionCommands", string.Join("\n", cmdLines) + "\n");
+        yaml = UpsertYamlTopBlock(yaml, "sessionFlows", string.Join("\n", flowLines) + "\n");
+        File.WriteAllText(profile.ConfigPath, yaml);
+
+        var bias = request.SessionFlowBias;
+        if (bias < 0) bias = 0;
+        if (bias > 1) bias = 1;
+        try
+        {
+            yaml = File.ReadAllText(profile.ConfigPath);
+            if (Regex.IsMatch(yaml, @"^\s*sessionFlowBias:", RegexOptions.Multiline))
+                yaml = ReplaceYamlKey(yaml, "sessionFlowBias",
+                    bias.ToString(System.Globalization.CultureInfo.InvariantCulture), quote: false);
+            else if (Regex.IsMatch(yaml, @"^fuzz:\s*$", RegexOptions.Multiline))
+            {
+                var fuzzRx = new Regex(@"^fuzz:\s*$", RegexOptions.Multiline);
+                yaml = fuzzRx.Replace(yaml,
+                    $"fuzz:\n  sessionFlowBias: {bias.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+                    1);
+            }
+            File.WriteAllText(profile.ConfigPath, yaml);
+        }
+        catch { /* best effort */ }
+
+        // Keep seeds: list usable for single-blob fallback — register last PDU
+        TryEnsureSeedInYaml(profile.ConfigPath, $"seeds/{flowName}_{SanitizeName(steps[^1].Name)}.bin");
+
+        if (allHints.Count > 0)
+            SaveDict(new CaseSaveDictRequest(request.Project, allHints.Distinct().ToList(), true), repoRoot);
+
+        ProjectLoader.Load(profile.ConfigPath);
+        return new CaseSaveResultDto(true,
+            $"Applied flow '{flowName}' ({steps.Count} PDUs, {totalBytes} bytes) → sessionCommands + sessionFlows. Campaign will use sessionFlowBias={bias.ToString(System.Globalization.CultureInfo.InvariantCulture)}.",
+            profile.ConfigPath,
+            totalBytes);
+    }
+
+    private static List<CaseSessionStepDto> NormalizeSessionSteps(IReadOnlyList<CaseSessionStepDto>? steps)
+    {
+        if (steps is null || steps.Count == 0)
+            return [];
+
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var list = new List<CaseSessionStepDto>();
+        var i = 0;
+        foreach (var s in steps)
+        {
+            i++;
+            var blocks = (s.Blocks ?? []).ToList();
+            if (blocks.Count == 0)
+                continue;
+            var raw = string.IsNullOrWhiteSpace(s.Name) ? $"step{i}" : s.Name.Trim();
+            var name = SanitizeCommandName(raw);
+            if (string.IsNullOrWhiteSpace(name))
+                name = $"step{i}";
+            var baseName = name;
+            var n = 2;
+            while (!used.Add(name))
+                name = $"{baseName}{n++}";
+            list.Add(new CaseSessionStepDto(name, blocks, s.ReadBanner, s.ExpectResponse));
+        }
+        return list;
+    }
+
+    private static string SanitizeCommandName(string name)
+    {
+        var s = name.Trim();
+        s = Regex.Replace(s, @"[^A-Za-z0-9_\-]+", "_");
+        return s.Trim('_');
+    }
+
+    /// <summary>Replace or insert a top-level YAML list block (sessionCommands / sessionFlows).</summary>
+    private static string UpsertYamlTopBlock(string yaml, string key, string block)
+    {
+        var pattern = new Regex(
+            $@"^{Regex.Escape(key)}:[ \t]*\r?\n(?:[ \t]+[^\r\n]*\r?\n?)*",
+            RegexOptions.Multiline);
+        var normalized = block.TrimEnd() + "\n";
+        if (pattern.IsMatch(yaml))
+            return pattern.Replace(yaml, normalized, 1);
+
+        var fuzz = new Regex(@"^fuzz:\s*\r?\n", RegexOptions.Multiline);
+        if (fuzz.IsMatch(yaml))
+            return fuzz.Replace(yaml, normalized + "fuzz:\n", 1);
+
+        return yaml.TrimEnd() + "\n\n" + normalized;
+    }
+
+    public static CaseSaveResultDto DeleteRecipe(string projectName, string recipeName, string? repoRoot = null)
+    {
+        var profile = GetProfile(projectName, repoRoot)
+                      ?? throw new ArgumentException($"Unknown project: {projectName}");
+        var safe = SanitizeName(Path.GetFileNameWithoutExtension(recipeName));
+        var path = Path.Combine(RecipesDir(profile.ConfigPath), safe + ".json");
+        if (!File.Exists(path))
+            return new CaseSaveResultDto(false, $"Recipe not found: {safe}", null, 0);
+        File.Delete(path);
+        return new CaseSaveResultDto(true, $"Deleted recipe '{safe}'", path, 0);
     }
 
     private static string SanitizeName(string name)

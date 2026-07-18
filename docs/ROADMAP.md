@@ -316,3 +316,167 @@ dotnet run --project src/Randall.Server
 | Remote stalk APIs on `randall agent` | ✅ `/api/remote/procmon` · `/api/remote/tools` |
 
 Custom targets: [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · Case builder: [CASE_BUILDER.md](CASE_BUILDER.md)
+
+---
+
+## Phase 18 — Scare Floor Network (app-layer packets) 🔄
+
+**Goal:** Craft and send multi-message TCP/UDP cases from Scare Floor the way you already build file seeds — boofuzz-style app PDUs on sockets first; L2–L4 forge is Phase 24.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Network recipe = **session steps** (not only one blob) | ✅ | `CaseSessionStepDto` + recipe JSON |
+| Scare Floor UI: add / reorder / mutate-which-step | ✅ | PDU strip + mutate select |
+| Preview shows per-step ASCII/hex + wire order | ✅ | `/api/case/preview-session` |
+| **Apply to Campaign** → `sessionCommands` / `sessionFlows` | ✅ | `/api/case/apply-session` |
+| FTP login flow multi-PDU preset | ✅ | USER → PASS → STOR |
+| Import **Proxy capture** → network recipe | ✅ | Proxy → Send to Scare Floor / All C→S |
+| Import hex/pcap **application payload** (TCP stream) | 🔲 | Not full pcap dissect; stream bytes → steps |
+| More network presets (SMTP, Redis RESP, custom binary) | 🔲 | Beside HTTP/FTP |
+| Docs: “fuzz a remote TCP service from Scare Floor” | ✅ | CASE_BUILDER |
+
+**Not in this phase (comes later):** Ethernet/IP/TCP-flag crafting and raw sockets — see Phase 24 (in-house packet forge). Phase 18 stays app-PDU on connected sockets so network Scare Floor ships sooner.
+
+**Try shape (target UX):**
+```
+Scare Floor → kind: tcp → host:port
+  Step 1: banner read (optional)
+  Step 2: static "USER " + fuzzable name + CRLF
+  Step 3: static "PASS " + fuzzable pass + CRLF
+  Step 4: fuzzable command body
+→ Save recipe → Campaign
+```
+
+---
+
+## Phase 19 — Wire Scare Floor ↔ sessions/models 🔲
+
+**Goal:** Scare Floor stops being “seed-only”; it authors the same YAML the engine already runs.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Save recipe → `sessionFlows` / `sessionCommands` | 🔲 | Round-trip with `projects/*.yaml` |
+| Visual sessionGraph edges from UI (edit, not just view) | 🔲 | Build on Phase 14 graph tab |
+| `expectResponse` per step in Scare Floor | 🔲 | Camouflage / Phase 11 |
+| Promote step fields → `projects/protocols/*.yaml` model | 🔲 | Field-aware mutate |
+| Dictionary harvest across session steps | 🔲 | Tokens from fuzzable fields |
+| `randall case from-proxy` / `from-stream` CLI | 🔲 | Parity with `from-file` |
+
+---
+
+## Phase 20 — Protocol packs (useful before SMB) 🔲
+
+**Goal:** Ship reusable PDU packs so users aren’t hand-hexing common services.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Pack format: recipe + protocol YAML + example project | 🔲 | `projects/protocols/packs/` |
+| HTTP/1.1 request pack (headers as fields) | 🔲 | Upgrade simple GET |
+| FTP full login → STOR/RETR flow pack | 🔲 | From vulnftp |
+| Generic **TLV / length-prefixed** pack | 🔲 | Scapy-ish structure without L2 |
+| DNS / mDNS UDP query pack (lab) | 🔲 | Short datagram |
+| Import boofuzz example → Scare Floor recipe | 🔲 | Extend `import-boofuzz.py` |
+| Community: “custom protocol” wizard | 🔲 | Magic + len + body + CRC |
+
+---
+
+## Phase 21 — RPC / DCE-RPC (first real hard protocol) 🔲
+
+**Goal:** Fuzz RPC-shaped services without pretending we have full IDL/NDR yet.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| DCE/RPC **bind** + **request** framing model | 🔲 | Fixed / call_id / opnum fields |
+| NDR stub as hex + sized fields (manual IDL) | 🔲 | User supplies layout |
+| Optional: parse simple IDL → stub field map | 🔲 | Later stretch |
+| Session: bind → alter_context? → request* | 🔲 | `sessionFlows` |
+| Lab: tiny RPC stub server (crashable opnum) | 🔲 | Like vulnserver for RPC |
+| Docs: “fuzz RPC with a known stub layout” | 🔲 | Honest limits vs Impacket |
+
+**Honest limit:** Full Windows RPC + auth + complex NDR is months; start with **unauthenticated lab stub + known opnum layouts**.
+
+---
+
+## Phase 22 — SMB (session-aware, lab-first) 🔲
+
+**Goal:** Real SMB fuzzing path for lab VMs — negotiate → session → tree → command — not “hex dump at 445”.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| NetBIOS session service (NBT) framing | 🔲 | When needed for 139/445 |
+| SMB2 **Negotiate** + **Session Setup** (null/guest lab) | 🔲 | No full Kerberos v1 |
+| Tree Connect + Create + Read/Write models | 🔲 | Field-aware sizes |
+| sessionGraph: response status → next command | 🔲 | Error paths matter |
+| Lab target guidance (vulnerable SMB in VM) | 🔲 | Never default-scan production |
+| Crash signal: TCP reset / process death / agent | 🔲 | Remote = agent or peer-down |
+| Optional: named-pipe → DCERPC reuse (Phase 21) | 🔲 | IPC$ bridge |
+
+**Honest limit:** Production SMB + signing + modern auth is a research product of its own. Phase 22 targets **lab parsers / legacy / intentionally weak services**.
+
+---
+
+## Phase 23 — Layered PDU builder (Scapy workflow, Randall-owned) 🔲
+
+**Goal:** In-house layered crafting for **application stacks** first — same mental model as Scapy (`A / B / C`), implemented in Scare Floor + YAML, not a Python sidecar.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Layered PDU builder in Scare Floor | 🔲 | e.g. `nbss / smb2 / ioctl` |
+| Field table edit (name, type, endian, fuzzable) | 🔲 | Not only free hex |
+| Stack templates (“SMB2 write”, “RPC request”) | 🔲 | From packs |
+| Recipe JSON as interchange (CLI + UI + optional scripts) | 🔲 | Own format; Scapy import optional later |
+| Autocalc length / checksum fields across layers | 🔲 | Like Scapy post-build |
+
+```
+Phase 23:     TCP socket  / NBSS / SMB2 / fields
+Phase 24:     Ether / IP / TCP / …   (raw / pcap path)
+```
+
+Users should **not** need Scapy for normal Randfuzz work. Scapy remains an optional *interop* target (import/export), never a required dependency.
+
+---
+
+## Phase 24 — Packet forge (in-house L2–L4) 🔲
+
+**Goal:** Own the Scapy-class surface inside Randfuzz — craft and send below the app stream when you need it (malformed TCP, IP options, VLAN, fuzzing parsers that sit under the socket).
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Layer model: Ether / VLAN / IP / IPv6 / TCP / UDP / ICMP | 🔲 | Field-aware + fuzzable |
+| Build → bytes → mutate → rebuild (len/checksum fixups) | 🔲 | Core forge engine |
+| Send paths: raw socket / pcap inject (Win + Linux) | 🔲 | Platform adapters; privilege-aware |
+| Capture → dissect → Scare Floor layers | 🔲 | Round-trip with Proxy / pcap |
+| TCP stream mode vs packet mode in Campaign | 🔲 | Same recipe language, different transport |
+| Safety defaults | 🔲 | Lab-only warnings; no “scan internet” presets |
+| Docs + lab: fuzz a userspace packet parser | 🔲 | Safer than attacking live stacks first |
+
+**Why later:** Phases 18–22 make SMB/RPC *useful* on normal sockets. Phase 24 is the big platform bite (privileges, OS APIs, checksums, fragmentation). Still a **first-class product goal**, not “use Scapy instead.”
+
+**Interop (optional, never required):** import a Scapy packet / hex dump into Randall layers; export Randall layers as hex/pcap for other tools.
+
+---
+
+### Priority order (recommended)
+
+1. **Phase 18** — highest leverage (Scare Floor already exists; sessions already exist in YAML)
+2. **Phase 19** — glue so UI authors what the engine runs
+3. **Phase 20** — packs make demos/teaching fast
+4. **Phase 21** — RPC before SMB (smaller state machine; reusable under SMB pipes)
+5. **Phase 22** — SMB lab path
+6. **Phase 23** — layered app-PDU UX (Scapy workflow, our stack)
+7. **Phase 24** — in-house L2–L4 packet forge
+
+### Near-term caution (not “never”)
+
+These are **deferred product goals**, not permanent non-goals:
+
+| Deferred | Why wait | Still in-house? |
+|----------|----------|-----------------|
+| L2–L4 forge (Phase 24) | Needs Phases 18–23 foundations + OS send/capture | **Yes** |
+| Kerberos / NTLM / signing-heavy SMB | Huge auth surface after basic SMB PDUs work | **Yes**, lab-scoped |
+| Internet-facing “scan SMB” UX | Safety / product ethics — lab + explicit target only | Features stay lab-oriented |
+| Linux Scream/WinDbg parity | Separate stalk/scream track | **Yes**, when we port backends |
+
+**Policy:** Prefer Randall-native builders and transports. External tools (Scapy, Wireshark, Impacket) are for *optional import/compare*, not the primary workflow.
+
+Related: [BOOFUZZ_PARITY.md](BOOFUZZ_PARITY.md) · [MODEL.md](MODEL.md) · [CASE_BUILDER.md](CASE_BUILDER.md) · [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md)

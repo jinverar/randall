@@ -14,6 +14,12 @@ const api = {
     if (!r.ok) throw new Error(data?.error || data?.message || `${r.status} ${path}`);
     return data;
   }),
+  del: async (path) => {
+    const r = await fetch(path, { method: 'DELETE' });
+    const data = r.status === 204 ? null : await r.json().catch(() => null);
+    if (!r.ok) throw new Error(data?.error || data?.message || `${r.status} ${path}`);
+    return data;
+  },
 };
 
 const HIDDEN_TARGETS = new Set(['cfpass']);
@@ -2281,6 +2287,136 @@ document.getElementById('proxy-replay-btn').addEventListener('click', async () =
   }
 });
 
+function openScareFloorTab() {
+  switchView('fuzz');
+  document.querySelector('.fuzz-subtab[data-fuzz-tab="cases"]')?.click();
+}
+
+function hexToSpaced(hex) {
+  const clean = String(hex || '').replace(/[^0-9a-fA-F]/g, '');
+  const parts = [];
+  for (let i = 0; i + 1 < clean.length; i += 2)
+    parts.push(clean.slice(i, i + 2));
+  return parts.join(' ');
+}
+
+async function importProxyHexToScareFloor(hexFull, pduName) {
+  openScareFloorTab();
+  await loadCaseBuilder().catch(() => {});
+  const kind = (caseProfile?.kind || '').toLowerCase();
+  if (kind !== 'tcp') {
+    const status = document.getElementById('proxy-scare-status');
+    if (status) {
+      status.textContent =
+        'Scare Floor needs a TCP Target profile selected (Working on project). Create/select TCP, then retry.';
+    }
+    document.getElementById('case-save-result').textContent =
+      'Proxy import: switch Working on project to a [tcp] target, then send again.';
+    focusCaseSessionPanel();
+    return false;
+  }
+  const spaced = hexToSpaced(hexFull);
+  const block = { op: 'hex', value: spaced, count: 16, format: 'u32le', role: 'fuzzable' };
+  ensureCaseSessionMode();
+  flushActiveSessionPdu();
+  const name = pduName || `proxy${caseSessionSteps.length + 1}`;
+  caseSessionSteps.push({
+    name,
+    readBanner: caseSessionSteps.length === 0,
+    expectResponse: '',
+    blocks: [block],
+  });
+  setActivePdu(caseSessionSteps.length - 1);
+  const recipeName = document.getElementById('case-recipe-name');
+  if (recipeName && !recipeName.value) recipeName.value = 'from-proxy';
+  document.getElementById('case-save-result').textContent =
+    `Imported proxy PDU “${name}” (${Math.floor(spaced.replace(/\s/g, '').length / 2)} bytes). Preview / Apply to Campaign.`;
+  focusCaseSessionPanel();
+  return true;
+}
+
+document.getElementById('proxy-to-scare')?.addEventListener('click', async () => {
+  const status = document.getElementById('proxy-scare-status');
+  if (!selectedProxyMessage) {
+    if (status) status.textContent = 'Select a captured message first.';
+    return;
+  }
+  try {
+    // Prefer edited hex textarea if present, else full payload from API
+    let hex = document.getElementById('proxy-hex')?.value?.trim() || '';
+    hex = hex.replace(/…/g, '').trim();
+    if (!hex || hex.length < 4) {
+      const detail = await api.get(`/api/proxy/messages/${encodeURIComponent(selectedProxyMessage)}`);
+      hex = detail.hexFull || '';
+    }
+    if (!hex) {
+      if (status) status.textContent = 'No payload bytes on this message.';
+      return;
+    }
+    const ok = await importProxyHexToScareFloor(hex, 'proxy');
+    if (status) status.textContent = ok ? 'Sent to Scare Floor (Network session).' : 'See Scare Floor tip — need TCP project.';
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  }
+});
+
+document.getElementById('proxy-to-scare-session')?.addEventListener('click', async () => {
+  const status = document.getElementById('proxy-scare-status');
+  try {
+    const messages = await api.get('/api/proxy/messages');
+    // Oldest first; client→server only (common labels: c2s, client, →)
+    const c2s = [...messages]
+      .filter((m) => {
+        const d = String(m.direction || '').toLowerCase();
+        // TcpMitmProxy labels: "client→target" / "target→client"
+        return d.includes('client→') || d.includes('client->') || d.includes('c2s');
+      })
+      .sort((a, b) => new Date(a.at) - new Date(b.at));
+    const list = c2s.length ? c2s : [...messages].sort((a, b) => new Date(a.at) - new Date(b.at));
+    if (!list.length) {
+      if (status) status.textContent = 'No proxy messages to import.';
+      return;
+    }
+    openScareFloorTab();
+    await loadCaseBuilder().catch(() => {});
+    if ((caseProfile?.kind || '').toLowerCase() !== 'tcp') {
+      if (status) status.textContent = 'Select a TCP Target profile on Scare Floor first.';
+      focusCaseSessionPanel();
+      return;
+    }
+    caseSessionSteps = [];
+    for (let i = 0; i < list.length; i++) {
+      const detail = await api.get(`/api/proxy/messages/${encodeURIComponent(list[i].id)}`);
+      const spaced = hexToSpaced(detail.hexFull || '');
+      if (!spaced) continue;
+      caseSessionSteps.push({
+        name: `m${i + 1}`,
+        readBanner: i === 0,
+        expectResponse: '',
+        blocks: [{ op: 'hex', value: spaced, count: 16, format: 'u32le', role: 'fuzzable' }],
+      });
+    }
+    if (!caseSessionSteps.length) {
+      if (status) status.textContent = 'Messages had no payload.';
+      return;
+    }
+    caseActivePdu = caseSessionSteps.length - 1;
+    caseSteps = mapApiSteps(caseSessionSteps[caseActivePdu].blocks);
+    const recipeName = document.getElementById('case-recipe-name');
+    if (recipeName) recipeName.value = 'from-proxy-session';
+    const mut = document.getElementById('case-mutate-step');
+    if (mut) mut.value = 'last';
+    renderCaseSessionSteps();
+    renderCaseSteps();
+    document.getElementById('case-save-result').textContent =
+      `Imported ${caseSessionSteps.length} PDU(s) from proxy. Preview all PDUs → Apply to Campaign.`;
+    focusCaseSessionPanel();
+    if (status) status.textContent = `Imported ${caseSessionSteps.length} PDU(s) to Scare Floor.`;
+  } catch (err) {
+    if (status) status.textContent = err.message;
+  }
+});
+
 async function pollStatus() {
   try {
     const s = await api.get('/api/fuzz/status');
@@ -2297,9 +2433,12 @@ async function pollStatus() {
   } catch { /* ignore */ }
 }
 
-/* —— Case builder (CyberChef / Sulley-style recipe → seed + dict) —— */
+/* —— Scare Floor (case recipes → seeds + dict → Campaign) —— */
 let caseOps = [];
 let caseSteps = [];
+/** @type {null | { name: string, readBanner: boolean, expectResponse: string, blocks: any[] }[]} */
+let caseSessionSteps = null;
+let caseActivePdu = 0;
 
 document.querySelectorAll('.fuzz-subtab').forEach((btn) => {
   btn.addEventListener('click', () => {
@@ -2435,6 +2574,171 @@ function collectCaseSteps() {
   }));
 }
 
+function isCaseSessionMode() {
+  return Array.isArray(caseSessionSteps) && caseSessionSteps.length > 0;
+}
+
+function mapBlocksForApi(blocks) {
+  return (blocks || []).map((s) => ({
+    op: s.op,
+    value: s.value || null,
+    count: s.count ?? null,
+    format: s.format || null,
+    role: s.role || 'fuzzable',
+  }));
+}
+
+function flushActiveSessionPdu() {
+  if (!isCaseSessionMode() || !caseSessionSteps[caseActivePdu]) return;
+  caseSessionSteps[caseActivePdu].blocks = mapApiSteps(collectCaseSteps());
+  const nameInp = document.querySelector(`#case-session-steps [data-pdu-name="${caseActivePdu}"]`);
+  if (nameInp) caseSessionSteps[caseActivePdu].name = nameInp.value.trim() || `PDU${caseActivePdu + 1}`;
+  const ban = document.querySelector(`#case-session-steps [data-pdu-banner="${caseActivePdu}"]`);
+  if (ban) caseSessionSteps[caseActivePdu].readBanner = !!ban.checked;
+}
+
+function collectSessionStepsPayload() {
+  flushActiveSessionPdu();
+  return caseSessionSteps.map((s) => ({
+    name: s.name || 'PDU',
+    readBanner: !!s.readBanner,
+    expectResponse: s.expectResponse || null,
+    blocks: mapBlocksForApi(s.blocks),
+  }));
+}
+
+function ensureCaseSessionMode() {
+  if (isCaseSessionMode()) return;
+  caseSessionSteps = [{
+    name: 'PDU1',
+    readBanner: true,
+    expectResponse: '',
+    blocks: mapApiSteps(collectCaseSteps()),
+  }];
+  caseActivePdu = 0;
+}
+
+function setActivePdu(index) {
+  if (!isCaseSessionMode()) return;
+  flushActiveSessionPdu();
+  caseActivePdu = Math.max(0, Math.min(index, caseSessionSteps.length - 1));
+  caseSteps = mapApiSteps(caseSessionSteps[caseActivePdu].blocks);
+  renderCaseSessionSteps();
+  renderCaseSteps();
+  const label = document.getElementById('case-active-pdu-label');
+  if (label) label.textContent = `— editing ${caseSessionSteps[caseActivePdu].name}`;
+}
+
+function syncCaseSessionPanel() {
+  const kind = (caseProfile?.kind || '').toLowerCase();
+  const panel = document.getElementById('case-session-panel');
+  const body = document.getElementById('case-session-body');
+  const hint = document.getElementById('case-session-hint');
+  const badge = document.getElementById('case-session-badge');
+  const unlocked = kind === 'tcp';
+  panel?.classList.toggle('case-session-locked', !unlocked);
+  panel?.classList.toggle('case-session-ready', unlocked);
+  if (body) body.classList.toggle('hidden', !unlocked);
+  if (badge) {
+    badge.textContent = unlocked ? 'TCP ready' : (kind ? `${kind} — switch to TCP` : 'TCP only');
+    badge.classList.toggle('ok', unlocked);
+  }
+  if (hint) {
+    hint.innerHTML = unlocked
+      ? 'Multi-message TCP on one connection — each PDU has its own blocks. Use <strong>+ PDU</strong> or <em>FTP login flow</em>, then <strong>Apply to Campaign</strong>.'
+      : `Multi-message TCP needs a <em>TCP</em> Target profile. You are on <strong>${escapeAttr(caseProfile?.project || kind || '—')} [${escapeAttr(kind || '?')}]</strong>.
+         In Step 1: create <strong>TCP network</strong> → Create target, or change <em>Working on project</em> to a <code>[tcp]</code> entry.`;
+  }
+  if (!unlocked) {
+    caseSessionSteps = null;
+    caseActivePdu = 0;
+    const label = document.getElementById('case-active-pdu-label');
+    if (label) label.textContent = '';
+  }
+  renderCaseSessionSteps();
+}
+
+function focusCaseSessionPanel() {
+  const panel = document.getElementById('case-session-panel');
+  if (!panel) return;
+  panel.classList.add('case-session-flash');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => panel.classList.remove('case-session-flash'), 1600);
+}
+
+function renderCaseSessionSteps() {
+  const el = document.getElementById('case-session-steps');
+  if (!el) return;
+  if (!isCaseSessionMode()) {
+    el.innerHTML = '<p class="hint">Single-blob recipe (default). Click <strong>+ PDU</strong> or load <em>FTP login flow</em> for multi-message TCP.</p>';
+    return;
+  }
+  el.innerHTML = caseSessionSteps.map((s, i) =>
+    `<div class="case-pdu ${i === caseActivePdu ? 'active' : ''}" data-pdu="${i}">
+      <button type="button" class="btn case-pdu-select ${i === caseActivePdu ? 'primary' : ''}" data-pdu-go="${i}">${i}</button>
+      <input type="text" data-pdu-name="${i}" value="${escapeAttr(s.name)}" title="PDU / sessionCommands name" />
+      <label class="checkbox"><input type="checkbox" data-pdu-banner="${i}" ${s.readBanner ? 'checked' : ''}/> banner</label>
+      <button type="button" class="btn" data-pdu-up="${i}" title="Move up" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button type="button" class="btn" data-pdu-down="${i}" title="Move down" ${i >= caseSessionSteps.length - 1 ? 'disabled' : ''}>↓</button>
+      <button type="button" class="btn" data-pdu-del="${i}" title="Remove PDU" ${caseSessionSteps.length <= 1 ? 'disabled' : ''}>×</button>
+    </div>`).join('');
+
+  el.querySelectorAll('[data-pdu-go]').forEach((btn) => {
+    btn.addEventListener('click', () => setActivePdu(Number(btn.dataset.pduGo)));
+  });
+  el.querySelectorAll('[data-pdu-name]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      const i = Number(inp.dataset.pduName);
+      if (caseSessionSteps[i]) caseSessionSteps[i].name = inp.value.trim() || `PDU${i + 1}`;
+      if (i === caseActivePdu) {
+        const label = document.getElementById('case-active-pdu-label');
+        if (label) label.textContent = `— editing ${caseSessionSteps[i].name}`;
+      }
+    });
+  });
+  el.querySelectorAll('[data-pdu-banner]').forEach((inp) => {
+    inp.addEventListener('change', () => {
+      const i = Number(inp.dataset.pduBanner);
+      if (caseSessionSteps[i]) caseSessionSteps[i].readBanner = !!inp.checked;
+    });
+  });
+  el.querySelectorAll('[data-pdu-up]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.pduUp);
+      if (i <= 0) return;
+      flushActiveSessionPdu();
+      [caseSessionSteps[i - 1], caseSessionSteps[i]] = [caseSessionSteps[i], caseSessionSteps[i - 1]];
+      if (caseActivePdu === i) caseActivePdu = i - 1;
+      else if (caseActivePdu === i - 1) caseActivePdu = i;
+      setActivePdu(caseActivePdu);
+    });
+  });
+  el.querySelectorAll('[data-pdu-down]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.pduDown);
+      if (i >= caseSessionSteps.length - 1) return;
+      flushActiveSessionPdu();
+      [caseSessionSteps[i + 1], caseSessionSteps[i]] = [caseSessionSteps[i], caseSessionSteps[i + 1]];
+      if (caseActivePdu === i) caseActivePdu = i + 1;
+      else if (caseActivePdu === i + 1) caseActivePdu = i;
+      setActivePdu(caseActivePdu);
+    });
+  });
+  el.querySelectorAll('[data-pdu-del]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const i = Number(btn.dataset.pduDel);
+      if (caseSessionSteps.length <= 1) return;
+      flushActiveSessionPdu();
+      caseSessionSteps.splice(i, 1);
+      if (caseActivePdu >= caseSessionSteps.length) caseActivePdu = caseSessionSteps.length - 1;
+      else if (caseActivePdu > i) caseActivePdu -= 1;
+      setActivePdu(caseActivePdu);
+    });
+  });
+  const label = document.getElementById('case-active-pdu-label');
+  if (label) label.textContent = `— editing ${caseSessionSteps[caseActivePdu].name}`;
+}
+
 let caseProfile = null;
 
 function syncCaseKindUi(kind) {
@@ -2474,6 +2778,7 @@ async function refreshCaseProject() {
   if (!name) return;
   const p = await api.get(`/api/case/project/${encodeURIComponent(name)}`);
   caseProfile = p;
+  syncCaseSessionPanel();
   const seedNames = (p.seeds || []).map((s) => s.fileName || s).slice(0, 8);
   const kind = (p.kind || '').toLowerCase();
   document.getElementById('case-project-tip').textContent =
@@ -2489,8 +2794,10 @@ async function refreshCaseProject() {
       `Campaign name: <strong>${escapeAttr(p.project)}</strong> — pick this under ` +
       `<em>Fuzz → Campaign → Target profile</em> after you save a seed. ` +
       (kind === 'file'
-        ? 'File-format target (no host/port).'
-        : `Network ${kind.toUpperCase()} → ${escapeAttr(p.host)}:${p.port}.`);
+        ? 'File-format target (no host/port). Network session PDUs need a <em>TCP</em> project.'
+        : kind === 'tcp'
+          ? `TCP → ${escapeAttr(p.host)}:${p.port}. Scroll to <strong>Network session (PDUs)</strong> in the Recipe column.`
+          : `Network ${kind.toUpperCase()} → ${escapeAttr(p.host)}:${p.port}.`);
   }
 
   syncCaseEditKindUi(kind);
@@ -2517,6 +2824,122 @@ async function refreshCaseProject() {
   }
   renderCaseMutators(p);
   renderCaseSeedList(p.seeds || []);
+  await refreshCaseRecipes(name);
+}
+
+async function refreshCaseRecipes(project) {
+  const el = document.getElementById('case-recipe-list');
+  if (!el || !project) return;
+  try {
+    const list = await api.get(`/api/case/recipes/${encodeURIComponent(project)}`);
+    renderCaseRecipeList(list || []);
+  } catch {
+    el.innerHTML = '<p class="hint">No recipes yet — Save recipe to keep an editable scare attempt.</p>';
+  }
+}
+
+function mapApiSteps(steps) {
+  return (steps || []).map((s) => ({
+    op: s.op,
+    value: s.value || '',
+    count: s.count ?? 16,
+    format: s.format || 'u32le',
+    role: s.role || 'fuzzable',
+  }));
+}
+
+function renderCaseRecipeList(recipes) {
+  const el = document.getElementById('case-recipe-list');
+  if (!el) return;
+  if (!recipes.length) {
+    el.innerHTML = '<p class="hint">No saved recipes — build blocks, name the recipe, Save recipe.</p>';
+    return;
+  }
+  el.innerHTML = recipes.map((r) =>
+    `<div class="case-recipe-row">
+      <button type="button" class="btn case-recipe-btn" data-recipe="${escapeAttr(r.name)}" title="${escapeAttr(r.description || '')}">
+        ${escapeAttr(r.name)} <span class="hex">${r.sessionStepCount > 0 ? `${r.sessionStepCount} PDUs · ` : ''}${r.stepCount} blocks</span>
+      </button>
+      <button type="button" class="btn" data-recipe-append="${escapeAttr(r.name)}" title="Append onto current recipe">Append</button>
+      <button type="button" class="btn" data-recipe-del="${escapeAttr(r.name)}" title="Delete recipe">×</button>
+    </div>`).join('');
+
+  el.querySelectorAll('[data-recipe]').forEach((btn) => {
+    btn.addEventListener('click', () => loadCaseRecipe(btn.dataset.recipe, false));
+  });
+  el.querySelectorAll('[data-recipe-append]').forEach((btn) => {
+    btn.addEventListener('click', () => loadCaseRecipe(btn.dataset.recipeAppend, true));
+  });
+  el.querySelectorAll('[data-recipe-del]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const project = document.getElementById('case-project').value;
+      if (!confirm(`Delete recipe “${btn.dataset.recipeDel}”?`)) return;
+      try {
+        const r = await api.del(
+          `/api/case/recipes/${encodeURIComponent(project)}/${encodeURIComponent(btn.dataset.recipeDel)}`);
+        document.getElementById('case-save-result').textContent = r.message || `Deleted ${btn.dataset.recipeDel}`;
+        await refreshCaseRecipes(project);
+      } catch (err) {
+        document.getElementById('case-save-result').textContent = err.message;
+      }
+    });
+  });
+}
+
+async function loadCaseRecipe(name, append) {
+  const project = document.getElementById('case-project').value;
+  try {
+    const r = await api.get(`/api/case/recipes/${encodeURIComponent(project)}/${encodeURIComponent(name)}`);
+    const session = r.sessionSteps || [];
+    if (!append && session.length > 0) {
+      caseSessionSteps = session.map((s, i) => ({
+        name: s.name || `PDU${i + 1}`,
+        readBanner: !!s.readBanner,
+        expectResponse: s.expectResponse || '',
+        blocks: mapApiSteps(s.blocks),
+      }));
+      caseActivePdu = 0;
+      caseSteps = mapApiSteps(caseSessionSteps[0].blocks);
+      const mut = document.getElementById('case-mutate-step');
+      if (mut && r.mutateStep) mut.value = r.mutateStep;
+    } else {
+      const mapped = mapApiSteps(r.steps);
+      if (append && isCaseSessionMode()) {
+        flushActiveSessionPdu();
+        caseSessionSteps[caseActivePdu].blocks = [
+          ...caseSessionSteps[caseActivePdu].blocks,
+          ...mapped,
+        ];
+        caseSteps = mapApiSteps(caseSessionSteps[caseActivePdu].blocks);
+      } else if (append) {
+        caseSteps = [...caseSteps, ...mapped];
+      } else {
+        caseSessionSteps = null;
+        caseSteps = mapped;
+      }
+    }
+    const nameEl = document.getElementById('case-recipe-name');
+    const descEl = document.getElementById('case-recipe-desc');
+    if (nameEl && !append) nameEl.value = r.name || name;
+    if (descEl && !append) descEl.value = r.description || '';
+    if (r.suggestedSeedName && !append) {
+      const seedEl = document.getElementById('case-seed-name');
+      if (seedEl) seedEl.value = r.suggestedSeedName;
+    }
+    renderCaseSessionSteps();
+    renderCaseSteps();
+    const nBlocks = isCaseSessionMode()
+      ? caseSessionSteps.reduce((n, s) => n + (s.blocks?.length || 0), 0)
+      : caseSteps.length;
+    document.getElementById('case-save-result').textContent = append
+      ? `Appended recipe “${r.name || name}” — ${nBlocks} blocks`
+      : isCaseSessionMode()
+        ? `Loaded session recipe “${r.name || name}” (${caseSessionSteps.length} PDUs, ${nBlocks} blocks)`
+        : `Loaded recipe “${r.name || name}” (${nBlocks} blocks)`;
+    document.getElementById('case-preview')?.click();
+  } catch (err) {
+    document.getElementById('case-save-result').textContent = err.message;
+  }
 }
 
 function renderCaseMutators(p) {
@@ -2567,18 +2990,396 @@ document.getElementById('case-project')?.addEventListener('change', () => {
   refreshCaseProject().catch(() => {});
 });
 
+/* —— Scare Floor byte editor (find/replace · invisibles · column) —— */
+const caseByte = {
+  mode: 'ascii', // ascii | hex
+  logical: '', // editor content without invisible markers
+  showInvisibles: false,
+  findFrom: 0,
+};
+
+const INVIS = {
+  space: '\u00B7', // ·
+  tab: '\u2192', // →
+  cr: '\u240D', // ␍
+  lf: '\u240A', // ␊
+  crlf: '\u2424', // ␤
+};
+
+function bytesFromHexFull(hex) {
+  const clean = String(hex || '').replace(/[^0-9a-fA-F]/g, '');
+  const out = new Uint8Array(Math.floor(clean.length / 2));
+  for (let i = 0; i < out.length; i++)
+    out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
+/** Latin-1 view of raw bytes (round-trip safe). Use Show invisibles for tab/space/CR/LF. */
+function bytesToAsciiLogical(bytes) {
+  const chunk = 0x8000;
+  let s = '';
+  for (let i = 0; i < bytes.length; i += chunk)
+    s += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+  return s;
+}
+
+function bytesToHexLogical(bytes) {
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+function asciiLogicalToBytes(text) {
+  const out = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++)
+    out[i] = text.charCodeAt(i) & 0xff;
+  return out;
+}
+
+function hexLogicalToBytes(text) {
+  return bytesFromHexFull(text);
+}
+
+function withInvisibles(logical) {
+  let out = '';
+  for (let i = 0; i < logical.length; i++) {
+    const c = logical[i];
+    if (c === '\r' && logical[i + 1] === '\n') {
+      out += INVIS.crlf;
+      i++;
+    } else if (c === '\r') out += INVIS.cr;
+    else if (c === '\n') out += INVIS.lf;
+    else if (c === '\t') out += INVIS.tab;
+    else if (c === ' ') out += INVIS.space;
+    else out += c;
+  }
+  return out;
+}
+
+function stripInvisibles(display) {
+  let out = '';
+  for (let i = 0; i < display.length; i++) {
+    const c = display[i];
+    if (c === INVIS.crlf) out += '\r\n';
+    else if (c === INVIS.cr) out += '\r';
+    else if (c === INVIS.lf) out += '\n';
+    else if (c === INVIS.tab) out += '\t';
+    else if (c === INVIS.space) out += ' ';
+    else out += c;
+  }
+  return out;
+}
+
+function caseByteEditorEl() {
+  return document.getElementById('case-byte-editor');
+}
+
+function readCaseByteLogicalFromDom() {
+  const el = caseByteEditorEl();
+  if (!el) return caseByte.logical;
+  const raw = el.value;
+  caseByte.logical = caseByte.showInvisibles ? stripInvisibles(raw) : raw;
+  return caseByte.logical;
+}
+
+function paintCaseByteEditor() {
+  const el = caseByteEditorEl();
+  if (!el) return;
+  const start = el.selectionStart;
+  const end = el.selectionEnd;
+  const painted = caseByte.showInvisibles ? withInvisibles(caseByte.logical) : caseByte.logical;
+  if (el.value !== painted) el.value = painted;
+  el.classList.toggle('case-invis-on', caseByte.showInvisibles);
+  try {
+    el.setSelectionRange(Math.min(start, painted.length), Math.min(end, painted.length));
+  } catch { /* ignore */ }
+  document.getElementById('case-invis-legend')?.classList.toggle('hidden', !caseByte.showInvisibles);
+}
+
+function setCaseByteFromBytes(bytes) {
+  caseByte.logical = caseByte.mode === 'hex'
+    ? bytesToHexLogical(bytes)
+    : bytesToAsciiLogical(bytes);
+  paintCaseByteEditor();
+}
+
+function getCaseByteBytes() {
+  const logical = readCaseByteLogicalFromDom();
+  return caseByte.mode === 'hex' ? hexLogicalToBytes(logical) : asciiLogicalToBytes(logical);
+}
+
+function setCaseByteStatus(msg) {
+  const el = document.getElementById('case-byte-status');
+  if (el) el.textContent = msg || '';
+}
+
+function caseByteFind(nextOnly) {
+  const needle = document.getElementById('case-find')?.value ?? '';
+  if (!needle) {
+    setCaseByteStatus('Enter find text.');
+    return -1;
+  }
+  const logical = readCaseByteLogicalFromDom();
+  const from = nextOnly ? caseByte.findFrom : 0;
+  let idx = logical.indexOf(needle, from);
+  if (idx < 0 && from > 0) idx = logical.indexOf(needle, 0);
+  if (idx < 0) {
+    setCaseByteStatus(`Not found: ${needle}`);
+    return -1;
+  }
+  caseByte.findFrom = idx + needle.length;
+  paintCaseByteEditor();
+  const el = caseByteEditorEl();
+  // Map logical index → display index when invisibles on
+  let dStart = idx;
+  let dEnd = idx + needle.length;
+  if (caseByte.showInvisibles) {
+    dStart = withInvisibles(logical.slice(0, idx)).length;
+    dEnd = withInvisibles(logical.slice(0, idx + needle.length)).length;
+  }
+  el.focus();
+  el.setSelectionRange(dStart, dEnd);
+  setCaseByteStatus(`Found at ${idx}`);
+  return idx;
+}
+
+function caseByteReplaceOne() {
+  const needle = document.getElementById('case-find')?.value ?? '';
+  const repl = document.getElementById('case-replace')?.value ?? '';
+  if (!needle) {
+    setCaseByteStatus('Enter find text.');
+    return;
+  }
+  const logical = readCaseByteLogicalFromDom();
+  let idx = -1;
+  // Prefer current selection when it matches the find string
+  const el = caseByteEditorEl();
+  if (el && el.selectionStart !== el.selectionEnd) {
+    let a = el.selectionStart;
+    let b = el.selectionEnd;
+    if (caseByte.showInvisibles) {
+      a = stripInvisibles(el.value.slice(0, a)).length;
+      b = stripInvisibles(el.value.slice(0, b)).length;
+    }
+    if (logical.slice(a, b) === needle) idx = a;
+  }
+  if (idx < 0) {
+    idx = logical.indexOf(needle, caseByte.findFrom);
+    if (idx < 0) idx = logical.indexOf(needle, 0);
+  }
+  if (idx < 0) {
+    setCaseByteStatus(`Not found: ${needle}`);
+    return;
+  }
+  caseByte.logical = logical.slice(0, idx) + repl + logical.slice(idx + needle.length);
+  caseByte.findFrom = idx + repl.length;
+  paintCaseByteEditor();
+  const dStart = caseByte.showInvisibles
+    ? withInvisibles(caseByte.logical.slice(0, idx)).length
+    : idx;
+  const dEnd = caseByte.showInvisibles
+    ? withInvisibles(caseByte.logical.slice(0, caseByte.findFrom)).length
+    : caseByte.findFrom;
+  el.focus();
+  el.setSelectionRange(dStart, dEnd);
+  setCaseByteStatus('Replaced 1 occurrence');
+}
+
+function caseByteReplaceAll() {
+  const needle = document.getElementById('case-find')?.value ?? '';
+  const repl = document.getElementById('case-replace')?.value ?? '';
+  if (!needle) {
+    setCaseByteStatus('Enter find text.');
+    return;
+  }
+  const logical = readCaseByteLogicalFromDom();
+  if (!logical.includes(needle)) {
+    setCaseByteStatus(`Not found: ${needle}`);
+    return;
+  }
+  let count = 0;
+  let i = 0;
+  let out = '';
+  while (i < logical.length) {
+    if (logical.startsWith(needle, i)) {
+      out += repl;
+      i += needle.length;
+      count++;
+    } else {
+      out += logical[i];
+      i++;
+    }
+  }
+  caseByte.logical = out;
+  caseByte.findFrom = 0;
+  paintCaseByteEditor();
+  setCaseByteStatus(`Replaced ${count} occurrence${count === 1 ? '' : 's'}`);
+}
+
+function caseByteApplyColumn() {
+  const start = Math.max(0, Number(document.getElementById('case-col-start')?.value) || 0);
+  const endRaw = Number(document.getElementById('case-col-end')?.value);
+  const end = Number.isFinite(endRaw) ? Math.max(start, endRaw) : start + 1;
+  const value = document.getElementById('case-col-value')?.value ?? '';
+  const logical = readCaseByteLogicalFromDom();
+  const lines = logical.split('\n');
+  const next = lines.map((line) => {
+    // Preserve trailing \r if present from CRLF split oddities
+    const hasCr = line.endsWith('\r');
+    const body = hasCr ? line.slice(0, -1) : line;
+    const left = body.slice(0, start);
+    const pad = left.length < start ? ' '.repeat(start - left.length) : '';
+    const right = body.slice(end);
+    const mid = value;
+    return left + pad + mid + right + (hasCr ? '\r' : '');
+  });
+  caseByte.logical = next.join('\n');
+  paintCaseByteEditor();
+  setCaseByteStatus(`Column ${start}–${end} applied on ${lines.length} line(s)`);
+}
+
+/** Ctrl+Alt typing: overwrite one character at the caret column on selected lines (or all lines). */
+function caseByteCtrlAltInsert(ch) {
+  const el = caseByteEditorEl();
+  if (!el) return;
+  const logical = readCaseByteLogicalFromDom();
+  const lines = logical.split('\n');
+
+  const toLogicalOffset = (domOff) =>
+    (caseByte.showInvisibles ? stripInvisibles(el.value.slice(0, domOff)).length : domOff);
+
+  const offsetToLineCol = (off) => {
+    let pos = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const bodyLen = lines[i].replace(/\r$/, '').length;
+      if (off <= pos + bodyLen || i === lines.length - 1)
+        return { line: i, col: Math.max(0, Math.min(off - pos, bodyLen)) };
+      pos += lines[i].length + 1; // + \n
+    }
+    return { line: lines.length - 1, col: 0 };
+  };
+
+  const caret = offsetToLineCol(toLogicalOffset(el.selectionStart));
+  const col = caret.col;
+  let fromLine = 0;
+  let toLine = lines.length - 1;
+  if (el.selectionStart !== el.selectionEnd) {
+    fromLine = offsetToLineCol(toLogicalOffset(el.selectionStart)).line;
+    toLine = offsetToLineCol(toLogicalOffset(el.selectionEnd)).line;
+    if (fromLine > toLine) [fromLine, toLine] = [toLine, fromLine];
+  }
+
+  const next = lines.map((line, i) => {
+    if (i < fromLine || i > toLine) return line;
+    const hasCr = line.endsWith('\r');
+    const body = hasCr ? line.slice(0, -1) : line;
+    const left = body.slice(0, col);
+    const pad = left.length < col ? ' '.repeat(col - left.length) : '';
+    const base = left + pad;
+    return base.slice(0, col) + ch + body.slice(col + 1) + (hasCr ? '\r' : '');
+  });
+  caseByte.logical = next.join('\n');
+  paintCaseByteEditor();
+  const shown = ch === ' ' ? 'space' : ch === '\t' ? 'tab' : ch;
+  setCaseByteStatus(`Ctrl+Alt: '${shown}' at column ${col} on lines ${fromLine + 1}–${toLine + 1}`);
+}
+
+function loadCaseByteEditorFromPreview(preview) {
+  const bytes = bytesFromHexFull(preview.hexFull || '');
+  setCaseByteFromBytes(bytes);
+  document.getElementById('case-preview-ascii').textContent = preview.asciiPreview || '';
+  document.getElementById('case-preview-hex').textContent = preview.hexPreview || '';
+  setCaseByteStatus(`${preview.length} bytes loaded into editor (${caseByte.mode})`);
+}
+
 document.getElementById('case-preview')?.addEventListener('click', async () => {
   try {
     const preview = await api.post('/api/case/preview', { steps: collectCaseSteps() });
     document.getElementById('case-preview-meta').textContent =
       `${preview.length} bytes` + ((preview.notes || []).length ? ` — ${preview.notes.join(' ')}` : '');
-    document.getElementById('case-preview-ascii').textContent = preview.asciiPreview || '';
-    document.getElementById('case-preview-hex').textContent = preview.hexPreview || '';
+    loadCaseByteEditorFromPreview(preview);
     document.getElementById('case-preview-hints').innerHTML =
       (preview.dictionaryHints || []).map((h) => `<li>${escapeAttr(h)}</li>`).join('') ||
       '<li class="hint">(none — mark text/delim as fuzzable)</li>';
   } catch (err) {
     document.getElementById('case-preview-meta').textContent = err.message;
+  }
+});
+
+document.querySelectorAll('.case-byte-mode').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const bytes = getCaseByteBytes();
+    caseByte.mode = btn.dataset.byteMode || 'ascii';
+    document.querySelectorAll('.case-byte-mode').forEach((b) =>
+      b.classList.toggle('active', b === btn));
+    setCaseByteFromBytes(bytes);
+    setCaseByteStatus(`Mode: ${caseByte.mode}`);
+  });
+});
+
+document.getElementById('case-show-invisibles')?.addEventListener('change', (ev) => {
+  readCaseByteLogicalFromDom();
+  caseByte.showInvisibles = !!ev.target.checked;
+  paintCaseByteEditor();
+});
+
+document.getElementById('case-column-mode')?.addEventListener('change', (ev) => {
+  document.getElementById('case-column-row')?.classList.toggle('hidden', !ev.target.checked);
+  setCaseByteStatus(ev.target.checked
+    ? 'Column mode on — set cols + Apply, or Ctrl+Alt+key in the editor'
+    : '');
+});
+
+document.getElementById('case-find-next')?.addEventListener('click', () => caseByteFind(true));
+document.getElementById('case-replace-one')?.addEventListener('click', () => caseByteReplaceOne());
+document.getElementById('case-replace-all')?.addEventListener('click', () => caseByteReplaceAll());
+document.getElementById('case-col-apply')?.addEventListener('click', () => caseByteApplyColumn());
+
+document.getElementById('case-byte-refresh')?.addEventListener('click', () => {
+  document.getElementById('case-preview')?.click();
+});
+
+document.getElementById('case-byte-apply')?.addEventListener('click', () => {
+  const bytes = getCaseByteBytes();
+  if (!bytes.length) {
+    setCaseByteStatus('Editor is empty — Preview first or type bytes.');
+    return;
+  }
+  const hex = bytesToHexLogical(bytes);
+  caseSteps = [{ op: 'hex', value: hex, role: 'fuzzable' }];
+  if (isCaseSessionMode() && caseSessionSteps[caseActivePdu]) {
+    caseSessionSteps[caseActivePdu].blocks = mapApiSteps(caseSteps);
+    renderCaseSessionSteps();
+  }
+  renderCaseSteps();
+  setCaseByteStatus(
+    isCaseSessionMode()
+      ? `Applied ${bytes.length} bytes → PDU ${caseSessionSteps[caseActivePdu].name}`
+      : `Applied ${bytes.length} bytes → recipe (one hex block). Preview again to verify.`);
+});
+
+caseByteEditorEl()?.addEventListener('input', () => {
+  readCaseByteLogicalFromDom();
+});
+
+caseByteEditorEl()?.addEventListener('keydown', (ev) => {
+  if (ev.key === 'F3') {
+    ev.preventDefault();
+    caseByteFind(true);
+    return;
+  }
+  if (ev.ctrlKey && !ev.altKey && (ev.key === 'h' || ev.key === 'H')) {
+    ev.preventDefault();
+    document.getElementById('case-find')?.focus();
+    return;
+  }
+  if (ev.ctrlKey && !ev.altKey && (ev.key === 'f' || ev.key === 'F')) {
+    ev.preventDefault();
+    document.getElementById('case-find')?.focus();
+    return;
+  }
+  // Ctrl+Alt + printable → column write (Notepad++-style multi-line edit)
+  if (ev.ctrlKey && ev.altKey && ev.key.length === 1 && !ev.metaKey) {
+    ev.preventDefault();
+    caseByteCtrlAltInsert(ev.key);
   }
 });
 
@@ -2640,9 +3441,10 @@ document.getElementById('case-new-file-format')?.addEventListener('change', () =
   const fmt = document.getElementById('case-new-file-format').value;
   const ext = document.getElementById('case-new-ext');
   if (!ext) return;
-  if (fmt === 'file-xml' && (ext.value === '.bin' || !ext.value)) ext.value = '.xml';
+  if (fmt === 'file-xml' && (ext.value === '.bin' || !ext.value || ext.value === '.wav')) ext.value = '.xml';
+  if (fmt === 'file-wav') ext.value = '.wav';
   if (fmt === 'file-framed' || fmt === 'file-magic' || fmt === 'file-blank') {
-    if (!ext.value || ext.value === '.xml') ext.value = '.bin';
+    if (!ext.value || ext.value === '.xml' || ext.value === '.wav') ext.value = '.bin';
   }
 });
 
@@ -2685,19 +3487,41 @@ document.getElementById('case-new-create')?.addEventListener('click', async () =
     });
     resultEl.textContent = r.message;
     document.getElementById('case-save-result').textContent = r.message;
-    await loadTargets();
+    const targets = await loadTargets();
     const caseSel = document.getElementById('case-project');
     const sanitized = name.trim().toLowerCase().replace(/[^a-z0-9_\-]+/g, '-').replace(/^-|-$/g, '');
-    if (caseSel && [...caseSel.options].some((o) => o.value === sanitized))
-      caseSel.value = sanitized;
+    // Prefer path basename, then sanitized name, then match from /api/targets
+    let pick = sanitized;
+    if (r.path) {
+      const base = String(r.path).replace(/\\/g, '/').split('/').pop()?.replace(/\.ya?ml$/i, '');
+      if (base) pick = base;
+    }
+    if (caseSel) {
+      const names = new Set(targets.map((t) => t.name));
+      if (!names.has(pick) && names.has(sanitized)) pick = sanitized;
+      if (names.has(pick)) caseSel.value = pick;
+      else if (caseSel.options.length) {
+        // last resort: option whose label starts with sanitized
+        const opt = [...caseSel.options].find((o) => o.value === sanitized || o.textContent.startsWith(sanitized));
+        if (opt) caseSel.value = opt.value;
+      }
+    }
     await refreshCaseProject();
-    // Apply matching seed preset for file starters
+    // Collapse create form so Recipe / Network session is visible
+    const createDetails = document.getElementById('case-create-details');
+    if (createDetails) createDetails.open = false;
+
     if (isFile) {
       const fmt = document.getElementById('case-new-file-format')?.value;
       if (fmt === 'file-xml') document.getElementById('case-preset-xml')?.click();
       else if (fmt === 'file-framed') document.getElementById('case-preset-file-framed')?.click();
       else if (fmt === 'file-magic') document.getElementById('case-preset-file-magic')?.click();
+      else if (fmt === 'file-wav') document.getElementById('case-preset-wav')?.click();
       else document.getElementById('case-preset-file-blank')?.click();
+    } else if (kind === 'tcp') {
+      document.getElementById('case-save-result').textContent =
+        `${r.message} — Network session (PDUs) is unlocked below. Try FTP login flow.`;
+      focusCaseSessionPanel();
     }
   } catch (err) {
     resultEl.textContent = err.message;
@@ -2728,32 +3552,238 @@ document.getElementById('case-edit-save')?.addEventListener('click', async () =>
   }
 });
 
+/** Last uploaded sample (base64) — for “Save exact sample”. */
+let caseUploadRaw = null;
+
+function applyCaseImportResult(r, sourceLabel) {
+  caseSteps = (r.suggestedSteps || []).map((s) => ({
+    op: s.op,
+    value: s.value || '',
+    count: s.count ?? 16,
+    format: s.format || 'u32le',
+    role: s.role || 'fuzzable',
+  }));
+  renderCaseSteps();
+  if (r.suggestedSeedName) {
+    const nameEl = document.getElementById('case-seed-name');
+    if (nameEl) nameEl.value = r.suggestedSeedName;
+  }
+  const notes = (r.notes || []).join(' ');
+  const msg =
+    `${sourceLabel}: ${r.length} bytes → ${caseSteps.length} block(s)` +
+    (r.detectedFormat ? ` · ${r.detectedFormat}` : '') +
+    (notes ? ` — ${notes}` : '');
+  const saveEl = document.getElementById('case-save-result');
+  if (saveEl) saveEl.textContent = msg;
+  const up = document.getElementById('case-upload-status');
+  if (up) up.textContent = msg;
+  // Auto-preview so the template is visible immediately
+  document.getElementById('case-preview')?.click();
+}
+
 async function importCaseBytes(asHex) {
   const raw = document.getElementById('case-import-text').value;
   if (!raw.trim()) return;
+  caseUploadRaw = null;
+  document.getElementById('case-save-exact').disabled = true;
   try {
     const body = asHex ? { hex: raw } : { text: raw };
     const r = await api.post('/api/case/import', body);
-    caseSteps = (r.suggestedSteps || []).map((s) => ({
-      op: s.op,
-      value: s.value || '',
-      count: s.count ?? 16,
-      format: s.format || 'u32le',
-      role: s.role || 'fuzzable',
-    }));
-    renderCaseSteps();
-    document.getElementById('case-save-result').textContent =
-      `Imported ${r.length} bytes → ${caseSteps.length} block(s)`;
+    applyCaseImportResult(r, 'Imported');
   } catch (err) {
     document.getElementById('case-save-result').textContent = err.message;
   }
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const i = dataUrl.indexOf('base64,');
+      resolve(i >= 0 ? dataUrl.slice(i + 7) : dataUrl);
+    };
+    reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function importCaseFile(file) {
+  if (!file) return;
+  const status = document.getElementById('case-upload-status');
+  const exactBtn = document.getElementById('case-save-exact');
+  if (status) status.textContent = `Reading ${file.name} (${file.size} bytes)…`;
+  try {
+    const base64 = await fileToBase64(file);
+    caseUploadRaw = { fileName: file.name, base64, size: file.size };
+    if (exactBtn) exactBtn.disabled = false;
+    const r = await api.post('/api/case/import', { base64, fileName: file.name });
+    applyCaseImportResult(r, `Template from ${file.name}`);
+  } catch (err) {
+    if (status) status.textContent = err.message;
+    document.getElementById('case-save-result').textContent = err.message;
+    caseUploadRaw = null;
+    if (exactBtn) exactBtn.disabled = true;
+  }
+}
+
+document.getElementById('case-save-recipe')?.addEventListener('click', async () => {
+  const project = document.getElementById('case-project')?.value;
+  if (!project) {
+    document.getElementById('case-save-result').textContent = 'Pick a Target profile first (Step 1).';
+    return;
+  }
+  const name = document.getElementById('case-recipe-name')?.value?.trim();
+  if (!name) {
+    document.getElementById('case-save-result').textContent = 'Enter a recipe name (e.g. overflow-trun).';
+    return;
+  }
+  const sessionSteps = isCaseSessionMode() ? collectSessionStepsPayload() : null;
+  const steps = sessionSteps
+    ? sessionSteps.flatMap((s) => s.blocks)
+    : collectCaseSteps();
+  if (!steps.length) {
+    document.getElementById('case-save-result').textContent = 'Recipe is empty — add blocks first.';
+    return;
+  }
+  try {
+    const r = await api.post('/api/case/recipes', {
+      project,
+      name,
+      description: document.getElementById('case-recipe-desc')?.value?.trim() || null,
+      suggestedSeedName: document.getElementById('case-seed-name')?.value?.trim() || null,
+      steps,
+      sessionSteps,
+      mutateStep: sessionSteps ? (document.getElementById('case-mutate-step')?.value || 'last') : null,
+      kind: sessionSteps ? 'session' : 'blob',
+    });
+    document.getElementById('case-save-result').textContent = r.message;
+    await refreshCaseRecipes(project);
+  } catch (err) {
+    document.getElementById('case-save-result').textContent = err.message;
+  }
+});
+
+document.getElementById('case-pdu-add')?.addEventListener('click', () => {
+  ensureCaseSessionMode();
+  flushActiveSessionPdu();
+  const n = caseSessionSteps.length + 1;
+  caseSessionSteps.push({
+    name: `PDU${n}`,
+    readBanner: false,
+    expectResponse: '',
+    blocks: [{ op: 'text', value: 'payload', count: 16, format: 'u32le', role: 'fuzzable' }],
+  });
+  setActivePdu(caseSessionSteps.length - 1);
+  document.getElementById('case-save-result').textContent =
+    `Added ${caseSessionSteps[caseActivePdu].name} — edit its blocks below.`;
+});
+
+document.getElementById('case-preview-session')?.addEventListener('click', async () => {
+  if (!isCaseSessionMode()) {
+    document.getElementById('case-preview')?.click();
+    return;
+  }
+  try {
+    const preview = await api.post('/api/case/preview-session', {
+      sessionSteps: collectSessionStepsPayload(),
+    });
+    const box = document.getElementById('case-session-preview');
+    if (box) {
+      box.innerHTML = (preview.steps || []).map((s) =>
+        `<div class="case-pdu-preview">
+          <strong>${escapeAttr(s.name)}</strong> <span class="hex">${s.length}B</span>
+          <pre class="ascii-preview">${escapeAttr(s.asciiPreview || '')}</pre>
+          <pre class="hex-preview">${escapeAttr(s.hexPreview || '')}</pre>
+        </div>`).join('') || '<p class="hint">No PDUs</p>';
+    }
+    document.getElementById('case-preview-meta').textContent =
+      `Session: ${preview.stepCount} PDUs · ${preview.totalLength} bytes` +
+      ((preview.notes || []).length ? ` — ${preview.notes.join('; ')}` : '');
+    // Load active PDU into byte editor
+    const active = (preview.steps || [])[caseActivePdu] || (preview.steps || [])[0];
+    if (active) {
+      loadCaseByteEditorFromPreview({
+        length: active.length,
+        hexFull: active.hexFull,
+        asciiPreview: active.asciiPreview,
+        hexPreview: active.hexPreview,
+      });
+    }
+    document.getElementById('case-preview-hints').innerHTML =
+      (preview.dictionaryHints || []).map((h) => `<li>${escapeAttr(h)}</li>`).join('') ||
+      '<li class="hint">(none)</li>';
+  } catch (err) {
+    document.getElementById('case-save-result').textContent = err.message;
+  }
+});
+
+document.getElementById('case-apply-session')?.addEventListener('click', async () => {
+  const project = document.getElementById('case-project')?.value;
+  if (!project) {
+    document.getElementById('case-save-result').textContent = 'Pick a Target profile first (Step 1).';
+    return;
+  }
+  ensureCaseSessionMode();
+  const sessionSteps = collectSessionStepsPayload();
+  if (!sessionSteps.length) {
+    document.getElementById('case-save-result').textContent = 'No PDUs to apply.';
+    return;
+  }
+  const flowName = document.getElementById('case-recipe-name')?.value?.trim() || 'scare-flow';
+  try {
+    const r = await api.post('/api/case/apply-session', {
+      project,
+      flowName,
+      sessionSteps,
+      mutateStep: document.getElementById('case-mutate-step')?.value || 'last',
+      sessionFlowBias: 0.5,
+    });
+    document.getElementById('case-save-result').textContent = r.message;
+    await refreshCaseProject();
+  } catch (err) {
+    document.getElementById('case-save-result').textContent = err.message;
+  }
+});
+
 document.getElementById('case-import-hex')?.addEventListener('click', () => importCaseBytes(true));
 document.getElementById('case-import-text-btn')?.addEventListener('click', () => importCaseBytes(false));
 
+document.getElementById('case-upload-file')?.addEventListener('change', (e) => {
+  const file = e.target.files?.[0];
+  importCaseFile(file).catch(() => {});
+  e.target.value = '';
+});
+
+document.getElementById('case-save-exact')?.addEventListener('click', async () => {
+  if (!caseUploadRaw) return;
+  const project = document.getElementById('case-project')?.value;
+  if (!project) {
+    document.getElementById('case-save-result').textContent = 'Pick a Target profile first (Step 1).';
+    return;
+  }
+  const fileName = document.getElementById('case-seed-name')?.value?.trim() || caseUploadRaw.fileName;
+  try {
+    const r = await api.post('/api/case/save-raw-seed', {
+      project,
+      fileName,
+      base64: caseUploadRaw.base64,
+    });
+    document.getElementById('case-save-result').textContent = r.message;
+    document.getElementById('case-upload-status').textContent = r.message;
+    await refreshCaseProject();
+  } catch (err) {
+    document.getElementById('case-save-result').textContent = err.message;
+  }
+});
+
 document.getElementById('case-clear')?.addEventListener('click', () => {
   caseSteps = [];
+  caseSessionSteps = null;
+  caseActivePdu = 0;
+  const prev = document.getElementById('case-session-preview');
+  if (prev) prev.innerHTML = '';
+  renderCaseSessionSteps();
   renderCaseSteps();
 });
 
@@ -2795,14 +3825,74 @@ document.getElementById('case-preset-binary')?.addEventListener('click', () => {
 });
 
 document.getElementById('case-preset-ftp')?.addEventListener('click', () => {
+  caseSessionSteps = null;
   caseSteps = [
     { op: 'static', value: 'USER', role: 'static' },
     { op: 'delim', value: ' ', role: 'fuzzable' },
     { op: 'text', value: 'anonymous', role: 'fuzzable' },
     { op: 'crlf', role: 'static' },
   ];
+  renderCaseSessionSteps();
   renderCaseSteps();
 });
+
+function loadFtpLoginFlowPreset() {
+  if ((caseProfile?.kind || '').toLowerCase() !== 'tcp') {
+    document.getElementById('case-save-result').textContent =
+      'FTP login flow needs a TCP Target profile — create/select one in Step 1 first.';
+    focusCaseSessionPanel();
+    return;
+  }
+  caseSessionSteps = [
+    {
+      name: 'USER',
+      readBanner: true,
+      expectResponse: '',
+      blocks: [
+        { op: 'static', value: 'USER', role: 'static' },
+        { op: 'delim', value: ' ', role: 'static' },
+        { op: 'text', value: 'anonymous', role: 'fuzzable' },
+        { op: 'crlf', role: 'static' },
+      ],
+    },
+    {
+      name: 'PASS',
+      readBanner: false,
+      expectResponse: '',
+      blocks: [
+        { op: 'static', value: 'PASS', role: 'static' },
+        { op: 'delim', value: ' ', role: 'static' },
+        { op: 'text', value: 'ftp', role: 'fuzzable' },
+        { op: 'crlf', role: 'static' },
+      ],
+    },
+    {
+      name: 'STOR',
+      readBanner: false,
+      expectResponse: '',
+      blocks: [
+        { op: 'static', value: 'STOR ', role: 'static' },
+        { op: 'text', value: 'file.bin', role: 'fuzzable' },
+        { op: 'crlf', role: 'static' },
+        { op: 'repeat', value: 'A', count: 64, role: 'fuzzable' },
+      ],
+    },
+  ];
+  caseActivePdu = 2;
+  caseSteps = mapApiSteps(caseSessionSteps[caseActivePdu].blocks);
+  const nameEl = document.getElementById('case-recipe-name');
+  if (nameEl && !nameEl.value) nameEl.value = 'ftp-login-stor';
+  const mut = document.getElementById('case-mutate-step');
+  if (mut) mut.value = 'last';
+  renderCaseSessionSteps();
+  renderCaseSteps();
+  document.getElementById('case-save-result').textContent =
+    'FTP login flow — 3 PDUs. Preview all PDUs, then Apply to Campaign.';
+  focusCaseSessionPanel();
+}
+
+document.getElementById('case-preset-ftp-flow')?.addEventListener('click', () => loadFtpLoginFlowPreset());
+document.getElementById('case-preset-ftp-flow-inline')?.addEventListener('click', () => loadFtpLoginFlowPreset());
 
 document.getElementById('case-preset-xml')?.addEventListener('click', () => {
   caseSteps = [
@@ -2852,6 +3942,23 @@ document.getElementById('case-preset-file-blank')?.addEventListener('click', () 
     { op: 'text', value: 'edit-me', role: 'fuzzable' },
   ];
   document.getElementById('case-seed-name').value = 'custom.bin';
+  renderCaseSteps();
+});
+
+document.getElementById('case-preset-wav')?.addEventListener('click', () => {
+  // Minimal PCM WAV: RIFF/WAVE + fmt (16) + data (4 silence samples)
+  caseSteps = [
+    { op: 'hex', value: '52 49 46 46', role: 'static' }, // RIFF
+    { op: 'hex', value: '24 00 00 00', role: 'fuzzable' }, // chunk size
+    { op: 'hex', value: '57 41 56 45', role: 'static' }, // WAVE
+    { op: 'hex', value: '66 6D 74 20', role: 'static' }, // fmt
+    { op: 'hex', value: '10 00 00 00', role: 'static' }, // fmt size
+    { op: 'hex', value: '01 00 01 00 44 AC 00 00 88 58 01 00 02 00 10 00', role: 'static' },
+    { op: 'hex', value: '64 61 74 61', role: 'static' }, // data
+    { op: 'hex', value: '04 00 00 00', role: 'fuzzable' }, // data size
+    { op: 'hex', value: '00 00 00 00', role: 'fuzzable' }, // PCM samples
+  ];
+  document.getElementById('case-seed-name').value = 'sample.wav';
   renderCaseSteps();
 });
 

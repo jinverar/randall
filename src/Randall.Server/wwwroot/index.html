@@ -254,7 +254,7 @@
         <p>Run campaigns against local or remote services — build seeds like CyberChef / Sulley blocks.</p>
         <div class="fuzz-subtabs" role="tablist">
           <button type="button" class="fuzz-subtab active" data-fuzz-tab="campaign">Campaign</button>
-          <button type="button" class="fuzz-subtab" data-fuzz-tab="cases">Case builder</button>
+          <button type="button" class="fuzz-subtab" data-fuzz-tab="cases" title="Scare Floor — build and reuse case recipes">Scare Floor</button>
         </div>
       </header>
 
@@ -322,17 +322,19 @@
 
       <div id="fuzz-tab-cases" class="fuzz-tab-panel hidden">
         <div class="case-guide panel">
-          <h2>How to use Case builder</h2>
+          <h2>Scare Floor <span class="hex">— case recipes</span></h2>
+          <p class="hint">Prep scare attempts (test cases), save reusable recipes, queue them as seeds, then run the shift on <strong>Campaign</strong>.</p>
           <ol class="case-guide-steps">
             <li><strong>Create or pick a target</strong> — the project <code>name</code> becomes the entry in
-              <em>Fuzz → Campaign → Target profile</em> (the campaign dropdown). After you create one, refresh/look there — it will be listed by that name.</li>
-            <li><strong>Build a seed</strong> — stack blocks (or use a preset / import). Think Sulley: static pieces stay put; fuzzable text becomes dictionary hints.</li>
-            <li><strong>Preview → Save as seed</strong> — writes into that project’s <code>seeds/</code> folder and registers it in the YAML.</li>
-            <li><strong>Tune mutators</strong> — turn on <code>dictionary</code> if you saved tokens, then switch to <strong>Campaign</strong>, select your Target profile, and Start.</li>
+              <em>Fuzz → Campaign → Target profile</em>.</li>
+            <li><strong>Build a recipe</strong> — stack blocks, use a preset, or <strong>upload a valid sample</strong>. Save the recipe to reuse or combine later.</li>
+            <li><strong>Queue seeds</strong> — Preview → Save as seed (or Save exact sample). Multiple seeds = multiple cases in one campaign.</li>
+            <li><strong>Tune mutators → Campaign → Start</strong> — the floor runs every queued seed through the mutators.</li>
           </ol>
           <p class="hint">Network targets talk to host:port. File-format targets feed a temp file to an executable (no host/port).
-            More detail: <button type="button" class="linkish" data-help="CASE_BUILDER.md">Case builder help</button>
-            · <button type="button" class="linkish" data-help="CUSTOM_TARGETS.md">Custom targets</button></p>
+            More detail: <button type="button" class="linkish" data-help="CASE_BUILDER.md">Scare Floor help</button>
+            · <button type="button" class="linkish" data-help="CUSTOM_TARGETS.md">Custom targets</button>
+            · <button type="button" class="linkish" data-help="LORE.md">Lore</button></p>
         </div>
 
         <!-- Step 1: Target -->
@@ -404,7 +406,8 @@
 
             <fieldset id="case-new-file" class="case-fieldset case-fieldset-disabled" disabled>
               <legend>File format</legend>
-              <p class="hint">Host/port are not used. Randfuzz writes each case to a temp file and passes it as <code>{file}</code>.</p>
+              <p class="hint">Host/port are not used. Randfuzz writes each case to a temp file and passes it as <code>{file}</code>.
+                After create, use <strong>Upload sample → template</strong> in step 2 to turn a valid file into a fuzz seed.</p>
               <label>Parser / executable
                 <input type="text" id="case-new-exe" placeholder="../targets/local/myparser.exe" />
               </label>
@@ -418,6 +421,7 @@
                     <option value="file-xml">XML / text document</option>
                     <option value="file-framed">Length-prefixed binary frame</option>
                     <option value="file-magic">Magic header + body</option>
+                    <option value="file-wav">WAV audio (RIFF)</option>
                   </select>
                 </label>
               </div>
@@ -466,18 +470,30 @@
               <button type="button" class="btn" id="case-preset-http">HTTP GET</button>
               <button type="button" class="btn" id="case-preset-overflow">Overflow pad</button>
               <button type="button" class="btn" id="case-preset-ftp">FTP USER</button>
+              <button type="button" class="btn" id="case-preset-ftp-flow" title="Multi-PDU: USER → PASS → STOR">FTP login flow</button>
               <button type="button" class="btn" id="case-preset-binary">Binary frame</button>
             </div>
             <div id="case-preset-file" class="btn-row wrap case-preset-row hidden">
               <button type="button" class="btn" id="case-preset-xml">Custom XML</button>
               <button type="button" class="btn" id="case-preset-file-framed">Length frame</button>
               <button type="button" class="btn" id="case-preset-file-magic">Magic + body</button>
+              <button type="button" class="btn" id="case-preset-wav" title="Minimal WAV-shaped recipe">WAV audio</button>
               <button type="button" class="btn" id="case-preset-file-blank">Blank custom</button>
             </div>
             <button type="button" class="btn" id="case-clear">Clear recipe</button>
             <h3>Blocks</h3>
             <div id="case-op-buttons" class="case-op-buttons"></div>
-            <h3>Import bytes</h3>
+            <h3>Upload sample → template</h3>
+            <p class="hint">Drop a valid file of your format. Randfuzz sniffs magic / length / text and builds an editable recipe (great for file-format targets).</p>
+            <label class="case-upload-label">
+              <input type="file" id="case-upload-file" />
+              <span class="btn">Choose sample file…</span>
+            </label>
+            <p id="case-upload-status" class="hint"></p>
+            <div class="btn-row wrap">
+              <button type="button" class="btn primary" id="case-save-exact" disabled title="Write the original bytes as a seed (recommended for large/binary samples)">Save exact sample</button>
+            </div>
+            <h3>Or paste bytes</h3>
             <label>Paste hex or text
               <textarea id="case-import-text" rows="3" placeholder="Valid sample of your format…"></textarea>
             </label>
@@ -490,19 +506,61 @@
           <div class="panel case-recipe">
             <h2>Recipe</h2>
             <p class="hint">Order matters. Mark strings as <em>fuzzable</em> so Save dict can harvest tokens.</p>
+
+            <div id="case-session-panel" class="case-session-panel case-session-locked">
+              <h3>Network session (PDUs) <span id="case-session-badge" class="case-session-badge">TCP only</span></h3>
+              <p id="case-session-hint" class="hint">
+                Multi-message TCP on one connection. <strong>Working on project</strong> must be a
+                <em>TCP</em> target (not file-format). Create one in Step 1 or switch the dropdown above.
+              </p>
+              <div id="case-session-body" class="case-session-body">
+                <div id="case-session-steps" class="case-session-steps"></div>
+                <div class="btn-row wrap">
+                  <button type="button" class="btn" id="case-pdu-add">+ PDU</button>
+                  <button type="button" class="btn" id="case-preset-ftp-flow-inline" title="USER → PASS → STOR">FTP login flow</button>
+                  <label class="case-mutate-label">Mutate
+                    <select id="case-mutate-step">
+                      <option value="last">last PDU</option>
+                      <option value="all">all PDUs</option>
+                      <option value="0">PDU 0 only</option>
+                      <option value="0,1">PDU 0+1</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="btn-row wrap">
+                  <button type="button" class="btn" id="case-preview-session">Preview all PDUs</button>
+                  <button type="button" class="btn primary" id="case-apply-session" title="Write seeds + sessionFlows into project YAML">Apply to Campaign</button>
+                </div>
+                <div id="case-session-preview" class="case-session-preview"></div>
+              </div>
+            </div>
+
+            <h3 id="case-blocks-heading">Blocks <span id="case-active-pdu-label" class="hint-inline"></span></h3>
             <div id="case-steps" class="case-steps"></div>
             <label>
               Seed file name
               <input type="text" id="case-seed-name" placeholder="my_case.bin" />
             </label>
+            <label>
+              Recipe name <span class="hint-inline">(Scare Floor library)</span>
+              <input type="text" id="case-recipe-name" placeholder="overflow-trun" />
+            </label>
+            <label>
+              Recipe note
+              <input type="text" id="case-recipe-desc" placeholder="Optional — what this scare attempt is for" />
+            </label>
             <div class="btn-row wrap">
               <button type="button" class="btn primary" id="case-preview">Preview</button>
+              <button type="button" class="btn primary" id="case-save-recipe" title="Save editable block list for reuse">Save recipe</button>
               <button type="button" class="btn primary" id="case-save-seed">Save as seed</button>
               <button type="button" class="btn" id="case-save-dict">Save dict tokens</button>
             </div>
             <p id="case-save-result" class="hint"></p>
+            <h3>Recipes on this project</h3>
+            <p class="hint">Load replaces the current recipe. <em>Append</em> stacks another recipe onto it (combine cases).</p>
+            <div id="case-recipe-list" class="case-recipe-list"></div>
             <h3>Seeds on this project</h3>
-            <p class="hint">Click a seed to load it back into the recipe for editing.</p>
+            <p class="hint">Queued scare inputs — click to rebuild a recipe from bytes (best-effort).</p>
             <div id="case-seed-list" class="case-seed-list"></div>
           </div>
 
@@ -510,15 +568,51 @@
             <div class="case-step-heading compact">
               <span class="case-step-num">3</span>
               <div>
-                <h2>Preview &amp; mutators</h2>
-                <p class="hint">After saving a seed, open Campaign and pick this Target profile to fuzz it.</p>
+                <h2>Byte editor &amp; mutators</h2>
+                <p class="hint">Notepad-style find/replace · show invisibles · Ctrl+Alt column edit. Apply writes back into the recipe.</p>
               </div>
             </div>
             <p id="case-preview-meta" class="hint">Add blocks, then Preview.</p>
-            <p class="label">ASCII</p>
-            <pre id="case-preview-ascii" class="ascii-preview"></pre>
-            <p class="label">Hex</p>
-            <pre id="case-preview-hex" class="hex-preview"></pre>
+
+            <div class="case-byte-toolbar">
+              <div class="btn-row wrap">
+                <button type="button" class="btn case-byte-mode active" data-byte-mode="ascii">ASCII</button>
+                <button type="button" class="btn case-byte-mode" data-byte-mode="hex">Hex</button>
+                <label class="checkbox case-byte-check" title="Show spaces, tabs, CR/LF">
+                  <input type="checkbox" id="case-show-invisibles" /> Show invisibles
+                </label>
+                <label class="checkbox case-byte-check" title="Ctrl+Alt — edit the same columns on every selected line">
+                  <input type="checkbox" id="case-column-mode" /> Column mode
+                </label>
+              </div>
+              <div class="case-find-row">
+                <input type="text" id="case-find" placeholder="Find…" />
+                <input type="text" id="case-replace" placeholder="Replace…" />
+                <button type="button" class="btn" id="case-find-next" title="Find next (F3)">Find</button>
+                <button type="button" class="btn" id="case-replace-one" title="Replace selection / next">Replace</button>
+                <button type="button" class="btn" id="case-replace-all">Replace all</button>
+              </div>
+              <div class="case-column-row hidden" id="case-column-row">
+                <label>Col start <input type="number" id="case-col-start" value="0" min="0" /></label>
+                <label>Col end <input type="number" id="case-col-end" value="1" min="0" /></label>
+                <input type="text" id="case-col-value" placeholder="New text / hex for those columns" />
+                <button type="button" class="btn" id="case-col-apply">Apply to lines</button>
+              </div>
+              <p class="hint case-invis-legend hidden" id="case-invis-legend">
+                Invisibles: <code>·</code> space · <code>→</code> tab · <code>␍</code> CR · <code>␊</code> LF · <code>␤</code> CRLF
+              </p>
+            </div>
+            <textarea id="case-byte-editor" class="case-byte-editor hex-edit" spellcheck="false"
+              placeholder="Preview to load bytes — edit, then Apply to recipe." rows="12"></textarea>
+            <div class="btn-row wrap">
+              <button type="button" class="btn primary" id="case-byte-apply" title="Replace recipe with edited buffer as one fuzzable block">Apply to recipe</button>
+              <button type="button" class="btn" id="case-byte-refresh">Reload from recipe</button>
+            </div>
+            <p id="case-byte-status" class="hint"></p>
+
+            <pre id="case-preview-ascii" class="hidden" aria-hidden="true"></pre>
+            <pre id="case-preview-hex" class="hidden" aria-hidden="true"></pre>
+
             <p class="label">Dictionary hints (from recipe)</p>
             <ul id="case-preview-hints" class="case-hints"></ul>
             <p class="label">Dictionary on project</p>
@@ -553,9 +647,14 @@
           <h2>Captured traffic</h2>
           <div id="proxy-messages" class="table-wrap"></div>
           <div id="proxy-replay" class="crash-detail hidden">
-            <h3>Replay message</h3>
+            <h3>Replay / export</h3>
             <label>Edit hex (optional) <textarea id="proxy-hex" rows="3" class="hex-edit"></textarea></label>
-            <button type="button" class="btn primary" id="proxy-replay-btn">Replay to target</button>
+            <div class="btn-row wrap">
+              <button type="button" class="btn primary" id="proxy-replay-btn">Replay to target</button>
+              <button type="button" class="btn" id="proxy-to-scare" title="Open Scare Floor with this payload as a PDU">Send to Scare Floor</button>
+              <button type="button" class="btn" id="proxy-to-scare-session" title="Import all client→server messages as a multi-PDU session">All C→S → session</button>
+            </div>
+            <p id="proxy-scare-status" class="hint"></p>
           </div>
         </div>
       </div>

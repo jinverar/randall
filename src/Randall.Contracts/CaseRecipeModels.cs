@@ -96,10 +96,84 @@ public sealed record CaseUpdateProjectRequest(
 public sealed record CaseImportBytesRequest(
     string? Hex = null,
     string? Text = null,
-    string? Base64 = null);
+    string? Base64 = null,
+    /// <summary>Optional original filename — used for suggested seed name / format hints.</summary>
+    string? FileName = null);
 
 public sealed record CaseImportBytesDto(
     int Length,
     string HexPreview,
     string AsciiPreview,
-    IReadOnlyList<CaseStepDto> SuggestedSteps);
+    IReadOnlyList<CaseStepDto> SuggestedSteps,
+    string? DetectedFormat = null,
+    IReadOnlyList<string>? Notes = null,
+    string? SuggestedSeedName = null);
+
+/// <summary>Write an uploaded sample byte-for-byte as a project seed (exact file, not recipe-rendered).</summary>
+public sealed record CaseSaveRawSeedRequest(
+    string Project,
+    string FileName,
+    string Base64,
+    bool AlsoImportRecipe = true);
+
+/// <summary>One PDU / message in a multi-step network recipe (maps to sessionCommands).</summary>
+public sealed record CaseSessionStepDto(
+    string Name,
+    IReadOnlyList<CaseStepDto> Blocks,
+    bool ReadBanner = false,
+    string? ExpectResponse = null);
+
+/// <summary>Saved Scare Floor recipe (editable block list — not the rendered seed bytes).</summary>
+public sealed record CaseRecipeInfoDto(
+    string Name,
+    string? Description,
+    int StepCount,
+    DateTimeOffset UpdatedAt,
+    string RelativePath,
+    int SessionStepCount = 0,
+    string? Kind = null);
+
+public sealed record CaseRecipeDto(
+    string Name,
+    string? Description,
+    IReadOnlyList<CaseStepDto> Steps,
+    DateTimeOffset UpdatedAt,
+    string? SuggestedSeedName = null,
+    IReadOnlyList<CaseSessionStepDto>? SessionSteps = null,
+    string? MutateStep = null,
+    string? Kind = null);
+
+public sealed record CaseSaveRecipeRequest(
+    string Project,
+    string Name,
+    IReadOnlyList<CaseStepDto> Steps,
+    string? Description = null,
+    string? SuggestedSeedName = null,
+    IReadOnlyList<CaseSessionStepDto>? SessionSteps = null,
+    string? MutateStep = null,
+    string? Kind = null);
+
+public sealed record CaseSessionPreviewRequest(
+    IReadOnlyList<CaseSessionStepDto> SessionSteps);
+
+public sealed record CaseSessionStepPreviewDto(
+    string Name,
+    int Length,
+    string HexPreview,
+    string AsciiPreview,
+    string HexFull,
+    IReadOnlyList<string> DictionaryHints);
+
+public sealed record CaseSessionPreviewDto(
+    int StepCount,
+    int TotalLength,
+    IReadOnlyList<CaseSessionStepPreviewDto> Steps,
+    IReadOnlyList<string> DictionaryHints,
+    IReadOnlyList<string> Notes);
+
+public sealed record CaseApplySessionRequest(
+    string Project,
+    string FlowName,
+    IReadOnlyList<CaseSessionStepDto> SessionSteps,
+    string MutateStep = "last",
+    double SessionFlowBias = 0.5);

@@ -8,6 +8,16 @@ public sealed record CapturedMessageDto(
     string HexPreview,
     string? CommandTag);
 
+/// <summary>Full payload for Scare Floor import / replay edit.</summary>
+public sealed record CapturedMessageDetailDto(
+    Guid Id,
+    string Direction,
+    DateTimeOffset At,
+    int Length,
+    string HexFull,
+    string AsciiPreview,
+    string? CommandTag);
+
 public sealed record ProxyStartRequest(
     string TargetHost = "127.0.0.1",
     int TargetPort = 9999,

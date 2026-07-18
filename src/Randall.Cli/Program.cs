@@ -1094,6 +1094,10 @@ static int RunCase(string[] args)
               randall case preview [--static T] [--text T] [--delim T] [--hex H]
                                    [--repeat C] [--crlf] [--null] [--cyclic N]
               randall case save-seed -p <project> [--file name.bin] [same preview flags…]
+              randall case from-file -p <project> --file sample.bin [--exact]
+                    Upload a sample → print template recipe; --exact also saves the raw seed
+              randall case recipes -p <project>               List Scare Floor recipes
+              randall case recipes -p <project> --load NAME   Print a saved recipe
               randall case mutators -p <project>              List mutators
               randall case mutators -p <project> --set a,b,c  Update YAML mutators
 
@@ -1114,6 +1118,8 @@ static int RunCase(string[] args)
             "update" or "edit" => CaseUpdate(rest),
             "preview" => CasePreview(rest),
             "save-seed" or "seed" => CaseSaveSeed(rest),
+            "from-file" or "import-file" or "template" => CaseFromFile(rest),
+            "recipes" or "recipe" => CaseRecipes(rest),
             "mutators" or "mutator" => CaseMutators(rest),
             _ => Unknown($"case {args[0]}"),
         };
@@ -1245,6 +1251,105 @@ static int CaseSaveSeed(string[] args)
     var r = CaseRecipeStore.SaveSeed(new CaseSaveSeedRequest(project, file ?? "", steps, true));
     Console.WriteLine(r.Message);
     return r.Ok ? 0 : 1;
+}
+
+/// <summary>Build a fuzz template recipe from a sample file; optionally save the exact bytes as a seed.</summary>
+static int CaseFromFile(string[] args)
+{
+    string? project = null, file = null, outName = null;
+    var exact = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if ((args[i] is "-p" or "--project") && i + 1 < args.Length)
+            project = args[++i];
+        else if ((args[i] is "--file" or "-f" or "-i") && i + 1 < args.Length)
+            file = args[++i];
+        else if ((args[i] is "--out" or "-o" or "--name") && i + 1 < args.Length)
+            outName = args[++i];
+        else if (args[i] is "--exact" or "--raw" or "--save")
+            exact = true;
+    }
+
+    if (string.IsNullOrWhiteSpace(file) || !File.Exists(file))
+    {
+        Console.Error.WriteLine("Usage: randall case from-file -p <project> --file sample.bin [--exact] [--out name.bin]");
+        return 1;
+    }
+
+    var bytes = File.ReadAllBytes(file);
+    var imported = CaseRecipeEngine.SuggestFromBytes(bytes, Path.GetFileName(file));
+    Console.WriteLine($"Format: {imported.DetectedFormat ?? "unknown"} · {imported.Length} bytes · {imported.SuggestedSteps.Count} block(s)");
+    foreach (var n in imported.Notes ?? [])
+        Console.WriteLine($"  note: {n}");
+    Console.WriteLine();
+    Console.WriteLine("Template recipe:");
+    foreach (var s in imported.SuggestedSteps)
+    {
+        var bits = new List<string> { s.Op };
+        if (!string.IsNullOrWhiteSpace(s.Value))
+            bits.Add(s.Value!.Length > 48 ? s.Value[..48] + "…" : s.Value);
+        if (s.Count is int c)
+            bits.Add($"count={c}");
+        if (!string.IsNullOrWhiteSpace(s.Format))
+            bits.Add($"fmt={s.Format}");
+        bits.Add($"role={s.Role}");
+        Console.WriteLine("  " + string.Join(" ", bits));
+    }
+
+    if (!exact)
+    {
+        Console.WriteLine();
+        Console.WriteLine("Tip: add --exact to write the original file into the project's seeds/ folder.");
+        return 0;
+    }
+
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("--exact requires -p <project>");
+        return 1;
+    }
+
+    var seedName = outName ?? imported.SuggestedSeedName ?? Path.GetFileName(file);
+    var saved = CaseRecipeStore.SaveRawSeed(new CaseSaveRawSeedRequest(
+        project,
+        seedName!,
+        Convert.ToBase64String(bytes)));
+    Console.WriteLine();
+    Console.WriteLine(saved.Message);
+    return saved.Ok ? 0 : 1;
+}
+
+static int CaseRecipes(string[] args)
+{
+    string? project = null, load = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if ((args[i] is "-p" or "--project") && i + 1 < args.Length)
+            project = args[++i];
+        else if ((args[i] is "--load" or "-l") && i + 1 < args.Length)
+            load = args[++i];
+    }
+
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("Usage: randall case recipes -p <project> [--load name]");
+        return 1;
+    }
+
+    if (!string.IsNullOrWhiteSpace(load))
+    {
+        var recipe = CaseRecipeStore.LoadRecipe(project, load);
+        Console.WriteLine($"{recipe.Name} — {recipe.Steps.Count} blocks — {recipe.UpdatedAt:u}");
+        if (!string.IsNullOrWhiteSpace(recipe.Description))
+            Console.WriteLine(recipe.Description);
+        foreach (var s in recipe.Steps)
+            Console.WriteLine($"  {s.Op} {(s.Value ?? "")} role={s.Role}");
+        return 0;
+    }
+
+    foreach (var r in CaseRecipeStore.ListRecipes(project))
+        Console.WriteLine($"{r.Name,-24} {r.StepCount,3} blocks  {r.UpdatedAt:yyyy-MM-dd HH:mm}  {r.Description}");
+    return 0;
 }
 
 static int CaseMutators(string[] args)

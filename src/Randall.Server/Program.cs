@@ -313,6 +313,106 @@ app.MapPost("/api/case/import", (CaseImportBytesRequest request) =>
     }
 });
 
+app.MapPost("/api/case/save-raw-seed", (CaseSaveRawSeedRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.SaveRawSeed(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/case/recipes/{project}", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    try
+    {
+        return Results.Ok(CaseRecipeStore.ListRecipes(project));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/case/recipes/{project}/{name}", (string project, string name) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    try
+    {
+        return Results.Ok(CaseRecipeStore.LoadRecipe(project, name));
+    }
+    catch (FileNotFoundException)
+    {
+        return Results.NotFound();
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/recipes", (CaseSaveRecipeRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.SaveRecipe(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/preview-session", (CaseSessionPreviewRequest request) =>
+{
+    try
+    {
+        return Results.Ok(CaseRecipeStore.PreviewSession(request.SessionSteps ?? []));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/case/apply-session", (CaseApplySessionRequest request) =>
+{
+    if (WebTargetFilter.IsHiddenProject(request.Project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.ApplySessionRecipe(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapDelete("/api/case/recipes/{project}/{name}", (string project, string name) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(CaseRecipeStore.DeleteRecipe(project, name));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapPost("/api/case/mutators", (CaseMutatorsRequest request) =>
 {
     if (WebTargetFilter.IsHiddenProject(request.Project))
@@ -384,6 +484,22 @@ app.MapGet("/api/proxy/messages", (ProxyManager proxy) =>
         m.Data.Length,
         string.Join(' ', m.Data.Take(32).Select(b => b.ToString("X2"))) + (m.Data.Length > 32 ? " …" : ""),
         m.CommandTag)).OrderByDescending(m => m.At));
+
+app.MapGet("/api/proxy/messages/{id:guid}", (Guid id, ProxyManager proxy) =>
+{
+    var m = proxy.Messages().FirstOrDefault(x => x.Id == id);
+    if (m is null)
+        return Results.NotFound(new { error = "Message not found" });
+    var ascii = new string(m.Data.Select(b => b is >= 32 and <= 126 ? (char)b : '.').ToArray());
+    return Results.Ok(new CapturedMessageDetailDto(
+        m.Id,
+        m.Direction,
+        m.At,
+        m.Data.Length,
+        Convert.ToHexString(m.Data),
+        ascii.Length > 256 ? ascii[..256] + "…" : ascii,
+        m.CommandTag));
+});
 
 app.MapPost("/api/proxy/start", (ProxyStartRequest request, ProxyManager proxy) =>
 {

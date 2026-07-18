@@ -8,7 +8,8 @@ public static class DocsCatalog
     public static readonly (string Path, string Title, string Group)[] Index =
     [
         ("CUSTOM_TARGETS.md", "Custom targets (YAML → Target profile)", "Getting started"),
-        ("CASE_BUILDER.md", "Case builder — seeds & dictionaries", "Getting started"),
+        ("CASE_BUILDER.md", "Scare Floor — recipes, seeds & dictionaries", "Getting started"),
+        ("LORE.md", "Mascot lore (Randall)", "Project"),
         ("TARGETS.md", "Lab targets", "Getting started"),
         ("FUZZING.md", "Fuzzing techniques & mutators", "Fuzzing"),
         ("STALKING.md", "Stalking bugs", "Stalk & scream"),
