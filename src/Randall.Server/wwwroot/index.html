@@ -358,6 +358,10 @@
             pktmon capture (ETL bookend — built-in; often needs elevation)
           </label>
           <label class="checkbox">
+            <input type="checkbox" id="fuzz-etw" />
+            ETW/WPR capture (light FileIO/Registry/DiskIO/Network → fuzz-etw.etl — often needs elevation)
+          </label>
+          <label class="checkbox">
             <input type="checkbox" id="fuzz-debugview" />
             DebugView capture (OutputDebugString → debugview.log — needs Dbgview.exe)
           </label>

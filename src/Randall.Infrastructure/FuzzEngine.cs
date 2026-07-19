@@ -88,6 +88,7 @@ public sealed class FuzzEngine
         ProcmonCapture? procmon = null;
         TcpvconCapture? tcpvcon = null;
         PktmonCapture? pktmon = null;
+        EtwCapture? etw = null;
         ProcDumpCrashArm? procdumpArm = null;
         DebugViewCapture? debugView = null;
         SysinternalsSnapshots? sysinternalsSnap = null;
@@ -95,11 +96,12 @@ public sealed class FuzzEngine
         var wantTcpvcon = options.TcpvconCapture ?? project.Fuzz.TcpvconCapture;
         var wantProcdump = options.ProcdumpOnCrash ?? project.Fuzz.ProcdumpOnCrash;
         var wantPktmon = options.PktmonCapture ?? project.Fuzz.PktmonCapture;
+        var wantEtw = options.EtwCapture ?? project.Fuzz.EtwCapture;
         var wantDebugView = options.DebugViewCapture ?? project.Fuzz.DebugViewCapture;
         var wantSysinternalsSnap = options.SysinternalsSnapshots ?? project.Fuzz.SysinternalsSnapshots;
         var wantStringsOnCrash = options.StringsOnCrash ?? project.Fuzz.StringsOnCrash;
         string? runDir = journal?.RunDirectory;
-        if (!dryRun && (wantProcmon || wantTcpvcon || wantPktmon || wantDebugView || wantSysinternalsSnap))
+        if (!dryRun && (wantProcmon || wantTcpvcon || wantPktmon || wantEtw || wantDebugView || wantSysinternalsSnap))
         {
             runDir ??= Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir),
                 $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
@@ -149,6 +151,16 @@ public sealed class FuzzEngine
             else
                 FuzzAnalystLog.Warn(progress,
                     $"pktmon capture skipped: {pktmon?.LastError ?? "pktmon not available"}");
+        }
+
+        if (!dryRun && wantEtw && runDir is not null)
+        {
+            etw = EtwCapture.TryStart(runDir);
+            if (etw?.IsRunning == true)
+                FuzzAnalystLog.Info(progress, $"ETW/WPR capture → {etw.EtlPath}");
+            else
+                FuzzAnalystLog.Warn(progress,
+                    $"ETW/WPR capture skipped: {etw?.LastError ?? "wpr not available"}");
         }
 
         if (!dryRun && wantDebugView && runDir is not null)
@@ -1018,6 +1030,15 @@ public sealed class FuzzEngine
                 else if (pktmon.LastError is not null)
                     Console.WriteLine($"pktmon: {pktmon.LastError}");
                 pktmon.Dispose();
+            }
+            if (etw is not null)
+            {
+                etw.Stop();
+                if (File.Exists(etw.EtlPath))
+                    Console.WriteLine($"ETW/WPR saved: {etw.EtlPath}");
+                else if (etw.LastError is not null)
+                    Console.WriteLine($"ETW/WPR: {etw.LastError}");
+                etw.Dispose();
             }
             runtime?.Dispose();
             if (inProcess is not null)

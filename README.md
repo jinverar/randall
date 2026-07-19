@@ -175,7 +175,7 @@ Start·stop·restart for long-lived targets, remote lab agent, crash artifact pa
 
 - [docs/TARGET_RUNTIME.md](docs/TARGET_RUNTIME.md) · [docs/LAB_AGENT.md](docs/LAB_AGENT.md) · [TARGET_RUNTIME_README.txt](TARGET_RUNTIME_README.txt)
 
-**Sysinternals tiers (Procmon, snapshots + SigCheck/AccessChk, Strings on crash, TCPVCon, DebugView, pktmon, ProcDump / Scream, Page Heap) + workstation layout:** [docs/RECORDING.md](docs/RECORDING.md)
+**Observation stack (Procmon, ETW/WPR, snapshots, TCPVCon, DebugView, pktmon, Scream/PageHeap, + Frida/API Monitor companions) + workstation layout:** [docs/RECORDING.md](docs/RECORDING.md)
 
 ### In-process harnesses (persistent / cold / forkServer)
 

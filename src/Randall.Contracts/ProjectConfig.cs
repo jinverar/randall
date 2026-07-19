@@ -212,6 +212,11 @@ public sealed class FuzzConfig
     /// <summary>Start Windows pktmon packet capture for the duration of the fuzz run.</summary>
     public bool PktmonCapture { get; set; }
     /// <summary>
+    /// Start Windows Performance Recorder (WPR) ETW capture for the run
+    /// (light FileIO/Registry/DiskIO/Network → fuzz-etw.etl). Soft-fails if unavailable.
+    /// </summary>
+    public bool EtwCapture { get; set; }
+    /// <summary>
     /// Start Sysinternals DebugView (Dbgview.exe) OutputDebugString capture for the run.
     /// </summary>
     public bool DebugViewCapture { get; set; }

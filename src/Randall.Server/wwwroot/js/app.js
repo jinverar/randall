@@ -2421,6 +2421,7 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
       tcpvconCapture: document.getElementById('fuzz-tcpvcon')?.checked === true,
       procdumpOnCrash: document.getElementById('fuzz-procdump')?.checked === true,
       pktmonCapture: document.getElementById('fuzz-pktmon')?.checked === true,
+      etwCapture: document.getElementById('fuzz-etw')?.checked === true,
       debugViewCapture: document.getElementById('fuzz-debugview')?.checked === true,
       sysinternalsSnapshots: document.getElementById('fuzz-sysinternals-snap')?.checked === true,
       stringsOnCrash: document.getElementById('fuzz-strings-crash')?.checked === true,

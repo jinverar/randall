@@ -186,6 +186,22 @@ public static class LabDoctor
                     : "pktmon not found — optional packet bookends disabled");
         }
 
+        var wprExe = EtwCapture.DiscoverExecutable();
+        if (project.Fuzz.EtwCapture)
+        {
+            Add("etw", wprExe is not null ? "ok" : "warn",
+                wprExe is not null
+                    ? $"EtwCapture enabled → {wprExe} (often needs elevation)"
+                    : "EtwCapture enabled but wpr.exe not found");
+        }
+        else
+        {
+            Add("etw", wprExe is not null ? "ok" : "warn",
+                wprExe is not null
+                    ? $"{wprExe} (set fuzz.etwCapture: true for WPR ETL bookends; may need admin)"
+                    : "wpr.exe not found — optional ETW bookends disabled");
+        }
+
         var dbgviewExe = DebugViewCapture.DiscoverExecutable();
         if (project.Fuzz.DebugViewCapture)
         {
