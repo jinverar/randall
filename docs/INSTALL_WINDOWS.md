@@ -67,7 +67,22 @@ Expect `Build succeeded`.
 
 ---
 
-## 5. Build lab targets
+## 5. Install gcc (MinGW) for Scream / native helpers
+
+ScreamCrash native helpers (`scream_crash.exe`, `scream_av.dll`) need **gcc** on `PATH`. The install script prefers **winget** [WinLibs MinGW](https://winlibs.com/) (`BrechtSanders.WinLibs.POSIX.UCRT`), then Strawberry Perl, then Chocolatey if present.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1
+gcc --version
+```
+
+Idempotent — safe to re-run. Use `-Skip` to bail out without installing. If winget is missing, install [App Installer](https://apps.microsoft.com/detail/9nblggh4nns1) / update Windows, or install from [winlibs.com](https://winlibs.com/) / [strawberryperl.com](https://strawberryperl.com/) and open a **new** shell.
+
+`build-all-lab-targets.ps1` calls this automatically when gcc is missing (unless you pass `-SkipGcc`).
+
+---
+
+## 6. Build lab targets
 
 Many Windows 10/11 images ship with PowerShell **ExecutionPolicy = Restricted**, so this fails:
 
@@ -81,6 +96,14 @@ Use **Bypass for this file only** (recommended):
 powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
 ```
 
+That installs gcc if needed, then compiles vulnserver, vulnhttp, vulnftp, ScreamCrash, and other practice targets under `targets\`.
+
+Skip gcc/Scream (vulnserver-only style):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1 -SkipGcc
+```
+
 Or allow your own scripts for this user (one-time):
 
 ```powershell
@@ -88,13 +111,9 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\scripts\build-all-lab-targets.ps1
 ```
 
-Compiles vulnserver, vulnhttp, vulnftp, and other practice targets under `targets\`.
-
-**ScreamCrash (optional):** needs **gcc** from [MinGW-w64](https://www.mingw-w64.org/) or [Strawberry Perl](https://strawberryperl.com/) on `PATH`. Without gcc the build **warns and skips** Scream — that is fine for normal lab fuzzing (vulnserver, etc.). To add Scream later: install gcc, then re-run `powershell -ExecutionPolicy Bypass -File .\scripts\build-screamcrash.ps1`.
-
 ---
 
-## 6. (Optional) DynamoRIO — coverage stalking
+## 7. (Optional) DynamoRIO — coverage stalking
 
 Needed only for `+N edges` / coverage-guided corpus. **Crashes and basic fuzzing work without it.** The Windows zip is large; on a slow VM network the download can take a long time.
 
@@ -126,18 +145,18 @@ Test-Path "$env:DYNAMORIO_HOME\bin64\drrun.exe"   # should be True
 
 ---
 
-## 7. Doctor (preflight)
+## 8. Doctor (preflight)
 
 ```powershell
 dotnet run --project src\Randall.Cli -- doctor -c projects\vulnserver.yaml
 ```
 
 Expect `[✓] project`, `[✓] target`, and **Ready to fuzz**.  
-`[!] dynamorio` is OK if you skipped step 6.
+`[!] dynamorio` is OK if you skipped step 7.
 
 ---
 
-## 8. Start the web UI
+## 9. Start the web UI
 
 ```powershell
 dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000
@@ -161,7 +180,7 @@ dotnet run --project src\Randall.Cli -- fuzz -c projects\harness-demo.yaml
 
 ---
 
-## 9. Remote lab agent (optional)
+## 10. Remote lab agent (optional)
 
 On the VM (listens for LAN clients):
 
@@ -181,7 +200,7 @@ For real dumps / memory lens, **fuzz on the agent UI** — see [LAB_AGENT.md](LA
 | `dotnet` not found | New PowerShell after SDK install; check PATH |
 | **Scripts disabled / `PSSecurityException`** | `powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1` |
 | Lab target missing | Re-run the Bypass command above |
-| `gcc not found` / Scream skipped | Optional — ignore for vulnserver; or install MinGW/Strawberry and re-run `build-screamcrash.ps1` |
+| `gcc not found` / Scream skipped | `powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1` then re-run `build-screamcrash.ps1`; or `-SkipGcc` on build-all |
 | DynamoRIO download “forever” | Use `-Skip`, or browser-download the zip + `-ZipPath`; re-run resumes via curl/BITS |
 | Port 5000 in use | Stop other Server/agent processes |
 | OOM / very slow | Raise VM RAM; avoid every lab + DynamoRIO at once |

@@ -30,7 +30,7 @@ Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
 Fresh VM or bare metal. Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md).
 
-**Need:** [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) · [Git](https://git-scm.com/download/win) · PowerShell · ~8 GB RAM recommended
+**Need:** [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) · [Git](https://git-scm.com/download/win) · PowerShell · winget (for MinGW gcc / Scream) · ~8 GB RAM recommended
 
 Prefer **`git clone` / `git pull`** over a GitHub ZIP of the repo — you get script fixes without re-downloading the whole tree. If you already unpacked a ZIP under Downloads, either clone fresh or `git pull` after initializing a remote.
 
@@ -40,11 +40,12 @@ cd $env:USERPROFILE\Projects
 git clone https://github.com/jinverar/randall.git
 cd randall
 
-# 2) Build fuzzer + lab targets
+# 2) Build fuzzer + lab targets (installs MinGW gcc via winget if missing — needed for Scream)
 dotnet build
 # Windows often blocks scripts (ExecutionPolicy Restricted) — use Bypass for this file:
 powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
-# ScreamCrash needs MinGW/Strawberry gcc — without it the script warns and skips (OK for vulnserver fuzzing).
+# Skip gcc/Scream only:  ...\build-all-lab-targets.ps1 -SkipGcc
+# gcc alone:             ...\install-gcc.ps1
 
 # 3) Optional — coverage (DynamoRIO). Large download; skip anytime:
 #    powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip

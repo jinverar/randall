@@ -1,8 +1,29 @@
 # Build all Randall lab target binaries.
-# ScreamCrash needs gcc; if missing, that script warns and skips (exit 0).
-# Other labs (vulnserver, etc.) always build; optional failures are summarized.
+# ScreamCrash needs gcc. By default, if gcc is missing, this script runs install-gcc.ps1
+# (winget WinLibs / Strawberry, or Chocolatey). Use -SkipGcc to skip install + Scream.
+#
+# Examples:
+#   powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
+#   powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1 -SkipGcc
+#   powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1 -InstallGcc
+param(
+    [switch]$InstallGcc,
+    [switch]$SkipGcc
+)
+
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+
+function Refresh-SessionPath {
+    $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $user = [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ";"
+}
+
+function Test-GccOnPath {
+    Refresh-SessionPath
+    return [bool](Get-Command gcc -ErrorAction SilentlyContinue)
+}
 
 # Required labs - failure stops the build.
 $Required = @(
@@ -21,6 +42,31 @@ $Optional = @(
 )
 
 $skippedOptional = @()
+
+# Ensure gcc before optional Scream build (unless -SkipGcc).
+if (-not $SkipGcc) {
+    if (-not (Test-GccOnPath) -or $InstallGcc) {
+        Write-Host "`n=== install-gcc.ps1 ===" -ForegroundColor Cyan
+        $installScript = Join-Path $Root "scripts\install-gcc.ps1"
+        if (-not (Test-Path $installScript)) {
+            Write-Host "[!] install-gcc.ps1 missing - Scream may be skipped." -ForegroundColor Yellow
+        } else {
+            try {
+                & $installScript
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host "[!] gcc install failed/skipped - Scream may be skipped. Use -SkipGcc to silence this." -ForegroundColor Yellow
+                }
+            } catch {
+                Write-Host ("[!] gcc install error: {0} - continuing; Scream may be skipped." -f $_.Exception.Message) -ForegroundColor Yellow
+            }
+            Refresh-SessionPath
+        }
+    } else {
+        Write-Host "gcc found on PATH - Scream native helpers can build." -ForegroundColor Green
+    }
+} else {
+    Write-Host "Skipping gcc install (-SkipGcc). Scream will warn/skip if gcc is missing." -ForegroundColor Yellow
+}
 
 foreach ($s in $Required) {
     Write-Host "`n=== $s ===" -ForegroundColor Cyan

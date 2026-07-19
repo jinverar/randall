@@ -2,6 +2,16 @@
 
 Third-party binaries used by Randall live here. They are **not** committed — install locally after clone.
 
+## gcc / MinGW (Scream native helpers)
+
+Not installed under `tools/` — system `PATH`. Needed for `scream_crash.exe` / `scream_av.dll`.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1
+```
+
+Prefers winget **WinLibs** (`BrechtSanders.WinLibs.POSIX.UCRT`), then Strawberry Perl, then Chocolatey. `build-all-lab-targets.ps1` runs this when gcc is missing unless you pass `-SkipGcc`. See [docs/INSTALL_WINDOWS.md](../docs/INSTALL_WINDOWS.md).
+
 ## DynamoRIO (coverage-guided stalking)
 
 Randall uses DynamoRIO `drrun` + `drcov` for optional coverage feedback (`--coverage`, web **Coverage-guided** checkbox).
