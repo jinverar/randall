@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using Randall.Contracts;
 using Randall.Core;
@@ -104,7 +105,37 @@ public sealed class FuzzEngine
         var crashes = new List<CrashRecord>();
         TargetRuntimeBridge? runtime = null;
         Process? longLived = null;
-        if (!useCoverageTcp && project.Target.LongLived &&
+        InProcessSession? inProcess = null;
+        PersistentTargetServer? persistentServer = null;
+        var useInProcess = InProcessSession.IsInProcess(project);
+        var usePersistentOop = !useInProcess && PersistentTargetServer.ShouldUse(project);
+        if (useInProcess)
+        {
+            useCoverageTcp = false;
+            useCoverageFile = false;
+            FuzzAnalystLog.Step(progress, "Starting in-process harness");
+            inProcess = InProcessSession.Start(project, yamlPath);
+            FuzzAnalystLog.Info(progress,
+                $"In-process ({inProcess.Mode}) isolation={inProcess.Isolation.Summary} — Target Runtime skipped");
+            if (!inProcess.Persistent)
+                FuzzAnalystLog.Info(progress,
+                    "cold isolation: reload/respawn every case (reproducibility baseline; slower)");
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && inProcess.ForkServer)
+                FuzzAnalystLog.Info(progress,
+                    "forkServer on Windows = warm worker + recycle after crash (no Unix fork)");
+        }
+        else if (usePersistentOop)
+        {
+            useCoverageTcp = false;
+            useCoverageFile = false;
+            FuzzAnalystLog.Step(progress, "Starting persistent / fork-server target");
+            persistentServer = PersistentTargetServer.Start(project, yamlPath);
+            FuzzAnalystLog.Info(progress, $"Persistent target ({persistentServer.Mode})");
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && (project.Fuzz.ForkServer ?? false))
+                FuzzAnalystLog.Info(progress,
+                    "forkServer on Windows = warm stdio process (AFL FORKSRV_FD is Linux-only)");
+        }
+        else if (!useCoverageTcp && project.Target.LongLived &&
             (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) ||
              project.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase)))
         {
@@ -403,7 +434,22 @@ public sealed class FuzzEngine
                 FuzzAnalystLog.Tx(progress, payload, iterations);
 
                 TargetRunResult result;
-                if (useResponseGraph && project.SessionGraph is not null)
+                if (inProcess is not null)
+                {
+                    commandName = "harness";
+                    caseLabel = $"harness/{mutator.Name}";
+                    result = await inProcess.RunAsync(payload, cancellationToken);
+                    if (iterations > 0 && iterations % 50 == 0)
+                        FuzzAnalystLog.Info(progress,
+                            $"Harness perf: {inProcess.Stats.Format()}", iterations);
+                }
+                else if (persistentServer is not null)
+                {
+                    commandName = "persistent";
+                    caseLabel = $"persistent/{mutator.Name}";
+                    result = await persistentServer.RunAsync(payload, cancellationToken);
+                }
+                else if (useResponseGraph && project.SessionGraph is not null)
                 {
                     var graphRun = await ResponseGraphRunner.RunAsync(
                         project, yamlPath, longLived, commandsByName, project.SessionGraph,
@@ -703,6 +749,13 @@ public sealed class FuzzEngine
                 procmon.Dispose();
             }
             runtime?.Dispose();
+            if (inProcess is not null)
+            {
+                FuzzAnalystLog.Info(progress, $"Harness final: {inProcess.Stats.Format()}");
+                inProcess.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+            if (persistentServer is not null)
+                persistentServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
             options.Progress?.OnTargetPid(null);
             journal?.Complete(iterations, crashCount, coverage.GetTopHotEdges());
         }

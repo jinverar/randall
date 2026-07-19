@@ -1,0 +1,29 @@
+# In-process managed harness demo — principles in docs/HARNESS_DESIGN.md
+# Seed "A\0OK" = valid type tag + body. Dictionary can reach bug body "CRASH".
+name: harness-demo
+description: Harness design demo — target rejects invalid input; bug path throws on body CRASH
+kind: harness
+target:
+  harness: ../targets/Randall.HarnessDemo/bin/Debug/net8.0/Randall.HarnessDemo.dll
+  harnessType: managed
+  timeoutMs: 2000
+fuzz:
+  executionMode: in-process
+  persistent: true          # warm harness; Reset() each case
+  forkServer: true          # recycle managed host after crash
+  harnessStrict: true       # refuse start without IInProcessHarnessReset
+  maxIterations: 200
+  corpusDir: ../data/corpus/harness-demo
+  crashesDir: ../data/crashes/harness-demo
+mutators:
+  - bitflip
+  - havoc
+  - expand
+  - dictionary
+seeds:
+  - seeds/harness_ok.bin
+dictionary:
+  - CRASH
+  - "A\0"
+  - "B\0"
+  - "C\0"

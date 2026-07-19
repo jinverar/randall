@@ -5,7 +5,8 @@ public sealed class ProjectConfig
 {
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
-    public string Kind { get; set; } = "file"; // file | tcp
+    /// <summary>file | tcp | udp | harness</summary>
+    public string Kind { get; set; } = "file";
     public TargetConfig Target { get; set; } = new();
     public TransportConfig Transport { get; set; } = new();
     public FuzzConfig Fuzz { get; set; } = new();
@@ -86,6 +87,17 @@ public sealed class TargetConfig
     /// Prefer these over brittle UI clicks; use <c>exec</c> for AutoIt/pywinauto when needed.
     /// </summary>
     public List<PostStartActionConfig> PostStart { get; set; } = [];
+
+    /// <summary>
+    /// In-process harness assembly or native DLL (when <c>fuzz.executionMode: in-process</c>
+    /// or <c>kind: harness</c>). Managed: implements <c>IInProcessHarness</c>.
+    /// Native: export <see cref="HarnessExport"/> (default LLVMFuzzerTestOneInput).
+    /// </summary>
+    public string? Harness { get; set; }
+    /// <summary>auto | managed | native</summary>
+    public string HarnessType { get; set; } = "auto";
+    /// <summary>Native export name (C ABI: int fn(const uint8_t*, size_t)).</summary>
+    public string HarnessExport { get; set; } = "LLVMFuzzerTestOneInput";
 }
 
 /// <summary>One Target Runtime post-start step. <see cref="Op"/> selects the action.</summary>
@@ -124,6 +136,29 @@ public sealed class TransportConfig
 
 public sealed class FuzzConfig
 {
+    /// <summary>
+    /// out-of-process (default) — spawn/file/TCP Target Runtime.
+    /// in-process — feed bytes into a harness DLL (managed in-engine or native worker).
+    /// </summary>
+    public string ExecutionMode { get; set; } = "out-of-process";
+    /// <summary>
+    /// Persistent mode: keep harness/target warm across cases.
+    /// null = default (true for in-process, false for out-of-process stdio).
+    /// Explicit false = cold isolation (reload/respawn every iteration).
+    /// </summary>
+    public bool? Persistent { get; set; }
+    /// <summary>
+    /// Fork-server style warm worker + recycle after crash.
+    /// null = default (follow Persistent for in-process).
+    /// Explicit false with Persistent true = warm process but no crash-generation recycle labeling.
+    /// Windows: warm worker (no Unix fork). See docs/HARNESS_DESIGN.md.
+    /// </summary>
+    public bool? ForkServer { get; set; }
+    /// <summary>
+    /// When true, refuse to start persistent in-process fuzzing if the harness
+    /// does not implement <c>IInProcessHarnessReset</c> (honest state management).
+    /// </summary>
+    public bool HarnessStrict { get; set; }
     /// <summary>random (default) or exhaustive — walk commands × fields × mutators.</summary>
     public string Mode { get; set; } = "random";
     public int MaxIterations { get; set; } = 500;

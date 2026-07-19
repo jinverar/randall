@@ -1,48 +1,5 @@
-/* Skins: dark (default) · light · cyber — toggle via html[data-theme] */
+/* Skins: light (default) · dark · cyber — toggle via html[data-theme] */
 :root,
-html[data-theme="dark"] {
-  --bg: #0b0f14;
-  --sidebar: #111820;
-  --panel: #161d27;
-  --border: #2a3441;
-  --text: #e8eef4;
-  --muted: #a8b8cc;
-  --accent: #6cb6ff;
-  --accent-dim: #3d7ab8;
-  --ok: #3fb950;
-  --warn: #d29922;
-  --danger: #f85149;
-  --code-bg: #0d1219;
-  --code-inline: #c8e6ff;
-  --surface-hover: #1c2633;
-  --nav-active-bg: #1a2838;
-  --link: #8ec8ff;
-  --link-hover: #b8dcff;
-  --btn-face: #1c2633;
-  --input-bg: #0d1219;
-  --shadow: rgba(0, 0, 0, 0.35);
-  --stalk-bg: #0a0614;
-  --stalk-panel: #140c22;
-  --stalk-border: #3a2758;
-  --stalk-purple: #b89cff;
-  --stalk-blue: #3d8bfd;
-  --stalk-green: #3dff8a;
-  --stalk-red: #ff3b4a;
-  --stalk-gray: #6b7280;
-  --stalk-grad-top: #1a0f30;
-  --stalk-grad-mid: #0d0818;
-  --stalk-chip-bg: #1a1230;
-  --stalk-chip-active: #2a1a4a;
-  --stalk-meta-bg: rgba(20, 12, 34, 0.9);
-  --stalk-panel-bg: rgba(20, 12, 34, 0.92);
-  --stalk-bright: #f2ecff;
-  --stalk-graph-bg: #090612;
-  --stalk-graph-grid: rgba(90, 60, 140, 0.08);
-  --stalk-ring-track: #2a2038;
-  --mono: "Cascadia Code", "Consolas", ui-monospace, monospace;
-  --sans: "Segoe UI", system-ui, sans-serif;
-}
-
 html[data-theme="light"] {
   --bg: #eef2f7;
   --sidebar: #ffffff;
@@ -82,6 +39,49 @@ html[data-theme="light"] {
   --stalk-graph-bg: #f7f9fc;
   --stalk-graph-grid: rgba(21, 101, 192, 0.08);
   --stalk-ring-track: #d0dae8;
+  --mono: "Cascadia Code", "Consolas", ui-monospace, monospace;
+  --sans: "Segoe UI", system-ui, sans-serif;
+}
+
+html[data-theme="dark"] {
+  --bg: #0b0f14;
+  --sidebar: #111820;
+  --panel: #161d27;
+  --border: #2a3441;
+  --text: #e8eef4;
+  --muted: #a8b8cc;
+  --accent: #6cb6ff;
+  --accent-dim: #3d7ab8;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --danger: #f85149;
+  --code-bg: #0d1219;
+  --code-inline: #c8e6ff;
+  --surface-hover: #1c2633;
+  --nav-active-bg: #1a2838;
+  --link: #8ec8ff;
+  --link-hover: #b8dcff;
+  --btn-face: #1c2633;
+  --input-bg: #0d1219;
+  --shadow: rgba(0, 0, 0, 0.35);
+  --stalk-bg: #0a0614;
+  --stalk-panel: #140c22;
+  --stalk-border: #3a2758;
+  --stalk-purple: #b89cff;
+  --stalk-blue: #3d8bfd;
+  --stalk-green: #3dff8a;
+  --stalk-red: #ff3b4a;
+  --stalk-gray: #6b7280;
+  --stalk-grad-top: #1a0f30;
+  --stalk-grad-mid: #0d0818;
+  --stalk-chip-bg: #1a1230;
+  --stalk-chip-active: #2a1a4a;
+  --stalk-meta-bg: rgba(20, 12, 34, 0.9);
+  --stalk-panel-bg: rgba(20, 12, 34, 0.92);
+  --stalk-bright: #f2ecff;
+  --stalk-graph-bg: #090612;
+  --stalk-graph-grid: rgba(90, 60, 140, 0.08);
+  --stalk-ring-track: #2a2038;
 }
 
 html[data-theme="cyber"] {

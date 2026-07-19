@@ -304,6 +304,9 @@ dotnet run --project src/Randall.Server
 | `randall analyze` registers from dump | ✅ |
 | Native PC stalk (debug events → drcov) | ✅ coarse — prefer DynamoRIO for full BB |
 | Doctor / auto prefer external when present | ✅ |
+| **In-process + out-of-process execution modes** | ✅ `fuzz.executionMode` · managed `IInProcessHarness` · native worker (`LLVMFuzzerTestOneInput`) — [IN_PROCESS.md](IN_PROCESS.md) |
+| **Persistent mode + fork server (warm worker)** | ✅ `fuzz.persistent` / `fuzz.forkServer` / `harnessStrict` — warm, cold, recycle matrix; harness perf signals — [PERSISTENT.md](PERSISTENT.md) · [HARNESS_DESIGN.md](HARNESS_DESIGN.md) |
+| AFL `FORKSRV_FD` native shim (Linux) | 📋 planned |
 
 ## Phase 17 — Pentest stalker + case builder 🔄
 

@@ -1,6 +1,7 @@
 # Custom targets — YAML → Target profile
 
-**Stalk your app end-to-end (baseline → fuzz → learn):** [HOWTO_STALK_GENERIC_APP.md](HOWTO_STALK_GENERIC_APP.md).
+**Stalk your app end-to-end (baseline → fuzz → learn):** [HOWTO_STALK_GENERIC_APP.md](HOWTO_STALK_GENERIC_APP.md).  
+**In-process parsers / libFuzzer DLLs:** [IN_PROCESS.md](IN_PROCESS.md).
 
 Once you add a project YAML under `projects/` or `projects/local/`, Randfuzz discovers it and shows the YAML **`name:`** field in the web UI **Target profile** dropdown (and in `randall targets`).
 

@@ -181,24 +181,36 @@ function themeLabel(name) {
   return 'Dark';
 }
 
-function setThemeDefaultLabel(theme) {
+function setThemeDefaultLabel(theme, { saving = false } = {}) {
   const el = document.getElementById('theme-default-label');
-  if (el) el.textContent = `Default skin: ${themeLabel(theme)} (saved)`;
+  if (!el) return;
+  el.textContent = saving
+    ? `Saving ${themeLabel(theme)}…`
+    : `Skin: ${themeLabel(theme)} (saved for next open)`;
 }
 
-function applyTheme(name, { persistServer = false } = {}) {
-  const theme = ['dark', 'light', 'cyber'].includes(name) ? name : 'dark';
+/** Apply skin immediately in the UI. */
+function applyTheme(name) {
+  const theme = ['dark', 'light', 'cyber'].includes(name) ? name : 'light';
   document.documentElement.setAttribute('data-theme', theme);
-  try { localStorage.setItem('randfuzz.theme', theme); } catch { /* ignore */ }
   document.querySelectorAll('.theme-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.theme === theme);
   });
-  setThemeDefaultLabel(theme);
-  if (persistServer) {
-    api.put('/api/ui/prefs', { theme }).catch(() => {
-      /* browser localStorage still holds the default for this client */
-    });
+  return theme;
+}
+
+/** User picked a skin: switch now and persist (browser + server). */
+async function selectTheme(name) {
+  const theme = applyTheme(name);
+  setThemeDefaultLabel(theme, { saving: true });
+  try { localStorage.setItem('randfuzz.theme', theme); } catch { /* ignore */ }
+  try {
+    await api.put('/api/ui/prefs', { theme });
+  } catch {
+    /* localStorage still restores this browser on reopen */
   }
+  setThemeDefaultLabel(theme);
+  return theme;
 }
 
 async function initThemePicker() {
@@ -213,10 +225,16 @@ async function initThemePicker() {
         theme = prefs.theme;
     } catch { /* ignore */ }
   }
-  applyTheme(theme || 'dark', { persistServer: false });
+
+  // No saved choice → Light. Do not write prefs until the user picks a skin.
+  theme = theme || 'light';
+  applyTheme(theme);
+  setThemeDefaultLabel(theme);
 
   document.querySelectorAll('.theme-btn').forEach((btn) => {
-    btn.addEventListener('click', () => applyTheme(btn.dataset.theme, { persistServer: true }));
+    btn.addEventListener('click', () => {
+      selectTheme(btn.dataset.theme).catch(() => {});
+    });
   });
 }
 

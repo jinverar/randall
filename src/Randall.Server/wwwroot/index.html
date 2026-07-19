@@ -7,11 +7,11 @@
   <script>
     (function () {
       try {
-        var t = localStorage.getItem('randfuzz.theme') || 'dark';
-        if (t !== 'dark' && t !== 'light' && t !== 'cyber') t = 'dark';
+        var t = localStorage.getItem('randfuzz.theme') || 'light';
+        if (t !== 'dark' && t !== 'light' && t !== 'cyber') t = 'light';
         document.documentElement.setAttribute('data-theme', t);
       } catch (e) {
-        document.documentElement.setAttribute('data-theme', 'dark');
+        document.documentElement.setAttribute('data-theme', 'light');
       }
     })();
   </script>
@@ -47,11 +47,11 @@
     </nav>
     <div class="sidebar-foot">
       <div class="theme-picker" role="group" aria-label="Default UI skin">
-        <button type="button" class="theme-btn" data-theme="dark" title="Set Dark as default skin">Dark</button>
-        <button type="button" class="theme-btn" data-theme="light" title="Set Light as default skin">Light</button>
-        <button type="button" class="theme-btn" data-theme="cyber" title="Set Cyber as default skin">Cyber</button>
+        <button type="button" class="theme-btn" data-theme="dark" title="Switch to Dark and save as your preference">Dark</button>
+        <button type="button" class="theme-btn" data-theme="light" title="Switch to Light and save as your preference">Light</button>
+        <button type="button" class="theme-btn" data-theme="cyber" title="Switch to Cyber and save as your preference">Cyber</button>
       </div>
-      <span id="theme-default-label" class="theme-default-label">Default skin: Dark</span>
+      <span id="theme-default-label" class="theme-default-label">Skin: Light (default until you pick)</span>
       <span id="health-label">—</span>
     </div>
   </aside>

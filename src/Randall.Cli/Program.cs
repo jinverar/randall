@@ -33,6 +33,7 @@ return args[0].ToLowerInvariant() switch
     "case" => RunCase(args.Skip(1).ToArray()),
     "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
     "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
+    "harness-worker" => RunHarnessWorker(args.Skip(1).ToArray()),
     _ => Unknown(args[0]),
 };
 
@@ -79,6 +80,7 @@ static void PrintHelp()
           randall runtime start --id X --exe path [--arg a]* [--port N]
           randall runtime stop|restart <id>
           randall runtime stop-all
+          randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
           randall serve [--port N] [--bind host]   Web UI + API (localhost)
           randall agent [--port N] [--bind host]   Lab agent (all interfaces)
@@ -1943,6 +1945,27 @@ static int RunLabs(string[] args)
 
     Console.Error.WriteLine("Usage: randall labs | labs start <id> | labs stop <id> | labs stop-all");
     return 1;
+}
+
+static int RunHarnessWorker(string[] args)
+{
+    string? dll = null;
+    var export = "LLVMFuzzerTestOneInput";
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--dll" or "-d" && i + 1 < args.Length)
+            dll = args[++i];
+        else if (args[i] is "--export" or "-e" && i + 1 < args.Length)
+            export = args[++i];
+    }
+
+    if (string.IsNullOrWhiteSpace(dll))
+    {
+        Console.Error.WriteLine("Usage: randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]");
+        return 1;
+    }
+
+    return NativeHarnessWorkerHost.Run(dll, export);
 }
 
 static int RunRuntime(string[] args)

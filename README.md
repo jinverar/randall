@@ -20,7 +20,7 @@ I don't just throw bytes at parsers and hope. I **camouflage** valid-looking tra
 | 🐛 **Competitive** — always hunting the edge | Coverage-guided inputs that hit **new** paths |
 | 🧪 **Sneak the factory** | Stalk unexplored code with DynamoRIO |
 | 💥 **Scream Extractor energy** | Crash capture — dumps, dedup, Ghidra export |
-| 🕵️ **Another trick up my sleeve** | Havoc, dictionaries, session flows, plugins |
+| 🕵️ **Another trick up my sleeve** | Havoc, dictionaries, session flows, plugins, in-process harnesses |
 
 Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
@@ -46,6 +46,7 @@ I'm not here to rewrite history. I'm here to **stop duct-taping six runtimes** e
 | **[CANAPE](https://github.com/foxitcs/canape)** | MITM capture, parse, inject — see the wire before you break it |
 | **[PaiMei pStalker](https://github.com/OpenRCE/paimei)** | Color-coded stalking — new edges, first divergence, crash paths |
 | **[DynamoRIO](https://dynamorio.org/)** | Fast drcov instrumentation |
+| **AFL / libFuzzer** | Persistent & fork-server style warm workers; in-process `LLVMFuzzerTestOneInput` |
 | **Ghidra / triage** | Export coverage and crashes for the reverse-engineering grind |
 
 Boofuzz and AFL still slap. Randfuzz is for when you want **generation + stalking + proxy + triage** under one roof — next-gen pipeline, same ethics: **authorized targets only**.
@@ -95,7 +96,7 @@ Eight capability areas. One chameleon. See [docs/LEGS.md](docs/LEGS.md) for the 
 |-----|--------|---------|
 | 1 | **Model** | Define protocols with blocks and primitives |
 | 2 | **Mutate** | Generation strategies and field-aware fuzzing |
-| 3 | **Send** | Network, file, and stdin transports |
+| 3 | **Send** | Network, file, stdin, and in-process harness delivery |
 | 4 | **Stalk** | DynamoRIO coverage and frontier detection |
 | 5 | **Scream** | Crash capture, dedup, minidumps |
 | 6 | **Proxy** | MITM capture and live traffic editing (CANAPE-inspired) |
@@ -129,7 +130,30 @@ See [docs/TARGETS.md](docs/TARGETS.md) and [targets/README.md](targets/README.md
 
 **Hands-on lab walkthrough:** [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md)
 
-**Working on next — Target Runtime** (local/remote start·stop·restart + human-readable memory/heap lens): [docs/TARGET_RUNTIME.md](docs/TARGET_RUNTIME.md) · quick text: [TARGET_RUNTIME_README.txt](TARGET_RUNTIME_README.txt)
+### Target Runtime (local & remote)
+
+Start·stop·restart for long-lived targets, remote lab agent, crash artifact packs, memory/heap lens:
+
+- [docs/TARGET_RUNTIME.md](docs/TARGET_RUNTIME.md) · [docs/LAB_AGENT.md](docs/LAB_AGENT.md) · [TARGET_RUNTIME_README.txt](TARGET_RUNTIME_README.txt)
+
+### In-process harnesses (persistent / cold / forkServer)
+
+Fuzz parsers and libraries **in-process** (managed `IInProcessHarness` or native `LLVMFuzzerTestOneInput`) with an explicit isolation matrix:
+
+| Mode | YAML | Behavior |
+|------|------|----------|
+| **Persistent + forkServer** | `persistent: true`, `forkServer: true` | Warm harness; `Reset()` each case; recycle after crash |
+| **Cold (non-persistent)** | `persistent: false` | Reload / new worker every case — reproducibility baseline |
+| **Strict** | `harnessStrict: true` | Refuse warm start without `IInProcessHarnessReset` |
+
+**One rule:** let the **target** reject invalid input — do not over-filter in the harness. Crashes are never swallowed. Perf signals (`avgFuzzOne`, resets, recycles) are logged so you can question results.
+
+```powershell
+dotnet build targets/Randall.HarnessDemo
+dotnet run --project src/Randall.Cli -- fuzz -c projects/harness-demo.yaml
+```
+
+Docs: [docs/HARNESS_DESIGN.md](docs/HARNESS_DESIGN.md) · [docs/IN_PROCESS.md](docs/IN_PROCESS.md) · [docs/PERSISTENT.md](docs/PERSISTENT.md)
 
 ## Optional — DynamoRIO (coverage-guided stalking)
 
@@ -214,6 +238,8 @@ Open **http://127.0.0.1:5000** for the lab console.
 | **Standalone** | Self-contained publish → zip folder | Air-gapped VM — I travel light |
 
 ## Status
+
+**Shipped recently** — Target Runtime (local/remote), crash artifact packs, stalk-loop guides, UI skins (default Light), **in-process harnesses** with persistent / cold / forkServer isolation and harness design contract.
 
 **Phase 15** — execution journal + crash sidecars. Logging: [docs/EXECUTION_LOGGING.md](docs/EXECUTION_LOGGING.md), [docs/CRASH_LOGGING.md](docs/CRASH_LOGGING.md).
 

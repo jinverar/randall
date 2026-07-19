@@ -21,24 +21,24 @@ public static class UiPrefsStore
     {
         var path = PrefsPath(repoRoot);
         if (!File.Exists(path))
-            return new UiPrefsDto("dark");
+            return new UiPrefsDto("light");
 
         try
         {
             var dto = JsonSerializer.Deserialize<UiPrefsDto>(File.ReadAllText(path), JsonOpts);
             if (dto is null || !IsValidTheme(dto.Theme))
-                return new UiPrefsDto("dark");
+                return new UiPrefsDto("light");
             return new UiPrefsDto(NormalizeTheme(dto.Theme));
         }
         catch
         {
-            return new UiPrefsDto("dark");
+            return new UiPrefsDto("light");
         }
     }
 
     public static UiPrefsDto Save(UiPrefsDto prefs, string? repoRoot = null)
     {
-        var theme = IsValidTheme(prefs.Theme) ? NormalizeTheme(prefs.Theme) : "dark";
+        var theme = IsValidTheme(prefs.Theme) ? NormalizeTheme(prefs.Theme) : "light";
         var path = PrefsPath(repoRoot);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var saved = new UiPrefsDto(theme);

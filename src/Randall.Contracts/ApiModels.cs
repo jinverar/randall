@@ -29,7 +29,7 @@ public sealed record LegInfoDto(string Id, string Title, string Summary);
 public sealed record HealthDto(string Name, string Version, string Status);
 
 /// <summary>Console UI preferences persisted under data/ui-prefs.json.</summary>
-public sealed record UiPrefsDto(string Theme = "dark");
+public sealed record UiPrefsDto(string Theme = "light");
 
 public sealed record UiPrefsUpdateRequest(string Theme);
 
