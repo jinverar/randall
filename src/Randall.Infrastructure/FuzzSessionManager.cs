@@ -53,7 +53,10 @@ public sealed class FuzzSessionManager
                             request.DebuggerMode,
                             request.DebuggerKind,
                             request.DebuggerOpenOnCrash,
-                            request.ProcmonCapture),
+                            request.ProcmonCapture,
+                            request.SysmonCapture,
+                            request.ProcdumpOnCrash,
+                            request.PktmonCapture),
                         token);
 
                     progress.OnCompleted(result);

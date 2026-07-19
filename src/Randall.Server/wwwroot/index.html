@@ -345,6 +345,18 @@
             <input type="checkbox" id="fuzz-procmon" />
             Procmon capture (.pml bookend — needs Procmon in PATH or tools/)
           </label>
+          <label class="checkbox">
+            <input type="checkbox" id="fuzz-sysmon" />
+            Sysmon export (run-window EVTX — Sysmon service must already be installed)
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="fuzz-procdump" />
+            ProcDump on crash (-e -ma — skipped if Scream/debugger already attached)
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="fuzz-pktmon" />
+            pktmon capture (ETL bookend — built-in; often needs elevation)
+          </label>
           <div class="btn-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>
             <button type="button" class="btn" id="fuzz-stop">Stop</button>

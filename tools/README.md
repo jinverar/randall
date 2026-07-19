@@ -22,6 +22,24 @@ tools/Procmon64.exe
 
 Also accepted: `tools/Procmon.exe`, or any of those names on `PATH`. Capture writes `data/runs/<runId>/fuzz.pml`. See [docs/RECORDING.md](../docs/RECORDING.md).
 
+## ProcDump (Sysinternals) — optional crash arm
+
+For `fuzz.procdumpOnCrash: true` / Fuzz UI **ProcDump on crash** (when Scream wait is not attached):
+
+```
+tools/procdump.exe
+```
+
+Also accepted: `tools/procdump64.exe`, `PATH`, or `PROCDUMP_PATH`. Dumps land under `data/crashes/<project>/dumps/procdump_*.dmp`. Prefer Scream (`debuggerMode: wait`) when you can — only one debugger can attach.
+
+## Sysmon — install once (not a tools/ drop-in)
+
+`fuzz.sysmonCapture` exports the run-window from `Microsoft-Windows-Sysmon/Operational`. Install Sysmon as a **service** on the fuzz host once (`Sysmon64.exe -accepteula -i config.xml`); do not expect Randfuzz to start/stop Sysmon each campaign. Artifacts: `data/runs/<runId>/sysmon-events.evtx`.
+
+## pktmon — built into Windows
+
+`fuzz.pktmonCapture` uses `%SystemRoot%\System32\pktmon.exe` (no download). Often needs an elevated console/agent. Writes `data/runs/<runId>/fuzz-pktmon.etl`.
+
 ## DynamoRIO (coverage-guided stalking)
 
 Randall uses DynamoRIO `drrun` + `drcov` for optional coverage feedback (`--coverage`, web **Coverage-guided** checkbox).

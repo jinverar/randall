@@ -2418,6 +2418,9 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
       debuggerKind: document.getElementById('fuzz-debugger-kind').value,
       debuggerOpenOnCrash: document.getElementById('fuzz-open-on-crash').checked,
       procmonCapture: document.getElementById('fuzz-procmon')?.checked === true,
+      sysmonCapture: document.getElementById('fuzz-sysmon')?.checked === true,
+      procdumpOnCrash: document.getElementById('fuzz-procdump')?.checked === true,
+      pktmonCapture: document.getElementById('fuzz-pktmon')?.checked === true,
     });
     appendLog('Session accepted…');
   } catch (err) {

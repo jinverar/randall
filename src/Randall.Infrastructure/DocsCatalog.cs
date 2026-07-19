@@ -19,7 +19,7 @@ public static class DocsCatalog
         ("FUZZING.md", "Fuzzing techniques & mutators", "Fuzzing"),
         ("STALK_LOOP.md", "Stalk loop (baseline → fuzz → learn)", "Stalk & scream"),
         ("STALKING.md", "Stalking bugs reference", "Stalk & scream"),
-        ("RECORDING.md", "Recording & process monitoring", "Stalk & scream"),
+        ("RECORDING.md", "Recording (Procmon, Sysmon, pktmon)", "Stalk & scream"),
         ("CRASH_ANALYSIS.md", "Crash analysis", "Stalk & scream"),
         ("TARGET_RUNTIME.md", "Target Runtime + remote lab", "Stalk & scream"),
         ("LAB_AGENT.md", "Lab agent (remote UI)", "Lab"),

@@ -158,5 +158,5 @@ No kernel driver. Agent URLs restricted to localhost / RFC1918.
 ## Related
 
 - [STALK_LOOP.md](STALK_LOOP.md) — baseline → fuzz → learn → repeat  
-- [RECORDING.md](RECORDING.md) — Procmon, Scream/debugger, Page Heap, coverage toggles  
+- [RECORDING.md](RECORDING.md) — Procmon, Sysmon, pktmon, ProcDump, Scream/debugger, Page Heap, coverage toggles  
 - [LAB_AGENT.md](LAB_AGENT.md) · [STALKING.md](STALKING.md) · [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · [CRASH_LOGGING.md](CRASH_LOGGING.md) · [ROADMAP.md](ROADMAP.md)

@@ -200,4 +200,15 @@ public sealed class FuzzConfig
     public bool DebuggerOpenOnCrash { get; set; }
     /// <summary>Start Sysinternals Procmon .pml capture for the duration of the fuzz run.</summary>
     public bool ProcmonCapture { get; set; }
+    /// <summary>
+    /// Export Sysmon Operational events for the fuzz run window (Sysmon must already be installed).
+    /// Does not install/start/stop the Sysmon service.
+    /// </summary>
+    public bool SysmonCapture { get; set; }
+    /// <summary>
+    /// Arm ProcDump -e -ma on the target PID when Scream wait is not already attached.
+    /// </summary>
+    public bool ProcdumpOnCrash { get; set; }
+    /// <summary>Start Windows pktmon packet capture for the duration of the fuzz run.</summary>
+    public bool PktmonCapture { get; set; }
 }

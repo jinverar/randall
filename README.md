@@ -175,7 +175,7 @@ Start·stop·restart for long-lived targets, remote lab agent, crash artifact pa
 
 - [docs/TARGET_RUNTIME.md](docs/TARGET_RUNTIME.md) · [docs/LAB_AGENT.md](docs/LAB_AGENT.md) · [TARGET_RUNTIME_README.txt](TARGET_RUNTIME_README.txt)
 
-**Procmon / Scream dumps / Page Heap / coverage toggles:** [docs/RECORDING.md](docs/RECORDING.md)
+**Procmon / Sysmon / pktmon / ProcDump / Scream dumps / Page Heap / coverage toggles:** [docs/RECORDING.md](docs/RECORDING.md)
 
 ### In-process harnesses (persistent / cold / forkServer)
 

@@ -41,7 +41,10 @@ public sealed record FuzzStartRequest(
     string? DebuggerMode = null,
     string? DebuggerKind = null,
     bool? DebuggerOpenOnCrash = null,
-    bool? ProcmonCapture = null);
+    bool? ProcmonCapture = null,
+    bool? SysmonCapture = null,
+    bool? ProcdumpOnCrash = null,
+    bool? PktmonCapture = null);
 
 public sealed record FuzzSessionStatusDto(
     bool Running,

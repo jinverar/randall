@@ -316,6 +316,9 @@ dotnet run --project src/Randall.Server
 | WinDbg attach / open dump + Scream watcher | ✅ |
 | Case builder + Help tab (served docs) | ✅ |
 | Procmon bookends (`fuzz.procmonCapture` / UI checkbox) | ✅ |
+| Sysmon run-window export (`fuzz.sysmonCapture`) | ✅ |
+| ProcDump -e -ma arm (`fuzz.procdumpOnCrash`) | ✅ |
+| pktmon ETL bookends (`fuzz.pktmonCapture`) | ✅ |
 | Remote stalk APIs on `randall agent` | ✅ `/api/remote/procmon` · `/api/remote/tools` |
 
 Custom targets: [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · Case builder: [CASE_BUILDER.md](CASE_BUILDER.md)

@@ -33,6 +33,9 @@ fuzz:
   maxIterations: 500
   debuggerMode: wait           # none | wait (Scream) | attach | both
   # procmonCapture: true       # needs Procmon64.exe in tools/ or PATH — see docs/RECORDING.md
+  # sysmonCapture: true        # export Sysmon Operational for run window (service pre-installed)
+  # procdumpOnCrash: true      # ProcDump -e -ma when Scream/attach is not used
+  # pktmonCapture: true        # Windows pktmon ETL (often needs elevation)
 mutators:
   - bitflip
   - havoc

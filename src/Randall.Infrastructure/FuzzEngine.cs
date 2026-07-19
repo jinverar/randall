@@ -86,13 +86,23 @@ public sealed class FuzzEngine
         DebuggerWaitHandle? debuggerWait = null;
 
         ProcmonCapture? procmon = null;
+        SysmonEventCapture? sysmon = null;
+        PktmonCapture? pktmon = null;
+        ProcDumpCrashArm? procdumpArm = null;
         var wantProcmon = options.ProcmonCapture ?? project.Fuzz.ProcmonCapture;
-        if (!dryRun && wantProcmon)
+        var wantSysmon = options.SysmonCapture ?? project.Fuzz.SysmonCapture;
+        var wantProcdump = options.ProcdumpOnCrash ?? project.Fuzz.ProcdumpOnCrash;
+        var wantPktmon = options.PktmonCapture ?? project.Fuzz.PktmonCapture;
+        string? runDir = journal?.RunDirectory;
+        if (!dryRun && (wantProcmon || wantSysmon || wantPktmon))
         {
-            var runDir = journal?.RunDirectory
-                         ?? Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir),
-                             $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
+            runDir ??= Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir),
+                $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
             Directory.CreateDirectory(runDir);
+        }
+
+        if (!dryRun && wantProcmon && runDir is not null)
+        {
             var pml = Path.Combine(runDir, "fuzz.pml");
             procmon = ProcmonCapture.TryStart(pml);
             if (procmon?.IsRunning == true)
@@ -100,6 +110,27 @@ public sealed class FuzzEngine
             else
                 FuzzAnalystLog.Warn(progress,
                     $"Procmon capture skipped: {procmon?.LastError ?? "Procmon not found (tools/ or PATH)"}");
+        }
+
+        if (!dryRun && wantSysmon && runDir is not null)
+        {
+            sysmon = SysmonEventCapture.TryBegin(runDir);
+            if (sysmon.Available)
+                FuzzAnalystLog.Info(progress,
+                    $"Sysmon export armed → {sysmon.EvtxPath} (service={sysmon.ServiceName ?? "channel"})");
+            else
+                FuzzAnalystLog.Warn(progress,
+                    $"Sysmon capture skipped: {sysmon.LastError ?? "Sysmon not installed"}");
+        }
+
+        if (!dryRun && wantPktmon && runDir is not null)
+        {
+            pktmon = PktmonCapture.TryStart(runDir);
+            if (pktmon?.IsRunning == true)
+                FuzzAnalystLog.Info(progress, $"pktmon capture → {pktmon.EtlPath}");
+            else
+                FuzzAnalystLog.Warn(progress,
+                    $"pktmon capture skipped: {pktmon?.LastError ?? "pktmon not available"}");
         }
 
         var crashes = new List<CrashRecord>();
@@ -192,6 +223,28 @@ public sealed class FuzzEngine
                 else
                 {
                     Console.WriteLine("  scream wait skipped");
+                }
+            }
+
+            // ProcDump -e also debug-attaches — only arm when Scream/attach is not holding the process.
+            procdumpArm?.Dispose();
+            procdumpArm = null;
+            if (wantProcdump)
+            {
+                if (debuggerWait?.Scream is not null || debuggerMode is "attach")
+                {
+                    FuzzAnalystLog.Warn(progress,
+                        "procdumpOnCrash skipped: Scream/debugger already attached (only one debugger)");
+                }
+                else
+                {
+                    var dumpsDir = Path.Combine(crashesDir, "dumps");
+                    procdumpArm = ProcDumpCrashArm.TryArm(proc.Id, dumpsDir);
+                    if (procdumpArm?.IsRunning == true)
+                        FuzzAnalystLog.Info(progress, $"ProcDump armed (-e -ma) → {procdumpArm.DumpPath}");
+                    else
+                        FuzzAnalystLog.Warn(progress,
+                            $"procdumpOnCrash skipped: {procdumpArm?.LastError ?? "ProcDump not found (tools/ or PATH)"}");
                 }
             }
         }
@@ -510,6 +563,21 @@ public sealed class FuzzEngine
                     }
                 }
 
+                if (procdumpArm is not null &&
+                    (procdumpArm.TryExistingDump() is not null || longLived is { HasExited: true }))
+                {
+                    var pd = procdumpArm.TryExistingDump();
+                    if (pd is not null)
+                    {
+                        result = result with
+                        {
+                            Crashed = true,
+                            MiniDumpPath = result.MiniDumpPath ?? pd,
+                            Detail = result.Crashed ? result.Detail : "procdump exception dump",
+                        };
+                    }
+                }
+
                 var newEdges = 0;
                 var newCoverage = false;
                 if (useCoverageTcp)
@@ -739,6 +807,7 @@ public sealed class FuzzEngine
         finally
         {
             debuggerWait?.Dispose();
+            procdumpArm?.Dispose();
             if (useCoverageTcp)
                 stalk.StopLongLivedAsync(longLived, cancellationToken).GetAwaiter().GetResult();
             if (procmon is not null)
@@ -747,6 +816,24 @@ public sealed class FuzzEngine
                 if (File.Exists(procmon.PmlPath))
                     Console.WriteLine($"Procmon saved: {procmon.PmlPath}");
                 procmon.Dispose();
+            }
+            if (pktmon is not null)
+            {
+                pktmon.Stop();
+                if (File.Exists(pktmon.EtlPath))
+                    Console.WriteLine($"pktmon saved: {pktmon.EtlPath}");
+                else if (pktmon.LastError is not null)
+                    Console.WriteLine($"pktmon: {pktmon.LastError}");
+                pktmon.Dispose();
+            }
+            if (sysmon is not null)
+            {
+                sysmon.StopAndExport();
+                if (sysmon.ExportOk)
+                    Console.WriteLine($"Sysmon export: {sysmon.EvtxPath}");
+                else if (sysmon.Available)
+                    Console.WriteLine($"Sysmon export: {sysmon.LastError ?? "no events / failed"} ({sysmon.MetaPath})");
+                sysmon.Dispose();
             }
             runtime?.Dispose();
             if (inProcess is not null)

@@ -129,6 +129,63 @@ public static class LabDoctor
                     : "Procmon not found — optional .pml bookends disabled");
         }
 
+        var sysmonOk = SysmonEventCapture.IsAvailable(out _, out var sysmonHint);
+        if (project.Fuzz.SysmonCapture)
+        {
+            Add("sysmon", sysmonOk ? "ok" : "warn",
+                sysmonOk
+                    ? $"SysmonCapture enabled → {sysmonHint}"
+                    : $"SysmonCapture enabled but {sysmonHint}");
+        }
+        else
+        {
+            Add("sysmon", sysmonOk ? "ok" : "warn",
+                sysmonOk
+                    ? $"{sysmonHint} (set fuzz.sysmonCapture: true to export run window)"
+                    : sysmonHint ?? "Sysmon not installed");
+        }
+
+        var procdumpExe = DebuggerTools.FindProcDump();
+        if (project.Fuzz.ProcdumpOnCrash)
+        {
+            var mode = (project.Fuzz.DebuggerMode ?? "none").Trim().ToLowerInvariant();
+            if (mode is "wait" or "both" or "attach")
+            {
+                Add("procdumpOnCrash", "warn",
+                    "procdumpOnCrash set but debuggerMode already attaches — ProcDump will be skipped at runtime");
+            }
+            else
+            {
+                Add("procdumpOnCrash", procdumpExe is not null ? "ok" : "warn",
+                    procdumpExe is not null
+                        ? $"ProcdumpOnCrash enabled → {procdumpExe}"
+                        : "ProcdumpOnCrash enabled but ProcDump not found (tools/ or PATH)");
+            }
+        }
+        else
+        {
+            Add("procdump", procdumpExe is not null ? "ok" : "warn",
+                procdumpExe is not null
+                    ? $"{procdumpExe} (set fuzz.procdumpOnCrash: true when not using Scream wait)"
+                    : "ProcDump not found — optional -e -ma arm disabled");
+        }
+
+        var pktmonExe = PktmonCapture.DiscoverExecutable();
+        if (project.Fuzz.PktmonCapture)
+        {
+            Add("pktmon", pktmonExe is not null ? "ok" : "warn",
+                pktmonExe is not null
+                    ? $"PktmonCapture enabled → {pktmonExe} (often needs elevation)"
+                    : "PktmonCapture enabled but pktmon.exe not found");
+        }
+        else
+        {
+            Add("pktmon", pktmonExe is not null ? "ok" : "warn",
+                pktmonExe is not null
+                    ? $"{pktmonExe} (set fuzz.pktmonCapture: true to bookend runs; may need admin)"
+                    : "pktmon not found — optional packet bookends disabled");
+        }
+
         var dbg = DebuggerTools.Probe();
         foreach (var t in dbg.Tools)
         {
