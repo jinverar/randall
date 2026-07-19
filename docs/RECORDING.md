@@ -257,6 +257,18 @@ Only **one** debugger can attach. Prefer **Scream** (`debuggerMode: wait`). Use 
 | Crash sidecars / lens | `data/crashes/<project>/*_crash.json`, `*_memory_lens.*` |
 | Coverage | `data/corpus/<project>/edges.txt` |
 
+### UI review vs on-disk logs
+
+Artifacts land in `data/runs/<runId>/` and `data/crashes/<project>/` on the fuzz host.
+
+| In the UI today | Not in the UI yet |
+|-----------------|-------------------|
+| **Crashes** investigation | Browsing/viewing `.pml`, `debugview.log`, `tcpvcon/`, `sysinternals/`, pktmon ETL |
+| **Dashboard** stalk timeline (from journal) | Full `run.json` / `iterations.jsonl` as a Runs browser |
+| **Bundles** crash packs (optional include linked run journals) | **Open Folder** button |
+
+Open the run folder on the fuzz host (path printed as `Run journal: ...` at start) or unzip a crash pack that included runs.
+
 ---
 
 ## Custom app on a VM (short path)
