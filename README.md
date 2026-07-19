@@ -40,10 +40,11 @@ cd randall
 
 # 2) Build fuzzer + lab targets
 dotnet build
-.\scripts\build-all-lab-targets.ps1
+# Windows often blocks scripts (ExecutionPolicy Restricted) — use Bypass for this file:
+powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
 
 # 3) Optional — coverage (DynamoRIO)
-powershell -File scripts\install-dynamorio.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
 $env:DYNAMORIO_HOME = (Resolve-Path tools\dynamorio).Path
 
 # 4) Preflight
@@ -52,6 +53,8 @@ dotnet run --project src\Randall.Cli -- doctor -c projects\vulnserver.yaml
 # 5) Web UI
 dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000
 ```
+
+If you see *“running scripts is disabled on this system”*, that Bypass form is the fix (or run once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`).
 
 Open **[http://127.0.0.1:5000](http://127.0.0.1:5000)** — Dashboard (stalker CFG), Fuzz, Crashes, Case builder, Help.
 

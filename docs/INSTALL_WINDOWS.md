@@ -65,7 +65,22 @@ Expect `Build succeeded`.
 
 ## 5. Build lab targets
 
+Many Windows 10/11 images ship with PowerShell **ExecutionPolicy = Restricted**, so this fails:
+
+```text
+.\scripts\build-all-lab-targets.ps1 : ... cannot be loaded because running scripts is disabled on this system.
+```
+
+Use **Bypass for this file only** (recommended):
+
 ```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
+```
+
+Or allow your own scripts for this user (one-time):
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\scripts\build-all-lab-targets.ps1
 ```
 
@@ -78,7 +93,7 @@ Compiles vulnserver, vulnhttp, vulnftp, and other practice targets under `target
 Needed for `+N edges` / coverage-guided corpus. Crashes work without it.
 
 ```powershell
-powershell -File scripts\install-dynamorio.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
 ```
 
 Session env (or set a permanent user variable `DYNAMORIO_HOME`):
@@ -143,7 +158,8 @@ For real dumps / memory lens, **fuzz on the agent UI** — see [LAB_AGENT.md](LA
 | Issue | Fix |
 |-------|-----|
 | `dotnet` not found | New PowerShell after SDK install; check PATH |
-| Lab target missing | Re-run `.\scripts\build-all-lab-targets.ps1` |
+| **Scripts disabled / `PSSecurityException`** | `powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1` |
+| Lab target missing | Re-run the Bypass command above |
 | Port 5000 in use | Stop other Server/agent processes |
 | OOM / very slow | Raise VM RAM; avoid every lab + DynamoRIO at once |
 | Clone / TLS errors | Fix VM date/time; check proxy |
