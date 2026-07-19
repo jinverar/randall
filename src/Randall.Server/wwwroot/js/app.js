@@ -2404,6 +2404,119 @@ async function connectHub() {
   await hub.start();
 }
 
+/* —— Campaign recording profiles (UI presets → same fuzz start flags) —— */
+const RECORDING_CHECKBOX_IDS = {
+  procmon: 'fuzz-procmon',
+  tcpvcon: 'fuzz-tcpvcon',
+  procdump: 'fuzz-procdump',
+  pktmon: 'fuzz-pktmon',
+  etw: 'fuzz-etw',
+  debugview: 'fuzz-debugview',
+  sysinternals: 'fuzz-sysinternals-snap',
+  strings: 'fuzz-strings-crash',
+};
+
+const RECORDING_PROFILES = {
+  off: {
+    procmon: false, tcpvcon: false, procdump: false, pktmon: false,
+    etw: false, debugview: false, sysinternals: false, strings: false,
+  },
+  'first-triage': {
+    procmon: true, tcpvcon: false, procdump: false, pktmon: false,
+    etw: false, debugview: false, sysinternals: true, strings: false,
+  },
+  network: {
+    procmon: true, tcpvcon: true, procdump: false, pktmon: true,
+    etw: false, debugview: false, sysinternals: true, strings: false,
+  },
+  'deep-dive': {
+    procmon: true, tcpvcon: true, procdump: false, pktmon: true,
+    etw: true, debugview: true, sysinternals: true, strings: true,
+  },
+};
+
+let applyingRecordingProfile = false;
+
+function readRecordingFlags() {
+  const flags = {};
+  for (const [key, id] of Object.entries(RECORDING_CHECKBOX_IDS)) {
+    flags[key] = document.getElementById(id)?.checked === true;
+  }
+  return flags;
+}
+
+function flagsMatchProfile(flags, profile) {
+  return Object.keys(RECORDING_CHECKBOX_IDS).every((k) => !!flags[k] === !!profile[k]);
+}
+
+function matchRecordingProfileName(flags = readRecordingFlags()) {
+  for (const [name, profile] of Object.entries(RECORDING_PROFILES)) {
+    if (flagsMatchProfile(flags, profile)) return name;
+  }
+  return 'custom';
+}
+
+function updateRecordingElevHint(profileName) {
+  const elev = document.getElementById('fuzz-recording-elev');
+  if (!elev) return;
+  elev.classList.toggle('hidden', profileName !== 'network' && profileName !== 'deep-dive');
+}
+
+function applyRecordingProfile(name) {
+  const profile = RECORDING_PROFILES[name];
+  const select = document.getElementById('fuzz-recording-profile');
+  const advanced = document.getElementById('fuzz-recording-advanced');
+  if (select) select.value = name === 'custom' ? 'custom' : name;
+  if (!profile) {
+    if (advanced && name === 'custom') advanced.open = true;
+    updateRecordingElevHint(name);
+    return;
+  }
+  applyingRecordingProfile = true;
+  for (const [key, id] of Object.entries(RECORDING_CHECKBOX_IDS)) {
+    const el = document.getElementById(id);
+    if (el) el.checked = !!profile[key];
+  }
+  applyingRecordingProfile = false;
+  updateRecordingElevHint(name);
+  if (advanced && name === 'custom') advanced.open = true;
+}
+
+function initRecordingProfiles() {
+  const select = document.getElementById('fuzz-recording-profile');
+  if (!select) return;
+
+  const initial = select.value || 'first-triage';
+  if (initial !== 'custom') applyRecordingProfile(initial);
+  else updateRecordingElevHint('custom');
+
+  select.addEventListener('change', () => {
+    const name = select.value;
+    if (name === 'custom') {
+      const advanced = document.getElementById('fuzz-recording-advanced');
+      if (advanced) advanced.open = true;
+      updateRecordingElevHint('custom');
+      return;
+    }
+    applyRecordingProfile(name);
+  });
+
+  for (const id of Object.values(RECORDING_CHECKBOX_IDS)) {
+    document.getElementById(id)?.addEventListener('change', () => {
+      if (applyingRecordingProfile) return;
+      const matched = matchRecordingProfileName();
+      select.value = matched;
+      updateRecordingElevHint(matched);
+      if (matched === 'custom') {
+        const advanced = document.getElementById('fuzz-recording-advanced');
+        if (advanced) advanced.open = true;
+      }
+    });
+  }
+}
+
+initRecordingProfiles();
+
 document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   // New session only — never clear merely because the user left/returned to Fuzz.

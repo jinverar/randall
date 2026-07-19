@@ -1525,6 +1525,48 @@ button.linkish {
   color: var(--text);
 }
 
+#fuzz-recording-hint {
+  margin: -0.4rem 0 0.55rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.fuzz-recording-elev {
+  margin: -0.25rem 0 0.55rem;
+  font-size: 0.8rem;
+  color: var(--warn);
+}
+
+.fuzz-recording-advanced {
+  margin: 0 0 0.85rem;
+  padding: 0.45rem 0.65rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--input-bg);
+}
+
+.fuzz-recording-advanced summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  list-style-position: outside;
+}
+
+.fuzz-recording-advanced[open] summary {
+  margin-bottom: 0.55rem;
+  color: var(--text);
+}
+
+.fuzz-recording-advanced .checkbox {
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.fuzz-recording-advanced .checkbox:last-child {
+  margin-bottom: 0;
+}
+
 .checkbox { display: flex !important; align-items: center; gap: 0.5rem; color: var(--text) !important; }
 .checkbox input { width: auto; margin: 0; }
 
