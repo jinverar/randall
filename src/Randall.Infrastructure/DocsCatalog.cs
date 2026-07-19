@@ -7,6 +7,7 @@ public static class DocsCatalog
 {
     public static readonly (string Path, string Title, string Group)[] Index =
     [
+        ("INSTALL_WINDOWS.md", "Install (Windows 10/11 VM)", "Getting started"),
         ("HOWTO_STALK_GENERIC_APP.md", "How to: stalk a generic application", "Getting started"),
         ("CUSTOM_TARGETS.md", "Custom targets (YAML → Target profile)", "Getting started"),
         ("CASE_BUILDER.md", "Scare Floor — recipes, seeds & dictionaries", "Getting started"),

@@ -26,15 +26,42 @@ Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
 > *Stalk code paths. Scream on crash.*
 
-## Start the web UI
+## Install (Windows 10 / 11 VM)
 
-Requires [.NET 8 SDK](https://dotnet.microsoft.com/download). From the repo root:
+Fresh VM or bare metal. Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md).
+
+**Need:** [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) · [Git](https://git-scm.com/download/win) · PowerShell · ~8 GB RAM recommended
 
 ```powershell
-dotnet run --project src/Randall.Server --urls http://127.0.0.1:5000
+# 1) Clone
+cd $env:USERPROFILE\Projects
+git clone https://github.com/jinverar/randall.git
+cd randall
+
+# 2) Build fuzzer + lab targets
+dotnet build
+.\scripts\build-all-lab-targets.ps1
+
+# 3) Optional — coverage (DynamoRIO)
+powershell -File scripts\install-dynamorio.ps1
+$env:DYNAMORIO_HOME = (Resolve-Path tools\dynamorio).Path
+
+# 4) Preflight
+dotnet run --project src\Randall.Cli -- doctor -c projects\vulnserver.yaml
+
+# 5) Web UI
+dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000
 ```
 
-Then open **[http://127.0.0.1:5000](http://127.0.0.1:5000)** — Dashboard (stalker CFG), Fuzz, Crashes, Case builder, Help.
+Open **[http://127.0.0.1:5000](http://127.0.0.1:5000)** — Dashboard (stalker CFG), Fuzz, Crashes, Case builder, Help.
+
+Smoke:
+
+```powershell
+dotnet run --project src\Randall.Cli -- fuzz -c projects\vulnserver.yaml --dry-run
+```
+
+Remote lab box: `dotnet run --project src\Randall.Cli -- agent --port 5000` → open `http://<vm-ip>:5000` from the host ([docs/LAB_AGENT.md](docs/LAB_AGENT.md)).
 
 ## Tricks borrowed from the greats
 
@@ -216,17 +243,7 @@ dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml --cover
 
 ## Quick start — sneak in
 
-Requires [.NET 8 SDK](https://dotnet.microsoft.com/download). Clone, build, start breaking things (legally):
-
-```powershell
-git clone https://github.com/jinverar/randall.git
-cd randall
-dotnet build
-dotnet run --project src/Randall.Cli -- --help
-dotnet run --project src/Randall.Server --urls http://127.0.0.1:5000
-```
-
-Open **http://127.0.0.1:5000** for the lab console.
+Same as **[Install](#install-windows-10--11-vm)** above — clone, build, doctor, then the UI. Full VM checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md).
 
 ## How I deploy
 
