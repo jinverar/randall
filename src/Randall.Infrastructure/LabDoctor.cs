@@ -129,20 +129,20 @@ public static class LabDoctor
                     : "Procmon not found — optional .pml bookends disabled");
         }
 
-        var sysmonOk = SysmonEventCapture.IsAvailable(out _, out var sysmonHint);
-        if (project.Fuzz.SysmonCapture)
+        var tcpvconExe = TcpvconCapture.DiscoverExecutable();
+        if (project.Fuzz.TcpvconCapture)
         {
-            Add("sysmon", sysmonOk ? "ok" : "warn",
-                sysmonOk
-                    ? $"SysmonCapture enabled → {sysmonHint}"
-                    : $"SysmonCapture enabled but {sysmonHint}");
+            Add("tcpvcon", tcpvconExe is not null ? "ok" : "warn",
+                tcpvconExe is not null
+                    ? $"TcpvconCapture enabled → {tcpvconExe}"
+                    : "TcpvconCapture enabled but tcpvcon/tcpvcon64 not found (tools/ or PATH)");
         }
         else
         {
-            Add("sysmon", sysmonOk ? "ok" : "warn",
-                sysmonOk
-                    ? $"{sysmonHint} (set fuzz.sysmonCapture: true to export run window)"
-                    : sysmonHint ?? "Sysmon not installed");
+            Add("tcpvcon", tcpvconExe is not null ? "ok" : "warn",
+                tcpvconExe is not null
+                    ? $"{tcpvconExe} (set fuzz.tcpvconCapture: true for network connection bookends)"
+                    : "tcpvcon not found — optional network connection snapshots disabled");
         }
 
         var procdumpExe = DebuggerTools.FindProcDump();

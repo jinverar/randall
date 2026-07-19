@@ -86,19 +86,19 @@ public sealed class FuzzEngine
         DebuggerWaitHandle? debuggerWait = null;
 
         ProcmonCapture? procmon = null;
-        SysmonEventCapture? sysmon = null;
+        TcpvconCapture? tcpvcon = null;
         PktmonCapture? pktmon = null;
         ProcDumpCrashArm? procdumpArm = null;
         DebugViewCapture? debugView = null;
         SysinternalsSnapshots? sysinternalsSnap = null;
         var wantProcmon = options.ProcmonCapture ?? project.Fuzz.ProcmonCapture;
-        var wantSysmon = options.SysmonCapture ?? project.Fuzz.SysmonCapture;
+        var wantTcpvcon = options.TcpvconCapture ?? project.Fuzz.TcpvconCapture;
         var wantProcdump = options.ProcdumpOnCrash ?? project.Fuzz.ProcdumpOnCrash;
         var wantPktmon = options.PktmonCapture ?? project.Fuzz.PktmonCapture;
         var wantDebugView = options.DebugViewCapture ?? project.Fuzz.DebugViewCapture;
         var wantSysinternalsSnap = options.SysinternalsSnapshots ?? project.Fuzz.SysinternalsSnapshots;
         string? runDir = journal?.RunDirectory;
-        if (!dryRun && (wantProcmon || wantSysmon || wantPktmon || wantDebugView || wantSysinternalsSnap))
+        if (!dryRun && (wantProcmon || wantTcpvcon || wantPktmon || wantDebugView || wantSysinternalsSnap))
         {
             runDir ??= Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir),
                 $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
@@ -116,15 +116,15 @@ public sealed class FuzzEngine
                     $"Procmon capture skipped: {procmon?.LastError ?? "Procmon not found (tools/ or PATH)"}");
         }
 
-        if (!dryRun && wantSysmon && runDir is not null)
+        if (!dryRun && wantTcpvcon && runDir is not null)
         {
-            sysmon = SysmonEventCapture.TryBegin(runDir);
-            if (sysmon.Available)
+            tcpvcon = TcpvconCapture.TryBegin(runDir);
+            if (tcpvcon.Available)
                 FuzzAnalystLog.Info(progress,
-                    $"Sysmon export armed → {sysmon.EvtxPath} (service={sysmon.ServiceName ?? "channel"})");
+                    $"TCPVCon capture armed → {tcpvcon.CaptureDir}");
             else
                 FuzzAnalystLog.Warn(progress,
-                    $"Sysmon capture skipped: {sysmon.LastError ?? "Sysmon not installed"}");
+                    $"TCPVCon capture skipped: {tcpvcon.LastError ?? "tcpvcon not found (tools/ or PATH)"}");
         }
 
         if (!dryRun && wantPktmon && runDir is not null)
@@ -230,6 +230,19 @@ public sealed class FuzzEngine
                 catch (Exception ex)
                 {
                     FuzzAnalystLog.Warn(progress, $"Sysinternals arm snapshots: {ex.Message}");
+                }
+            }
+
+            if (tcpvcon is { Available: true })
+            {
+                try
+                {
+                    tcpvcon.CaptureArm(proc.Id);
+                    FuzzAnalystLog.Info(progress, $"TCPVCon arm snapshot (pid={proc.Id})");
+                }
+                catch (Exception ex)
+                {
+                    FuzzAnalystLog.Warn(progress, $"TCPVCon arm snapshot: {ex.Message}");
                 }
             }
 
@@ -680,26 +693,41 @@ public sealed class FuzzEngine
                 {
                     FuzzAnalystLog.Crash(progress, iterations, $"{caseLabel} — {result.Detail}");
                     crashCount++;
-                    if (sysinternalsSnap is { AnyToolFound: true })
+                    if (sysinternalsSnap is { AnyToolFound: true } || tcpvcon is { Available: true })
                     {
+                        int? crashPid = null;
                         try
                         {
-                            int? crashPid = null;
+                            if (longLived is { HasExited: false })
+                                crashPid = longLived.Id;
+                        }
+                        catch
+                        {
+                            /* process may be gone */
+                        }
+
+                        if (sysinternalsSnap is { AnyToolFound: true })
+                        {
                             try
                             {
-                                if (longLived is { HasExited: false })
-                                    crashPid = longLived.Id;
+                                sysinternalsSnap.CaptureCrash(crashPid);
                             }
-                            catch
+                            catch (Exception ex)
                             {
-                                /* process may be gone */
+                                FuzzAnalystLog.Warn(progress, $"Sysinternals crash snapshots: {ex.Message}", iterations);
                             }
-
-                            sysinternalsSnap.CaptureCrash(crashPid);
                         }
-                        catch (Exception ex)
+
+                        if (tcpvcon is { Available: true })
                         {
-                            FuzzAnalystLog.Warn(progress, $"Sysinternals crash snapshots: {ex.Message}", iterations);
+                            try
+                            {
+                                tcpvcon.CaptureCrash(crashPid);
+                            }
+                            catch (Exception ex)
+                            {
+                                FuzzAnalystLog.Warn(progress, $"TCPVCon crash snapshot: {ex.Message}", iterations);
+                            }
                         }
                     }
 
@@ -871,36 +899,65 @@ public sealed class FuzzEngine
             procdumpArm?.Dispose();
             if (useCoverageTcp)
                 stalk.StopLongLivedAsync(longLived, cancellationToken).GetAwaiter().GetResult();
-            if (sysinternalsSnap is { AnyToolFound: true })
+            if (sysinternalsSnap is { AnyToolFound: true } || tcpvcon is { Available: true })
             {
+                int? endPid = null;
                 try
                 {
-                    int? endPid = null;
+                    if (longLived is { HasExited: false })
+                        endPid = longLived.Id;
+                }
+                catch
+                {
+                    /* ignore */
+                }
+
+                if (sysinternalsSnap is { AnyToolFound: true })
+                {
                     try
                     {
-                        if (longLived is { HasExited: false })
-                            endPid = longLived.Id;
+                        sysinternalsSnap.CaptureDisarm(endPid);
+                        Console.WriteLine($"Sysinternals snapshots: {sysinternalsSnap.SnapshotDir}");
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        /* ignore */
+                        Console.WriteLine($"Sysinternals snapshots: {ex.Message}");
                     }
+                    finally
+                    {
+                        sysinternalsSnap.Dispose();
+                    }
+                }
+                else
+                {
+                    sysinternalsSnap?.Dispose();
+                }
 
-                    sysinternalsSnap.CaptureDisarm(endPid);
-                    Console.WriteLine($"Sysinternals snapshots: {sysinternalsSnap.SnapshotDir}");
-                }
-                catch (Exception ex)
+                if (tcpvcon is { Available: true })
                 {
-                    Console.WriteLine($"Sysinternals snapshots: {ex.Message}");
+                    try
+                    {
+                        tcpvcon.CaptureDisarm(endPid);
+                        Console.WriteLine($"TCPVCon snapshots: {tcpvcon.CaptureDir}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"TCPVCon: {ex.Message}");
+                    }
+                    finally
+                    {
+                        tcpvcon.Dispose();
+                    }
                 }
-                finally
+                else
                 {
-                    sysinternalsSnap.Dispose();
+                    tcpvcon?.Dispose();
                 }
             }
             else
             {
                 sysinternalsSnap?.Dispose();
+                tcpvcon?.Dispose();
             }
 
             if (debugView is not null)
@@ -928,15 +985,6 @@ public sealed class FuzzEngine
                 else if (pktmon.LastError is not null)
                     Console.WriteLine($"pktmon: {pktmon.LastError}");
                 pktmon.Dispose();
-            }
-            if (sysmon is not null)
-            {
-                sysmon.StopAndExport();
-                if (sysmon.ExportOk)
-                    Console.WriteLine($"Sysmon export: {sysmon.EvtxPath}");
-                else if (sysmon.Available)
-                    Console.WriteLine($"Sysmon export: {sysmon.LastError ?? "no events / failed"} ({sysmon.MetaPath})");
-                sysmon.Dispose();
             }
             runtime?.Dispose();
             if (inProcess is not null)

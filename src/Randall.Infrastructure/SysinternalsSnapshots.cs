@@ -114,7 +114,7 @@ public sealed class SysinternalsSnapshots : IDisposable
                 wrote++;
         }
 
-        // Network snapshot (TCPView is GUI-only; netstat is the automatable stand-in).
+        // Lightweight network snapshot (dedicated TCPVCon bookends: fuzz.tcpvconCapture).
         if (CaptureNetstat(Path.Combine(SnapshotDir, $"{safe}-netstat.txt")))
             wrote++;
 
@@ -207,7 +207,7 @@ public sealed class SysinternalsSnapshots : IDisposable
             var stdout = proc.StandardOutput.ReadToEnd();
             proc.WaitForExit(15_000);
             File.WriteAllText(outPath,
-                $"# netstat -ano (TCPView has no useful CLI — network snapshot stand-in)\n" +
+                $"# netstat -ano (lightweight; use fuzz.tcpvconCapture for Sysinternals TCPVCon)\n" +
                 $"# utc={DateTimeOffset.UtcNow:O}\n" +
                 stdout);
             return true;
@@ -229,7 +229,7 @@ public sealed class SysinternalsSnapshots : IDisposable
             sb.AppendLine($"ListDLLs: {snap.ListDllsPath ?? "(missing)"}");
             sb.AppendLine($"PsList: {snap.PsListPath ?? "(missing)"}");
             sb.AppendLine($"PsInfo: {snap.PsInfoPath ?? "(optional, missing)"}");
-            sb.AppendLine("TCPView: skipped (GUI-only) — netstat -ano used instead");
+            sb.AppendLine("Network: netstat -ano in this bundle; richer TCPVCon via fuzz.tcpvconCapture");
             sb.AppendLine("VMMap: skipped (GUI-only / no stable CLI bookend)");
             sb.AppendLine("Bundle: handle + listdlls + pslist at arm/disarm/crash; netstat each time; psinfo on arm");
             if (snap._warnings.Count > 0)

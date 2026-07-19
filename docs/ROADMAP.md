@@ -316,7 +316,7 @@ dotnet run --project src/Randall.Server
 | WinDbg attach / open dump + Scream watcher | ✅ |
 | Case builder + Help tab (served docs) | ✅ |
 | Procmon bookends (`fuzz.procmonCapture` / UI checkbox) | ✅ |
-| Sysmon run-window export (`fuzz.sysmonCapture`) | ✅ |
+| TCPVCon network snapshots (`fuzz.tcpvconCapture`) | ✅ |
 | ProcDump -e -ma arm (`fuzz.procdumpOnCrash`) | ✅ |
 | pktmon ETL bookends (`fuzz.pktmonCapture`) | ✅ |
 | DebugView OutputDebugString (`fuzz.debugViewCapture`) | ✅ |

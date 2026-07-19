@@ -145,7 +145,7 @@ public static class RandallRoadmap
             new("p17-scream-selftest", "scream selftest + screamcrash lab target", true, "ACCESS_VIOLATION harness"),
             new("p17-procdump", "ProcDump optional fallback", true, "not required"),
             new("p17-procmon", "Procmon capture bookends (fuzz.procmonCapture)", true, "ProcmonCapture"),
-            new("p17-sysmon", "Sysmon run-window export (fuzz.sysmonCapture)", true, "SysmonEventCapture"),
+            new("p17-tcpvcon", "TCPVCon network snapshots (fuzz.tcpvconCapture)", true, "TcpvconCapture"),
             new("p17-procdump-arm", "ProcDump -e -ma arm (fuzz.procdumpOnCrash)", true, "ProcDumpCrashArm"),
             new("p17-pktmon", "pktmon ETL bookends (fuzz.pktmonCapture)", true, "PktmonCapture"),
             new("p17-debugview", "DebugView OutputDebugString capture (fuzz.debugViewCapture)", true, "DebugViewCapture"),

@@ -54,7 +54,7 @@ public sealed class FuzzSessionManager
                             request.DebuggerKind,
                             request.DebuggerOpenOnCrash,
                             request.ProcmonCapture,
-                            request.SysmonCapture,
+                            request.TcpvconCapture,
                             request.ProcdumpOnCrash,
                             request.PktmonCapture,
                             request.DebugViewCapture,

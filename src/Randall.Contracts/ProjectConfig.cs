@@ -201,10 +201,10 @@ public sealed class FuzzConfig
     /// <summary>Start Sysinternals Procmon .pml capture for the duration of the fuzz run.</summary>
     public bool ProcmonCapture { get; set; }
     /// <summary>
-    /// Export Sysmon Operational events for the fuzz run window (Sysmon must already be installed).
-    /// Does not install/start/stop the Sysmon service.
+    /// Sysinternals TCPVCon network connection snapshots at arm / disarm / crash
+    /// (tcpvcon64.exe / tcpvcon.exe from the TCPView package).
     /// </summary>
-    public bool SysmonCapture { get; set; }
+    public bool TcpvconCapture { get; set; }
     /// <summary>
     /// Arm ProcDump -e -ma on the target PID when Scream wait is not already attached.
     /// </summary>

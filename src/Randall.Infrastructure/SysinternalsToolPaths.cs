@@ -59,4 +59,7 @@ public static class SysinternalsToolPaths
 
     public static string? FindPsInfo(string? repoRoot = null) =>
         Find(repoRoot, "PsInfo64.exe", "psinfo64.exe", "PsInfo.exe", "psinfo.exe");
+
+    public static string? FindTcpvcon(string? repoRoot = null) =>
+        Find(repoRoot, "tcpvcon64.exe", "Tcpvcon64.exe", "tcpvcon.exe", "Tcpvcon.exe");
 }

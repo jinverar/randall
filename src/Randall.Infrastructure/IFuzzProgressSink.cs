@@ -46,7 +46,7 @@ public sealed record FuzzRunOptions(
     string? DebuggerKind = null,
     bool? DebuggerOpenOnCrash = null,
     bool? ProcmonCapture = null,
-    bool? SysmonCapture = null,
+    bool? TcpvconCapture = null,
     bool? ProcdumpOnCrash = null,
     bool? PktmonCapture = null,
     bool? DebugViewCapture = null,

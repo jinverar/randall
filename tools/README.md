@@ -32,9 +32,15 @@ tools/procdump.exe
 
 Also accepted: `tools/procdump64.exe`, `PATH`, or `PROCDUMP_PATH`. Dumps land under `data/crashes/<project>/dumps/procdump_*.dmp`. Prefer Scream (`debuggerMode: wait`) when you can — only one debugger can attach.
 
-## Sysmon — install once (not a tools/ drop-in)
+## TCPVCon (Sysinternals) — optional network connection bookends
 
-`fuzz.sysmonCapture` exports the run-window from `Microsoft-Windows-Sysmon/Operational`. Install Sysmon as a **service** on the fuzz host once (`Sysmon64.exe -accepteula -i config.xml`); do not expect Randfuzz to start/stop Sysmon each campaign. Artifacts: `data/runs/<runId>/sysmon-events.evtx`.
+For `fuzz.tcpvconCapture: true` / Fuzz UI **TCPVCon (network connections)**, drop the CLI from the [TCPView](https://learn.microsoft.com/en-us/sysinternals/downloads/tcpview) package on the **fuzz host**:
+
+```
+tools/tcpvcon64.exe
+```
+
+Also accepted: `tools/tcpvcon.exe`, or those names on `PATH`. Captures at arm / disarm / crash under `data/runs/<runId>/tcpvcon/` (+ `tcpvcon-capture.txt` meta). Soft-fails if missing. (Sysmon is not exported by Randfuzz — run it externally if you still want EVTX.)
 
 ## pktmon — built into Windows
 
@@ -61,11 +67,12 @@ tools/pslist64.exe
 tools/PsInfo64.exe   # optional — host info at arm only
 ```
 
-Also accepted: 32-bit names (`handle.exe`, …) or PATH / `C:\Sysinternals\`. Artifacts under `data/runs/<runId>/sysinternals/` (`arm-*`, `disarm-*`, `crash_*`). TCPView and VMMap are GUI-only and are **not** bookended (netstat `-ano` is used as the network snapshot). Soft-fails per missing binary.
+Also accepted: 32-bit names (`handle.exe`, …) or PATH / `C:\Sysinternals\`. Artifacts under `data/runs/<runId>/sysinternals/` (`arm-*`, `disarm-*`, `crash_*`). VMMap is GUI-only and is **not** bookended; netstat `-ano` is the lightweight network snapshot in this bundle (prefer `fuzz.tcpvconCapture` for richer endpoints). Soft-fails per missing binary.
 
 ```powershell
 # Typical Suite drop-in
 copy Dbgview.exe tools\
+copy tcpvcon64.exe tools\
 copy handle64.exe tools\
 copy listdlls64.exe tools\
 copy pslist64.exe tools\
