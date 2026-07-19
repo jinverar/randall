@@ -1,11 +1,19 @@
 # Download DynamoRIO into tools/dynamorio (gitignored lab dependency).
-# Optional - skip anytime; Randfuzz finds crashes without coverage.
+# Optional for coverage; Randfuzz finds crashes without it.
+# IMPORTANT: the download is large and may take a while on slow networks.
 #
-# Examples:
+# Primary paths:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
-#   powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
-#   powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-11.3.0-1.zip
+#   # Or manually: download DynamoRIO-Windows-*.zip from
+#   #   https://github.com/DynamoRIO/dynamorio/releases
+#   #   (URL: .../releases/download/<tag>/DynamoRIO-Windows-<version>.zip)
+#   # extract and rename the folder to tools\dynamorio so
+#   #   tools\dynamorio\bin64\drrun.exe exists
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-11.3.0.zip
 #   # Or drop a zip / extracted folder under tools\ then re-run (auto-detects)
+#
+# Footnote — coverage later / skip for now:
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
 param(
     [string]$Version = "",
     [string]$ZipPath = "",
@@ -153,7 +161,8 @@ if ($localZip) {
 }
 
 Write-Host "Fetching DynamoRIO release metadata from GitHub..."
-Write-Host 'Coverage is optional - Ctrl+C anytime, or re-run with -Skip / -ZipPath.'
+Write-Host 'IMPORTANT: large download - may take a while on slow networks. Patience is normal.'
+Write-Host 'Or Ctrl+C and manually unzip into tools\dynamorio (see tips below).'
 $release = Invoke-RestMethod "https://api.github.com/repos/DynamoRIO/dynamorio/releases/latest"
 if ($Version) {
     $release = Invoke-RestMethod "https://api.github.com/repos/DynamoRIO/dynamorio/releases/tags/$Version"
@@ -194,10 +203,14 @@ Write-Host "URL:    $($asset.browser_download_url)"
 Write-Host "Cache:  $zip"
 Write-Host ""
 Write-Host "Tips if this is too slow:"
-Write-Host '  - Cancel (Ctrl+C), download the zip in a browser, then:'
+Write-Host '  - Cancel (Ctrl+C), download DynamoRIO-Windows-*.zip from'
+Write-Host '      https://github.com/DynamoRIO/dynamorio/releases'
+Write-Host '    (URL pattern: .../releases/download/<tag>/DynamoRIO-Windows-<version>.zip),'
+Write-Host '    extract, and move/rename the folder to tools\dynamorio so'
+Write-Host '      tools\dynamorio\bin64\drrun.exe exists.'
+Write-Host '  - Or pass a browser-downloaded zip:'
 Write-Host '      powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath <path-to-zip>'
-Write-Host '  - Or extract so tools\dynamorio\bin64\drrun.exe exists, then skip this script.'
-Write-Host '  - Or skip coverage for now:  ...\install-dynamorio.ps1 -Skip'
+Write-Host '  - Coverage later / skip for now:  ...\install-dynamorio.ps1 -Skip'
 Write-Host ""
 
 try {
@@ -205,7 +218,7 @@ try {
 } catch {
     Write-Host ""
     Write-Host ("[!] Download failed: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
-    Write-Host "    Re-run to resume (curl/BITS), pass -ZipPath, or -Skip for now." -ForegroundColor Yellow
+    Write-Host "    Re-run to resume (curl/BITS), manual unzip into tools\dynamorio, -ZipPath, or -Skip." -ForegroundColor Yellow
     throw
 }
 

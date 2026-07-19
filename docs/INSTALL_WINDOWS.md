@@ -130,25 +130,41 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 ## 7. (Optional) DynamoRIO — coverage stalking
 
-Needed only for `+N edges` / coverage-guided corpus. **Crashes and basic fuzzing work without it.** The Windows zip is large; on a slow VM network the download can take a long time.
+Needed only for `+N edges` / coverage-guided corpus. **Crashes and basic fuzzing work without it.**
 
-**Skip for now:**
+> **Important:** `powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1` **may take a while** — large download; slow networks can run for many minutes. That is normal.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
-```
-
-**Install with progress / resume** (`curl.exe` if present, else BITS):
+**A. Install with the script** (progress + resume via `curl.exe` / BITS):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
 ```
 
-**Manual / faster on slow links** — download `DynamoRIO-Windows-*.zip` in a browser from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases), then:
+**B. Manual download + unzip into `tools`**
+
+1. Open [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases) and download the Windows asset `DynamoRIO-Windows-*.zip`  
+   (URL pattern: `https://github.com/DynamoRIO/dynamorio/releases/download/<tag>/DynamoRIO-Windows-<version>.zip` — e.g. `.../download/release_11.3.0/DynamoRIO-Windows-11.3.0.zip`).
+2. Extract the zip. The archive contains a single top-level folder (e.g. `DynamoRIO-Windows-11.3.0`).
+3. Move/rename that folder to `tools\dynamorio` so this path exists:
+
+```
+tools\dynamorio\bin64\drrun.exe
+```
+
+Layout after install:
+
+```
+tools\
+  dynamorio\
+    bin64\
+      drrun.exe
+    ...
+```
+
+Alternatively, pass a browser-downloaded zip to the script (no manual extract):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-*.zip
-# or extract yourself so tools\dynamorio\bin64\drrun.exe exists
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-11.3.0.zip
 ```
 
 Session env (or set a permanent user variable `DYNAMORIO_HOME`):
@@ -157,6 +173,9 @@ Session env (or set a permanent user variable `DYNAMORIO_HOME`):
 $env:DYNAMORIO_HOME = (Resolve-Path tools\dynamorio).Path
 Test-Path "$env:DYNAMORIO_HOME\bin64\drrun.exe"   # should be True
 ```
+
+> **Footnote — coverage later / skip for now:**  
+> `powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip`
 
 ---
 
@@ -216,7 +235,7 @@ For real dumps / memory lens, **fuzz on the agent UI** — see [LAB_AGENT.md](LA
 | **Scripts disabled / `PSSecurityException`** | `powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1` |
 | Lab target missing | Re-run the Bypass command above |
 | `gcc not found` / Scream skipped | `powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1 -Verbose` (downloads WinLibs zip; no winget needed); open a **new** shell; re-run `build-screamcrash.ps1`; or `-SkipGcc` on build-all |
-| DynamoRIO download “forever” | Use `-Skip`, or browser-download the zip + `-ZipPath`; re-run resumes via curl/BITS |
+| DynamoRIO download “forever” | Patience (large zip), or browser-download + unzip into `tools\dynamorio` (or `-ZipPath`); re-run resumes via curl/BITS; `-Skip` only if skipping coverage for now |
 | Port 5000 in use | Stop other Server/agent processes |
 | OOM / very slow | Raise VM RAM; avoid every lab + DynamoRIO at once |
 | Old ZIP of the repo | Prefer `git clone` / `git pull` so install scripts stay current |

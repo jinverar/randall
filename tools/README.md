@@ -28,23 +28,27 @@ Randall also auto-detects `tools/DynamoRIO-*` (versioned extract folder) and `DY
 
 ### Install
 
-DynamoRIO is **optional**. Skip with `-Skip` if you only need crash-finding fuzzing.
+DynamoRIO is **optional**. **Important:** the install script **may take a while** (large download; slow networks).
 
-**Script (progress + resume via curl/BITS)**
+**A. Script (progress + resume via curl/BITS)**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
-powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
 ```
 
-**Manual / slow network**
+**B. Manual download + unzip into `tools`**
 
-1. Download `DynamoRIO-Windows-*.zip` from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases).
-2. Either extract into `tools/` and rename to `dynamorio` (or keep `DynamoRIO-Windows-x.y.z`), **or**:
+1. Download `DynamoRIO-Windows-*.zip` from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases)  
+   (URL pattern: `https://github.com/DynamoRIO/dynamorio/releases/download/<tag>/DynamoRIO-Windows-<version>.zip`).
+2. Extract the zip, then move/rename the top-level folder to `tools\dynamorio` so `tools\dynamorio\bin64\drrun.exe` exists  
+   (or keep `tools\DynamoRIO-*` — Randall auto-detects it).
+3. Or pass the zip to the script instead of extracting by hand:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\path\to\DynamoRIO-Windows-*.zip
 ```
+
+> **Footnote — coverage later:** `...\install-dynamorio.ps1 -Skip` if you only need crash-finding for now.
 
 ### Verify
 

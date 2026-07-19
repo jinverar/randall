@@ -48,8 +48,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
 # gcc alone:             ...\install-gcc.ps1   (-Verbose for logs)
 # After gcc install: open a new shell before using gcc elsewhere
 
-# 3) Optional — coverage (DynamoRIO). Large download; skip anytime:
-#    powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
+# 3) Optional — coverage (DynamoRIO). IMPORTANT: may take a while (large zip; slow networks).
+#    Or manual: download DynamoRIO-Windows-*.zip from GitHub releases, unzip into tools\
+#    so tools\dynamorio\bin64\drrun.exe exists (see Optional — DynamoRIO below).
+#    Coverage later / skip for now:  ...\install-dynamorio.ps1 -Skip
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
 $env:DYNAMORIO_HOME = (Resolve-Path tools\dynamorio).Path
 
@@ -193,7 +195,9 @@ Docs: [docs/HARNESS_DESIGN.md](docs/HARNESS_DESIGN.md) · [docs/IN_PROCESS.md](d
 
 ## Optional — DynamoRIO (coverage-guided stalking)
 
-Coverage is **optional**. Randfuzz finds crashes without it. Install DynamoRIO when you want `+N edges` in the fuzz log and corpus inputs ranked by new basic blocks. The Windows zip is large — on a slow VM NAT link it can take a long time; that is normal.
+Coverage is **optional**. Randfuzz finds crashes without it. Install DynamoRIO when you want `+N edges` in the fuzz log and corpus inputs ranked by new basic blocks.
+
+> **Important:** `powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1` **may take a while** — the Windows zip is large, and slow VM/NAT links can run for many minutes. That is normal; let it finish, or use the manual path below.
 
 ### Install (pick one)
 
@@ -201,26 +205,39 @@ Coverage is **optional**. Randfuzz finds crashes without it. Install DynamoRIO w
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
-# Skip for now:
-powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
 ```
 
-**B. Manual zip (often faster — browser download, then point the script at it)**
+**B. Manual download + unzip into `tools`**
 
-1. Download `DynamoRIO-Windows-*.zip` from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases) (or copy the zip into `tools\`).
-2. Either extract so this file exists, **or** pass the zip to the script:
+1. Open [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases) and download the Windows asset `DynamoRIO-Windows-*.zip`  
+   (URL pattern: `https://github.com/DynamoRIO/dynamorio/releases/download/<tag>/DynamoRIO-Windows-<version>.zip` — e.g. `.../download/release_11.3.0/DynamoRIO-Windows-11.3.0.zip`).
+2. Extract the zip. The archive contains a single top-level folder (e.g. `DynamoRIO-Windows-11.3.0`).
+3. Move/rename that folder to `tools\dynamorio` so this path exists:
+
+```
+tools\dynamorio\bin64\drrun.exe
+```
+
+Layout after install:
+
+```
+tools\
+  dynamorio\
+    bin64\
+      drrun.exe
+    ...
+```
+
+You can keep a versioned name under `tools\` (e.g. `tools\DynamoRIO-Windows-11.3.0`) — Randfuzz auto-detects `tools\DynamoRIO-*`. Or pass the zip to the script instead of extracting by hand:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-11.3.0-1.zip
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-11.3.0.zip
 ```
-
-```
-tools/dynamorio/bin64/drrun.exe
-```
-
-Example: extract `DynamoRIO-Windows-11.3.0-1` and rename the folder to `tools/dynamorio`. Randfuzz also auto-detects `tools/DynamoRIO-*` if you keep the versioned folder name.
 
 Optional env var: `DYNAMORIO_HOME=C:\path\to\tools\dynamorio`
+
+> **Footnote — coverage later:** if you only want crash-finding for now, skip DynamoRIO with  
+> `powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip`
 
 ### Verify
 
