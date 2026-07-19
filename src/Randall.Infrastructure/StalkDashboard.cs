@@ -596,12 +596,49 @@ public static class StalkDashboard
         CrashDetailDto? latestDetail,
         IReadOnlyList<CrashSummaryDto> crashes)
     {
+        var runId = run?.RunId;
+        // Prefer crashes from the active run, then newest observation for that iteration.
         var crashByIteration = crashes
             .GroupBy(c => c.Iteration)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.ObservedAt).First().Id);
+            .ToDictionary(
+                g => g.Key,
+                g => g
+                    .OrderByDescending(c =>
+                        !string.IsNullOrWhiteSpace(runId)
+                        && string.Equals(c.RunId, runId, StringComparison.OrdinalIgnoreCase))
+                    .ThenByDescending(c => c.ObservedAt)
+                    .First().Id);
 
-        Guid? CrashIdFor(int iteration, bool crashed) =>
-            crashed && crashByIteration.TryGetValue(iteration, out var id) ? id : null;
+        Guid? CrashIdFor(int iteration, bool crashed, string? command = null)
+        {
+            if (!crashed) return null;
+            if (crashByIteration.TryGetValue(iteration, out var id))
+                return id;
+
+            // Fallback: nearest crash in the same run (iteration numbers can drift).
+            var pool = crashes.Where(c =>
+                string.IsNullOrWhiteSpace(runId)
+                || string.Equals(c.RunId, runId, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(command))
+            {
+                var cmdKey = command.Split('/')[0];
+                var byCommand = pool
+                    .Where(c =>
+                        (!string.IsNullOrWhiteSpace(cmdKey)
+                            && c.InputPath?.Contains(cmdKey, StringComparison.OrdinalIgnoreCase) == true)
+                        || string.Equals(c.Mutator, command, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(c => Math.Abs(c.Iteration - iteration))
+                    .ThenByDescending(c => c.ObservedAt)
+                    .FirstOrDefault();
+                if (byCommand is not null) return byCommand.Id;
+            }
+
+            var nearest = pool
+                .OrderBy(c => Math.Abs(c.Iteration - iteration))
+                .ThenByDescending(c => c.ObservedAt)
+                .FirstOrDefault();
+            return nearest?.Id ?? latestDetail?.Summary.Id;
+        }
 
         var points = new List<StalkTimelinePointDto>();
         if (run is null)
@@ -638,7 +675,7 @@ public static class StalkDashboard
                     iteration,
                     crashed,
                     kind == "novel" ? 1 : 0,
-                    CrashIdFor(iteration, crashed) ?? (crashed ? latestDetail?.Summary.Id : null)));
+                    CrashIdFor(iteration, crashed)));
             }
             return points;
         }
@@ -659,7 +696,7 @@ public static class StalkDashboard
                     entry.Iteration,
                     entry.Crashed,
                     entry.NewEdges,
-                    CrashIdFor(entry.Iteration, entry.Crashed)));
+                    CrashIdFor(entry.Iteration, entry.Crashed, entry.Command)));
             }
             catch
             {

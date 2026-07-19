@@ -284,6 +284,9 @@ let stalkSelection = null;
 let stalkRenderedTimeline = [];
 /** iteration → crash Guid (filled from server timeline / crash list). */
 const stalkCrashIdByIteration = new Map();
+/** Monotonic token so stale loadDashboard responses cannot clobber a newer pin/live fetch. */
+let stalkLoadSeq = 0;
+let stalkTimelineClickBound = false;
 
 async function loadTargets() {
   const targets = (await api.get('/api/targets')).filter(isVisibleTarget);
@@ -1054,10 +1057,32 @@ function mergeTimeline(serverPoints) {
   return [...(stalkServerTimeline || []), ...stalkLiveTimeline].slice(-200);
 }
 
+function ensureTimelineClickDelegation() {
+  const el = document.getElementById('stalk-timeline');
+  if (!el || stalkTimelineClickBound) return;
+  stalkTimelineClickBound = true;
+  el.addEventListener('click', (ev) => {
+    const bar = ev.target.closest?.('.bar');
+    if (!bar || !el.contains(bar)) return;
+    ev.preventDefault();
+    const idx = Number(bar.dataset.index);
+    const point = stalkRenderedTimeline[idx];
+    if (point) {
+      selectTimelinePoint(point, idx).catch((err) => {
+        console.error('Timeline selection failed', err);
+        const notes = document.getElementById('stalk-notes');
+        if (notes)
+          notes.innerHTML = `<li class="warn">Timeline pin failed: ${escapeXml(err.message || String(err))}</li>`;
+      });
+    }
+  });
+}
+
 function renderTimeline(points) {
   const el = document.getElementById('stalk-timeline');
   const end = document.getElementById('stalk-timeline-end');
   if (!el || !end) return;
+  ensureTimelineClickDelegation();
   const list = (points || []).slice(-200).map((p, i) => {
     const kind = p.kind || (p.crashed ? 'crash' : (p.newEdges || p.newEdgeCount) > 0 ? 'novel' : 'hit');
     const crashId = p.crashId || stalkCrashIdByIteration.get(Number(p.iteration)) || null;
@@ -1086,13 +1111,6 @@ function renderTimeline(points) {
       aria-label="${escapeXml(title)}"
       role="option" aria-selected="${selected ? 'true' : 'false'}"></button>`;
   }).join('');
-  el.querySelectorAll('.bar').forEach((bar) => {
-    bar.addEventListener('click', () => {
-      const idx = Number(bar.dataset.index);
-      const point = stalkRenderedTimeline[idx];
-      if (point) selectTimelinePoint(point, idx).catch(() => {});
-    });
-  });
   const last = list[list.length - 1];
   if (!stalkFollowLive && stalkSelection)
     end.textContent = `PINNED #${stalkSelection.iteration}`;
@@ -1143,7 +1161,7 @@ function highlightCrashLogRow(crashId) {
 
 async function selectTimelinePoint(point, index) {
   const kind = point.kind || (point.crashed ? 'crash' : 'hit');
-  let crashId = point.crashId || null;
+  let crashId = point.crashId || stalkCrashIdByIteration.get(Number(point.iteration)) || null;
   if ((kind === 'crash' || point.crashed) && !crashId)
     crashId = await resolveCrashIdForIteration(point.iteration);
 
@@ -1156,10 +1174,12 @@ async function selectTimelinePoint(point, index) {
     crashId,
     index,
   };
+  // Paint pin/selection immediately (before network) so Follow live + bar highlight show up.
   renderTimeline(stalkRenderedTimeline);
+  updateTimelineFollowUi();
 
   if (crashId) {
-    await loadDashboard({ crashId, applyWidgets: true });
+    await loadDashboard({ crashId, applyWidgets: true, force: true });
     highlightCrashLogRow(crashId);
   } else {
     applyIterationSelectionNote(point);
@@ -1263,6 +1283,7 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
 }
 
 async function loadDashboard(opts = {}) {
+  const seq = ++stalkLoadSeq;
   // Explicit applyWidgets wins; otherwise follow-live (or a focused crashId) drives widgets.
   const applyWidgets = typeof opts.applyWidgets === 'boolean'
     ? opts.applyWidgets
@@ -1270,8 +1291,10 @@ async function loadDashboard(opts = {}) {
   const crashId = opts.crashId
     || (!stalkFollowLive && stalkSelection?.crashId)
     || null;
+  const wantFollowLive = !!opts.followLive || stalkFollowLive;
 
   const targets = (await api.get('/api/targets')).filter(isVisibleTarget);
+  if (seq !== stalkLoadSeq) return;
   const tabs = document.getElementById('stalker-tabs');
   if (!targets.length) {
     tabs.innerHTML = '<span class="stalk-empty">No projects in projects/</span>';
@@ -1298,9 +1321,26 @@ async function loadDashboard(opts = {}) {
 
   const qs = crashId ? `?crashId=${encodeURIComponent(crashId)}` : '';
   const data = await api.get(`/api/stalk/${encodeURIComponent(stalkProject)}${qs}`);
+  if (seq !== stalkLoadSeq) return;
+
+  // Always refresh the bar strip; widgets are gated so in-flight live fetches cannot
+  // clobber a pin that happened while this request was on the wire.
   renderTimeline(mergeTimeline(data.timeline || []));
 
-  if (applyWidgets)
+  let canApply = applyWidgets;
+  if (canApply && !stalkFollowLive) {
+    const pinnedId = stalkSelection?.crashId || null;
+    if (!crashId) {
+      // Live/unfocused payload after user pinned — keep widgets frozen.
+      canApply = false;
+    } else if (pinnedId && String(pinnedId) !== String(crashId)) {
+      canApply = false;
+    }
+  }
+  if (canApply && wantFollowLive && !stalkFollowLive)
+    canApply = false;
+
+  if (canApply)
     applyDashboardWidgets(data, { selectedCrashId: crashId });
   else
     updateTimelineFollowUi();

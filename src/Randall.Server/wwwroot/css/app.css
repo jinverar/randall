@@ -2849,11 +2849,24 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
   outline: 2px solid var(--stalk-bright);
   outline-offset: 1px;
   z-index: 2;
-  filter: brightness(1.12);
+  filter: brightness(1.18);
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--stalk-bright) 40%, transparent);
 }
 .stalk-timeline .bar.crash.selected {
-  outline-color: var(--stalk-red);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--stalk-red) 35%, transparent);
+  outline-color: #fff;
+  box-shadow:
+    0 0 0 2px var(--stalk-red),
+    0 0 10px color-mix(in srgb, var(--stalk-red) 55%, transparent);
+}
+#stalk-follow-live:not(.hidden) {
+  border-color: var(--stalk-red);
+  color: var(--stalk-red);
+  font-weight: 600;
+}
+.stalk-timeline-selection:not(.hidden) {
+  color: var(--stalk-bright);
+  font-weight: 600;
 }
 .stalk-timeline-axis {
   display: flex;

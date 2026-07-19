@@ -12,7 +12,21 @@ builder.Services.AddSingleton<CampaignSessionManager>();
 var app = builder.Build();
 
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        // Dashboard JS/CSS change often during local stalker work — avoid stale click handlers.
+        var path = ctx.Context.Request.Path.Value ?? "";
+        if (path.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+            || path is "/" or "/index.html")
+        {
+            ctx.Context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+        }
+    },
+});
 
 app.MapGet("/randall.png", () => ServeRepoAsset("docs/assets/randall.png", "randall.png"));
 app.MapGet("/stalker.png", () => ServeRepoAsset("docs/assets/randal_stalking_bugs.png"));
@@ -387,11 +401,18 @@ app.MapGet("/api/coverage/status", () =>
 
 app.MapGet("/api/corpus/{project}", (string project) => CorpusStats.ForProject(project));
 
-app.MapGet("/api/stalk/{project}", (string project, Guid? crashId, FuzzSessionManager sessions) =>
+app.MapGet("/api/stalk/{project}", (string project, string? crashId, FuzzSessionManager sessions) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))
         return Results.NotFound(new { error = "project not found" });
-    var dash = StalkDashboard.ForProject(project, sessions.Status, crashId);
+    Guid? focusId = null;
+    if (!string.IsNullOrWhiteSpace(crashId))
+    {
+        if (!Guid.TryParse(crashId, out var parsed))
+            return Results.BadRequest(new { error = "crashId must be a guid" });
+        focusId = parsed;
+    }
+    var dash = StalkDashboard.ForProject(project, sessions.Status, focusId);
     return dash is null ? Results.NotFound(new { error = "project not found" }) : Results.Ok(dash);
 });
 
