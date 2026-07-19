@@ -49,8 +49,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
 # After gcc install: open a new shell before using gcc elsewhere
 
 # 3) Optional — coverage (DynamoRIO). IMPORTANT: may take a while (large zip; slow networks).
-#    Or manual: download DynamoRIO-Windows-*.zip from GitHub releases, unzip into tools\
-#    so tools\dynamorio\bin64\drrun.exe exists (see Optional — DynamoRIO below).
+#    Or manual: download DynamoRIO-Windows-*.zip, unzip, then rename the folder to
+#    exactly tools\dynamorio (NOT tools\DynamoRIO-Windows-*) so
+#    tools\dynamorio\bin64\drrun.exe exists (see Optional — DynamoRIO below).
 #    Coverage later / skip for now:  ...\install-dynamorio.ps1 -Skip
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
 $env:DYNAMORIO_HOME = (Resolve-Path tools\dynamorio).Path
@@ -209,10 +210,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
 
 **B. Manual download + unzip into `tools`**
 
+> **IMPORTANT:** The extracted folder **must** be named `tools\dynamorio` — **not** `tools\DynamoRIO-Windows-11.3.0` or any versioned name. After unzip, rename/move the top-level `DynamoRIO-Windows-*` folder to exactly `tools\dynamorio` so `tools\dynamorio\bin64\drrun.exe` exists.
+
 1. Open [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases) and download the Windows asset `DynamoRIO-Windows-*.zip`  
    (URL pattern: `https://github.com/DynamoRIO/dynamorio/releases/download/<tag>/DynamoRIO-Windows-<version>.zip` — e.g. `.../download/release_11.3.0/DynamoRIO-Windows-11.3.0.zip`).
 2. Extract the zip. The archive contains a single top-level folder (e.g. `DynamoRIO-Windows-11.3.0`).
-3. Move/rename that folder to `tools\dynamorio` so this path exists:
+3. **Rename/move** that folder to exactly `tools\dynamorio` (do **not** leave it as `tools\DynamoRIO-Windows-11.3.0`). Confirm:
 
 ```
 tools\dynamorio\bin64\drrun.exe
@@ -222,13 +225,13 @@ Layout after install:
 
 ```
 tools\
-  dynamorio\
+  dynamorio\          ← must be this exact name (not DynamoRIO-Windows-*)
     bin64\
       drrun.exe
     ...
 ```
 
-You can keep a versioned name under `tools\` (e.g. `tools\DynamoRIO-Windows-11.3.0`) — Randfuzz auto-detects `tools\DynamoRIO-*`. Or pass the zip to the script instead of extracting by hand:
+Or pass the zip to the script instead of extracting by hand (the script renames for you):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-11.3.0.zip

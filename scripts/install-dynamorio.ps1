@@ -7,10 +7,11 @@
 #   # Or manually: download DynamoRIO-Windows-*.zip from
 #   #   https://github.com/DynamoRIO/dynamorio/releases
 #   #   (URL: .../releases/download/<tag>/DynamoRIO-Windows-<version>.zip)
-#   # extract and rename the folder to tools\dynamorio so
-#   #   tools\dynamorio\bin64\drrun.exe exists
+#   # IMPORTANT: rename/move the top-level DynamoRIO-Windows-* folder to
+#   #   exactly tools\dynamorio (NOT tools\DynamoRIO-Windows-11.3.0 or any
+#   #   versioned name) so tools\dynamorio\bin64\drrun.exe exists
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-11.3.0.zip
-#   # Or drop a zip / extracted folder under tools\ then re-run (auto-detects)
+#   # Or drop a zip / extracted folder under tools\ then re-run (auto-detects + renames)
 #
 # Footnote — coverage later / skip for now:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
@@ -162,7 +163,7 @@ if ($localZip) {
 
 Write-Host "Fetching DynamoRIO release metadata from GitHub..."
 Write-Host 'IMPORTANT: large download - may take a while on slow networks. Patience is normal.'
-Write-Host 'Or Ctrl+C and manually unzip into tools\dynamorio (see tips below).'
+Write-Host 'Or Ctrl+C and manually unzip, then rename to exactly tools\dynamorio (see tips below).'
 $release = Invoke-RestMethod "https://api.github.com/repos/DynamoRIO/dynamorio/releases/latest"
 if ($Version) {
     $release = Invoke-RestMethod "https://api.github.com/repos/DynamoRIO/dynamorio/releases/tags/$Version"
@@ -206,8 +207,9 @@ Write-Host "Tips if this is too slow:"
 Write-Host '  - Cancel (Ctrl+C), download DynamoRIO-Windows-*.zip from'
 Write-Host '      https://github.com/DynamoRIO/dynamorio/releases'
 Write-Host '    (URL pattern: .../releases/download/<tag>/DynamoRIO-Windows-<version>.zip),'
-Write-Host '    extract, and move/rename the folder to tools\dynamorio so'
-Write-Host '      tools\dynamorio\bin64\drrun.exe exists.'
+Write-Host '    extract, then rename/move the top-level DynamoRIO-Windows-* folder'
+Write-Host '    to exactly tools\dynamorio (IMPORTANT: NOT tools\DynamoRIO-Windows-11.3.0'
+Write-Host '    or any versioned name) so tools\dynamorio\bin64\drrun.exe exists.'
 Write-Host '  - Or pass a browser-downloaded zip:'
 Write-Host '      powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath <path-to-zip>'
 Write-Host '  - Coverage later / skip for now:  ...\install-dynamorio.ps1 -Skip'

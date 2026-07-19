@@ -142,10 +142,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
 
 **B. Manual download + unzip into `tools`**
 
+> **IMPORTANT:** The extracted folder **must** be named `tools\dynamorio` — **not** `tools\DynamoRIO-Windows-11.3.0` or any versioned name. After unzip, rename/move the top-level `DynamoRIO-Windows-*` folder to exactly `tools\dynamorio` so `tools\dynamorio\bin64\drrun.exe` exists.
+
 1. Open [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases) and download the Windows asset `DynamoRIO-Windows-*.zip`  
    (URL pattern: `https://github.com/DynamoRIO/dynamorio/releases/download/<tag>/DynamoRIO-Windows-<version>.zip` — e.g. `.../download/release_11.3.0/DynamoRIO-Windows-11.3.0.zip`).
 2. Extract the zip. The archive contains a single top-level folder (e.g. `DynamoRIO-Windows-11.3.0`).
-3. Move/rename that folder to `tools\dynamorio` so this path exists:
+3. **Rename/move** that folder to exactly `tools\dynamorio` (do **not** leave it as `tools\DynamoRIO-Windows-11.3.0`). Confirm:
 
 ```
 tools\dynamorio\bin64\drrun.exe
@@ -155,13 +157,13 @@ Layout after install:
 
 ```
 tools\
-  dynamorio\
+  dynamorio\          ← must be this exact name (not DynamoRIO-Windows-*)
     bin64\
       drrun.exe
     ...
 ```
 
-Alternatively, pass a browser-downloaded zip to the script (no manual extract):
+Alternatively, pass a browser-downloaded zip to the script (no manual extract — the script renames for you):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-11.3.0.zip
@@ -235,7 +237,7 @@ For real dumps / memory lens, **fuzz on the agent UI** — see [LAB_AGENT.md](LA
 | **Scripts disabled / `PSSecurityException`** | `powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1` |
 | Lab target missing | Re-run the Bypass command above |
 | `gcc not found` / Scream skipped | `powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1 -Verbose` (downloads WinLibs zip; no winget needed); open a **new** shell; re-run `build-screamcrash.ps1`; or `-SkipGcc` on build-all |
-| DynamoRIO download “forever” | Patience (large zip), or browser-download + unzip into `tools\dynamorio` (or `-ZipPath`); re-run resumes via curl/BITS; `-Skip` only if skipping coverage for now |
+| DynamoRIO download “forever” | Patience (large zip), or browser-download + unzip then **rename** to exactly `tools\dynamorio` (not `tools\DynamoRIO-Windows-*`; or use `-ZipPath`); re-run resumes via curl/BITS; `-Skip` only if skipping coverage for now |
 | Port 5000 in use | Stop other Server/agent processes |
 | OOM / very slow | Raise VM RAM; avoid every lab + DynamoRIO at once |
 | Old ZIP of the repo | Prefer `git clone` / `git pull` so install scripts stay current |
