@@ -31,7 +31,8 @@ transport:
   receiveTimeoutMs: 1500
 fuzz:
   maxIterations: 500
-  debuggerMode: scream
+  debuggerMode: wait           # none | wait (Scream) | attach | both
+  # procmonCapture: true       # needs Procmon64.exe in tools/ or PATH — see docs/RECORDING.md
 mutators:
   - bitflip
   - havoc

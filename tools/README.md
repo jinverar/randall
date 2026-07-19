@@ -12,6 +12,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1 -Verbose
 ```
 
 Order: WinLibs zip → optional winget / Chocolatey. Open a **new** shell after install if another window still lacks `gcc`. `build-all-lab-targets.ps1` runs this when gcc is missing unless you pass `-SkipGcc`. See [docs/INSTALL_WINDOWS.md](../docs/INSTALL_WINDOWS.md).
+## Procmon (Sysinternals) — optional run bookends
+
+For `fuzz.procmonCapture: true` / Fuzz UI **Procmon capture**, drop the binary on the **fuzz host**:
+
+```
+tools/Procmon64.exe
+```
+
+Also accepted: `tools/Procmon.exe`, or any of those names on `PATH`. Capture writes `data/runs/<runId>/fuzz.pml`. See [docs/RECORDING.md](../docs/RECORDING.md).
+
 ## DynamoRIO (coverage-guided stalking)
 
 Randall uses DynamoRIO `drrun` + `drcov` for optional coverage feedback (`--coverage`, web **Coverage-guided** checkbox).
