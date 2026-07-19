@@ -23,6 +23,7 @@ data/
 logs/
 tools/dynamorio/
 tools/DynamoRIO-*/
+tools/mingw64/
 targets/vulnserver/*
 !targets/vulnserver/.gitkeep
 targets/vulnhttp/*

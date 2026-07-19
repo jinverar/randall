@@ -1,6 +1,6 @@
 # Build all Randall lab target binaries.
 # ScreamCrash needs gcc. By default, if gcc is missing, this script runs install-gcc.ps1
-# (winget WinLibs / Strawberry, or Chocolatey). Use -SkipGcc to skip install + Scream.
+# (WinLibs zip primary; optional winget / Chocolatey). Use -SkipGcc to skip install + Scream.
 #
 # Examples:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1

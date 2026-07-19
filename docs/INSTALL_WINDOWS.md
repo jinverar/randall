@@ -69,14 +69,29 @@ Expect `Build succeeded`.
 
 ## 5. Install gcc (MinGW) for Scream / native helpers
 
-ScreamCrash native helpers (`scream_crash.exe`, `scream_av.dll`) need **gcc** on `PATH`. The install script prefers **winget** [WinLibs MinGW](https://winlibs.com/) (`BrechtSanders.WinLibs.POSIX.UCRT`), then Strawberry Perl, then Chocolatey if present.
+ScreamCrash native helpers (`scream_crash.exe`, `scream_av.dll`) need **gcc** on `PATH`. **winget is not required.** The install script tries, in order:
+
+1. **Direct WinLibs zip** (primary; no admin) → `tools\mingw64` or `%LOCALAPPDATA%\Randfuzz\mingw64`, then prepends that `bin` to your **user PATH**  
+2. **winget** [WinLibs](https://winlibs.com/) / Strawberry (optional, only if `winget` exists)  
+3. **Chocolatey** `mingw` / `strawberryperl` (optional, if `choco` is on PATH)
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1
+# optional: powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1 -Verbose
 gcc --version
 ```
 
-Idempotent — safe to re-run. Use `-Skip` to bail out without installing. If winget is missing, install [App Installer](https://apps.microsoft.com/detail/9nblggh4nns1) / update Windows, or install from [winlibs.com](https://winlibs.com/) / [strawberryperl.com](https://strawberryperl.com/) and open a **new** shell.
+Idempotent — safe to re-run. Use `-Skip` to bail out without installing. Needs network for the ~260 MB WinLibs zip.
+
+**After a successful install, open a new PowerShell window** before `gcc --version` in another shell — user PATH changes do not apply to shells that were already open.
+
+Optional winget one-liner (only if App Installer / winget is installed):
+
+```powershell
+winget install -e --id BrechtSanders.WinLibs.POSIX.UCRT --accept-package-agreements --accept-source-agreements
+```
+
+Manual backup: [winlibs.com](https://winlibs.com/) (x86_64 POSIX UCRT `.zip`) / [strawberryperl.com](https://strawberryperl.com/), then open a **new** shell.
 
 `build-all-lab-targets.ps1` calls this automatically when gcc is missing (unless you pass `-SkipGcc`).
 
@@ -200,7 +215,7 @@ For real dumps / memory lens, **fuzz on the agent UI** — see [LAB_AGENT.md](LA
 | `dotnet` not found | New PowerShell after SDK install; check PATH |
 | **Scripts disabled / `PSSecurityException`** | `powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1` |
 | Lab target missing | Re-run the Bypass command above |
-| `gcc not found` / Scream skipped | `powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1` then re-run `build-screamcrash.ps1`; or `-SkipGcc` on build-all |
+| `gcc not found` / Scream skipped | `powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1 -Verbose` (downloads WinLibs zip; no winget needed); open a **new** shell; re-run `build-screamcrash.ps1`; or `-SkipGcc` on build-all |
 | DynamoRIO download “forever” | Use `-Skip`, or browser-download the zip + `-ZipPath`; re-run resumes via curl/BITS |
 | Port 5000 in use | Stop other Server/agent processes |
 | OOM / very slow | Raise VM RAM; avoid every lab + DynamoRIO at once |
