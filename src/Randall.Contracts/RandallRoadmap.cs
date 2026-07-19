@@ -148,6 +148,8 @@ public static class RandallRoadmap
             new("p17-sysmon", "Sysmon run-window export (fuzz.sysmonCapture)", true, "SysmonEventCapture"),
             new("p17-procdump-arm", "ProcDump -e -ma arm (fuzz.procdumpOnCrash)", true, "ProcDumpCrashArm"),
             new("p17-pktmon", "pktmon ETL bookends (fuzz.pktmonCapture)", true, "PktmonCapture"),
+            new("p17-debugview", "DebugView OutputDebugString capture (fuzz.debugViewCapture)", true, "DebugViewCapture"),
+            new("p17-sysinternals-snap", "Sysinternals snapshots bundle (fuzz.sysinternalsSnapshots)", true, "SysinternalsSnapshots"),
             new("p17-remote", "Remote stalk agent APIs on randall agent", true, "/api/remote/procmon|/tools"),
             new("p17-regs", "Registers from analyze / crash UI (live WinDbg panel later)", true, "analyze + crash detail"),
             new("p17-case", "Case builder — seeds, dicts, new/edit YAML targets", true, "docs/CASE_BUILDER.md"),

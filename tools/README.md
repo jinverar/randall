@@ -40,6 +40,37 @@ Also accepted: `tools/procdump64.exe`, `PATH`, or `PROCDUMP_PATH`. Dumps land un
 
 `fuzz.pktmonCapture` uses `%SystemRoot%\System32\pktmon.exe` (no download). Often needs an elevated console/agent. Writes `data/runs/<runId>/fuzz-pktmon.etl`.
 
+## DebugView (Sysinternals) — optional OutputDebugString capture
+
+For `fuzz.debugViewCapture: true` / Fuzz UI **DebugView capture**:
+
+```
+tools/Dbgview.exe
+```
+
+Also accepted on `PATH`. Capture writes `data/runs/<runId>/debugview.log` (Win32 OutputDebugString via `/o /l`). Soft-fails if missing.
+
+## Sysinternals snapshots — Handle / ListDLLs / PsList
+
+For `fuzz.sysinternalsSnapshots: true` / Fuzz UI **Sysinternals snapshots**, copy from the [Sysinternals Suite](https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite):
+
+```
+tools/handle64.exe
+tools/listdlls64.exe
+tools/pslist64.exe
+tools/PsInfo64.exe   # optional — host info at arm only
+```
+
+Also accepted: 32-bit names (`handle.exe`, …) or PATH / `C:\Sysinternals\`. Artifacts under `data/runs/<runId>/sysinternals/` (`arm-*`, `disarm-*`, `crash_*`). TCPView and VMMap are GUI-only and are **not** bookended (netstat `-ano` is used as the network snapshot). Soft-fails per missing binary.
+
+```powershell
+# Typical Suite drop-in
+copy Dbgview.exe tools\
+copy handle64.exe tools\
+copy listdlls64.exe tools\
+copy pslist64.exe tools\
+```
+
 ## DynamoRIO (coverage-guided stalking)
 
 Randall uses DynamoRIO `drrun` + `drcov` for optional coverage feedback (`--coverage`, web **Coverage-guided** checkbox).

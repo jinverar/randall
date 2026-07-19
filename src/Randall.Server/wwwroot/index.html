@@ -357,6 +357,14 @@
             <input type="checkbox" id="fuzz-pktmon" />
             pktmon capture (ETL bookend — built-in; often needs elevation)
           </label>
+          <label class="checkbox">
+            <input type="checkbox" id="fuzz-debugview" />
+            DebugView capture (OutputDebugString → debugview.log — needs Dbgview.exe)
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="fuzz-sysinternals-snap" />
+            Sysinternals snapshots (Handle + ListDLLs + PsList + netstat bookends)
+          </label>
           <div class="btn-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>
             <button type="button" class="btn" id="fuzz-stop">Stop</button>

@@ -56,7 +56,9 @@ public sealed class FuzzSessionManager
                             request.ProcmonCapture,
                             request.SysmonCapture,
                             request.ProcdumpOnCrash,
-                            request.PktmonCapture),
+                            request.PktmonCapture,
+                            request.DebugViewCapture,
+                            request.SysinternalsSnapshots),
                         token);
 
                     progress.OnCompleted(result);

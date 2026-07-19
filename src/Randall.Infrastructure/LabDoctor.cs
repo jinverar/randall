@@ -186,6 +186,41 @@ public static class LabDoctor
                     : "pktmon not found — optional packet bookends disabled");
         }
 
+        var dbgviewExe = DebugViewCapture.DiscoverExecutable();
+        if (project.Fuzz.DebugViewCapture)
+        {
+            Add("debugView", dbgviewExe is not null ? "ok" : "warn",
+                dbgviewExe is not null
+                    ? $"DebugViewCapture enabled → {dbgviewExe}"
+                    : "DebugViewCapture enabled but Dbgview.exe not found (tools/ or PATH)");
+        }
+        else
+        {
+            Add("debugView", dbgviewExe is not null ? "ok" : "warn",
+                dbgviewExe is not null
+                    ? $"{dbgviewExe} (set fuzz.debugViewCapture: true for OutputDebugString)"
+                    : "Dbgview.exe not found — optional DebugView bookends disabled");
+        }
+
+        var handleExe = SysinternalsToolPaths.FindHandle();
+        var listDllsExe = SysinternalsToolPaths.FindListDlls();
+        var pslistExe = SysinternalsToolPaths.FindPsList();
+        var snapTools = new[] { handleExe, listDllsExe, pslistExe }.Count(p => p is not null);
+        if (project.Fuzz.SysinternalsSnapshots)
+        {
+            Add("sysinternalsSnapshots", snapTools > 0 ? "ok" : "warn",
+                snapTools > 0
+                    ? $"SysinternalsSnapshots enabled → handle/listdlls/pslist ({snapTools}/3 found)"
+                    : "SysinternalsSnapshots enabled but Handle/ListDLLs/PsList not found (tools/ or PATH)");
+        }
+        else
+        {
+            Add("sysinternalsSnapshots", snapTools > 0 ? "ok" : "warn",
+                snapTools > 0
+                    ? $"Sysinternals CLI tools present ({snapTools}/3) — set fuzz.sysinternalsSnapshots: true"
+                    : "Handle/ListDLLs/PsList not found — optional snapshot bundle disabled");
+        }
+
         var dbg = DebuggerTools.Probe();
         foreach (var t in dbg.Tools)
         {

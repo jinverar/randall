@@ -319,6 +319,8 @@ dotnet run --project src/Randall.Server
 | Sysmon run-window export (`fuzz.sysmonCapture`) | ✅ |
 | ProcDump -e -ma arm (`fuzz.procdumpOnCrash`) | ✅ |
 | pktmon ETL bookends (`fuzz.pktmonCapture`) | ✅ |
+| DebugView OutputDebugString (`fuzz.debugViewCapture`) | ✅ |
+| Sysinternals snapshots bundle (`fuzz.sysinternalsSnapshots`) | ✅ |
 | Remote stalk APIs on `randall agent` | ✅ `/api/remote/procmon` · `/api/remote/tools` |
 
 Custom targets: [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · Case builder: [CASE_BUILDER.md](CASE_BUILDER.md)

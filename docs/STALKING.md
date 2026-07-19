@@ -40,7 +40,7 @@ Record via drcov path, crash id, or **From corpus edges**. Layers live under `da
 | `native` | Debug-event PC samples → drcov-compatible log (coarse) |
 | `none` | No coverage instrumentation |
 
-Procmon / Sysmon / pktmon / ProcDump bookends: `fuzz.procmonCapture`, `fuzz.sysmonCapture`, `fuzz.pktmonCapture`, `fuzz.procdumpOnCrash` (or Fuzz tab checkboxes). Full operator guide (tools PATH, Page Heap, remote VM): [RECORDING.md](RECORDING.md).
+Procmon / Sysmon / DebugView / Sysinternals snapshots / pktmon / ProcDump bookends: `fuzz.procmonCapture`, `fuzz.sysmonCapture`, `fuzz.debugViewCapture`, `fuzz.sysinternalsSnapshots`, `fuzz.pktmonCapture`, `fuzz.procdumpOnCrash` (or Fuzz tab checkboxes). Full operator guide (tools PATH, Page Heap, remote VM): [RECORDING.md](RECORDING.md).
 
 ---
 

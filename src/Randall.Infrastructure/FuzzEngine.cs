@@ -89,12 +89,16 @@ public sealed class FuzzEngine
         SysmonEventCapture? sysmon = null;
         PktmonCapture? pktmon = null;
         ProcDumpCrashArm? procdumpArm = null;
+        DebugViewCapture? debugView = null;
+        SysinternalsSnapshots? sysinternalsSnap = null;
         var wantProcmon = options.ProcmonCapture ?? project.Fuzz.ProcmonCapture;
         var wantSysmon = options.SysmonCapture ?? project.Fuzz.SysmonCapture;
         var wantProcdump = options.ProcdumpOnCrash ?? project.Fuzz.ProcdumpOnCrash;
         var wantPktmon = options.PktmonCapture ?? project.Fuzz.PktmonCapture;
+        var wantDebugView = options.DebugViewCapture ?? project.Fuzz.DebugViewCapture;
+        var wantSysinternalsSnap = options.SysinternalsSnapshots ?? project.Fuzz.SysinternalsSnapshots;
         string? runDir = journal?.RunDirectory;
-        if (!dryRun && (wantProcmon || wantSysmon || wantPktmon))
+        if (!dryRun && (wantProcmon || wantSysmon || wantPktmon || wantDebugView || wantSysinternalsSnap))
         {
             runDir ??= Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir),
                 $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
@@ -131,6 +135,27 @@ public sealed class FuzzEngine
             else
                 FuzzAnalystLog.Warn(progress,
                     $"pktmon capture skipped: {pktmon?.LastError ?? "pktmon not available"}");
+        }
+
+        if (!dryRun && wantDebugView && runDir is not null)
+        {
+            debugView = DebugViewCapture.TryStart(runDir);
+            if (debugView.IsRunning)
+                FuzzAnalystLog.Info(progress, $"DebugView capture → {debugView.LogPath}");
+            else
+                FuzzAnalystLog.Warn(progress,
+                    $"DebugView capture skipped: {debugView.LastError ?? "Dbgview.exe not found (tools/ or PATH)"}");
+        }
+
+        if (!dryRun && wantSysinternalsSnap && runDir is not null)
+        {
+            sysinternalsSnap = SysinternalsSnapshots.TryBegin(runDir);
+            if (sysinternalsSnap.AnyToolFound)
+                FuzzAnalystLog.Info(progress,
+                    $"Sysinternals snapshots → {sysinternalsSnap.SnapshotDir} (handle/listdlls/pslist + netstat)");
+            else
+                FuzzAnalystLog.Warn(progress,
+                    $"Sysinternals snapshots skipped: {sysinternalsSnap.LastError ?? "tools not found"}");
         }
 
         var crashes = new List<CrashRecord>();
@@ -194,6 +219,19 @@ public sealed class FuzzEngine
 
             options.Progress?.OnTargetPid(proc.Id);
             Console.WriteLine($"Target PID: {proc.Id}");
+
+            if (sysinternalsSnap is { AnyToolFound: true })
+            {
+                try
+                {
+                    sysinternalsSnap.CaptureArm(proc.Id);
+                    FuzzAnalystLog.Info(progress, $"Sysinternals arm snapshots (pid={proc.Id})");
+                }
+                catch (Exception ex)
+                {
+                    FuzzAnalystLog.Warn(progress, $"Sysinternals arm snapshots: {ex.Message}");
+                }
+            }
 
             // Only one debugger can attach. "both" = scream wait + open GUI after crash (not live dual-attach).
             if (debuggerMode is "attach")
@@ -642,6 +680,29 @@ public sealed class FuzzEngine
                 {
                     FuzzAnalystLog.Crash(progress, iterations, $"{caseLabel} — {result.Detail}");
                     crashCount++;
+                    if (sysinternalsSnap is { AnyToolFound: true })
+                    {
+                        try
+                        {
+                            int? crashPid = null;
+                            try
+                            {
+                                if (longLived is { HasExited: false })
+                                    crashPid = longLived.Id;
+                            }
+                            catch
+                            {
+                                /* process may be gone */
+                            }
+
+                            sysinternalsSnap.CaptureCrash(crashPid);
+                        }
+                        catch (Exception ex)
+                        {
+                            FuzzAnalystLog.Warn(progress, $"Sysinternals crash snapshots: {ex.Message}", iterations);
+                        }
+                    }
+
                     var crashDump = await TakeWaitDumpAsync(result.MiniDumpPath);
                     var crashTag = await RppCrashHook.RunAsync(
                         project, yamlPath, payload, result, cancellationToken);
@@ -810,6 +871,48 @@ public sealed class FuzzEngine
             procdumpArm?.Dispose();
             if (useCoverageTcp)
                 stalk.StopLongLivedAsync(longLived, cancellationToken).GetAwaiter().GetResult();
+            if (sysinternalsSnap is { AnyToolFound: true })
+            {
+                try
+                {
+                    int? endPid = null;
+                    try
+                    {
+                        if (longLived is { HasExited: false })
+                            endPid = longLived.Id;
+                    }
+                    catch
+                    {
+                        /* ignore */
+                    }
+
+                    sysinternalsSnap.CaptureDisarm(endPid);
+                    Console.WriteLine($"Sysinternals snapshots: {sysinternalsSnap.SnapshotDir}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Sysinternals snapshots: {ex.Message}");
+                }
+                finally
+                {
+                    sysinternalsSnap.Dispose();
+                }
+            }
+            else
+            {
+                sysinternalsSnap?.Dispose();
+            }
+
+            if (debugView is not null)
+            {
+                debugView.Stop();
+                if (File.Exists(debugView.LogPath) && new FileInfo(debugView.LogPath).Length > 0)
+                    Console.WriteLine($"DebugView log: {debugView.LogPath}");
+                else if (debugView.LastError is not null)
+                    Console.WriteLine($"DebugView: {debugView.LastError}");
+                debugView.Dispose();
+            }
+
             if (procmon is not null)
             {
                 procmon.Stop();

@@ -34,6 +34,8 @@ fuzz:
   debuggerMode: wait           # none | wait (Scream) | attach | both
   # procmonCapture: true       # needs Procmon64.exe in tools/ or PATH — see docs/RECORDING.md
   # sysmonCapture: true        # export Sysmon Operational for run window (service pre-installed)
+  # debugViewCapture: true     # Dbgview.exe OutputDebugString → debugview.log
+  # sysinternalsSnapshots: true  # handle + listdlls + pslist (+ netstat) arm/disarm/crash
   # procdumpOnCrash: true      # ProcDump -e -ma when Scream/attach is not used
   # pktmonCapture: true        # Windows pktmon ETL (often needs elevation)
 mutators:

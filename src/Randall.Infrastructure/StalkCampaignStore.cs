@@ -289,8 +289,20 @@ public static class StalkCampaignStore
                 PktmonCapture.DiscoverExecutable() is not null ? "ready" : "missing",
                 "NIC packet ETL bookend — fuzz.pktmonCapture (often needs elevation)",
                 "pktmon start --capture --comp nics -f fuzz-pktmon.etl"),
+            new("debugview", "DebugView",
+                DebugViewCapture.DiscoverExecutable(repoRoot) is not null ? "ready" : "missing",
+                "OutputDebugString capture — fuzz.debugViewCapture (Dbgview.exe in tools/ or PATH)",
+                "Dbgview /accepteula /t /o /l debugview.log"),
+            new("sysinternals-snap", "Sysinternals snapshots",
+                SysinternalsToolPaths.FindHandle(repoRoot) is not null ||
+                SysinternalsToolPaths.FindListDlls(repoRoot) is not null ||
+                SysinternalsToolPaths.FindPsList(repoRoot) is not null
+                    ? "ready"
+                    : "missing",
+                "Handle + ListDLLs + PsList + netstat bookends — fuzz.sysinternalsSnapshots",
+                "handle64 -p <pid> · listdlls64 <pid> · pslist <pid>"),
             new("procexp", "Process Explorer", ExistsOnPath("procexp") || ExistsOnPath("procexp64") ? "ready" : "planned",
-                "Live process tree, handles, and module view",
+                "Live process tree, handles, and module view (GUI — not bookended)",
                 null),
             new("native-stalk", "Native PC stalk", new NativeStalkRunner().IsAvailable ? "ready" : "missing",
                 "Debug-event PC samples → drcov (no DynamoRIO). Coarser than external BB coverage.",

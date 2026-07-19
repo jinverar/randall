@@ -211,4 +211,12 @@ public sealed class FuzzConfig
     public bool ProcdumpOnCrash { get; set; }
     /// <summary>Start Windows pktmon packet capture for the duration of the fuzz run.</summary>
     public bool PktmonCapture { get; set; }
+    /// <summary>
+    /// Start Sysinternals DebugView (Dbgview.exe) OutputDebugString capture for the run.
+    /// </summary>
+    public bool DebugViewCapture { get; set; }
+    /// <summary>
+    /// Sysinternals snapshot bundle: Handle + ListDLLs + PsList (+ netstat) at arm/disarm/crash.
+    /// </summary>
+    public bool SysinternalsSnapshots { get; set; }
 }
