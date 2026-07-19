@@ -346,6 +346,7 @@
             <select id="fuzz-recording-profile" title="Presets for observation bookends — Debugger wait is separate">
               <option value="off">Off</option>
               <option value="first-triage" selected>First triage (recommended)</option>
+              <option value="parser-re">Parser / RE</option>
               <option value="network">Network / protocol</option>
               <option value="deep-dive">Deep dive</option>
               <option value="custom">Custom</option>
@@ -358,6 +359,27 @@
           <p id="fuzz-recording-elev" class="hint fuzz-recording-elev hidden">
             Network / Deep dive enable pktmon (and Deep dive adds ETW) — often need elevation.
           </p>
+          <details class="fuzz-re-companions" id="fuzz-re-companions">
+            <summary>RE companions</summary>
+            <p id="fuzz-re-companions-note" class="hint fuzz-re-note hidden">
+              Start API Monitor / Frida on the target PID after Target Runtime starts — Randfuzz does not inject these yet.
+            </p>
+            <div class="fuzz-re-item">
+              <strong>API Monitor</strong>
+              <p>
+                Hooks Windows APIs and shows parameters, return values, and structures
+                (CreateFile, RegSetValueEx, …). For parser RE, often more informative than Procmon’s high-level FS/Reg view.
+              </p>
+              <button type="button" class="linkish" data-help="RECORDING.md#api-monitor-frida">Open in Help</button>
+            </div>
+            <div class="fuzz-re-item">
+              <strong>Frida</strong>
+              <p>
+                Dynamic instrumentation: hook any function, dump buffers, log APIs — without recompiling the target.
+              </p>
+              <button type="button" class="linkish" data-help="RECORDING.md#api-monitor-frida">Open in Help</button>
+            </div>
+          </details>
           <details class="fuzz-recording-advanced" id="fuzz-recording-advanced">
             <summary>Advanced recording options</summary>
             <label class="checkbox" title="Procmon .pml bookend — needs Procmon in PATH or tools/">
@@ -1174,6 +1196,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=recording-profiles-1"></script>
+  <script type="module" src="/js/app.js?v=re-companions-1"></script>
 </body>
 </html>

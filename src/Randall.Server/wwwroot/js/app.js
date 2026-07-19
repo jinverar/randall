@@ -125,6 +125,34 @@ function switchView(name) {
 /* —— Help (served markdown from docs/) —— */
 let helpLoaded = false;
 
+function parseHelpRef(ref) {
+  const raw = String(ref || '').trim();
+  const hashIdx = raw.indexOf('#');
+  if (hashIdx < 0) return { path: raw, hash: '' };
+  return { path: raw.slice(0, hashIdx), hash: raw.slice(hashIdx + 1) };
+}
+
+function slugifyHeading(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-');
+}
+
+function ensureHelpHeadingIds(root) {
+  root.querySelectorAll('h1, h2, h3, h4').forEach((h) => {
+    if (!h.id) h.id = slugifyHeading(h.textContent);
+  });
+}
+
+function scrollHelpToHash(hash) {
+  if (!hash) return;
+  const body = document.getElementById('help-content');
+  const el = body?.querySelector(`#${CSS.escape(hash)}`) || document.getElementById(hash);
+  el?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
 async function loadHelpView(openPath) {
   const indexEl = document.getElementById('help-index');
   if (!indexEl) return;
@@ -150,15 +178,22 @@ async function loadHelpView(openPath) {
   if (openPath) await openHelpDoc(openPath);
 }
 
-async function openHelpDoc(path) {
+async function openHelpDoc(pathOrRef) {
+  const { path, hash } = parseHelpRef(pathOrRef);
+  if (!path) return;
   const doc = await api.get(`/api/docs/${path.split('/').map(encodeURIComponent).join('/')}`);
   document.getElementById('help-title').textContent = doc.title;
   const body = document.getElementById('help-content');
   const md = typeof marked !== 'undefined' ? marked.parse(doc.markdown || '') : `<pre>${escapeAttr(doc.markdown || '')}</pre>`;
   body.innerHTML = md;
+  ensureHelpHeadingIds(body);
+  // Stable anchor used by Campaign → RE companions "Open in Help"
+  const apiFridaH = [...body.querySelectorAll('h2, h3')].find((h) =>
+    /api\s*monitor/i.test(h.textContent || '') && /frida/i.test(h.textContent || ''));
+  if (apiFridaH) apiFridaH.id = 'api-monitor-frida';
   body.querySelectorAll('a[href]').forEach((a) => {
     const href = a.getAttribute('href') || '';
-    if (href.endsWith('.md') && !href.startsWith('http')) {
+    if (href.includes('.md') && !href.startsWith('http')) {
       a.addEventListener('click', (ev) => {
         ev.preventDefault();
         openHelpDoc(href.replace(/^\.\//, '')).catch(() => {});
@@ -166,10 +201,18 @@ async function openHelpDoc(path) {
     } else if (href.startsWith('http')) {
       a.target = '_blank';
       a.rel = 'noopener';
+    } else if (href.startsWith('#')) {
+      a.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        scrollHelpToHash(href.slice(1));
+      });
     }
   });
   document.querySelectorAll('.help-link').forEach((b) =>
     b.classList.toggle('active', b.dataset.doc === path));
+  if (hash) {
+    requestAnimationFrame(() => scrollHelpToHash(hash));
+  }
 }
 
 document.querySelectorAll('[data-help]').forEach((btn) => {
@@ -2425,6 +2468,11 @@ const RECORDING_PROFILES = {
     procmon: true, tcpvcon: false, procdump: false, pktmon: false,
     etw: false, debugview: false, sysinternals: true, strings: false,
   },
+  // Same wired flags as first-triage — surfaces RE companions (API Monitor / Frida).
+  'parser-re': {
+    procmon: true, tcpvcon: false, procdump: false, pktmon: false,
+    etw: false, debugview: false, sysinternals: true, strings: false,
+  },
   network: {
     procmon: true, tcpvcon: true, procdump: false, pktmon: true,
     etw: false, debugview: false, sysinternals: true, strings: false,
@@ -2451,6 +2499,8 @@ function flagsMatchProfile(flags, profile) {
 
 function matchRecordingProfileName(flags = readRecordingFlags()) {
   for (const [name, profile] of Object.entries(RECORDING_PROFILES)) {
+    // parser-re shares first-triage flags — only selectable from the dropdown
+    if (name === 'parser-re') continue;
     if (flagsMatchProfile(flags, profile)) return name;
   }
   return 'custom';
@@ -2462,6 +2512,14 @@ function updateRecordingElevHint(profileName) {
   elev.classList.toggle('hidden', profileName !== 'network' && profileName !== 'deep-dive');
 }
 
+function updateReCompanionsPanel(profileName) {
+  const panel = document.getElementById('fuzz-re-companions');
+  const note = document.getElementById('fuzz-re-companions-note');
+  const isParserRe = profileName === 'parser-re';
+  if (note) note.classList.toggle('hidden', !isParserRe);
+  if (panel && isParserRe) panel.open = true;
+}
+
 function applyRecordingProfile(name) {
   const profile = RECORDING_PROFILES[name];
   const select = document.getElementById('fuzz-recording-profile');
@@ -2470,6 +2528,7 @@ function applyRecordingProfile(name) {
   if (!profile) {
     if (advanced && name === 'custom') advanced.open = true;
     updateRecordingElevHint(name);
+    updateReCompanionsPanel(name);
     return;
   }
   applyingRecordingProfile = true;
@@ -2479,6 +2538,7 @@ function applyRecordingProfile(name) {
   }
   applyingRecordingProfile = false;
   updateRecordingElevHint(name);
+  updateReCompanionsPanel(name);
   if (advanced && name === 'custom') advanced.open = true;
 }
 
@@ -2488,7 +2548,10 @@ function initRecordingProfiles() {
 
   const initial = select.value || 'first-triage';
   if (initial !== 'custom') applyRecordingProfile(initial);
-  else updateRecordingElevHint('custom');
+  else {
+    updateRecordingElevHint('custom');
+    updateReCompanionsPanel('custom');
+  }
 
   select.addEventListener('change', () => {
     const name = select.value;
@@ -2496,6 +2559,7 @@ function initRecordingProfiles() {
       const advanced = document.getElementById('fuzz-recording-advanced');
       if (advanced) advanced.open = true;
       updateRecordingElevHint('custom');
+      updateReCompanionsPanel('custom');
       return;
     }
     applyRecordingProfile(name);
@@ -2507,6 +2571,7 @@ function initRecordingProfiles() {
       const matched = matchRecordingProfileName();
       select.value = matched;
       updateRecordingElevHint(matched);
+      updateReCompanionsPanel(matched);
       if (matched === 'custom') {
         const advanced = document.getElementById('fuzz-recording-advanced');
         if (advanced) advanced.open = true;

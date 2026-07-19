@@ -78,16 +78,53 @@ Sysinternals covers most day-to-day blast-radius work. For long campaigns, parse
 | One weird crash you cannot single-step | WinDbg TTD (External) |
 | Custom long-lived telemetry DLL | Detours (External) |
 
-### Manual companions (install + run beside fuzz)
+<a id="api-monitor-frida"></a>
 
-**API Monitor** — [rohitab.com/apimonitor](http://www.rohitab.com/apimonitor) (or current mirror). Attach to target after Target Runtime start; enable File/Process/Memory categories you care about; save session when a crash lands.
+### API Monitor & Frida (RE companions)
 
-**Frida** — `pip install frida-tools` (or Frida releases). Example beside a run:
+⭐⭐⭐⭐⭐ for **parser RE** / dynamic instrumentation. **GUI companions** — install yourself, run on the **fuzz host** beside a Campaign. Randfuzz does **not** inject or bookend them (yet).
+
+#### API Monitor
+
+Hooks Windows API calls and shows **function parameters**, **return values**, **structures**, COM, Winsock, Crypto, Registry, File APIs, and hundreds of DLLs. For parser / file-format work it is often more informative than Procmon alone.
+
+| Procmon (Wired) | API Monitor (GUI) |
+|-----------------|-------------------|
+| Shows a file was opened | Exact **CreateFile** parameters |
+| Shows registry access | Exact **RegSetValueEx** data |
+| Shows process creation | **CreateProcess** arguments |
+| No function arguments | Full arguments + structures |
+
+Install: [rohitab.com/apimonitor](http://www.rohitab.com/apimonitor) (or current mirror). Filter on target PID/module; enable File / Process / Memory categories you care about; save the session when a crash lands.
+
+#### Frida
+
+Dynamic instrumentation without rebuilding the target:
+
+- Hook any function  
+- Modify parameters  
+- Dump internal buffers  
+- Log API traffic  
+- Instrument parsers / decoders live  
 
 ```powershell
-# After Campaign starts and target PID is known (UI / doctor / Process Explorer)
+# pip install frida-tools  (or Frida releases)
+# After Target Runtime starts — PID from UI / doctor / Process Explorer
 frida -p <pid> -l projects/local/myapp/hooks.js
 ```
+
+Keep scripts next to the project; do not expect Randfuzz to inject.
+
+#### Run beside a Randfuzz campaign (fuzz host)
+
+1. On the lab VM / bare metal: start Target Runtime (or Campaign with long-lived target).  
+2. Note the target **PID**.  
+3. Attach **API Monitor** and/or **Frida** to that PID (Monitor 2/3).  
+4. In the UI, pick **First triage** or **Parser / RE** (Procmon + snapshots) — Debugger **Wait** separately.  
+5. Start the Campaign. Wired bookends write under `data/runs/<id>/`; companion sessions you save yourself.  
+6. On crash: keep the API Monitor / Frida session + Scream dump + Procmon `.pml`.
+
+UI: Fuzz → Campaign → **RE companions** panel (guidance only). Help deep-link: this section.
 
 **ETW viewers (for Wired or manual WPR)** — Windows Performance Analyzer (`wpa.exe` from ADK/WPT), [PerfView](https://github.com/microsoft/perfview), or [UIforETW](https://github.com/google/UIforETW). Manual bookend if not using `fuzz.etwCapture`:
 
@@ -172,7 +209,7 @@ Run together: **Procmon or ETW** (Wired) + **API Monitor** (GUI) + **Process Exp
 | **Boofuzz** | Network protocol fuzzing | Related lineage — Randfuzz Campaign |
 | **pktmon** | NIC ETL | **Wired** — `fuzz.pktmonCapture` |
 | **TCPVCon** | Connection snapshots (TCPView CLI) | **Wired** — `fuzz.tcpvconCapture` |
-| **Frida / API Monitor / Detours** | Dynamic observation | **GUI companion** / **External** — see [Beyond Sysinternals](#beyond-sysinternals--modern-observation-stack) |
+| **Frida / API Monitor / Detours** | Dynamic observation | **GUI companion** / **External** — see [API Monitor & Frida](#api-monitor-frida) |
 | **Sysmon** | Host-wide EVTX | **External only** — Randfuzz does **not** export Sysmon |
 
 ---
@@ -276,9 +313,9 @@ Template: [templates/tcp-runtime.yaml](templates/tcp-runtime.yaml).
 ### UI (Fuzz → Campaign)
 
 - **Debugger** → None / Wait (Scream) / Attach / Both  
-- **Procmon** · **ETW/WPR** · **TCPVCon** · **ProcDump on crash** · **pktmon** · **DebugView**  
-- **Sysinternals snapshots** (includes SigCheck/AccessChk/VMMap when binaries exist)  
-- **Strings on crash** (opt-in)  
+- **Recording profile** → Off · First triage · Network / protocol · Deep dive · **Parser / RE** · Custom  
+- **RE companions** → API Monitor + Frida guidance (not injected; expand with Parser / RE)  
+- **Advanced** → Procmon · ETW/WPR · TCPVCon · ProcDump · pktmon · DebugView · snapshots · Strings  
 - **Doctor** probes the Suite tools + `wpr` / `pktmon` above  
 
 ```powershell
