@@ -2423,6 +2423,7 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
       pktmonCapture: document.getElementById('fuzz-pktmon')?.checked === true,
       debugViewCapture: document.getElementById('fuzz-debugview')?.checked === true,
       sysinternalsSnapshots: document.getElementById('fuzz-sysinternals-snap')?.checked === true,
+      stringsOnCrash: document.getElementById('fuzz-strings-crash')?.checked === true,
     });
     appendLog('Session accepted…');
   } catch (err) {

@@ -56,7 +56,7 @@ tools/Dbgview.exe
 
 Also accepted on `PATH`. Capture writes `data/runs/<runId>/debugview.log` (Win32 OutputDebugString via `/o /l`). Soft-fails if missing.
 
-## Sysinternals snapshots — Handle / ListDLLs / PsList
+## Sysinternals snapshots — Handle / ListDLLs / PsList (+ SigCheck / AccessChk / VMMap)
 
 For `fuzz.sysinternalsSnapshots: true` / Fuzz UI **Sysinternals snapshots**, copy from the [Sysinternals Suite](https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite):
 
@@ -64,10 +64,23 @@ For `fuzz.sysinternalsSnapshots: true` / Fuzz UI **Sysinternals snapshots**, cop
 tools/handle64.exe
 tools/listdlls64.exe
 tools/pslist64.exe
-tools/PsInfo64.exe   # optional — host info at arm only
+tools/sigcheck64.exe     # optional — target exe at arm → sigcheck-target.txt
+tools/accesschk64.exe    # optional — process token (-p -f) bookends
+tools/vmmap64.exe        # optional — best-effort CLI on arm/crash; GUI still preferred
+tools/PsInfo64.exe       # optional — host info at arm only
 ```
 
-Also accepted: 32-bit names (`handle.exe`, …) or PATH / `C:\Sysinternals\`. Artifacts under `data/runs/<runId>/sysinternals/` (`arm-*`, `disarm-*`, `crash_*`). VMMap is GUI-only and is **not** bookended; netstat `-ano` is the lightweight network snapshot in this bundle (prefer `fuzz.tcpvconCapture` for richer endpoints). Soft-fails per missing binary.
+Also accepted: 32-bit names (`handle.exe`, …) or PATH / `C:\Sysinternals\`. Artifacts under `data/runs/<runId>/sysinternals/`. netstat `-ano` is the lightweight network snapshot (prefer `fuzz.tcpvconCapture`). Process Explorer / RAMMap remain **GUI companions** (not bookended). Soft-fails per missing binary.
+
+## Strings on crash
+
+For `fuzz.stringsOnCrash: true` / Fuzz UI **Strings on crash**:
+
+```
+tools/strings64.exe
+```
+
+Writes `data/crashes/<project>/<crash>_strings.txt` beside the crashing `.bin`. Opt-in (can be slow on huge payloads). Soft-fails if missing.
 
 ```powershell
 # Typical Suite drop-in
@@ -76,6 +89,9 @@ copy tcpvcon64.exe tools\
 copy handle64.exe tools\
 copy listdlls64.exe tools\
 copy pslist64.exe tools\
+copy sigcheck64.exe tools\
+copy strings64.exe tools\
+copy accesschk64.exe tools\
 ```
 
 ## DynamoRIO (coverage-guided stalking)

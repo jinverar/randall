@@ -81,6 +81,8 @@ transport:
 # … seeds + mutators as above
 ```
 
+**Windows services:** prefer Target Runtime (`longLived` + restart after death) over scripting SCM yourself. Sysinternals **PsService / PsKill / PsExec** remain useful external companions for real SCM services — see [RECORDING.md](RECORDING.md) Tier 4. Recording bookends (Procmon, snapshots, ProcDump/Scream) still apply on the fuzz host.
+
 ## Remote long-lived (Target Runtime on agent)
 
 Same checkout on the fuzz VM. Run `randall agent --port 5000` there. On the laptop YAML:

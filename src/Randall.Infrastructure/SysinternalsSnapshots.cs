@@ -4,14 +4,15 @@ using System.Text;
 namespace Randall.Infrastructure;
 
 /// <summary>
-/// Opt-in Sysinternals snapshot bundle: Handle, ListDLLs, PsList (and netstat network snapshot —
-/// TCPView has no useful CLI). Captures at arm / disarm / crash under the run journal.
+/// Opt-in Sysinternals snapshot bundle: Handle, ListDLLs, PsList, optional AccessChk / VMMap,
+/// SigCheck on arm (target exe), and netstat. Captures at arm / disarm / crash under the run journal.
 /// Soft-fails per tool when binaries are missing.
 /// </summary>
 public sealed class SysinternalsSnapshots : IDisposable
 {
     private bool _disposed;
     private readonly List<string> _warnings = [];
+    private bool _sigcheckDone;
 
     public string SnapshotDir { get; }
     public string MetaPath { get; }
@@ -20,6 +21,9 @@ public sealed class SysinternalsSnapshots : IDisposable
     public string? ListDllsPath { get; }
     public string? PsListPath { get; }
     public string? PsInfoPath { get; }
+    public string? SigCheckPath { get; }
+    public string? AccessChkPath { get; }
+    public string? VmMapPath { get; }
     public IReadOnlyList<string> Warnings => _warnings;
     public string? LastError => _warnings.Count > 0 ? string.Join("; ", _warnings) : null;
 
@@ -29,7 +33,10 @@ public sealed class SysinternalsSnapshots : IDisposable
         string? handlePath,
         string? listDllsPath,
         string? psListPath,
-        string? psInfoPath)
+        string? psInfoPath,
+        string? sigCheckPath,
+        string? accessChkPath,
+        string? vmMapPath)
     {
         SnapshotDir = snapshotDir;
         MetaPath = metaPath;
@@ -37,8 +44,13 @@ public sealed class SysinternalsSnapshots : IDisposable
         ListDllsPath = listDllsPath;
         PsListPath = psListPath;
         PsInfoPath = psInfoPath;
+        SigCheckPath = sigCheckPath;
+        AccessChkPath = accessChkPath;
+        VmMapPath = vmMapPath;
         AnyToolFound = handlePath is not null || listDllsPath is not null ||
-                       psListPath is not null || psInfoPath is not null;
+                       psListPath is not null || psInfoPath is not null ||
+                       sigCheckPath is not null || accessChkPath is not null ||
+                       vmMapPath is not null;
     }
 
     public static SysinternalsSnapshots TryBegin(string runDirectory, string? repoRoot = null)
@@ -54,7 +66,10 @@ public sealed class SysinternalsSnapshots : IDisposable
             SysinternalsToolPaths.FindHandle(repoRoot),
             SysinternalsToolPaths.FindListDlls(repoRoot),
             SysinternalsToolPaths.FindPsList(repoRoot),
-            SysinternalsToolPaths.FindPsInfo(repoRoot));
+            SysinternalsToolPaths.FindPsInfo(repoRoot),
+            SysinternalsToolPaths.FindSigCheck(repoRoot),
+            SysinternalsToolPaths.FindAccessChk(repoRoot),
+            SysinternalsToolPaths.FindVmMap(repoRoot));
 
         if (!OperatingSystem.IsWindows())
         {
@@ -66,7 +81,7 @@ public sealed class SysinternalsSnapshots : IDisposable
         if (!snap.AnyToolFound)
         {
             snap._warnings.Add(
-                "No Handle/ListDLLs/PsList found (tools/ or PATH) — copy from Sysinternals Suite");
+                "No Handle/ListDLLs/PsList/SigCheck/AccessChk found (tools/ or PATH) — copy from Sysinternals Suite");
             WriteMeta(snap, "skipped — no tools");
             return snap;
         }
@@ -76,7 +91,8 @@ public sealed class SysinternalsSnapshots : IDisposable
     }
 
     /// <summary>Bookend at target start (after PID is known).</summary>
-    public void CaptureArm(int? pid) => Capture("arm", pid);
+    public void CaptureArm(int? pid, string? targetExecutable = null) =>
+        Capture("arm", pid, targetExecutable);
 
     /// <summary>Bookend at run stop.</summary>
     public void CaptureDisarm(int? pid) => Capture("disarm", pid);
@@ -84,13 +100,37 @@ public sealed class SysinternalsSnapshots : IDisposable
     /// <summary>On-crash snapshot (best-effort; process may already be gone).</summary>
     public void CaptureCrash(int? pid) => Capture($"crash_{DateTime.UtcNow:yyyyMMdd_HHmmss}", pid);
 
-    public void Capture(string label, int? pid)
+    public void Capture(string label, int? pid, string? targetExecutable = null)
     {
         if (!OperatingSystem.IsWindows() || _disposed)
             return;
 
         var safe = SanitizeLabel(label);
         var wrote = 0;
+        var isArm = string.Equals(safe, "arm", StringComparison.OrdinalIgnoreCase);
+
+        if (isArm && !_sigcheckDone && SigCheckPath is not null &&
+            !string.IsNullOrWhiteSpace(targetExecutable) && File.Exists(targetExecutable))
+        {
+            _sigcheckDone = true;
+            if (RunTool(SigCheckPath, $"-accepteula -a -h \"{targetExecutable}\"",
+                    Path.Combine(SnapshotDir, "sigcheck-target.txt"), timeoutMs: 45_000))
+                wrote++;
+        }
+        else if (isArm && !_sigcheckDone && SigCheckPath is not null)
+        {
+            _sigcheckDone = true;
+            try
+            {
+                File.WriteAllText(
+                    Path.Combine(SnapshotDir, "sigcheck-target.txt"),
+                    "# sigcheck skipped — target executable path missing or not found\n");
+            }
+            catch
+            {
+                /* ignore */
+            }
+        }
 
         if (pid is > 0)
         {
@@ -104,6 +144,20 @@ public sealed class SysinternalsSnapshots : IDisposable
 
             if (PsListPath is not null &&
                 RunTool(PsListPath, $"-accepteula {pid.Value}", Path.Combine(SnapshotDir, $"{safe}-pslist.txt")))
+                wrote++;
+
+            // Process token + privileges (AccessChk -p -f <pid>). Soft-fail if binary missing.
+            if (AccessChkPath is not null &&
+                RunTool(AccessChkPath, $"-accepteula -nobanner -p -f {pid.Value}",
+                    Path.Combine(SnapshotDir, $"{safe}-accesschk.txt"), timeoutMs: 45_000))
+                wrote++;
+
+            // Best-effort CLI save. Prefer GUI VMMap on Monitor 2/3 if this hangs or fails.
+            if (VmMapPath is not null && (isArm || safe.StartsWith("crash_", StringComparison.Ordinal)) &&
+                RunTool(VmMapPath, $"-accepteula -p {pid.Value} \"{Path.Combine(SnapshotDir, $"{safe}-vmmap.txt")}\"",
+                    Path.Combine(SnapshotDir, $"{safe}-vmmap-run.txt"),
+                    timeoutMs: 90_000,
+                    treatEmptyAsOk: true))
                 wrote++;
         }
         else
@@ -119,7 +173,7 @@ public sealed class SysinternalsSnapshots : IDisposable
             wrote++;
 
         // Optional one-shot host info (light).
-        if (string.Equals(safe, "arm", StringComparison.OrdinalIgnoreCase) &&
+        if (isArm &&
             PsInfoPath is not null &&
             RunTool(PsInfoPath, "-accepteula", Path.Combine(SnapshotDir, $"{safe}-psinfo.txt")))
             wrote++;
@@ -141,7 +195,12 @@ public sealed class SysinternalsSnapshots : IDisposable
         _disposed = true;
     }
 
-    private bool RunTool(string exe, string args, string outPath)
+    private bool RunTool(
+        string exe,
+        string args,
+        string outPath,
+        int timeoutMs = 30_000,
+        bool treatEmptyAsOk = false)
     {
         try
         {
@@ -161,16 +220,38 @@ public sealed class SysinternalsSnapshots : IDisposable
                 return false;
             }
 
-            var stdout = proc.StandardOutput.ReadToEnd();
-            var stderr = proc.StandardError.ReadToEnd();
-            proc.WaitForExit(30_000);
+            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+            var stderrTask = proc.StandardError.ReadToEndAsync();
+            if (!proc.WaitForExit(timeoutMs))
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { /* ignore */ }
+                _warnings.Add($"{Path.GetFileName(exe)} timed out after {timeoutMs}ms");
+                try
+                {
+                    File.WriteAllText(outPath, $"# error: timed out after {timeoutMs}ms\n# args: {args}\n");
+                }
+                catch
+                {
+                    /* ignore */
+                }
+
+                return false;
+            }
+
+            var stdout = stdoutTask.GetAwaiter().GetResult();
+            var stderr = stderrTask.GetAwaiter().GetResult();
             var body = new StringBuilder();
             body.AppendLine($"# {Path.GetFileName(exe)} {args}");
             body.AppendLine($"# exit={proc.ExitCode} utc={DateTimeOffset.UtcNow:O}");
             if (!string.IsNullOrWhiteSpace(stderr))
                 body.AppendLine($"# stderr: {stderr.Trim()}");
             body.AppendLine(stdout);
+
+            // VMMap writes the outfile itself; keep a small run log either way.
             File.WriteAllText(outPath, body.ToString());
+
+            if (treatEmptyAsOk)
+                return true;
             return true;
         }
         catch (Exception ex)
@@ -229,9 +310,13 @@ public sealed class SysinternalsSnapshots : IDisposable
             sb.AppendLine($"ListDLLs: {snap.ListDllsPath ?? "(missing)"}");
             sb.AppendLine($"PsList: {snap.PsListPath ?? "(missing)"}");
             sb.AppendLine($"PsInfo: {snap.PsInfoPath ?? "(optional, missing)"}");
+            sb.AppendLine($"SigCheck: {snap.SigCheckPath ?? "(optional, missing)"} — arm → sigcheck-target.txt");
+            sb.AppendLine($"AccessChk: {snap.AccessChkPath ?? "(optional, missing)"} — process token (-p -f)");
+            sb.AppendLine($"VMMap: {snap.VmMapPath ?? "(optional / GUI companion)"} — best-effort CLI on arm/crash");
             sb.AppendLine("Network: netstat -ano in this bundle; richer TCPVCon via fuzz.tcpvconCapture");
-            sb.AppendLine("VMMap: skipped (GUI-only / no stable CLI bookend)");
-            sb.AppendLine("Bundle: handle + listdlls + pslist at arm/disarm/crash; netstat each time; psinfo on arm");
+            sb.AppendLine(
+                "Bundle: handle + listdlls + pslist (+ accesschk/vmmap if present) at arm/disarm/crash; " +
+                "sigcheck + psinfo on arm; netstat each time");
             if (snap._warnings.Count > 0)
             {
                 sb.AppendLine("Warnings:");

@@ -50,4 +50,5 @@ public sealed record FuzzRunOptions(
     bool? ProcdumpOnCrash = null,
     bool? PktmonCapture = null,
     bool? DebugViewCapture = null,
-    bool? SysinternalsSnapshots = null);
+    bool? SysinternalsSnapshots = null,
+    bool? StringsOnCrash = null);

@@ -97,12 +97,26 @@ public sealed class FuzzEngine
         var wantPktmon = options.PktmonCapture ?? project.Fuzz.PktmonCapture;
         var wantDebugView = options.DebugViewCapture ?? project.Fuzz.DebugViewCapture;
         var wantSysinternalsSnap = options.SysinternalsSnapshots ?? project.Fuzz.SysinternalsSnapshots;
+        var wantStringsOnCrash = options.StringsOnCrash ?? project.Fuzz.StringsOnCrash;
         string? runDir = journal?.RunDirectory;
         if (!dryRun && (wantProcmon || wantTcpvcon || wantPktmon || wantDebugView || wantSysinternalsSnap))
         {
             runDir ??= Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir),
                 $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
             Directory.CreateDirectory(runDir);
+        }
+
+        string? targetExeResolved = null;
+        if (!string.IsNullOrWhiteSpace(project.Target.Executable))
+        {
+            try
+            {
+                targetExeResolved = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
+            }
+            catch
+            {
+                targetExeResolved = project.Target.Executable;
+            }
         }
 
         if (!dryRun && wantProcmon && runDir is not null)
@@ -152,7 +166,8 @@ public sealed class FuzzEngine
             sysinternalsSnap = SysinternalsSnapshots.TryBegin(runDir);
             if (sysinternalsSnap.AnyToolFound)
                 FuzzAnalystLog.Info(progress,
-                    $"Sysinternals snapshots → {sysinternalsSnap.SnapshotDir} (handle/listdlls/pslist + netstat)");
+                    $"Sysinternals snapshots → {sysinternalsSnap.SnapshotDir} " +
+                    "(handle/listdlls/pslist + sigcheck/accesschk/vmmap when present)");
             else
                 FuzzAnalystLog.Warn(progress,
                     $"Sysinternals snapshots skipped: {sysinternalsSnap.LastError ?? "tools not found"}");
@@ -224,7 +239,7 @@ public sealed class FuzzEngine
             {
                 try
                 {
-                    sysinternalsSnap.CaptureArm(proc.Id);
+                    sysinternalsSnap.CaptureArm(proc.Id, targetExeResolved);
                     FuzzAnalystLog.Info(progress, $"Sysinternals arm snapshots (pid={proc.Id})");
                 }
                 catch (Exception ex)
@@ -788,6 +803,24 @@ public sealed class FuzzEngine
                         (saved.MiniDumpPath is not null ? $" dump={saved.MiniDumpPath}" : "") +
                         (saved.SidecarPath is not null ? $" sidecar={saved.SidecarPath}" : "") +
                         (crashTag is not null ? $" tag={crashTag}" : ""));
+
+                    if (wantStringsOnCrash && !string.IsNullOrWhiteSpace(saved.InputPath))
+                    {
+                        try
+                        {
+                            var stringsOut = StringsOnCrash.TryCapture(saved.InputPath!);
+                            if (stringsOut is not null)
+                                FuzzAnalystLog.Info(progress, $"Strings on crash → {stringsOut}", iterations);
+                            else
+                                FuzzAnalystLog.Warn(progress,
+                                    "stringsOnCrash skipped: strings64.exe not found or capture failed",
+                                    iterations);
+                        }
+                        catch (Exception ex)
+                        {
+                            FuzzAnalystLog.Warn(progress, $"stringsOnCrash: {ex.Message}", iterations);
+                        }
+                    }
 
                     if (project.Fuzz.AutoAnalyzeCrash && saved.MiniDumpPath is not null)
                     {

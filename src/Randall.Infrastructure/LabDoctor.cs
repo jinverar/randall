@@ -205,20 +205,40 @@ public static class LabDoctor
         var handleExe = SysinternalsToolPaths.FindHandle();
         var listDllsExe = SysinternalsToolPaths.FindListDlls();
         var pslistExe = SysinternalsToolPaths.FindPsList();
-        var snapTools = new[] { handleExe, listDllsExe, pslistExe }.Count(p => p is not null);
+        var sigcheckExe = SysinternalsToolPaths.FindSigCheck();
+        var accesschkExe = SysinternalsToolPaths.FindAccessChk();
+        var vmmapExe = SysinternalsToolPaths.FindVmMap();
+        var coreSnap = new[] { handleExe, listDllsExe, pslistExe }.Count(p => p is not null);
+        var extraSnap = new[] { sigcheckExe, accesschkExe, vmmapExe }.Count(p => p is not null);
         if (project.Fuzz.SysinternalsSnapshots)
         {
-            Add("sysinternalsSnapshots", snapTools > 0 ? "ok" : "warn",
-                snapTools > 0
-                    ? $"SysinternalsSnapshots enabled → handle/listdlls/pslist ({snapTools}/3 found)"
-                    : "SysinternalsSnapshots enabled but Handle/ListDLLs/PsList not found (tools/ or PATH)");
+            Add("sysinternalsSnapshots", coreSnap + extraSnap > 0 ? "ok" : "warn",
+                coreSnap + extraSnap > 0
+                    ? $"SysinternalsSnapshots enabled → core {coreSnap}/3, extras {extraSnap}/3 (sigcheck/accesschk/vmmap)"
+                    : "SysinternalsSnapshots enabled but no Suite CLI tools found (tools/ or PATH)");
         }
         else
         {
-            Add("sysinternalsSnapshots", snapTools > 0 ? "ok" : "warn",
-                snapTools > 0
-                    ? $"Sysinternals CLI tools present ({snapTools}/3) — set fuzz.sysinternalsSnapshots: true"
+            Add("sysinternalsSnapshots", coreSnap + extraSnap > 0 ? "ok" : "warn",
+                coreSnap + extraSnap > 0
+                    ? $"Sysinternals CLI tools present (core {coreSnap}/3, extras {extraSnap}/3) — set fuzz.sysinternalsSnapshots: true"
                     : "Handle/ListDLLs/PsList not found — optional snapshot bundle disabled");
+        }
+
+        var stringsExe = SysinternalsToolPaths.FindStrings();
+        if (project.Fuzz.StringsOnCrash)
+        {
+            Add("stringsOnCrash", stringsExe is not null ? "ok" : "warn",
+                stringsExe is not null
+                    ? $"StringsOnCrash enabled → {stringsExe}"
+                    : "StringsOnCrash enabled but strings64.exe not found (tools/ or PATH)");
+        }
+        else
+        {
+            Add("strings", stringsExe is not null ? "ok" : "warn",
+                stringsExe is not null
+                    ? $"{stringsExe} (set fuzz.stringsOnCrash: true to dump strings on crashing input)"
+                    : "strings64.exe not found — optional strings-on-crash disabled");
         }
 
         var dbg = DebuggerTools.Probe();

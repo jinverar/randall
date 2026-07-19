@@ -1,10 +1,18 @@
 # Recording & process monitoring during fuzz runs
 
-Operator guide for **Procmon**, **TCPVCon**, **DebugView**, **Sysinternals snapshots**, **pktmon**, **ProcDump**, **Scream / debugger wait**, **dumps**, **Page Heap**, **coverage**, and **postStart** — what each does, YAML keys, UI toggles, and where tools must live.
+**Philosophy (2026):** Sysinternals is for **observing** what happened before, during, and after a crash — not for finding crashes. Randfuzz finds faults (mutators, coverage, Scream); Suite tools explain the blast radius.
 
-There is no separate `target_recorder` binary. Recording is wired through **FuzzEngine** + **Target Runtime** using the knobs below. (`ProcessMonitor` is the internal long-lived start/detect-death/restart helper — not Sysinternals Procmon.)
+There is no separate `target_recorder` binary. Recording is wired through **FuzzEngine** + **Target Runtime**. (`ProcessMonitor` is the internal long-lived start/detect-death/restart helper — not Sysinternals Procmon.)
 
-**Related:** [STALKING.md](STALKING.md) · [TARGET_RUNTIME.md](TARGET_RUNTIME.md) · [HOWTO_STALK_GENERIC_APP.md](HOWTO_STALK_GENERIC_APP.md) · [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · [tools/README.md](../tools/README.md)
+**Related:** [STALKING.md](STALKING.md) · [TARGET_RUNTIME.md](TARGET_RUNTIME.md) · [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · [tools/README.md](../tools/README.md)
+
+**Status legend**
+
+| Status | Meaning |
+|--------|---------|
+| **Wired** | Soft-fail bookend / on-crash from Campaign YAML or UI |
+| **GUI companion** | Run interactively on Monitor 2/3 — not automated |
+| **External** | Install/run yourself; not exported by Randfuzz |
 
 ---
 
@@ -12,211 +20,226 @@ There is no separate `target_recorder` binary. Recording is wired through **Fuzz
 
 | Setup | What you get |
 |-------|----------------|
-| **Fuzz on the lab VM / bare metal** (`randall serve` or `randall agent`, Campaign in that UI) | Procmon `.pml`, TCPVCon connection snapshots, DebugView log, Sysinternals snapshots, pktmon ETL, Scream/ProcDump dumps, memory lens, coverage edges — full stack |
-| **Laptop Campaign + `target.agentUrl` only** | Remote process start/stop; **debugger attach skipped**; dumps/lens stay thin on the laptop |
+| **Fuzz on the lab VM / bare metal** (`randall serve` or `randall agent`) | Full stack: Procmon, TCPVCon, DebugView, snapshots, Strings, pktmon, Scream/ProcDump, coverage |
+| **Laptop Campaign + `target.agentUrl` only** | Remote process start/stop; debugger attach skipped; dumps stay thin on the laptop |
 
-Same rule as Sulley-era procmon + crashbin: tools run **on the target host**. Prefer opening `http://<vm-ip>:5000` on the agent and fuzzing there; pull packs later ([TARGET_RUNTIME.md](TARGET_RUNTIME.md)#remote-lab-workflow-dumps--lens--offline-import).
+Prefer opening `http://<vm-ip>:5000` on the agent and fuzzing there; pull packs later ([TARGET_RUNTIME.md](TARGET_RUNTIME.md)#remote-lab-workflow-dumps--lens--offline-import).
 
 ---
 
-## Recommendations
+## Recommendations (defaults)
 
 | Scenario | Enable | Why / skip |
 |----------|--------|------------|
-| **First triage (any target)** | Scream wait + Procmon | Best crash dumps + file/registry/network activity. Keep UI light. |
-| **Protocol / network fuzz (TCP/UDP)** | First triage **+ TCPVCon** (optional **+ pktmon**) | TCPVCon connection bookends fill the Sysinternals network gap; pktmon adds NIC ETL (often needs elevation). |
-| **File / parser fuzz** | First triage; snapshots optional | Procmon shows file I/O paths. Snapshots help on handle leaks after many iterations. |
-| **App logs via OutputDebugString / DbgPrint** | **+ DebugView capture** | Captures Win32 ODS to `debugview.log`. Kernel DbgPrint needs elevated DebugView `/k` (not armed by default). |
-| **Handle / DLL / process leaks** | **+ Sysinternals snapshots** | Handle + ListDLLs + PsList at arm/disarm/crash; netstat included (TCPVCon is the richer network option). |
-| **No Scream / debugger attach** | **ProcDump on crash** | Only when `debuggerMode: none`. Skipped if Scream/attach already holds the process. |
-| **Heavy / skip for now** | TCPView GUI, VMMap GUI, WPR/xperf, API Monitor, Frida | Not bookended — use interactively if needed. |
+| **Almost every session** | **Scream wait** + **Procmon** + **Sysinternals snapshots** | Crash dumps + file/registry/network activity + Handle/ListDLLs bookends (SigCheck/AccessChk when present) |
+| **Crashes appearing, no Scream** | **+ ProcDump on crash** | Only when `debuggerMode: none`. Skipped if Scream/attach already holds the process |
+| **ODS / DbgPrint logging** | **+ DebugView** | Win32 OutputDebugString → `debugview.log`. Kernel DbgPrint needs elevated DebugView `/k` (not armed by default) |
+| **Network / protocol** | **+ TCPVCon** (optional **+ pktmon**) | Connection bookends; pktmon adds NIC ETL (often needs elevation) |
+| **File format / parser** | Procmon + snapshots + **VMMap GUI** + Scream/ProcDump + DebugView | Procmon shows load paths/temp files; VMMap for heap growth (GUI companion; CLI best-effort if `vmmap64` present) |
+| **Interesting crash payload** | **+ Strings on crash** | Opt-in — avoids surprise cost on huge inputs |
+| **Drivers / services / kernel** | LiveKD, WinObj, AppVerifier, ProcMon boot logging | **External** / GUI — see Tier 3–4 below. Service restart via [Target Runtime](TARGET_RUNTIME.md) (`longLived` + restart); PsService/PsKill are companions |
+| **Skip / interactive only** | Process Explorer, RAMMap, LiveKD, TCPView GUI, WPR/xperf, API Monitor, Frida | Not bookended |
 
-Default campaign checklist: **Wait (Scream)** + **Procmon**. Add **TCPVCon** for protocol/network targets; DebugView / snapshots / pktmon when the scenario above applies.
+Default campaign checklist: **Wait (Scream)** + **Procmon** + **Sysinternals snapshots**. Add TCPVCon for protocol targets; DebugView / ProcDump / Strings / pktmon when the row above applies.
 
 ---
 
-## What each recorder / monitor is
+## Tier matrices (Randfuzz mapping)
 
-| Piece | When to use | How it turns on |
-|-------|-------------|-----------------|
-| **ProcessMonitor** (internal) | Long-lived TCP/UDP — restart after death | Automatic when `target.longLived: true` (Target Runtime path) |
-| **Procmon capture** | File/registry/network activity for the whole run | `fuzz.procmonCapture: true` or Fuzz UI checkbox |
-| **TCPVCon capture** | TCP/UDP endpoint snapshots (process-aware) at arm / disarm / crash | `fuzz.tcpvconCapture: true` or Fuzz UI checkbox — needs `tcpvcon64.exe` / `tcpvcon.exe` |
-| **DebugView capture** | OutputDebugString from the target | `fuzz.debugViewCapture: true` — needs `Dbgview.exe` in `tools/` or PATH |
-| **Sysinternals snapshots** | Handle / modules / process list bookends (+ netstat) | `fuzz.sysinternalsSnapshots: true` — Handle, ListDLLs, PsList from Suite |
-| **pktmon capture** | NIC-level packet ETL for the run | `fuzz.pktmonCapture: true` or Fuzz UI checkbox (often needs elevation) |
-| **ProcDump on crash** | Full dump on unhandled exception when Scream is not attached | `fuzz.procdumpOnCrash: true` — skipped if debugger wait/attach already holds the process |
-| **Scream (`debuggerMode: wait`)** | Best crash dumps (second-chance exception → minidump) | `fuzz.debuggerMode: wait` (or UI **Wait**) |
-| **WinDbg attach (`attach`)** | Live debug under fuzz | `fuzz.debuggerMode: attach` + Debugging Tools / Preview |
-| **Both** | Scream during run + open dump in GUI after crash | `fuzz.debuggerMode: both` or wait + `debuggerOpenOnCrash: true` |
-| **MiniDumpWriter (default)** | Basic dump on exit/hang when debugger is `none` | Always on for supported crash paths |
-| **Page Heap** | Stronger UAF / heap corruption signals | `target.pageHeap: true` (needs `gflags.exe`) |
-| **Coverage / stalk** | Novelty-guided corpus + stalk layers | `fuzz.coverageGuided: true` + DynamoRIO (or `stalkMode: native`) |
-| **postStart** | Wait for listen port, prime PDU, open UI / harness | `target.postStart:` list |
+### Tier 1 — Must have (almost every session)
 
-Skipped as out of scope for bookends: API Monitor, Frida, **TCPView GUI** (use **TCPVCon** CLI instead), **VMMap** (GUI / no stable CLI), WPR/xperf (heavy / interactive). Optional post-crash: Sysinternals `strings` / `sigcheck` on dumps (not wired).
+| Tool | Why | Status | Enable / place |
+|------|-----|--------|----------------|
+| **Process Monitor** | Registry, filesystem, process/thread, DLL load, pipes, ALPC — what input reached before the crash | **Wired** | `fuzz.procmonCapture: true` / UI **Procmon** → `tools/Procmon64.exe` → `data/runs/<id>/fuzz.pml` |
+| **Process Explorer** | Live handles, threads, modules, privileges, parent/child | **GUI companion** | Monitor 2/3 — `procexp64.exe` (not bookended) |
+| **Handle** | Leaked handles after many iterations | **Wired** (snapshots) | `fuzz.sysinternalsSnapshots: true` → `tools/handle64.exe` |
+| **ListDLLs** | Loaded modules during the test | **Wired** (snapshots) | same → `tools/listdlls64.exe` |
+| **VMMap** | Heap growth, fragmentation, VA exhaustion | **GUI companion** (+ best-effort CLI) | Prefer GUI on Monitor 2/3. If `vmmap64.exe` is present, snapshots may attempt `vmmap -accepteula -p <pid> out.txt` on arm/crash (soft-fail / timeout) |
+| **RAMMap** | Kernel / physical resource leaks | **GUI companion** | Monitor 3 — not automated |
+| **PsList** (+ optional PsInfo) | Process list / host info bookends | **Wired** (snapshots) | `tools/pslist64.exe`, optional `PsInfo64.exe` |
 
-### Sysmon (external only)
+### Tier 2 — Memory & crash analysis
 
-Randfuzz does **not** export Sysmon. If you still want host-wide process/network/file telemetry, install and run Sysmon yourself on the fuzz host and keep its EVTX outside the run journal — it is not wired into Campaign / `fuzz.*` capture flags.
+| Tool | Purpose | Status | Enable / place |
+|------|---------|--------|----------------|
+| **ProcDump** | Full dump on unhandled exception | **Wired** | `fuzz.procdumpOnCrash: true` when no Scream — `tools/procdump.exe` |
+| **Scream** (`debuggerMode: wait`) | First-party second-chance minidump | **Wired** | UI **Wait** / `debuggerMode: wait` (preferred over ProcDump) |
+| **LiveKD** | Kernel debug without reboot | **External** | Run interactively when investigating drivers |
+| **DebugView** | OutputDebugString / app debug spew | **Wired** | `fuzz.debugViewCapture: true` → `tools/Dbgview.exe` → `debugview.log` |
+| **Strings** | Inspect crashing / corpus inputs | **Wired** | `fuzz.stringsOnCrash: true` / UI checkbox → `tools/strings64.exe` → `*_strings.txt` beside crash `.bin` |
+| **SigCheck** | Binary / signature / version at arm | **Wired** (snapshots) | Included when snapshots on + `sigcheck64.exe` → `sysinternals/sigcheck-target.txt` |
 
-### ProcDump vs Scream
+### Tier 3 — Driver / kernel fuzzing
 
-Only **one** debugger can attach. Prefer **Scream** (`debuggerMode: wait`) for exception dumps. Use `procdumpOnCrash` when you want Sysinternals ProcDump `-e -ma` **instead** (debugger mode `none`). If Scream/attach is already on, ProcDump arm is skipped with a warning.
+| Tool | Status | Notes |
+|------|--------|-------|
+| LiveKD, RAMMap, WinObj, WinObjEx64 | **External** / **GUI companion** | Object namespace + kernel state — not bookended |
+| **AccessChk** | **Wired** (optional in snapshots) | Process token (`-p -f`) when `accesschk64.exe` present |
+| ProcMon boot logging | **External** | Configure ProcMon yourself for boot-time drivers |
+
+### Tier 4 — Service fuzzing
+
+| Tool | Status | Notes |
+|------|--------|-------|
+| **Target Runtime** restart | **Wired** | `target.longLived: true` — start/stop/restart after death ([TARGET_RUNTIME.md](TARGET_RUNTIME.md), [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md)) |
+| PsService / PsExec / PsKill | **External** | Useful companions for SCM services; not automated by Randfuzz |
+| Process Explorer / ProcDump | GUI / **Wired** | Same as Tier 1–2 |
+
+### Tier 5 — File format fuzzing
+
+Run together: **Procmon** (Wired) + **Process Explorer** (GUI) + **VMMap** (GUI) + **ProcDump/Scream** (Wired) + **DebugView** (Wired) + **snapshots** (Wired). You typically see malformed file load → decoder DLL → registry/temp paths → heap growth → dump.
+
+### Tier 6 — COM / RPC / ALPC
+
+| Tool | Status |
+|------|--------|
+| Procmon, Handle | **Wired** |
+| Process Explorer, WinObj | **GUI companion** / **External** |
+| AccessChk | **Wired** (optional in snapshots) |
+
+---
+
+## Companion tools (non-Sysinternals)
+
+| Tool | Use | Status |
+|------|-----|--------|
+| **WinDbg Preview** | First-choice dump / live analysis | **Wired** attach/open (`debuggerMode`, open-on-crash) |
+| **PageHeap (GFlags)** | Earlier heap corruption | **Wired** — `target.pageHeap: true` |
+| **Application Verifier** | Handle/API misuse | **External** |
+| **WinAFL / TinyInst** | Coverage-guided Windows user-mode | **External** (Randfuzz uses DynamoRIO drcov / native stalk) |
+| **Boofuzz** | Network protocol fuzzing | Related lineage — Randfuzz Campaign |
+| **Lighthouse / Ghidra / IDA / Binary Ninja / x64dbg** | Coverage viz / RE / triage | **External** — stalk export helps ([STALKING.md](STALKING.md)) |
+| **pktmon** | NIC ETL | **Wired** — `fuzz.pktmonCapture` |
+| **TCPVCon** | Connection snapshots (TCPView CLI) | **Wired** — `fuzz.tcpvconCapture` |
+| **Sysmon** | Host-wide EVTX | **External only** — Randfuzz does **not** export Sysmon |
+
+---
+
+## Example workstation layout (Randfuzz)
+
+```
+Monitor 1
+---------
+WinDbg Preview (dumps / attach)
+Randfuzz agent UI (Campaign + live log)
+Scream / ProcDump status
+
+Monitor 2
+---------
+ProcMon (filters: Process Name is <target.exe>; drop noise)
+optional: TCPView GUI if not using TCPVCon bookends
+
+Monitor 3
+---------
+Process Explorer
+VMMap
+DbgView (if not using fuzz.debugViewCapture)
+
+Background
+----------
+randall agent / Campaign fuzz loop
+DynamoRIO coverage (optional)
+Crash artifact packs / triage
+```
+
+---
+
+## Wired knobs (YAML / UI)
 
 ### Sysinternals snapshots bundle
 
-`fuzz.sysinternalsSnapshots: true` runs a **group** (not five UI checkboxes):
+`fuzz.sysinternalsSnapshots: true` — **one checkbox**, not five:
 
 | Tool | When | Notes |
 |------|------|-------|
-| **Handle** (`handle64.exe -p <pid>`) | arm / disarm / crash | Soft-fail if missing |
-| **ListDLLs** (`listdlls64.exe <pid>`) | arm / disarm / crash | Soft-fail if missing |
-| **PsList** | arm / disarm / crash | Soft-fail if missing |
-| **netstat -ano** | each capture | Lightweight network; prefer **TCPVCon** for richer endpoints |
-| **PsInfo** | arm only | Optional if present |
+| Handle | arm / disarm / crash | Soft-fail if missing |
+| ListDLLs | arm / disarm / crash | Soft-fail |
+| PsList | arm / disarm / crash | Soft-fail |
+| **SigCheck** | arm once | `sigcheck-target.txt` on target exe |
+| **AccessChk** | arm / disarm / crash | `-p <pid> -f` when present |
+| **VMMap** | arm / crash | Best-effort CLI; prefer GUI if flaky |
+| netstat `-ano` | each capture | Prefer **TCPVCon** for richer endpoints |
+| PsInfo | arm only | Optional |
 
-Artifacts under `data/runs/<runId>/sysinternals/`.
+Artifacts: `data/runs/<runId>/sysinternals/`.
 
-### TCPVCon honesty
-
-TCPVCon is the **CLI** from the [TCPView](https://learn.microsoft.com/en-us/sysinternals/downloads/tcpview) package (`tcpvcon64.exe` / `tcpvcon.exe`). Randfuzz runs it at arm / disarm / crash with `-accepteula -a -c -n` (all endpoints, CSV, numeric). Soft-fails if the binary is missing — same style as Procmon.
-
----
-
-## YAML keys (copy-paste)
+### Other `fuzz.*` keys
 
 ```yaml
-name: myapp
-kind: tcp
-target:
-  executable: C:/path/to/your/app.exe   # must exist on the fuzz host
-  longLived: true
-  timeoutMs: 5000
-  pageHeap: false                       # true → gflags /p /enable <image> /full
-  # agentUrl: http://192.168.2.10:5000  # optional process ownership only
-  postStart:
-    - op: wait-port
-      host: 127.0.0.1
-      port: 9999
-      timeoutMs: 8000
-transport:
-  type: tcp
-  host: 127.0.0.1
-  port: 9999
 fuzz:
-  maxIterations: 500
-  coverageGuided: true
-  coverageTcpSpawn: true                # TCP: instrumented spawn per iter when using DynamoRIO
-  stalkMode: auto                       # auto | external | native | none
-  debuggerMode: wait                    # none | wait | attach | both  (not "scream")
-  debuggerKind: auto                    # auto | windbg-preview | windbg | cdb
+  debuggerMode: wait              # none | wait | attach | both
+  debuggerKind: auto
   debuggerOpenOnCrash: false
-  procmonCapture: true                  # bookend → data/runs/<run>/fuzz.pml
-  tcpvconCapture: true                  # arm/disarm/crash → data/runs/<run>/tcpvcon/
-  debugViewCapture: false               # bookend → data/runs/<run>/debugview.log
-  sysinternalsSnapshots: false          # arm/disarm/crash → data/runs/<run>/sysinternals/
-  procdumpOnCrash: false                # arm ProcDump -e -ma when Scream is not attached
-  pktmonCapture: false                  # bookend → data/runs/<run>/fuzz-pktmon.etl (admin often)
-  corpusDir: ../data/corpus/myapp
-  crashesDir: ../data/crashes/myapp
+  procmonCapture: true            # → fuzz.pml
+  tcpvconCapture: true            # → tcpvcon/
+  debugViewCapture: false         # → debugview.log
+  sysinternalsSnapshots: true     # → sysinternals/ (+ sigcheck/accesschk/vmmap if present)
+  stringsOnCrash: false           # → <crash>_strings.txt (opt-in)
+  procdumpOnCrash: false          # ProcDump -e -ma when no Scream
+  pktmonCapture: false            # → fuzz-pktmon.etl
 ```
 
-| Key | Values / notes |
-|-----|----------------|
-| `fuzz.debuggerMode` | `none` · `wait` (Scream) · `attach` · `both` |
-| `fuzz.debuggerKind` | `auto` · `windbg-preview` · `windbg` · `cdb` |
-| `fuzz.debuggerOpenOnCrash` | Open dump in GUI after save |
-| `fuzz.procmonCapture` | Start/stop Sysinternals Procmon for the run |
-| `fuzz.tcpvconCapture` | TCPVCon network connection snapshots at arm/disarm/crash |
-| `fuzz.debugViewCapture` | Start/stop DebugView OutputDebugString log for the run |
-| `fuzz.sysinternalsSnapshots` | Handle + ListDLLs + PsList (+ netstat) at arm/disarm/crash |
-| `fuzz.procdumpOnCrash` | Arm ProcDump `-e -ma` on target PID if no Scream/attach |
-| `fuzz.pktmonCapture` | Start/stop Windows `pktmon` ETL for the run |
-| `fuzz.coverageGuided` | Prefer inputs that add edges |
-| `fuzz.stalkMode` | Coverage backend selection |
-| `fuzz.coverageTcpSpawn` | Long-lived TCP + coverage: spawn instrumented target per iteration |
-| `target.pageHeap` | Enable Page Heap via gflags when starting via Target Runtime |
-| `target.postStart` | `wait-port` · `sleep` · `exec` · `tcp-send` · `udp-send` · `http-get` |
-| `target.longLived` | Keep server up; ProcessMonitor / Target Runtime ownership |
+| Key | Notes |
+|-----|-------|
+| `fuzz.procmonCapture` | Procmon `.pml` bookend |
+| `fuzz.tcpvconCapture` | TCPVCon arm/disarm/crash |
+| `fuzz.debugViewCapture` | DebugView ODS log |
+| `fuzz.sysinternalsSnapshots` | Snapshot bundle (Handle/ListDLLs/PsList + SigCheck/AccessChk/VMMap when present) |
+| `fuzz.stringsOnCrash` | Strings on saved crashing input |
+| `fuzz.procdumpOnCrash` | ProcDump `-e -ma` if no Scream/attach |
+| `fuzz.pktmonCapture` | Windows pktmon ETL |
+| `target.pageHeap` | GFlags Page Heap via Target Runtime |
+| `target.longLived` | ProcessMonitor / Target Runtime ownership + restart |
 
-Template: [templates/tcp-runtime.yaml](templates/tcp-runtime.yaml). End-to-end custom app: [HOWTO_STALK_GENERIC_APP.md](HOWTO_STALK_GENERIC_APP.md).
+Template: [templates/tcp-runtime.yaml](templates/tcp-runtime.yaml).
 
----
+### UI (Fuzz → Campaign)
 
-## UI steps (Fuzz → Campaign)
-
-1. Open the console **on the machine that runs the binary** (`serve` or `agent`).
-2. **Fuzz → Campaign** → pick **Target profile**.
-3. Toggles / selects:
-   - **Coverage-guided** → `fuzz.coverageGuided`
-   - **Debugger** → None / Wait (Scream) / Attach / Both
-   - **Debugger kind** → Auto / WinDbg Preview / classic / cdb
-   - **Open dump in debugger after crash** → `debuggerOpenOnCrash`
-   - **Procmon capture** → `.pml` bookend (needs Procmon in `tools/` or PATH)
-   - **TCPVCon (network connections)** → arm/disarm/crash snapshots (needs `tcpvcon` / `tcpvcon64`)
-   - **ProcDump on crash** → `-e -ma` when not using Scream/attach
-   - **pktmon capture** → ETL bookend (built-in; often needs elevation)
-   - **DebugView capture** → OutputDebugString log (needs `Dbgview.exe`)
-   - **Sysinternals snapshots** → Handle + ListDLLs + PsList + netstat bookends
-4. **Doctor** (optional) — checks Procmon, TCPVCon, ProcDump, pktmon, DebugView, snapshot tools, debugger mode, DynamoRIO.
-5. **Start**. On stop, bookend artifacts land under the run directory (`data/runs/.../`).
-6. Crashes → investigation → **Memory lens**; dumps under `data/crashes/<project>/dumps/`.
-
-CLI equivalents:
+- **Debugger** → None / Wait (Scream) / Attach / Both  
+- **Procmon** · **TCPVCon** · **ProcDump on crash** · **pktmon** · **DebugView**  
+- **Sysinternals snapshots** (includes SigCheck/AccessChk/VMMap when binaries exist)  
+- **Strings on crash** (opt-in)  
+- **Doctor** probes the Suite tools above  
 
 ```powershell
-randall fuzz -c projects/local/myapp.yaml --debugger wait --open-on-crash
+randall fuzz -c projects/local/myapp.yaml --debugger wait
 randall doctor -c projects/local/myapp.yaml
-randall scream selftest
 ```
-
-Remote Procmon API (agent host): `GET /api/remote/tools` · `POST /api/remote/procmon/start|stop`.
 
 ---
 
 ## Where to put tools (`tools/` or PATH)
 
-Third-party binaries are **not** committed. On the **fuzz host**, copy from the [Sysinternals Suite](https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite) / [TCPView](https://learn.microsoft.com/en-us/sysinternals/downloads/tcpview):
+Binaries are **not** committed. On the **fuzz host**, copy from the [Sysinternals Suite](https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite) / [TCPView](https://learn.microsoft.com/en-us/sysinternals/downloads/tcpview):
 
-| Tool | Placement |
-|------|-----------|
-| **Procmon** | `tools/Procmon64.exe` (or `Procmon.exe`) **or** on `PATH` |
-| **ProcDump** | `tools/procdump.exe` / `procdump64.exe` or PATH / `PROCDUMP_PATH` |
-| **TCPVCon** | `tools/tcpvcon64.exe` (or `tcpvcon.exe`) from the TCPView package |
-| **DebugView** | `tools/Dbgview.exe` or PATH |
-| **Handle** | `tools/handle64.exe` (or `handle.exe`) |
-| **ListDLLs** | `tools/listdlls64.exe` |
-| **PsList** | `tools/pslist64.exe` |
-| **PsInfo** (optional) | `tools/PsInfo64.exe` — used once at arm |
-| **pktmon** | Built into Windows (`%SystemRoot%\System32\pktmon.exe`) — no download |
-| **DynamoRIO** | `tools/dynamorio/bin64/drrun.exe` (or `DYNAMORIO_HOME`) — [tools/README.md](../tools/README.md) |
-| **gflags / cdb / WinDbg** | Windows SDK Debugging Tools (Kit Debuggers) or PATH |
-| **WinDbg Preview** | Microsoft Store / usual install paths (auto-discovered) |
+| Tool | Placement | Status |
+|------|-----------|--------|
+| Procmon | `tools/Procmon64.exe` | Wired |
+| ProcDump | `tools/procdump.exe` | Wired |
+| TCPVCon | `tools/tcpvcon64.exe` | Wired |
+| DebugView | `tools/Dbgview.exe` | Wired |
+| Handle / ListDLLs / PsList | `tools/handle64.exe`, `listdlls64.exe`, `pslist64.exe` | Wired (snapshots) |
+| SigCheck | `tools/sigcheck64.exe` | Wired (snapshots) |
+| Strings | `tools/strings64.exe` | Wired (`stringsOnCrash`) |
+| AccessChk | `tools/accesschk64.exe` | Wired (optional in snapshots) |
+| VMMap | `tools/vmmap64.exe` | GUI + best-effort CLI |
+| Process Explorer / RAMMap | `procexp64.exe` / `RAMMap.exe` | GUI companion |
+| PsInfo | `tools/PsInfo64.exe` | Optional arm |
+| pktmon | Built-in Windows | Wired |
+| DynamoRIO / gflags / WinDbg | see [tools/README.md](../tools/README.md) | Wired / SDK |
 
 ```powershell
-# Example Sysinternals drop-in (from Suite / TCPView zip)
-copy Procmon64.exe tools\
-copy procdump64.exe tools\procdump.exe
-copy tcpvcon64.exe tools\
-copy Dbgview.exe tools\
-copy handle64.exe tools\
-copy listdlls64.exe tools\
-copy pslist64.exe tools\
+copy Procmon64.exe, procdump64.exe, tcpvcon64.exe, Dbgview.exe tools\
+copy handle64.exe, listdlls64.exe, pslist64.exe, sigcheck64.exe, strings64.exe, accesschk64.exe tools\
+# optional: vmmap64.exe, procexp64.exe, PsInfo64.exe
 randall doctor -c projects/local/myapp.yaml
 ```
 
 ---
 
-## Custom app on a VM (short path)
+## ProcDump vs Scream
 
-1. Snapshot the VM.
-2. Deploy Randfuzz + your `.exe` on the VM; put Procmon / ProcDump / TCPVCon / DebugView / Handle / ListDLLs / PsList / DynamoRIO under `tools/` if you want them.
-3. Create `projects/local/myapp.yaml` (Scare Floor **Create new target**, or copy the YAML above).
-4. On the VM: `randall agent --port 5000` (or `serve`) → open that URL.
-5. **Lab servers → Target Runtime** → start; confirm `postStart` / listen port.
-6. Enable **Wait** + optional **Procmon** / **TCPVCon** / **DebugView** / **snapshots** / **pktmon** / **Coverage-guided** → Campaign **Start**.
-7. Export: **Bundles → Crash artifact pack**, or `randall crashes pack -p myapp`.
+Only **one** debugger can attach. Prefer **Scream** (`debuggerMode: wait`). Use `procdumpOnCrash` when you want ProcDump `-e -ma` **instead** (`debuggerMode: none`). If Scream/attach is already on, ProcDump arm is skipped with a warning.
 
 ---
 
@@ -224,13 +247,24 @@ randall doctor -c projects/local/myapp.yaml
 
 | Artifact | Path |
 |----------|------|
-| Procmon log | `data/runs/<runId>/fuzz.pml` |
-| TCPVCon snapshots | `data/runs/<runId>/tcpvcon/` (`arm.txt`, `disarm.txt`, `crash_*`) + `tcpvcon-capture.txt` meta |
-| DebugView log | `data/runs/<runId>/debugview.log` (+ `debugview-capture.txt`) |
-| Sysinternals snapshots | `data/runs/<runId>/sysinternals/` (`arm-*`, `disarm-*`, `crash_*`, `snapshots.txt`) |
-| pktmon capture | `data/runs/<runId>/fuzz-pktmon.etl` (+ `pktmon-capture.txt`; optional `.txt` via `etl2txt`) |
-| ProcDump dumps | `data/crashes/<project>/dumps/procdump_*.dmp` |
-| Minidumps (Scream / default) | `data/crashes/<project>/dumps/*.dmp` |
+| Procmon | `data/runs/<runId>/fuzz.pml` |
+| TCPVCon | `data/runs/<runId>/tcpvcon/` + `tcpvcon-capture.txt` |
+| DebugView | `data/runs/<runId>/debugview.log` |
+| Snapshots | `data/runs/<runId>/sysinternals/` (`arm-*`, `disarm-*`, `crash_*`, `sigcheck-target.txt`, `snapshots.txt`) |
+| Strings on crash | `data/crashes/<project>/<crash>_strings.txt` (beside `.bin`) |
+| pktmon | `data/runs/<runId>/fuzz-pktmon.etl` |
+| ProcDump / Scream dumps | `data/crashes/<project>/dumps/` |
 | Crash sidecars / lens | `data/crashes/<project>/*_crash.json`, `*_memory_lens.*` |
-| Coverage edges | `data/corpus/<project>/edges.txt` (+ stalk layers under `data/stalk/<project>/`) |
-| Execution journal | `data/runs/<runId>/` (`fuzz.executionLog`) |
+| Coverage | `data/corpus/<project>/edges.txt` |
+
+---
+
+## Custom app on a VM (short path)
+
+1. Snapshot the VM.  
+2. Deploy Randfuzz + target; drop Suite tools under `tools/`.  
+3. Create `projects/local/myapp.yaml` (Scare Floor or template).  
+4. On the VM: `randall agent --port 5000` → open that URL.  
+5. Target Runtime start → confirm listen port.  
+6. Enable **Wait** + **Procmon** + **snapshots** (+ TCPVCon / DebugView / Strings as needed) → Campaign **Start**.  
+7. Export crash packs from Bundles or `randall crashes pack`.

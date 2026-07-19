@@ -296,14 +296,23 @@ public static class StalkCampaignStore
             new("sysinternals-snap", "Sysinternals snapshots",
                 SysinternalsToolPaths.FindHandle(repoRoot) is not null ||
                 SysinternalsToolPaths.FindListDlls(repoRoot) is not null ||
-                SysinternalsToolPaths.FindPsList(repoRoot) is not null
+                SysinternalsToolPaths.FindPsList(repoRoot) is not null ||
+                SysinternalsToolPaths.FindSigCheck(repoRoot) is not null
                     ? "ready"
                     : "missing",
-                "Handle + ListDLLs + PsList + netstat bookends — fuzz.sysinternalsSnapshots",
-                "handle64 -p <pid> · listdlls64 <pid> · pslist <pid>"),
+                "Handle + ListDLLs + PsList + SigCheck/AccessChk/VMMap when present — fuzz.sysinternalsSnapshots",
+                "handle64 -p <pid> · listdlls64 <pid> · sigcheck64 -a -h <exe>"),
+            new("strings", "Strings (on crash)",
+                SysinternalsToolPaths.FindStrings(repoRoot) is not null ? "ready" : "missing",
+                "Strings dump of crashing input — fuzz.stringsOnCrash (strings64.exe)",
+                "strings64 -accepteula -n 4 <crash.bin>"),
             new("procexp", "Process Explorer", ExistsOnPath("procexp") || ExistsOnPath("procexp64") ? "ready" : "planned",
-                "Live process tree, handles, and module view (GUI — not bookended)",
+                "Live process tree, handles, and module view (GUI companion — Monitor 2/3)",
                 null),
+            new("vmmap", "VMMap",
+                SysinternalsToolPaths.FindVmMap(repoRoot) is not null ? "ready" : "planned",
+                "Heap/VA map — GUI companion; best-effort CLI when in sysinternalsSnapshots",
+                "vmmap64 -accepteula -p <pid> out.txt"),
             new("native-stalk", "Native PC stalk", new NativeStalkRunner().IsAvailable ? "ready" : "missing",
                 "Debug-event PC samples → drcov (no DynamoRIO). Coarser than external BB coverage.",
                 "fuzz.stalkMode: native | auto"),

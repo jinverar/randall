@@ -363,7 +363,11 @@
           </label>
           <label class="checkbox">
             <input type="checkbox" id="fuzz-sysinternals-snap" />
-            Sysinternals snapshots (Handle + ListDLLs + PsList + netstat bookends)
+            Sysinternals snapshots (Handle + ListDLLs + PsList + SigCheck/AccessChk when present)
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="fuzz-strings-crash" />
+            Strings on crash (strings64 on crashing input — opt-in)
           </label>
           <div class="btn-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>

@@ -46,7 +46,8 @@ public sealed record FuzzStartRequest(
     bool? ProcdumpOnCrash = null,
     bool? PktmonCapture = null,
     bool? DebugViewCapture = null,
-    bool? SysinternalsSnapshots = null);
+    bool? SysinternalsSnapshots = null,
+    bool? StringsOnCrash = null);
 
 public sealed record FuzzSessionStatusDto(
     bool Running,

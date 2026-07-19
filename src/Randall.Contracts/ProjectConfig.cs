@@ -216,7 +216,13 @@ public sealed class FuzzConfig
     /// </summary>
     public bool DebugViewCapture { get; set; }
     /// <summary>
-    /// Sysinternals snapshot bundle: Handle + ListDLLs + PsList (+ netstat) at arm/disarm/crash.
+    /// Sysinternals snapshot bundle: Handle + ListDLLs + PsList (+ AccessChk/VMMap/SigCheck when present)
+    /// at arm/disarm/crash.
     /// </summary>
     public bool SysinternalsSnapshots { get; set; }
+    /// <summary>
+    /// Run Sysinternals Strings on the crashing input when a crash is saved
+    /// (needs strings64.exe in tools/ or PATH).
+    /// </summary>
+    public bool StringsOnCrash { get; set; }
 }

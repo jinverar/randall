@@ -32,12 +32,13 @@ transport:
 fuzz:
   maxIterations: 500
   debuggerMode: wait           # none | wait (Scream) | attach | both
-  # procmonCapture: true       # needs Procmon64.exe in tools/ or PATH — see docs/RECORDING.md
-  # tcpvconCapture: true       # tcpvcon64.exe network connection bookends (arm/disarm/crash)
-  # debugViewCapture: true     # Dbgview.exe OutputDebugString → debugview.log
-  # sysinternalsSnapshots: true  # handle + listdlls + pslist (+ netstat) arm/disarm/crash
-  # procdumpOnCrash: true      # ProcDump -e -ma when Scream/attach is not used
-  # pktmonCapture: true        # Windows pktmon ETL (often needs elevation)
+  # procmonCapture: true         # needs Procmon64.exe in tools/ or PATH — see docs/RECORDING.md
+  # tcpvconCapture: true         # tcpvcon64.exe network connection bookends (arm/disarm/crash)
+  # debugViewCapture: true       # Dbgview.exe OutputDebugString → debugview.log
+  # sysinternalsSnapshots: true  # handle/listdlls/pslist + sigcheck/accesschk/vmmap when present
+  # stringsOnCrash: true         # strings64 on crashing input (opt-in)
+  # procdumpOnCrash: true        # ProcDump -e -ma when Scream/attach is not used
+  # pktmonCapture: true          # Windows pktmon ETL (often needs elevation)
 mutators:
   - bitflip
   - havoc

@@ -62,4 +62,16 @@ public static class SysinternalsToolPaths
 
     public static string? FindTcpvcon(string? repoRoot = null) =>
         Find(repoRoot, "tcpvcon64.exe", "Tcpvcon64.exe", "tcpvcon.exe", "Tcpvcon.exe");
+
+    public static string? FindSigCheck(string? repoRoot = null) =>
+        Find(repoRoot, "sigcheck64.exe", "Sigcheck64.exe", "sigcheck.exe", "Sigcheck.exe");
+
+    public static string? FindStrings(string? repoRoot = null) =>
+        Find(repoRoot, "strings64.exe", "Strings64.exe", "strings.exe", "Strings.exe");
+
+    public static string? FindAccessChk(string? repoRoot = null) =>
+        Find(repoRoot, "accesschk64.exe", "Accesschk64.exe", "accesschk.exe", "Accesschk.exe");
+
+    public static string? FindVmMap(string? repoRoot = null) =>
+        Find(repoRoot, "vmmap64.exe", "Vmmap64.exe", "vmmap.exe", "Vmmap.exe");
 }
