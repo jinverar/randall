@@ -46,6 +46,11 @@ const statusEl = document.getElementById('fuzz-status');
 const startBtn = document.getElementById('fuzz-start');
 const stopBtn = document.getElementById('fuzz-stop');
 
+/** Soft cap for in-memory live log (survives leaving the Fuzz view). */
+const LOG_BUFFER_MAX = 2000;
+/** @type {{ line: string, cls: string, at: string|null }[]} */
+let logBuffer = [];
+
 function formatLogTs(isoOrDate) {
   try {
     const d = isoOrDate ? new Date(isoOrDate) : new Date();
@@ -57,21 +62,43 @@ function formatLogTs(isoOrDate) {
   }
 }
 
-function appendLog(line, cls = '', at = null) {
+function paintLogLine(entry) {
   if (!logEl) return;
   const row = document.createElement('div');
-  row.className = cls ? `log-line log-${cls}` : 'log-line log-info';
+  row.className = entry.cls ? `log-line log-${entry.cls}` : 'log-line log-info';
   const ts = document.createElement('span');
   ts.className = 'log-ts';
-  ts.textContent = `[${formatLogTs(at)}]`;
+  ts.textContent = `[${formatLogTs(entry.at)}]`;
   const msg = document.createElement('span');
   msg.className = 'log-msg';
-  msg.textContent = ` ${line}`;
+  msg.textContent = ` ${entry.line}`;
   row.appendChild(ts);
   row.appendChild(msg);
   logEl.appendChild(row);
-  // Keep the live log snappy — drop oldest lines beyond a soft cap
-  while (logEl.childElementCount > 2000)
+}
+
+/** Replay buffered lines into the Live log panel (e.g. after returning to Fuzz). */
+function rehydrateFuzzLog() {
+  if (!logEl) return;
+  logEl.innerHTML = '';
+  for (const entry of logBuffer) paintLogLine(entry);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function clearFuzzLog() {
+  logBuffer = [];
+  if (logEl) logEl.innerHTML = '';
+}
+
+function appendLog(line, cls = '', at = null) {
+  const entry = { line: line || '', cls: cls || '', at: at || new Date().toISOString() };
+  logBuffer.push(entry);
+  while (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+
+  if (!logEl) return;
+  // Keep appending while the view is hidden so an active run never loses lines.
+  paintLogLine(entry);
+  while (logEl.childElementCount > LOG_BUFFER_MAX)
     logEl.removeChild(logEl.firstChild);
   logEl.scrollTop = logEl.scrollHeight;
 }
@@ -83,6 +110,7 @@ function setStatus(text) {
 function switchView(name) {
   document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('visible', v.id === `view-${name}`));
+  if (name === 'fuzz') rehydrateFuzzLog();
   if (name === 'dashboard') loadDashboard().catch(() => {});
   if (name === 'stalking') loadStalkingView().catch(() => {});
   if (name === 'proxy') loadProxy().catch(() => {});
@@ -2138,7 +2166,8 @@ async function connectHub() {
 
 document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  logEl.innerHTML = '';
+  // New session only — never clear merely because the user left/returned to Fuzz.
+  clearFuzzLog();
   try {
     await api.post('/api/fuzz/start', {
       configPath: document.getElementById('fuzz-target').value,
