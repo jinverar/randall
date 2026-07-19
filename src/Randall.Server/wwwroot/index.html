@@ -355,7 +355,10 @@
           <div id="fuzz-status" class="status-box">Idle</div>
         </form>
         <div class="panel fuzz-log-panel">
-          <h2>Live log</h2>
+          <div class="fuzz-log-head">
+            <h2>Live log</h2>
+            <button type="button" class="btn" id="fuzz-log-clear" title="Clear the live log">Clear log</button>
+          </div>
           <pre id="fuzz-log" class="log"></pre>
         </div>
       </div>

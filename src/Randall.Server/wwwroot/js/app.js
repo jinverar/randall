@@ -2393,6 +2393,10 @@ stopBtn.addEventListener('click', async () => {
   }
 });
 
+document.getElementById('fuzz-log-clear')?.addEventListener('click', () => {
+  clearFuzzLog();
+});
+
 document.getElementById('fuzz-attach-dbg')?.addEventListener('click', async () => {
   try {
     const kind = document.getElementById('fuzz-debugger-kind').value;

@@ -392,6 +392,22 @@ html[data-theme="cyber"] body {
 
 .panel h2 { margin: 0 0 0.75rem; font-size: 1rem; }
 
+.fuzz-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.fuzz-log-head h2 { margin: 0; }
+
+.fuzz-log-head .btn {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
