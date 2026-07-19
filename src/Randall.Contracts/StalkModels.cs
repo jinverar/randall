@@ -62,7 +62,8 @@ public sealed record StalkTimelinePointDto(
     string Label,
     int Iteration,
     bool Crashed,
-    int NewEdges);
+    int NewEdges,
+    Guid? CrashId = null);
 
 public sealed record StalkHotBlockDto(string Address, long Hits);
 

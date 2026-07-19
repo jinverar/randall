@@ -387,11 +387,11 @@ app.MapGet("/api/coverage/status", () =>
 
 app.MapGet("/api/corpus/{project}", (string project) => CorpusStats.ForProject(project));
 
-app.MapGet("/api/stalk/{project}", (string project, FuzzSessionManager sessions) =>
+app.MapGet("/api/stalk/{project}", (string project, Guid? crashId, FuzzSessionManager sessions) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))
         return Results.NotFound(new { error = "project not found" });
-    var dash = StalkDashboard.ForProject(project, sessions.Status);
+    var dash = StalkDashboard.ForProject(project, sessions.Status, crashId);
     return dash is null ? Results.NotFound(new { error = "project not found" }) : Results.Ok(dash);
 });
 

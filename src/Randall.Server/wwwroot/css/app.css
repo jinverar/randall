@@ -2777,6 +2777,27 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
 .stalk-actions .btn { width: 100%; text-align: left; background: var(--stalk-chip-bg); border-color: var(--stalk-border); }
 
 .stalk-timeline-panel { margin-bottom: 0.65rem; }
+.stalk-timeline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.35rem;
+}
+.stalk-timeline-head h3 { margin: 0; }
+.stalk-timeline-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.stalk-timeline-selection {
+  font-size: 0.78rem;
+  color: var(--stalk-bright);
+  font-family: var(--mono);
+  max-width: 28rem;
+}
 .stalk-timeline {
   display: flex;
   align-items: flex-end;
@@ -2791,13 +2812,33 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
 .stalk-timeline .bar {
   flex: 1 1 0;
   min-width: 2px;
+  border: 0;
+  padding: 0;
   border-radius: 2px 2px 0 0;
   background: var(--stalk-gray);
+  cursor: pointer;
+  position: relative;
+}
+.stalk-timeline .bar:hover { filter: brightness(1.08); }
+.stalk-timeline .bar:focus-visible {
+  outline: 2px solid var(--stalk-blue);
+  outline-offset: 1px;
+  z-index: 1;
 }
 .stalk-timeline .bar.hit { background: var(--stalk-blue); height: 45% !important; }
 .stalk-timeline .bar.novel { background: var(--stalk-green); height: 70% !important; }
-.stalk-timeline .bar.crash { background: var(--stalk-red); height: 100% !important; box-shadow: 0 0 8px rgba(255, 59, 74, 0.55); }
-.stalk-timeline .bar.miss { background: #3a3f4a; height: 22% !important; }
+.stalk-timeline .bar.crash { background: var(--stalk-red); height: 100% !important; box-shadow: 0 0 6px color-mix(in srgb, var(--stalk-red) 45%, transparent); }
+.stalk-timeline .bar.miss { background: var(--stalk-gray); height: 22% !important; opacity: 0.55; }
+.stalk-timeline .bar.selected {
+  outline: 2px solid var(--stalk-bright);
+  outline-offset: 1px;
+  z-index: 2;
+  filter: brightness(1.12);
+}
+.stalk-timeline .bar.crash.selected {
+  outline-color: var(--stalk-red);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--stalk-red) 35%, transparent);
+}
 .stalk-timeline-axis {
   display: flex;
   justify-content: space-between;
@@ -2808,8 +2849,12 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
 }
 
 .stalk-crashlog-panel table { font-size: 0.78rem; }
-.stalk-crashlog-panel tr.crash-row td { color: #ffb4ba; }
-.stalk-crashlog-panel tr.crash-row:hover { background: #2a1220; }
+.stalk-crashlog-panel tr.crash-row td { color: var(--stalk-red); }
+.stalk-crashlog-panel tr.crash-row:hover { background: var(--stalk-chip-bg); }
+.stalk-crashlog-panel tr.crash-row.selected {
+  background: var(--stalk-chip-active);
+  outline: 1px solid var(--stalk-border);
+}
 .stalk-empty { color: var(--muted); font-style: italic; font-size: 0.85rem; }
 
 /* —— Stalking bugs workspace —— */

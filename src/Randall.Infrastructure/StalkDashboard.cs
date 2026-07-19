@@ -12,7 +12,10 @@ public static class StalkDashboard
         PropertyNameCaseInsensitive = true,
     };
 
-    public static StalkDashboardDto? ForProject(string projectName, FuzzSessionStatusDto? fuzzStatus = null)
+    public static StalkDashboardDto? ForProject(
+        string projectName,
+        FuzzSessionStatusDto? fuzzStatus = null,
+        Guid? focusCrashId = null)
     {
         var repoRoot = CrashCatalog.FindRepoRoot();
         if (repoRoot is null)
@@ -35,11 +38,14 @@ public static class StalkDashboard
         var pid = fuzzStatus?.TargetPid ?? FindPid(exePath, targetName);
 
         var crashes = CrashCatalog.ListAll(repoRoot, project.Name);
-        var latestCrash = crashes.FirstOrDefault();
+        var focusCrash = focusCrashId is Guid fid
+            ? crashes.FirstOrDefault(c => c.Id == fid)
+            : null;
+        var latestCrash = focusCrash ?? crashes.FirstOrDefault();
         CrashDetailDto? latestDetail = latestCrash is null ? null : CrashCatalog.GetDetail(latestCrash.Id, repoRoot);
 
         var run = FindLatestRun(project, configPath);
-        var timeline = BuildTimeline(run, latestDetail);
+        var timeline = BuildTimeline(run, latestDetail, crashes);
         var (blocks, edges) = BuildGraph(project, graph, latestDetail, run);
         var hotBlocks = (run?.HotEdges ?? [])
             .Take(8)
@@ -47,12 +53,19 @@ public static class StalkDashboard
             .ToList();
 
         var crashLog = BuildCrashLog(crashes, repoRoot);
-        var status = ResolveStatus(fuzzStatus, configPath, latestCrash, pid);
+        var status = focusCrash is not null
+            ? $"Inspecting {ShortCrashId(focusCrash.Id)}"
+            : ResolveStatus(fuzzStatus, configPath, latestCrash, pid);
         var mode = project.Fuzz.CoverageGuided || fuzzStatus?.CoverageGuided == true
             ? "Basic Block"
             : graph.HasGraph ? "Session Graph" : "Mutation";
 
         var notes = BuildNotes(status, latestDetail, corpus, graph, hotBlocks);
+        if (focusCrash is not null)
+        {
+            notes.Insert(0,
+                $"Inspecting historical crash {ShortCrashId(focusCrash.Id)} (iteration {focusCrash.Iteration}) — Follow live to resume.");
+        }
         var crashAddr = latestDetail?.Analysis?.FaultAddress
             ?? latestDetail?.Sidecar?.ExceptionHint
             ?? "—";
@@ -578,15 +591,34 @@ public static class StalkDashboard
         return hints;
     }
 
-    private static List<StalkTimelinePointDto> BuildTimeline(FuzzRunManifestDto? run, CrashDetailDto? latestDetail)
+    private static List<StalkTimelinePointDto> BuildTimeline(
+        FuzzRunManifestDto? run,
+        CrashDetailDto? latestDetail,
+        IReadOnlyList<CrashSummaryDto> crashes)
     {
+        var crashByIteration = crashes
+            .GroupBy(c => c.Iteration)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(c => c.ObservedAt).First().Id);
+
+        Guid? CrashIdFor(int iteration, bool crashed) =>
+            crashed && crashByIteration.TryGetValue(iteration, out var id) ? id : null;
+
         var points = new List<StalkTimelinePointDto>();
         if (run is null)
         {
             for (var i = 0; i < 40; i++)
                 points.Add(new StalkTimelinePointDto(i, i % 7 == 0 ? "novel" : "hit", $"bb_{i}", i, false, i % 7 == 0 ? 1 : 0));
             if (latestDetail is not null)
-                points.Add(new StalkTimelinePointDto(40, "crash", "CRASH", latestDetail.Summary.Iteration, true, latestDetail.Sidecar?.NewEdgesAtCrash ?? 0));
+            {
+                points.Add(new StalkTimelinePointDto(
+                    40,
+                    "crash",
+                    "CRASH",
+                    latestDetail.Summary.Iteration,
+                    true,
+                    latestDetail.Sidecar?.NewEdgesAtCrash ?? 0,
+                    latestDetail.Summary.Id));
+            }
             return points;
         }
 
@@ -597,7 +629,16 @@ public static class StalkDashboard
             for (var i = 0; i < Math.Min(80, Math.Max(10, run.Iterations)); i++)
             {
                 var kind = i == run.Iterations - 1 && run.CrashesFound > 0 ? "crash" : i % 9 == 0 ? "novel" : "hit";
-                points.Add(new StalkTimelinePointDto(i, kind, $"iter_{i}", i, kind == "crash", kind == "novel" ? 1 : 0));
+                var crashed = kind == "crash";
+                var iteration = crashed ? (latestDetail?.Summary.Iteration ?? i) : i;
+                points.Add(new StalkTimelinePointDto(
+                    i,
+                    kind,
+                    $"iter_{i}",
+                    iteration,
+                    crashed,
+                    kind == "novel" ? 1 : 0,
+                    CrashIdFor(iteration, crashed) ?? (crashed ? latestDetail?.Summary.Id : null)));
             }
             return points;
         }
@@ -611,7 +652,14 @@ public static class StalkDashboard
                 var entry = JsonSerializer.Deserialize<IterationLogEntry>(line, JsonOptions);
                 if (entry is null) continue;
                 var kind = entry.Crashed ? "crash" : entry.NewEdges > 0 ? "novel" : "hit";
-                points.Add(new StalkTimelinePointDto(idx++, kind, entry.Command, entry.Iteration, entry.Crashed, entry.NewEdges));
+                points.Add(new StalkTimelinePointDto(
+                    idx++,
+                    kind,
+                    entry.Command,
+                    entry.Iteration,
+                    entry.Crashed,
+                    entry.NewEdges,
+                    CrashIdFor(entry.Iteration, entry.Crashed)));
             }
             catch
             {

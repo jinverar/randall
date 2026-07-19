@@ -272,8 +272,18 @@ async function loadHealth() {
 }
 
 let stalkProject = null;
+/** Server/history timeline from last /api/stalk payload (persists across live ticks). */
+let stalkServerTimeline = [];
 let stalkLiveTimeline = [];
 let stalkPollTick = 0;
+/** When false, live SignalR/poll must not overwrite stalker widgets — timeline selection is pinned. */
+let stalkFollowLive = true;
+/** @type {null | { key: string, iteration: number, kind: string, label: string, crashId: string|null, index: number }} */
+let stalkSelection = null;
+/** Last painted timeline points (for re-highlight / click resolve). */
+let stalkRenderedTimeline = [];
+/** iteration → crash Guid (filled from server timeline / crash list). */
+const stalkCrashIdByIteration = new Map();
 
 async function loadTargets() {
   const targets = (await api.get('/api/targets')).filter(isVisibleTarget);
@@ -313,7 +323,7 @@ document.getElementById('fuzz-target')?.addEventListener('change', () => {
 
 function statusClass(status) {
   const s = (status || '').toLowerCase();
-  if (s.includes('crash')) return 'status-crash';
+  if (s.includes('crash') || s.includes('inspect')) return 'status-crash';
   if (s.includes('trac')) return 'status-tracing';
   if (s.includes('attach')) return 'status-attached';
   return 'status-idle';
@@ -998,52 +1008,173 @@ function closeBlockInspector() {
   hideBlockContextMenu();
 }
 
-function renderTimeline(points) {
-  const el = document.getElementById('stalk-timeline');
-  const end = document.getElementById('stalk-timeline-end');
-  const list = (points || []).slice(-200);
-  if (!list.length) {
-    el.innerHTML = '';
-    end.textContent = 'NOW';
+function timelinePointKey(p, index) {
+  if (p.crashId) return `crash:${p.crashId}`;
+  const kind = p.kind || (p.crashed ? 'crash' : p.newEdges > 0 ? 'novel' : 'hit');
+  return `iter:${p.iteration}:${kind}:${p.label || ''}:${index ?? p.index ?? 0}`;
+}
+
+function rememberTimelineCrashIds(points) {
+  for (const p of points || []) {
+    if (p.crashId != null && p.iteration != null)
+      stalkCrashIdByIteration.set(Number(p.iteration), p.crashId);
+  }
+  for (const p of stalkLiveTimeline) {
+    if (!p.crashId && stalkCrashIdByIteration.has(Number(p.iteration)))
+      p.crashId = stalkCrashIdByIteration.get(Number(p.iteration));
+  }
+}
+
+function updateTimelineFollowUi() {
+  const btn = document.getElementById('stalk-follow-live');
+  const label = document.getElementById('stalk-timeline-selection');
+  if (!btn || !label) return;
+  if (stalkFollowLive || !stalkSelection) {
+    btn.classList.add('hidden');
+    label.classList.add('hidden');
+    label.textContent = '';
     return;
   }
-  el.innerHTML = list.map((p) => {
-    const kind = p.kind || (p.crashed ? 'crash' : p.newEdges > 0 ? 'novel' : 'hit');
-    const h = kind === 'crash' ? 100 : kind === 'novel' ? 70 : kind === 'miss' ? 22 : 45;
-    return `<div class="bar ${kind}" style="height:${h}%" title="#${p.iteration} ${p.label || ''} (${kind})"></div>`;
-  }).join('');
-  const last = list[list.length - 1];
-  end.textContent = last.crashed || last.kind === 'crash' ? 'NOW (CRASH)' : 'NOW';
+  btn.classList.remove('hidden');
+  label.classList.remove('hidden');
+  const kind = stalkSelection.kind || 'hit';
+  const crashBit = stalkSelection.crashId
+    ? ` · ${String(stalkSelection.crashId).slice(0, 8)}…`
+    : '';
+  label.textContent = `Pinned #${stalkSelection.iteration} ${stalkSelection.label || ''} (${kind})${crashBit}`.trim();
 }
 
 function mergeTimeline(serverPoints) {
-  if (!stalkLiveTimeline.length) return serverPoints || [];
-  return [...(serverPoints || []), ...stalkLiveTimeline].slice(-200);
+  if (Array.isArray(serverPoints))
+    stalkServerTimeline = serverPoints;
+  rememberTimelineCrashIds(stalkServerTimeline);
+  rememberTimelineCrashIds(stalkLiveTimeline);
+  if (!stalkLiveTimeline.length)
+    return (stalkServerTimeline || []).slice(-200);
+  return [...(stalkServerTimeline || []), ...stalkLiveTimeline].slice(-200);
 }
 
-async function loadDashboard() {
-  const targets = (await api.get('/api/targets')).filter(isVisibleTarget);
-  const tabs = document.getElementById('stalker-tabs');
-  if (!targets.length) {
-    tabs.innerHTML = '<span class="stalk-empty">No projects in projects/</span>';
+function renderTimeline(points) {
+  const el = document.getElementById('stalk-timeline');
+  const end = document.getElementById('stalk-timeline-end');
+  if (!el || !end) return;
+  const list = (points || []).slice(-200).map((p, i) => {
+    const kind = p.kind || (p.crashed ? 'crash' : (p.newEdges || p.newEdgeCount) > 0 ? 'novel' : 'hit');
+    const crashId = p.crashId || stalkCrashIdByIteration.get(Number(p.iteration)) || null;
+    return { ...p, kind, crashId, index: p.index ?? i };
+  });
+  stalkRenderedTimeline = list;
+  rememberTimelineCrashIds(list);
+  if (!list.length) {
+    el.innerHTML = '';
+    end.textContent = 'NOW';
+    updateTimelineFollowUi();
     return;
   }
-
-  if (!stalkProject || !targets.some((t) => t.name === stalkProject)) {
-    stalkProject = targets.find((t) => t.name === 'vulnserver')?.name || targets[0].name;
-  }
-
-  tabs.innerHTML = targets.map((t) =>
-    `<button type="button" data-project="${t.name}" class="${t.name === stalkProject ? 'active' : ''}">${t.name}</button>`).join('');
-  tabs.querySelectorAll('button').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      stalkProject = btn.dataset.project;
-      stalkLiveTimeline = [];
-      loadDashboard().catch(() => {});
+  const selectedKey = stalkSelection?.key;
+  el.innerHTML = list.map((p, i) => {
+    const kind = p.kind;
+    const h = kind === 'crash' ? 100 : kind === 'novel' ? 70 : kind === 'miss' ? 22 : 45;
+    const key = timelinePointKey(p, i);
+    const selected = selectedKey && key === selectedKey ? ' selected' : '';
+    const title = `#${p.iteration} ${p.label || ''} (${kind}) — click to inspect`;
+    return `<button type="button" class="bar ${kind}${selected}" style="height:${h}%"
+      data-index="${i}" data-iteration="${p.iteration}" data-kind="${kind}"
+      data-label="${escapeXml(p.label || '')}"
+      data-crash-id="${escapeXml(p.crashId || '')}"
+      title="${escapeXml(title)}"
+      aria-label="${escapeXml(title)}"
+      role="option" aria-selected="${selected ? 'true' : 'false'}"></button>`;
+  }).join('');
+  el.querySelectorAll('.bar').forEach((bar) => {
+    bar.addEventListener('click', () => {
+      const idx = Number(bar.dataset.index);
+      const point = stalkRenderedTimeline[idx];
+      if (point) selectTimelinePoint(point, idx).catch(() => {});
     });
   });
+  const last = list[list.length - 1];
+  if (!stalkFollowLive && stalkSelection)
+    end.textContent = `PINNED #${stalkSelection.iteration}`;
+  else
+    end.textContent = last.crashed || last.kind === 'crash' ? 'NOW (CRASH)' : 'NOW';
+  updateTimelineFollowUi();
+}
 
-  const data = await api.get(`/api/stalk/${encodeURIComponent(stalkProject)}`);
+async function resolveCrashIdForIteration(iteration) {
+  if (stalkCrashIdByIteration.has(Number(iteration)))
+    return stalkCrashIdByIteration.get(Number(iteration));
+  if (!stalkProject) return null;
+  try {
+    const crashes = await api.get(`/api/crashes?project=${encodeURIComponent(stalkProject)}`);
+    for (const c of crashes || []) {
+      if (c.iteration != null && c.id)
+        stalkCrashIdByIteration.set(Number(c.iteration), c.id);
+    }
+    return stalkCrashIdByIteration.get(Number(iteration)) || null;
+  } catch {
+    return null;
+  }
+}
+
+function applyIterationSelectionNote(point) {
+  const notes = document.getElementById('stalk-notes');
+  if (!notes) return;
+  const kind = point.kind || 'hit';
+  notes.innerHTML = [
+    `<li>Timeline selection: iteration <strong>#${point.iteration}</strong> (${kind}).</li>`,
+    point.label ? `<li>Label / mutator: <code>${point.label}</code></li>` : '',
+    (point.newEdges || point.newEdgeCount)
+      ? `<li>New edges this case: <strong>${point.newEdges || point.newEdgeCount}</strong></li>`
+      : '',
+    '<li>Live updates paused — click <strong>Follow live</strong> to resume.</li>',
+  ].filter(Boolean).join('');
+  document.getElementById('stalk-divergence').textContent =
+    kind === 'novel' ? (point.label || `iter #${point.iteration}`) : (document.getElementById('stalk-divergence').textContent || '—');
+}
+
+function highlightCrashLogRow(crashId) {
+  const log = document.getElementById('stalk-crash-log');
+  if (!log) return;
+  log.querySelectorAll('tr.crash-row').forEach((row) => {
+    row.classList.toggle('selected', !!crashId && row.dataset.id === crashId);
+  });
+}
+
+async function selectTimelinePoint(point, index) {
+  const kind = point.kind || (point.crashed ? 'crash' : 'hit');
+  let crashId = point.crashId || null;
+  if ((kind === 'crash' || point.crashed) && !crashId)
+    crashId = await resolveCrashIdForIteration(point.iteration);
+
+  stalkFollowLive = false;
+  stalkSelection = {
+    key: timelinePointKey({ ...point, crashId, kind }, index),
+    iteration: point.iteration,
+    kind,
+    label: point.label || '',
+    crashId,
+    index,
+  };
+  renderTimeline(stalkRenderedTimeline);
+
+  if (crashId) {
+    await loadDashboard({ crashId, applyWidgets: true });
+    highlightCrashLogRow(crashId);
+  } else {
+    applyIterationSelectionNote(point);
+    updateTimelineFollowUi();
+  }
+}
+
+function followStalkLive() {
+  stalkFollowLive = true;
+  stalkSelection = null;
+  updateTimelineFollowUi();
+  loadDashboard({ applyWidgets: true, followLive: true }).catch(() => {});
+}
+
+function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
   document.getElementById('stalk-target').textContent = data.targetName || data.project;
   document.getElementById('stalk-pid').textContent = data.pid ?? '—';
   document.getElementById('stalk-arch').textContent = data.arch || '—';
@@ -1093,16 +1224,16 @@ async function loadDashboard() {
 
   document.getElementById('stalk-divergence').textContent = data.firstDivergence || '—';
   document.getElementById('stalk-notes').innerHTML = (data.notes || []).map((n) => `<li>${n}</li>`).join('');
-  renderTimeline(mergeTimeline(data.timeline));
 
   const log = document.getElementById('stalk-crash-log');
   if (!(data.crashLog || []).length) {
     log.innerHTML = '<p class="stalk-empty">No crashes yet — start a fuzz run from the Fuzz tab.</p>';
   } else {
+    const focusId = selectedCrashId || stalkSelection?.crashId || null;
     log.innerHTML = `<table><thead><tr>
       <th>ID</th><th>Sev</th><th>Class</th><th>Hits</th><th>Exception</th><th>Address</th><th>New cov</th><th>Input</th>
     </tr></thead><tbody>
-      ${data.crashLog.map((c) => `<tr class="clickable crash-row" data-id="${c.id}">
+      ${data.crashLog.map((c) => `<tr class="clickable crash-row${focusId && c.id === focusId ? ' selected' : ''}" data-id="${c.id}">
         <td><code>${c.shortId}</code></td>
         <td class="severity-${c.severity || 'low'}">${c.severity || '—'}</td>
         <td><code>${c.crashClass || '—'}</code></td>
@@ -1115,14 +1246,70 @@ async function loadDashboard() {
     </tbody></table>`;
     log.querySelectorAll('tr.clickable').forEach((row) => {
       row.addEventListener('click', () => {
-        crashState.pendingSelectId = row.dataset.id;
-        switchView('crashes');
+        const id = row.dataset.id;
+        stalkFollowLive = false;
+        stalkSelection = {
+          key: `crash:${id}`,
+          iteration: stalkSelection?.iteration ?? 0,
+          kind: 'crash',
+          label: 'crash-log',
+          crashId: id,
+          index: stalkSelection?.index ?? -1,
+        };
+        loadDashboard({ crashId: id, applyWidgets: true }).catch(() => {});
       });
     });
   }
 }
 
-document.getElementById('stalk-refresh')?.addEventListener('click', () => loadDashboard().catch(() => {}));
+async function loadDashboard(opts = {}) {
+  // Explicit applyWidgets wins; otherwise follow-live (or a focused crashId) drives widgets.
+  const applyWidgets = typeof opts.applyWidgets === 'boolean'
+    ? opts.applyWidgets
+    : (stalkFollowLive || !!opts.crashId || !!opts.force || !!opts.followLive);
+  const crashId = opts.crashId
+    || (!stalkFollowLive && stalkSelection?.crashId)
+    || null;
+
+  const targets = (await api.get('/api/targets')).filter(isVisibleTarget);
+  const tabs = document.getElementById('stalker-tabs');
+  if (!targets.length) {
+    tabs.innerHTML = '<span class="stalk-empty">No projects in projects/</span>';
+    return;
+  }
+
+  if (!stalkProject || !targets.some((t) => t.name === stalkProject)) {
+    stalkProject = targets.find((t) => t.name === 'vulnserver')?.name || targets[0].name;
+  }
+
+  tabs.innerHTML = targets.map((t) =>
+    `<button type="button" data-project="${t.name}" class="${t.name === stalkProject ? 'active' : ''}">${t.name}</button>`).join('');
+  tabs.querySelectorAll('button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      stalkProject = btn.dataset.project;
+      stalkServerTimeline = [];
+      stalkLiveTimeline = [];
+      stalkCrashIdByIteration.clear();
+      stalkFollowLive = true;
+      stalkSelection = null;
+      loadDashboard({ applyWidgets: true, followLive: true }).catch(() => {});
+    });
+  });
+
+  const qs = crashId ? `?crashId=${encodeURIComponent(crashId)}` : '';
+  const data = await api.get(`/api/stalk/${encodeURIComponent(stalkProject)}${qs}`);
+  renderTimeline(mergeTimeline(data.timeline || []));
+
+  if (applyWidgets)
+    applyDashboardWidgets(data, { selectedCrashId: crashId });
+  else
+    updateTimelineFollowUi();
+}
+
+document.getElementById('stalk-refresh')?.addEventListener('click', () => {
+  loadDashboard({ applyWidgets: true, force: true }).catch(() => {});
+});
+document.getElementById('stalk-follow-live')?.addEventListener('click', () => followStalkLive());
 document.getElementById('stalk-insp-close')?.addEventListener('click', () => closeBlockInspector());
 document.addEventListener('click', (ev) => {
   if (!ev.target.closest('#stalk-ctx-menu')) hideBlockContextMenu();
@@ -2111,9 +2298,13 @@ async function connectHub() {
     setStatus(`Running ${e.project}…`);
     startBtn.disabled = true;
     stalkProject = e.project || stalkProject;
+    stalkServerTimeline = [];
     stalkLiveTimeline = [];
+    stalkCrashIdByIteration.clear();
+    stalkFollowLive = true;
+    stalkSelection = null;
     if (document.getElementById('view-dashboard').classList.contains('visible'))
-      loadDashboard().catch(() => {});
+      loadDashboard({ applyWidgets: true, followLive: true }).catch(() => {});
   });
 
   hub.on('fuzzLog', (e) => {
@@ -2131,12 +2322,16 @@ async function connectHub() {
       iteration: e.iteration,
       crashed: !!e.crashed,
       newEdges: e.newEdgeCount || 0,
+      crashId: stalkCrashIdByIteration.get(Number(e.iteration)) || null,
     });
     if (stalkLiveTimeline.length > 200) stalkLiveTimeline = stalkLiveTimeline.slice(-200);
     if (document.getElementById('view-dashboard').classList.contains('visible')) {
-      document.getElementById('stalk-status').textContent = e.crashed ? 'Crash Detected' : 'Tracing';
-      document.getElementById('stalk-status').className = statusClass(e.crashed ? 'Crash Detected' : 'Tracing');
-      renderTimeline(stalkLiveTimeline);
+      // Keep growing the bar strip even when pinned; do not clobber CFG/widgets.
+      renderTimeline(mergeTimeline());
+      if (stalkFollowLive) {
+        document.getElementById('stalk-status').textContent = e.crashed ? 'Crash Detected' : 'Tracing';
+        document.getElementById('stalk-status').className = statusClass(e.crashed ? 'Crash Detected' : 'Tracing');
+      }
     }
   });
 
@@ -2144,7 +2339,12 @@ async function connectHub() {
     appendLog(`Done — ${e.iterations} iters, ${e.crashesFound} crashes, +${e.corpusAdded} corpus`, 'ok');
     setStatus('Completed');
     startBtn.disabled = false;
-    loadDashboard();
+    resolveCrashIdForIteration(-1).finally(() => {
+      loadDashboard({
+        applyWidgets: stalkFollowLive,
+        force: stalkFollowLive,
+      }).catch(() => {});
+    });
     loadCrashes();
   });
 
@@ -2152,7 +2352,7 @@ async function connectHub() {
     appendLog(`Stopped: ${e.reason}`, 'warn');
     setStatus('Stopped');
     startBtn.disabled = false;
-    loadDashboard().catch(() => {});
+    loadDashboard({ applyWidgets: stalkFollowLive, force: stalkFollowLive }).catch(() => {});
   });
 
   hub.on('fuzzError', (e) => {
@@ -2780,8 +2980,10 @@ async function pollStatus() {
       startBtn.disabled = true;
       setStatus(`${s.phase}: ${s.lastMessage || '…'}`);
       stalkPollTick += 1;
-      if (stalkPollTick % 3 === 0 && document.getElementById('view-dashboard').classList.contains('visible'))
-        loadDashboard().catch(() => {});
+      if (stalkPollTick % 3 === 0 && document.getElementById('view-dashboard').classList.contains('visible')) {
+        // Pinned selection: refresh timeline/crash-id map only — keep stalker widgets frozen.
+        loadDashboard({ applyWidgets: stalkFollowLive, force: stalkFollowLive }).catch(() => {});
+      }
     } else if (s.phase === 'idle') {
       startBtn.disabled = false;
       stalkPollTick = 0;

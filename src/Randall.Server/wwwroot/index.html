@@ -182,8 +182,14 @@
         </div>
 
         <section class="stalk-panel stalk-timeline-panel">
-          <h3>Execution timeline <span>(last 200 blocks)</span></h3>
-          <div id="stalk-timeline" class="stalk-timeline"></div>
+          <div class="stalk-timeline-head">
+            <h3>Execution timeline <span>(last 200 blocks)</span></h3>
+            <div class="stalk-timeline-tools">
+              <span id="stalk-timeline-selection" class="stalk-timeline-selection hidden" aria-live="polite"></span>
+              <button type="button" class="btn hidden" id="stalk-follow-live" title="Resume live dashboard updates">Follow live</button>
+            </div>
+          </div>
+          <div id="stalk-timeline" class="stalk-timeline" role="listbox" aria-label="Execution timeline — click a bar to inspect"></div>
           <div class="stalk-timeline-axis">
             <span>−200</span>
             <span id="stalk-timeline-end">NOW</span>
