@@ -1,4 +1,6 @@
-# Build Randfuzz Scream regression lab binaries (native AV + optional TCP target)
+# Build Randfuzz Scream regression lab binaries (native AV + optional TCP target).
+# Native helpers need gcc (MinGW/Strawberry). Without gcc this script warns and exits 0
+# so build-all-lab-targets can finish the other labs (vulnserver, etc.).
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Project = Join-Path $Root "targets\Randall.ScreamCrash\Randall.ScreamCrash.csproj"
@@ -8,7 +10,13 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
 $Gcc = Get-Command gcc -ErrorAction SilentlyContinue
 if (-not $Gcc) {
-    Write-Error "gcc not found (needed for native helpers). Install MinGW/Strawberry or add gcc to PATH."
+    Write-Host ""
+    Write-Host '[!] Skipping ScreamCrash lab - gcc not found.' -ForegroundColor Yellow
+    Write-Host '    Native helpers (scream_crash.exe / scream_av.dll) need MinGW or Strawberry Perl gcc on PATH.' -ForegroundColor Yellow
+    Write-Host '    This is optional. Other lab targets (vulnserver, etc.) do not need gcc.' -ForegroundColor Yellow
+    Write-Host '    To build Scream later: install gcc, then re-run scripts\build-screamcrash.ps1' -ForegroundColor Yellow
+    Write-Host ""
+    exit 0
 }
 
 Write-Host "Building scream_crash.exe (native selftest AV)..."

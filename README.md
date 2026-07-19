@@ -32,6 +32,8 @@ Fresh VM or bare metal. Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_W
 
 **Need:** [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) · [Git](https://git-scm.com/download/win) · PowerShell · ~8 GB RAM recommended
 
+Prefer **`git clone` / `git pull`** over a GitHub ZIP of the repo — you get script fixes without re-downloading the whole tree. If you already unpacked a ZIP under Downloads, either clone fresh or `git pull` after initializing a remote.
+
 ```powershell
 # 1) Clone
 cd $env:USERPROFILE\Projects
@@ -42,8 +44,10 @@ cd randall
 dotnet build
 # Windows often blocks scripts (ExecutionPolicy Restricted) — use Bypass for this file:
 powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
+# ScreamCrash needs MinGW/Strawberry gcc — without it the script warns and skips (OK for vulnserver fuzzing).
 
-# 3) Optional — coverage (DynamoRIO)
+# 3) Optional — coverage (DynamoRIO). Large download; skip anytime:
+#    powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
 $env:DYNAMORIO_HOME = (Resolve-Path tools\dynamorio).Path
 
@@ -187,17 +191,26 @@ Docs: [docs/HARNESS_DESIGN.md](docs/HARNESS_DESIGN.md) · [docs/IN_PROCESS.md](d
 
 ## Optional — DynamoRIO (coverage-guided stalking)
 
-Coverage is **optional**. Randfuzz finds crashes without it. Install DynamoRIO when you want `+N edges` in the fuzz log and corpus inputs ranked by new basic blocks.
+Coverage is **optional**. Randfuzz finds crashes without it. Install DynamoRIO when you want `+N edges` in the fuzz log and corpus inputs ranked by new basic blocks. The Windows zip is large — on a slow VM NAT link it can take a long time; that is normal.
 
 ### Install (pick one)
 
-**A. Script (downloads latest release)**
+**A. Script (downloads latest release — progress + resume via `curl.exe` / BITS)**
 
 ```powershell
-powershell -File scripts/install-dynamorio.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
+# Skip for now:
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
 ```
 
-**B. Manual zip** — download `DynamoRIO-Windows-*.zip` from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases), extract, and place so this file exists:
+**B. Manual zip (often faster — browser download, then point the script at it)**
+
+1. Download `DynamoRIO-Windows-*.zip` from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases) (or copy the zip into `tools\`).
+2. Either extract so this file exists, **or** pass the zip to the script:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-11.3.0-1.zip
+```
 
 ```
 tools/dynamorio/bin64/drrun.exe

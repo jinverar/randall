@@ -44,12 +44,16 @@ git --version
 
 ## 3. Clone the repo
 
+Prefer **git** over downloading a GitHub source ZIP — `git pull` picks up install-script fixes without re-unpacking.
+
 ```powershell
 cd $env:USERPROFILE\Projects
 # or: mkdir C:\src; cd C:\src
 git clone https://github.com/jinverar/randall.git
 cd randall
 ```
+
+If you already unpacked a ZIP (e.g. under `Downloads\randall-main\`), either clone fresh as above, or replace that tree with a clone / pull so you have the latest scripts.
 
 ---
 
@@ -86,14 +90,31 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 Compiles vulnserver, vulnhttp, vulnftp, and other practice targets under `targets\`.
 
+**ScreamCrash (optional):** needs **gcc** from [MinGW-w64](https://www.mingw-w64.org/) or [Strawberry Perl](https://strawberryperl.com/) on `PATH`. Without gcc the build **warns and skips** Scream — that is fine for normal lab fuzzing (vulnserver, etc.). To add Scream later: install gcc, then re-run `powershell -ExecutionPolicy Bypass -File .\scripts\build-screamcrash.ps1`.
+
 ---
 
 ## 6. (Optional) DynamoRIO — coverage stalking
 
-Needed for `+N edges` / coverage-guided corpus. Crashes work without it.
+Needed only for `+N edges` / coverage-guided corpus. **Crashes and basic fuzzing work without it.** The Windows zip is large; on a slow VM network the download can take a long time.
+
+**Skip for now:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
+```
+
+**Install with progress / resume** (`curl.exe` if present, else BITS):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
+```
+
+**Manual / faster on slow links** — download `DynamoRIO-Windows-*.zip` in a browser from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases), then:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-*.zip
+# or extract yourself so tools\dynamorio\bin64\drrun.exe exists
 ```
 
 Session env (or set a permanent user variable `DYNAMORIO_HOME`):
@@ -160,8 +181,11 @@ For real dumps / memory lens, **fuzz on the agent UI** — see [LAB_AGENT.md](LA
 | `dotnet` not found | New PowerShell after SDK install; check PATH |
 | **Scripts disabled / `PSSecurityException`** | `powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1` |
 | Lab target missing | Re-run the Bypass command above |
+| `gcc not found` / Scream skipped | Optional — ignore for vulnserver; or install MinGW/Strawberry and re-run `build-screamcrash.ps1` |
+| DynamoRIO download “forever” | Use `-Skip`, or browser-download the zip + `-ZipPath`; re-run resumes via curl/BITS |
 | Port 5000 in use | Stop other Server/agent processes |
 | OOM / very slow | Raise VM RAM; avoid every lab + DynamoRIO at once |
+| Old ZIP of the repo | Prefer `git clone` / `git pull` so install scripts stay current |
 | Clone / TLS errors | Fix VM date/time; check proxy |
 
 ---

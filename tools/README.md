@@ -18,16 +18,23 @@ Randall also auto-detects `tools/DynamoRIO-*` (versioned extract folder) and `DY
 
 ### Install
 
-**Script (recommended)**
+DynamoRIO is **optional**. Skip with `-Skip` if you only need crash-finding fuzzing.
+
+**Script (progress + resume via curl/BITS)**
 
 ```powershell
-powershell -File scripts/install-dynamorio.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
 ```
 
-**Manual**
+**Manual / slow network**
 
 1. Download `DynamoRIO-Windows-*.zip` from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases).
-2. Extract into `tools/` and rename the folder to `dynamorio` (or keep `DynamoRIO-Windows-x.y.z` — both work).
+2. Either extract into `tools/` and rename to `dynamorio` (or keep `DynamoRIO-Windows-x.y.z`), **or**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\path\to\DynamoRIO-Windows-*.zip
+```
 
 ### Verify
 
