@@ -186,6 +186,22 @@ public static class LabDoctor
                     : "pktmon not found — optional packet bookends disabled");
         }
 
+        var tsharkExe = TsharkCapture.DiscoverExecutable();
+        if (project.Fuzz.TsharkCapture)
+        {
+            Add("tshark", tsharkExe is not null ? "ok" : "warn",
+                tsharkExe is not null
+                    ? $"TsharkCapture enabled → {tsharkExe} (Npcap/admin often required)"
+                    : "TsharkCapture enabled but tshark.exe not found — install Wireshark (winget/choco) or place in tools/");
+        }
+        else
+        {
+            Add("tshark", tsharkExe is not null ? "ok" : "warn",
+                tsharkExe is not null
+                    ? $"{tsharkExe} (set fuzz.tsharkCapture: true → fuzz.pcapng; may need Npcap/admin)"
+                    : "tshark not found — optional pcap bookends disabled (Wireshark / winget install WiresharkFoundation.Wireshark)");
+        }
+
         var wprExe = EtwCapture.DiscoverExecutable();
         if (project.Fuzz.EtwCapture)
         {

@@ -45,6 +45,7 @@ public sealed record FuzzStartRequest(
     bool? TcpvconCapture = null,
     bool? ProcdumpOnCrash = null,
     bool? PktmonCapture = null,
+    bool? TsharkCapture = null,
     bool? EtwCapture = null,
     bool? DebugViewCapture = null,
     bool? SysinternalsSnapshots = null,

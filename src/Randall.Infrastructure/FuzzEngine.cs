@@ -88,6 +88,7 @@ public sealed class FuzzEngine
         ProcmonCapture? procmon = null;
         TcpvconCapture? tcpvcon = null;
         PktmonCapture? pktmon = null;
+        TsharkCapture? tshark = null;
         EtwCapture? etw = null;
         ProcDumpCrashArm? procdumpArm = null;
         DebugViewCapture? debugView = null;
@@ -96,12 +97,13 @@ public sealed class FuzzEngine
         var wantTcpvcon = options.TcpvconCapture ?? project.Fuzz.TcpvconCapture;
         var wantProcdump = options.ProcdumpOnCrash ?? project.Fuzz.ProcdumpOnCrash;
         var wantPktmon = options.PktmonCapture ?? project.Fuzz.PktmonCapture;
+        var wantTshark = options.TsharkCapture ?? project.Fuzz.TsharkCapture;
         var wantEtw = options.EtwCapture ?? project.Fuzz.EtwCapture;
         var wantDebugView = options.DebugViewCapture ?? project.Fuzz.DebugViewCapture;
         var wantSysinternalsSnap = options.SysinternalsSnapshots ?? project.Fuzz.SysinternalsSnapshots;
         var wantStringsOnCrash = options.StringsOnCrash ?? project.Fuzz.StringsOnCrash;
         string? runDir = journal?.RunDirectory;
-        if (!dryRun && (wantProcmon || wantTcpvcon || wantPktmon || wantEtw || wantDebugView || wantSysinternalsSnap))
+        if (!dryRun && (wantProcmon || wantTcpvcon || wantPktmon || wantTshark || wantEtw || wantDebugView || wantSysinternalsSnap))
         {
             runDir ??= Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir),
                 $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
@@ -151,6 +153,27 @@ public sealed class FuzzEngine
             else
                 FuzzAnalystLog.Warn(progress,
                     $"pktmon capture skipped: {pktmon?.LastError ?? "pktmon not available"}");
+        }
+
+        if (!dryRun && wantTshark && runDir is not null)
+        {
+            string? filterHost = null;
+            var filterPort = 0;
+            if (project.Kind is "tcp" or "udp" ||
+                project.Transport.Type is "tcp" or "udp" or "http" or "https")
+            {
+                filterHost = project.Transport.Host;
+                filterPort = project.Transport.Port;
+            }
+
+            tshark = TsharkCapture.TryStart(runDir, filterHost, filterPort);
+            if (tshark.IsRunning)
+                FuzzAnalystLog.Info(progress,
+                    $"tshark capture → {tshark.PcapPath}" +
+                    (tshark.CaptureFilter is not null ? $" (filter: {tshark.CaptureFilter})" : ""));
+            else
+                FuzzAnalystLog.Warn(progress,
+                    $"tshark capture skipped: {tshark.LastError ?? "tshark not available"}");
         }
 
         if (!dryRun && wantEtw && runDir is not null)
@@ -975,6 +998,7 @@ public sealed class FuzzEngine
                 debugView,
                 procmon,
                 pktmon,
+                tshark,
                 etw);
             procdumpArm = null;
             sysinternalsSnap = null;
@@ -982,6 +1006,7 @@ public sealed class FuzzEngine
             debugView = null;
             procmon = null;
             pktmon = null;
+            tshark = null;
             etw = null;
 
             try { runtime?.Dispose(); }

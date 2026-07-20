@@ -212,6 +212,11 @@ public sealed class FuzzConfig
     /// <summary>Start Windows pktmon packet capture for the duration of the fuzz run.</summary>
     public bool PktmonCapture { get; set; }
     /// <summary>
+    /// Start Wireshark tshark live capture → fuzz.pcapng for the duration of the fuzz run.
+    /// Soft-fails if tshark/Npcap missing or capture denied (often needs elevation).
+    /// </summary>
+    public bool TsharkCapture { get; set; }
+    /// <summary>
     /// Start Windows Performance Recorder (WPR) ETW capture for the run
     /// (light FileIO/Registry/DiskIO/Network → fuzz-etw.etl). Soft-fails if unavailable.
     /// </summary>

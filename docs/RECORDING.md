@@ -20,7 +20,7 @@ There is no separate `target_recorder` binary. Recording is wired through **Fuzz
 
 | Setup | What you get |
 |-------|----------------|
-| **Fuzz on the lab VM / bare metal** (`randall serve` or `randall agent`) | Full stack: Procmon, ETW/WPR, TCPVCon, DebugView, snapshots, Strings, pktmon, Scream/ProcDump, coverage |
+| **Fuzz on the lab VM / bare metal** (`randall serve` or `randall agent`) | Full stack: Procmon, ETW/WPR, TCPVCon, DebugView, snapshots, Strings, pktmon, tshark pcap, Scream/ProcDump, coverage |
 | **Laptop Campaign + `target.agentUrl` only** | Remote process start/stop; debugger attach skipped; dumps stay thin on the laptop |
 
 Prefer opening `http://<vm-ip>:5000` on the agent and fuzzing there; pull packs later ([TARGET_RUNTIME.md](TARGET_RUNTIME.md)#remote-lab-workflow-dumps--lens--offline-import).
@@ -35,7 +35,7 @@ Prefer opening `http://<vm-ip>:5000` on the agent and fuzzing there; pull packs 
 | **Long campaigns** (hours+) | Prefer **ETW/WPR** (`fuzz.etwCapture`) over Procmon | Lower overhead than Procmon for multi-hour runs; open ETL in WPA / PerfView / UIforETW. Keep Procmon for short interactive drills |
 | **Crashes appearing, no Scream** | **+ ProcDump on crash** | Only when `debuggerMode: none`. Skipped if Scream/attach already holds the process |
 | **ODS / DbgPrint logging** | **+ DebugView** | Win32 OutputDebugString → `debugview.log`. Kernel DbgPrint needs elevated DebugView `/k` (not armed by default) |
-| **Network / protocol** | **+ TCPVCon** (optional **+ pktmon**) | Connection bookends; pktmon adds NIC ETL (often needs elevation) |
+| **Network / protocol** | **+ TCPVCon** + **pktmon** + **tshark pcap** | Connection bookends; pktmon ETL + Wireshark `fuzz.pcapng` (Npcap/admin often required) |
 | **File format / parser deep dive** | Procmon or ETW + snapshots + **API Monitor** (GUI) + Scream + DebugView | Procmon/ETW show load paths; **API Monitor** shows call args (CreateFile, ReadFile, heap APIs) Procmon does not |
 | **Internal buffers / no recompile** | **Frida** (GUI companion) beside the run | Dynamic hooks, dump buffers, stalk parsers without rebuilding |
 | **Interesting crash payload** | **+ Strings on crash** | Opt-in — avoids surprise cost on huge inputs |
@@ -43,7 +43,7 @@ Prefer opening `http://<vm-ip>:5000` on the agent and fuzzing there; pull packs 
 | **Drivers / services / kernel** | LiveKD, WinObj, AppVerifier, ProcMon boot logging | **External** / GUI — see Tier 3–4 below. Service restart via [Target Runtime](TARGET_RUNTIME.md) (`longLived` + restart); PsService/PsKill are companions |
 | **Skip / interactive only** | Process Explorer, RAMMap, LiveKD, TCPView GUI, API Monitor, Frida, Detours toolkit, WinAFL | Not bookended (ETW/WPR is optional Wired via `fuzz.etwCapture`) |
 
-Default campaign checklist: **Wait (Scream)** + **Procmon** (or **ETW** for long runs) + **Sysinternals snapshots**. Add TCPVCon for protocol targets; DebugView / ProcDump / Strings / pktmon when the row above applies.
+Default campaign checklist: **Wait (Scream)** + **Procmon** (or **ETW** for long runs) + **Sysinternals snapshots**. Add TCPVCon / pktmon / tshark for protocol targets; DebugView / ProcDump / Strings when the row above applies.
 
 **Sysmon footnote:** host-wide EVTX remains an optional **External** companion if you already run it on the lab box. Randfuzz does **not** export or configure Sysmon — it is not part of the fuzz product path.
 
@@ -208,6 +208,7 @@ Run together: **Procmon or ETW** (Wired) + **API Monitor** (GUI) + **Process Exp
 | **Lighthouse / Ghidra / IDA / Binary Ninja / x64dbg** | Coverage viz / RE / triage | **External** — stalk export helps ([STALKING.md](STALKING.md)) |
 | **Boofuzz** | Network protocol fuzzing | Related lineage — Randfuzz Campaign |
 | **pktmon** | NIC ETL | **Wired** — `fuzz.pktmonCapture` |
+| **tshark** | Live pcapng | **Wired** — `fuzz.tsharkCapture` → `fuzz.pcapng` |
 | **TCPVCon** | Connection snapshots (TCPView CLI) | **Wired** — `fuzz.tcpvconCapture` |
 | **Frida / API Monitor / Detours** | Dynamic observation | **GUI companion** / **External** — see [API Monitor & Frida](#api-monitor-frida) |
 | **Sysmon** | Host-wide EVTX | **External only** — Randfuzz does **not** export Sysmon |
@@ -292,6 +293,7 @@ fuzz:
   stringsOnCrash: false           # → <crash>_strings.txt (opt-in)
   procdumpOnCrash: false          # ProcDump -e -ma when no Scream
   pktmonCapture: false            # → fuzz-pktmon.etl
+  tsharkCapture: false            # → fuzz.pcapng (Wireshark tshark; Npcap/admin often required)
 ```
 
 | Key | Notes |
@@ -304,6 +306,7 @@ fuzz:
 | `fuzz.stringsOnCrash` | Strings on saved crashing input |
 | `fuzz.procdumpOnCrash` | ProcDump `-e -ma` if no Scream/attach |
 | `fuzz.pktmonCapture` | Windows pktmon ETL |
+| `fuzz.tsharkCapture` | Wireshark tshark → `fuzz.pcapng` (optional BPF from transport host/port; soft-fail if missing/denied) |
 | `fuzz.coverageGuided` | DynamoRIO / native stalk coverage |
 | `target.pageHeap` | GFlags Page Heap via Target Runtime |
 | `target.longLived` | ProcessMonitor / Target Runtime ownership + restart |
@@ -315,8 +318,8 @@ Template: [templates/tcp-runtime.yaml](templates/tcp-runtime.yaml).
 - **Debugger** → None / Wait (Scream) / Attach / Both  
 - **Recording profile** → Off · First triage · Network / protocol · Deep dive · **Parser / RE** · Custom  
 - **RE companions** → API Monitor + Frida guidance (not injected; expand with Parser / RE)  
-- **Advanced** → Procmon · ETW/WPR · TCPVCon · ProcDump · pktmon · DebugView · snapshots · Strings  
-- **Doctor** probes the Suite tools + `wpr` / `pktmon` above  
+- **Advanced** → Procmon · ETW/WPR · TCPVCon · ProcDump · pktmon · **tshark pcap** · DebugView · snapshots · Strings  
+- **Doctor** probes the Suite tools + `wpr` / `pktmon` / `tshark` above  
 
 ```powershell
 randall fuzz -c projects/local/myapp.yaml --debugger wait
@@ -330,19 +333,19 @@ Armed bookends stop automatically when the run **completes**, the user hits **St
 | Action | What it does |
 |--------|----------------|
 | **Stop** (Campaign) / cancel fuzz | Ends the run **and** stops every armed recorder |
-| **Stop recording** (Campaign) | Emergency orphan cleanup only — kills leftover Procmon/DebugView/ProcDump and runs `wpr -cancel` / `pktmon stop` |
+| **Stop recording** (Campaign) | Emergency orphan cleanup only — kills leftover Procmon/DebugView/ProcDump/tshark and runs `wpr -cancel` / `pktmon stop` |
 | `randall recorders stop` | Same orphan cleanup from the CLI (after a hard kill / agent disconnect) |
 | `POST /api/recorders/stop` | Same as above on the lab agent / serve host |
 
 Verify nothing is left running:
 
 ```powershell
-Get-Process Procmon*, Dbgview*, procdump* -ErrorAction SilentlyContinue
+Get-Process Procmon*, Dbgview*, procdump*, tshark, dumpcap -ErrorAction SilentlyContinue
 wpr -status          # should show no active session (or cancel with recorders stop)
 pktmon status        # capture should be stopped
 ```
 
-Normal **Stop** is enough for day-to-day runs. Use **Stop recording** / `randall recorders stop` only if a GUI tool or WPR/pktmon session is still up after the fuzz exited.
+Normal **Stop** is enough for day-to-day runs. Use **Stop recording** / `randall recorders stop` only if a GUI tool or WPR/pktmon/tshark session is still up after the fuzz exited.
 
 ---
 
@@ -373,6 +376,7 @@ Or copy manually from the [Sysinternals Suite](https://learn.microsoft.com/en-us
 | Process Explorer / RAMMap | `procexp64.exe` / `RAMMap.exe` | GUI companion |
 | PsInfo | `tools/PsInfo64.exe` | Optional arm |
 | pktmon | Built-in Windows | Wired |
+| tshark | Wireshark install / `tools/tshark.exe` / PATH | Wired (`tsharkCapture`) — optional; see [tools/README.md](../tools/README.md) |
 | wpr (ETW) | Built-in Windows (`System32\wpr.exe`) | Wired (`etwCapture`) |
 | DynamoRIO / gflags / WinDbg | see [tools/README.md](../tools/README.md) | Wired / SDK |
 | API Monitor | `tools/API Monitor/apimonitor-x64.exe` (installer best-effort) | GUI companion |
@@ -393,7 +397,9 @@ Only **one** debugger can attach. Prefer **Scream** (`debuggerMode: wait`). Use 
 
 ## What you see vs what runs in the background
 
-**First triage** (UI default) only enables **Procmon + Sysinternals snapshots**. TCPVCon / ETW / DebugView / pktmon / ProcDump / Strings stay off until you pick **Network / protocol**, **Deep dive**, or **Custom**.
+**First triage** (UI default) only enables **Procmon + Sysinternals snapshots**. TCPVCon / ETW / DebugView / pktmon / tshark / ProcDump / Strings stay off until you pick **Network / protocol**, **Deep dive**, or **Custom**.
+
+**Network / protocol** enables Procmon + TCPVCon + **pktmon** + **tshark pcap** + Sysinternals snapshots (real `fuzz.pcapng` beside pktmon ETL).
 
 | Tool | Visible window? | When it runs | Elevation | Soft-fail | Verify under `data/runs/<runId>/` |
 |------|-----------------|--------------|-----------|-----------|----------------------------------|
@@ -410,6 +416,7 @@ Only **one** debugger can attach. Prefer **Scream** (`debuggerMode: wait`). Use 
 | **DebugView** | Tray (`/t`); may flash briefly | Whole run when enabled | Kernel `/k` needs admin (not default) | Missing exe soft-fail | `debugview.log` + `debugview-capture.txt` |
 | **ETW / WPR** | No — headless `wpr.exe` | Whole run when enabled | **Often needs elevation**; denied → soft-fail | Missing/denied → warn | `fuzz-etw.etl` + `etw-capture.txt` |
 | **pktmon** | No — headless | Whole run when enabled | **Often needs elevation**; denied → soft-fail | Missing/denied → warn | `fuzz-pktmon.etl` + `pktmon-capture.txt` |
+| **tshark** | No — headless console | Whole run when enabled | **Npcap + often elevation**; try without UAC first, soft-fail if denied | Missing Wireshark/tshark → warn + install hint | `fuzz.pcapng` + `tshark-capture.txt` |
 | **ProcDump** | No — headless console | Armed for duration; dump on exception | Usually fine | Skipped if Scream/attach already holds process; missing exe soft-fail | `data/crashes/<project>/dumps/procdump_*.dmp` (not under runs/) |
 
 **Why First triage looked like “only Procmon + VMMap”:** Handle / ListDLLs / PsList / SigCheck / AccessChk / netstat run **headless** inside the snapshots bundle — no windows. Procmon is the long-lived visible bookend; older VMMap launches could pop a GUI (fixed: Hidden CLI + kill on timeout). Confirm the rest via files under `sysinternals/` and `snapshots.txt`.
@@ -427,6 +434,7 @@ Only **one** debugger can attach. Prefer **Scream** (`debuggerMode: wait`). Use 
 | Snapshots | `data/runs/<runId>/sysinternals/` (`arm-*`, `disarm-*`, `crash_*`, `sigcheck-target.txt`, `snapshots.txt`) |
 | Strings on crash | `data/crashes/<project>/<crash>_strings.txt` (beside `.bin`) |
 | pktmon | `data/runs/<runId>/fuzz-pktmon.etl` |
+| tshark pcap | `data/runs/<runId>/fuzz.pcapng` (+ `tshark-capture.txt`) |
 | ProcDump / Scream dumps | `data/crashes/<project>/dumps/` |
 | Crash sidecars / lens | `data/crashes/<project>/*_crash.json`, `*_memory_lens.*` |
 | Coverage | `data/corpus/<project>/edges.txt` |
@@ -437,7 +445,7 @@ Artifacts land in `data/runs/<runId>/` and `data/crashes/<project>/` on the fuzz
 
 | In the UI today | Not in the UI yet |
 |-----------------|-------------------|
-| **Crashes** investigation | Browsing/viewing `.pml`, `debugview.log`, `tcpvcon/`, `sysinternals/`, ETW/pktmon ETL |
+| **Crashes** investigation | Browsing/viewing `.pml`, `debugview.log`, `tcpvcon/`, `sysinternals/`, ETW/pktmon ETL, `fuzz.pcapng` |
 | **Dashboard** stalk timeline (from journal) | Full `run.json` / `iterations.jsonl` as a Runs browser |
 | **Bundles** crash packs (optional include linked run journals) | **Open Folder** button |
 

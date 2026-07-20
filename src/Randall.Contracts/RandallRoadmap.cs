@@ -148,6 +148,7 @@ public static class RandallRoadmap
             new("p17-tcpvcon", "TCPVCon network snapshots (fuzz.tcpvconCapture)", true, "TcpvconCapture"),
             new("p17-procdump-arm", "ProcDump -e -ma arm (fuzz.procdumpOnCrash)", true, "ProcDumpCrashArm"),
             new("p17-pktmon", "pktmon ETL bookends (fuzz.pktmonCapture)", true, "PktmonCapture"),
+            new("p17-tshark", "tshark pcapng bookends (fuzz.tsharkCapture)", true, "TsharkCapture"),
             new("p17-etw", "WPR/ETW bookends (fuzz.etwCapture)", true, "EtwCapture"),
             new("p17-debugview", "DebugView OutputDebugString capture (fuzz.debugViewCapture)", true, "DebugViewCapture"),
             new("p17-sysinternals-snap", "Sysinternals snapshots bundle (fuzz.sysinternalsSnapshots)", true, "SysinternalsSnapshots"),

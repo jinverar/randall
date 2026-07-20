@@ -81,7 +81,7 @@ static void PrintHelp()
           randall runtime start --id X --exe path [--arg a]* [--port N]
           randall runtime stop|restart <id>
           randall runtime stop-all
-          randall recorders stop         Stop orphaned Procmon/DebugView/ProcDump/WPR/pktmon
+          randall recorders stop         Stop orphaned Procmon/DebugView/ProcDump/WPR/pktmon/tshark
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
           randall serve [--port N] [--bind host]   Web UI + API (localhost)
@@ -1980,10 +1980,10 @@ static int RunRecorders(string[] args)
 
             Stops orphaned host captures left behind after a hard kill / disconnect:
               Procmon (/Terminate), DebugView, ProcDump, WPR (-cancel), pktmon stop,
-              plus the agent remote Procmon slot.
+              tshark/dumpcap kill, plus the agent remote Procmon slot.
 
             Normal fuzz end and UI/CLI Stop already tear down armed recorders via FuzzEngine.
-            Use this when GUI tools or WPR/pktmon are still running afterward.
+            Use this when GUI tools or WPR/pktmon/tshark are still running afterward.
             """);
         return 0;
     }

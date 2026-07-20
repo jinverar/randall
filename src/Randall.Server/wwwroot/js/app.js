@@ -2453,6 +2453,7 @@ const RECORDING_CHECKBOX_IDS = {
   tcpvcon: 'fuzz-tcpvcon',
   procdump: 'fuzz-procdump',
   pktmon: 'fuzz-pktmon',
+  tshark: 'fuzz-tshark',
   etw: 'fuzz-etw',
   debugview: 'fuzz-debugview',
   sysinternals: 'fuzz-sysinternals-snap',
@@ -2461,24 +2462,24 @@ const RECORDING_CHECKBOX_IDS = {
 
 const RECORDING_PROFILES = {
   off: {
-    procmon: false, tcpvcon: false, procdump: false, pktmon: false,
+    procmon: false, tcpvcon: false, procdump: false, pktmon: false, tshark: false,
     etw: false, debugview: false, sysinternals: false, strings: false,
   },
   'first-triage': {
-    procmon: true, tcpvcon: false, procdump: false, pktmon: false,
+    procmon: true, tcpvcon: false, procdump: false, pktmon: false, tshark: false,
     etw: false, debugview: false, sysinternals: true, strings: false,
   },
   // Same wired flags as first-triage — surfaces RE companions (API Monitor / Frida).
   'parser-re': {
-    procmon: true, tcpvcon: false, procdump: false, pktmon: false,
+    procmon: true, tcpvcon: false, procdump: false, pktmon: false, tshark: false,
     etw: false, debugview: false, sysinternals: true, strings: false,
   },
   network: {
-    procmon: true, tcpvcon: true, procdump: false, pktmon: true,
+    procmon: true, tcpvcon: true, procdump: false, pktmon: true, tshark: true,
     etw: false, debugview: false, sysinternals: true, strings: false,
   },
   'deep-dive': {
-    procmon: true, tcpvcon: true, procdump: false, pktmon: true,
+    procmon: true, tcpvcon: true, procdump: false, pktmon: true, tshark: true,
     etw: true, debugview: true, sysinternals: true, strings: true,
   },
 };
@@ -2599,6 +2600,7 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
       tcpvconCapture: document.getElementById('fuzz-tcpvcon')?.checked === true,
       procdumpOnCrash: document.getElementById('fuzz-procdump')?.checked === true,
       pktmonCapture: document.getElementById('fuzz-pktmon')?.checked === true,
+      tsharkCapture: document.getElementById('fuzz-tshark')?.checked === true,
       etwCapture: document.getElementById('fuzz-etw')?.checked === true,
       debugViewCapture: document.getElementById('fuzz-debugview')?.checked === true,
       sysinternalsSnapshots: document.getElementById('fuzz-sysinternals-snap')?.checked === true,

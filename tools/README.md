@@ -10,6 +10,7 @@ After clone, pull Sysinternals (+ optional Frida / API Monitor) into `tools/`:
 powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
 # Sysinternals only:  ...\install-recording-tools.ps1 -SysinternalsOnly
 # Skip Frida:         ...\install-recording-tools.ps1 -SkipFrida
+# Optional Wireshark: ...\install-recording-tools.ps1 -IncludeWireshark
 # Umbrella (gcc + DynamoRIO + recording):
 powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
 ```
@@ -17,6 +18,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
 Idempotent — skips binaries already present unless `-Force`. Soft-fails per tool with a summary. See [docs/RECORDING.md](../docs/RECORDING.md).
 
 **Built-in (no download):** `wpr.exe` (ETW) and `pktmon.exe` ship with Windows.
+
+**Optional (large):** Wireshark / `tshark` for `fuzz.tsharkCapture` → `fuzz.pcapng`. Not installed by default — use `-IncludeWireshark` on the recording installer, or install manually (see below).
 
 ## gcc / MinGW (Scream native helpers)
 
@@ -61,6 +64,27 @@ Also accepted: `tools/tcpvcon.exe`, or those names on `PATH`. Captures at arm / 
 ## pktmon — built into Windows
 
 `fuzz.pktmonCapture` uses `%SystemRoot%\System32\pktmon.exe` (no download). Often needs an elevated console/agent. Writes `data/runs/<runId>/fuzz-pktmon.etl`.
+
+## tshark / Wireshark — optional pcap bookend
+
+`fuzz.tsharkCapture` / Fuzz UI **tshark pcap** runs Wireshark’s `tshark` for the fuzz duration and writes `data/runs/<runId>/fuzz.pcapng` (+ `tshark-capture.txt`). Soft-fails with an install hint if missing.
+
+**Not pulled by default** (Wireshark is a large install). Options:
+
+```powershell
+# Optional winget via recording installer (does not run unless you ask)
+powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1 -IncludeWireshark
+
+# Manual
+winget install WiresharkFoundation.Wireshark
+# or: choco install wireshark
+```
+
+Discovery order: `TSHARK_PATH` → `tools/tshark.exe` → `PATH` → `C:\Program Files\Wireshark\tshark.exe`.
+
+**Npcap / UAC:** Live capture usually needs the Npcap driver (bundled with Wireshark). Randfuzz tries without elevation first; if start is denied, the campaign continues with a warning — re-run the agent/console elevated, or fix Npcap (WinPcap API compatibility). Open the pcap later in Wireshark GUI.
+
+For TCP/UDP projects, tshark applies an optional BPF filter `host <transport.host> and port <transport.port>` when host/port are set; otherwise it captures on the first non-loopback interface (`tshark -D`).
 
 ## ETW / WPR — built into Windows
 

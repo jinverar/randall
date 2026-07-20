@@ -7,10 +7,12 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1 -SkipFrida
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1 -IncludeFrida -Force
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1 -SkipApiMonitor
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1 -IncludeWireshark
 #
 # Official Suite: https://download.sysinternals.com/files/SysinternalsSuite.zip
 # Docs: https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite
 # Built-in (no download): wpr.exe (ETW), pktmon.exe - already on Windows.
+# Optional (large): Wireshark/tshark — only with -IncludeWireshark (not default).
 [CmdletBinding()]
 param(
     [switch]$Force,
@@ -18,6 +20,7 @@ param(
     [switch]$IncludeFrida,
     [switch]$SkipFrida,
     [switch]$SkipApiMonitor,
+    [switch]$IncludeWireshark,
     [string]$SuiteZipUrl = "https://download.sysinternals.com/files/SysinternalsSuite.zip",
     [string]$SuiteZipPath = "",
     [string]$ApiMonitorZipUrl = "http://www.rohitab.com/download/api-monitor-v2r13-x86-x64.zip"
@@ -414,6 +417,55 @@ function Show-BuiltinNotes {
     Write-Host "  pktmon.exe  - fuzz.pktmonCapture     (%SystemRoot%\System32\pktmon.exe)"
     Write-Host "  Often need an elevated console/agent for capture."
     Add-Result "wpr/pktmon" "note" "built into Windows - no download"
+
+    Write-Host ""
+    Write-RecLog "Optional Wireshark / tshark (fuzz.tsharkCapture → fuzz.pcapng):" "Cyan"
+    Write-Host "  Not installed by default (large). Manual:"
+    Write-Host "    winget install WiresharkFoundation.Wireshark"
+    Write-Host "    choco install wireshark"
+    Write-Host "  Or:  .\scripts\install-recording-tools.ps1 -IncludeWireshark"
+    Write-Host "  Needs Npcap; live capture often requires elevation. Soft-fails if denied."
+    Add-Result "tshark/Wireshark" "note" "optional - use -IncludeWireshark or install manually"
+}
+
+function Install-WiresharkOptional {
+    if (-not $IncludeWireshark) { return }
+    if ($SysinternalsOnly) {
+        Write-RecLog "Skipping Wireshark (-SysinternalsOnly)." "Yellow"
+        return
+    }
+
+    Write-Host ""
+    Write-RecLog "Installing Wireshark via winget (-IncludeWireshark)..." "Cyan"
+    $tshark = Get-Command tshark.exe -ErrorAction SilentlyContinue
+    $pf = Join-Path ${env:ProgramFiles} "Wireshark\tshark.exe"
+    if (-not $Force -and (($tshark) -or (Test-Path -LiteralPath $pf))) {
+        $where = if ($tshark) { $tshark.Source } else { $pf }
+        Write-Host "  Already present: $where"
+        Add-Result "Wireshark" "skipped" $where
+        return
+    }
+
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        Write-Host "  winget not found. Install manually:"
+        Write-Host "    https://www.wireshark.org/download.html"
+        Write-Host "    or: choco install wireshark"
+        Add-Result "Wireshark" "failed" "winget missing — manual install"
+        return
+    }
+
+    try {
+        & winget install --id WiresharkFoundation.Wireshark -e --accept-package-agreements --accept-source-agreements
+        if ($LASTEXITCODE -ne 0) {
+            throw "winget exit $LASTEXITCODE"
+        }
+        Add-Result "Wireshark" "installed" "winget WiresharkFoundation.Wireshark (open new shell for PATH)"
+    } catch {
+        Write-Host "  winget install failed: $_"
+        Write-Host "  Manual: winget install WiresharkFoundation.Wireshark  |  choco install wireshark"
+        Add-Result "Wireshark" "failed" "$_"
+    }
 }
 
 # --- main ---
@@ -425,6 +477,7 @@ Write-Host ""
 Install-SysinternalsSuite
 Install-FridaTools
 Install-ApiMonitor
+Install-WiresharkOptional
 Show-BuiltinNotes
 
 Write-Host ""

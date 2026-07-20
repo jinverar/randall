@@ -39,6 +39,7 @@ fuzz:
   # stringsOnCrash: true         # strings64 on crashing input (opt-in)
   # procdumpOnCrash: true        # ProcDump -e -ma when Scream/attach is not used
   # pktmonCapture: true          # Windows pktmon ETL (often needs elevation)
+  # tsharkCapture: true          # Wireshark tshark → fuzz.pcapng (Npcap; often needs elevation)
   # etwCapture: true             # WPR light FileIO/Registry/DiskIO/Network → fuzz-etw.etl
 mutators:
   - bitflip

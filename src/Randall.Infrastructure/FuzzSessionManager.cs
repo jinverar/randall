@@ -57,6 +57,7 @@ public sealed class FuzzSessionManager
                             request.TcpvconCapture,
                             request.ProcdumpOnCrash,
                             request.PktmonCapture,
+                            request.TsharkCapture,
                             request.EtwCapture,
                             request.DebugViewCapture,
                             request.SysinternalsSnapshots,

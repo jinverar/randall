@@ -6,7 +6,7 @@ namespace Randall.Infrastructure;
 
 /// <summary>
 /// Deterministic stop/dispose for all armed fuzz recorders, plus host-wide orphan cleanup
-/// (Procmon / DebugView / ProcDump / WPR / pktmon) when a run died uncleanly.
+/// (Procmon / DebugView / ProcDump / WPR / pktmon / tshark) when a run died uncleanly.
 /// </summary>
 public static class RecordingTeardown
 {
@@ -23,6 +23,7 @@ public static class RecordingTeardown
         DebugViewCapture? debugView,
         ProcmonCapture? procmon,
         PktmonCapture? pktmon,
+        TsharkCapture? tshark,
         EtwCapture? etw)
     {
         var items = new List<RecordingStopItemDto>();
@@ -124,6 +125,22 @@ public static class RecordingTeardown
                 File.Exists(path) ? "stopped → etl" : "stopped");
         }, items);
 
+        Safe("tshark", () =>
+        {
+            if (tshark is null)
+                return null;
+            var path = tshark.PcapPath;
+            var wasRunning = tshark.IsRunning;
+            tshark.Stop();
+            tshark.Dispose();
+            if (!wasRunning && !File.Exists(path))
+                return null;
+            return new RecordingStopItemDto(
+                "tshark",
+                path,
+                File.Exists(path) ? "stopped → pcapng" : "stopped");
+        }, items);
+
         Safe("etw", () =>
         {
             if (etw is null)
@@ -150,7 +167,7 @@ public static class RecordingTeardown
     }
 
     /// <summary>
-    /// Host-wide emergency stop: remote Procmon slot, GUI orphans, WPR cancel, pktmon stop.
+    /// Host-wide emergency stop: remote Procmon slot, GUI orphans, WPR cancel, pktmon/tshark stop.
     /// Safe to call when no fuzz is running (or after a hard kill left tools behind).
     /// </summary>
     public static RecordingStopResultDto StopHostCaptures(string? repoRoot = null)
@@ -194,6 +211,12 @@ public static class RecordingTeardown
         {
             var ok = StopPktmon();
             return new RecordingStopItemDto("pktmon", null, ok ? "pktmon stop" : "pktmon unavailable");
+        }, items);
+
+        Safe("tshark", () =>
+        {
+            var ok = TsharkCapture.StopHostCaptures();
+            return new RecordingStopItemDto("tshark", null, ok ? "tshark/dumpcap killed" : "not running");
         }, items);
 
         var message = FormatSummary(items);

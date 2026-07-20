@@ -358,7 +358,7 @@
             · See <button type="button" class="linkish" data-help="RECORDING.md">Help → Recording</button>
           </p>
           <p id="fuzz-recording-elev" class="hint fuzz-recording-elev hidden">
-            Network / Deep dive enable pktmon (and Deep dive adds ETW) — often need elevation.
+            Network / Deep dive enable pktmon + tshark pcap (Deep dive also adds ETW) — Npcap/admin often required.
           </p>
           <details class="fuzz-re-companions" id="fuzz-re-companions">
             <summary>RE companions</summary>
@@ -399,6 +399,10 @@
               <input type="checkbox" id="fuzz-pktmon" />
               pktmon
             </label>
+            <label class="checkbox" title="Wireshark tshark → fuzz.pcapng — needs tshark/Npcap; often needs elevation">
+              <input type="checkbox" id="fuzz-tshark" />
+              tshark pcap
+            </label>
             <label class="checkbox" title="WPR light FileIO/Registry/DiskIO/Network → fuzz-etw.etl — often needs elevation">
               <input type="checkbox" id="fuzz-etw" />
               ETW (WPR)
@@ -418,8 +422,8 @@
           </details>
           <div class="btn-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>
-            <button type="button" class="btn" id="fuzz-stop" title="Stop fuzz — also stops Procmon, DebugView, WPR, pktmon, ProcDump">Stop</button>
-            <button type="button" class="btn" id="fuzz-stop-recorders" title="Kill orphaned Procmon/DebugView/ProcDump and cancel WPR/pktmon (if tools were left running)">Stop recording</button>
+            <button type="button" class="btn" id="fuzz-stop" title="Stop fuzz — also stops Procmon, DebugView, WPR, pktmon, tshark, ProcDump">Stop</button>
+            <button type="button" class="btn" id="fuzz-stop-recorders" title="Kill orphaned Procmon/DebugView/ProcDump/tshark and cancel WPR/pktmon (if tools were left running)">Stop recording</button>
             <button type="button" class="btn" id="fuzz-doctor">Doctor</button>
             <button type="button" class="btn" id="fuzz-attach-dbg">Attach debugger</button>
           </div>

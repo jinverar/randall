@@ -319,6 +319,7 @@ dotnet run --project src/Randall.Server
 | TCPVCon network snapshots (`fuzz.tcpvconCapture`) | ✅ |
 | ProcDump -e -ma arm (`fuzz.procdumpOnCrash`) | ✅ |
 | pktmon ETL bookends (`fuzz.pktmonCapture`) | ✅ |
+| tshark pcapng bookends (`fuzz.tsharkCapture`) | ✅ |
 | DebugView OutputDebugString (`fuzz.debugViewCapture`) | ✅ |
 | Sysinternals snapshots bundle (`fuzz.sysinternalsSnapshots`) | ✅ |
 | Remote stalk APIs on `randall agent` | ✅ `/api/remote/procmon` · `/api/remote/tools` |
