@@ -86,7 +86,7 @@ tools/listdlls64.exe
 tools/pslist64.exe
 tools/sigcheck64.exe     # optional — target exe at arm → sigcheck-target.txt
 tools/accesschk64.exe    # optional — process token (-p -f) bookends
-tools/vmmap64.exe        # optional — best-effort CLI on arm/crash; GUI still preferred
+tools/vmmap64.exe        # optional — silent Hidden CLI on arm/crash; GUI companion for live digs
 tools/PsInfo64.exe       # optional — host info at arm only
 ```
 

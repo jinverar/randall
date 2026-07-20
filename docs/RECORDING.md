@@ -149,7 +149,7 @@ wpr -stop data\runs\<id>\manual-etw.etl "Randfuzz manual"
 | **Process Explorer** | Live handles, threads, modules, privileges, parent/child | **GUI companion** | Monitor 2/3 — `procexp64.exe` (not bookended) |
 | **Handle** | Leaked handles after many iterations | **Wired** (snapshots) | `fuzz.sysinternalsSnapshots: true` → `tools/handle64.exe` |
 | **ListDLLs** | Loaded modules during the test | **Wired** (snapshots) | same → `tools/listdlls64.exe` |
-| **VMMap** | Heap growth, fragmentation, VA exhaustion | **GUI companion** (+ best-effort CLI) | Prefer GUI on Monitor 2/3. If `vmmap64.exe` is present, snapshots may attempt `vmmap -accepteula -p <pid> out.txt` on arm/crash (soft-fail / timeout) |
+| **VMMap** | Heap growth, fragmentation, VA exhaustion | **Wired** (silent CLI in snapshots) + **GUI companion** | Snapshots run `vmmap -accepteula -p <pid> out.txt` **Hidden** on arm/crash (scan+exit). Soft-fail / kill on timeout. Prefer interactive GUI on Monitor 2/3 for live digs |
 | **RAMMap** | Kernel / physical resource leaks | **GUI companion** | Monitor 3 — not automated |
 | **PsList** (+ optional PsInfo) | Process list / host info bookends | **Wired** (snapshots) | `tools/pslist64.exe`, optional `PsInfo64.exe` |
 
@@ -271,7 +271,7 @@ Crash artifact packs / triage
 | PsList | arm / disarm / crash | Soft-fail |
 | **SigCheck** | arm once | `sigcheck-target.txt` on target exe |
 | **AccessChk** | arm / disarm / crash | `-p <pid> -f` when present |
-| **VMMap** | arm / crash | Best-effort CLI; prefer GUI if flaky |
+| **VMMap** | arm / crash | Silent Hidden CLI (`-p <pid> out.txt`); kill + soft-fail if GUI hangs |
 | netstat `-ano` | each capture | Prefer **TCPVCon** for richer endpoints |
 | PsInfo | arm only | Optional |
 
@@ -369,7 +369,7 @@ Or copy manually from the [Sysinternals Suite](https://learn.microsoft.com/en-us
 | SigCheck | `tools/sigcheck64.exe` | Wired (snapshots) |
 | Strings | `tools/strings64.exe` | Wired (`stringsOnCrash`) |
 | AccessChk | `tools/accesschk64.exe` | Wired (optional in snapshots) |
-| VMMap | `tools/vmmap64.exe` | GUI + best-effort CLI |
+| VMMap | `tools/vmmap64.exe` | Silent CLI in snapshots + GUI companion |
 | Process Explorer / RAMMap | `procexp64.exe` / `RAMMap.exe` | GUI companion |
 | PsInfo | `tools/PsInfo64.exe` | Optional arm |
 | pktmon | Built-in Windows | Wired |
@@ -388,6 +388,31 @@ dotnet run --project src/Randall.Cli -- doctor -c projects/local/myapp.yaml
 ## ProcDump vs Scream
 
 Only **one** debugger can attach. Prefer **Scream** (`debuggerMode: wait`). Use `procdumpOnCrash` when you want ProcDump `-e -ma` **instead** (`debuggerMode: none`). If Scream/attach is already on, ProcDump arm is skipped with a warning.
+
+---
+
+## What you see vs what runs in the background
+
+**First triage** (UI default) only enables **Procmon + Sysinternals snapshots**. TCPVCon / ETW / DebugView / pktmon / ProcDump / Strings stay off until you pick **Network / protocol**, **Deep dive**, or **Custom**.
+
+| Tool | Visible window? | When it runs | Elevation | Soft-fail | Verify under `data/runs/<runId>/` |
+|------|-----------------|--------------|-----------|-----------|----------------------------------|
+| **Procmon** | Yes — minimized (`/Quiet /Minimized`); taskbar/tray often visible | Whole run (bookend) | Usually fine as user; filter drivers may need admin | Missing exe / start fail → warn, campaign continues | `fuzz.pml` growing; stop → file remains |
+| **Handle** | No — headless CLI | Snapshots: arm / disarm / crash | Rarely needed | Missing exe skipped | `sysinternals/arm-handle.txt` (also `disarm-*`, `crash_*`) |
+| **ListDLLs** | No — headless CLI | Snapshots: arm / disarm / crash | Soft-fail if denied | Missing / access denied | `sysinternals/arm-listdlls.txt` |
+| **PsList** | No — headless CLI | Snapshots: arm / disarm / crash (+ host-wide if no PID) | No | Missing exe skipped | `sysinternals/arm-pslist.txt` |
+| **SigCheck** | No — headless CLI | Snapshots: **arm once** (target exe) | No | Missing path → stub note in file | `sysinternals/sigcheck-target.txt` |
+| **AccessChk** | No — headless CLI | Snapshots: arm / disarm / crash (`-p -f`) | May need admin for some tokens | Missing / denied soft-fail | `sysinternals/arm-accesschk.txt` |
+| **VMMap** | **No** (Hidden CLI). Interactive GUI is companion-only on Monitor 2/3 | Snapshots: **arm + crash** only (not disarm) | May need rights to open target | Timeout → process killed; no export → soft-fail | `sysinternals/arm-vmmap.txt` + `arm-vmmap-run.txt` |
+| **netstat** (in snapshots) | No | Each snapshot | No | Unlikely | `sysinternals/arm-netstat.txt` |
+| **PsInfo** | No — headless CLI | Snapshots: **arm only** (optional) | No | Missing skipped | `sysinternals/arm-psinfo.txt` |
+| **TCPVCon** | No — headless CLI | Arm / disarm / crash (own knobs) | No | Missing → `tcpvcon-capture.txt` says skipped | `tcpvcon/arm.txt` + `tcpvcon-capture.txt` |
+| **DebugView** | Tray (`/t`); may flash briefly | Whole run when enabled | Kernel `/k` needs admin (not default) | Missing exe soft-fail | `debugview.log` + `debugview-capture.txt` |
+| **ETW / WPR** | No — headless `wpr.exe` | Whole run when enabled | **Often needs elevation**; denied → soft-fail | Missing/denied → warn | `fuzz-etw.etl` + `etw-capture.txt` |
+| **pktmon** | No — headless | Whole run when enabled | **Often needs elevation**; denied → soft-fail | Missing/denied → warn | `fuzz-pktmon.etl` + `pktmon-capture.txt` |
+| **ProcDump** | No — headless console | Armed for duration; dump on exception | Usually fine | Skipped if Scream/attach already holds process; missing exe soft-fail | `data/crashes/<project>/dumps/procdump_*.dmp` (not under runs/) |
+
+**Why First triage looked like “only Procmon + VMMap”:** Handle / ListDLLs / PsList / SigCheck / AccessChk / netstat run **headless** inside the snapshots bundle — no windows. Procmon is the long-lived visible bookend; older VMMap launches could pop a GUI (fixed: Hidden CLI + kill on timeout). Confirm the rest via files under `sysinternals/` and `snapshots.txt`.
 
 ---
 

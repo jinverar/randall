@@ -315,7 +315,7 @@ public static class StalkCampaignStore
                 null),
             new("vmmap", "VMMap",
                 SysinternalsToolPaths.FindVmMap(repoRoot) is not null ? "ready" : "planned",
-                "Heap/VA map — GUI companion; best-effort CLI when in sysinternalsSnapshots",
+                "Heap/VA map — silent Hidden CLI in sysinternalsSnapshots (arm/crash); GUI companion for live digs",
                 "vmmap64 -accepteula -p <pid> out.txt"),
             new("native-stalk", "Native PC stalk", new NativeStalkRunner().IsAvailable ? "ready" : "missing",
                 "Debug-event PC samples → drcov (no DynamoRIO). Coarser than external BB coverage.",
