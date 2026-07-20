@@ -4,6 +4,7 @@ using Randall.Server;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<FuzzLiveLogBuffer>();
 builder.Services.AddSingleton<FuzzSessionManager>();
 builder.Services.AddSingleton<SignalRFuzzProgressSink>();
 builder.Services.AddSingleton<ProxyManager>();
@@ -836,6 +837,17 @@ app.MapPost("/api/case/update-project", (CaseUpdateProjectRequest request) =>
 });
 
 app.MapGet("/api/fuzz/status", (FuzzSessionManager sessions) => sessions.Status);
+
+app.MapGet("/api/fuzz/logs", (FuzzLiveLogBuffer liveLog, FuzzSessionManager sessions) =>
+{
+    var status = sessions.Status;
+    return Results.Ok(new
+    {
+        running = status.Running || status.Phase is "starting" or "running" or "stopping",
+        phase = status.Phase,
+        logs = liveLog.Snapshot(),
+    });
+});
 
 app.MapPost("/api/fuzz/start", (
     FuzzStartRequest request,

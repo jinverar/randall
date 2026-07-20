@@ -3,7 +3,7 @@ using Randall.Core;
 
 namespace Randall.Infrastructure;
 
-public sealed class FuzzSessionManager
+public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
 {
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
@@ -22,6 +22,7 @@ public sealed class FuzzSessionManager
             if (_task is { IsCompleted: false })
                 return false;
 
+            liveLog.Clear();
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
             var dbgMode = request.DebuggerMode;
@@ -109,10 +110,11 @@ public sealed class FuzzSessionManager
     {
         lock (_gate)
         {
-            if (_cts is null)
+            if (_task is not { IsCompleted: false })
                 return false;
-            _cts.Cancel();
-            _status = _status with { Phase = "stopping", LastMessage = "Stopping…" };
+
+            _cts?.Cancel();
+            _status = _status with { Running = true, Phase = "stopping", LastMessage = "Stopping…" };
             return true;
         }
     }

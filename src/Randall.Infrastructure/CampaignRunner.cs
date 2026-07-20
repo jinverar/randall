@@ -92,7 +92,7 @@ public sealed class CampaignRunner
     }
 }
 
-public sealed class CampaignSessionManager
+public sealed class CampaignSessionManager(FuzzLiveLogBuffer liveLog)
 {
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
@@ -111,6 +111,7 @@ public sealed class CampaignSessionManager
             if (_task is { IsCompleted: false })
                 return false;
 
+            liveLog.Clear();
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
             var fullPath = Path.GetFullPath(campaignPath);
@@ -158,9 +159,12 @@ public sealed class CampaignSessionManager
     {
         lock (_gate)
         {
+            if (_task is not { IsCompleted: false })
+                return false;
+
             _cts?.Cancel();
-            _status = _status with { Phase = "stopping", LastMessage = "Stopping…" };
-            return _cts is not null;
+            _status = _status with { Running = true, Phase = "stopping", LastMessage = "Stopping…" };
+            return true;
         }
     }
 }

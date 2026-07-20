@@ -50,6 +50,12 @@ const stopBtn = document.getElementById('fuzz-stop');
 const LOG_BUFFER_MAX = 2000;
 /** @type {{ line: string, cls: string, at: string|null }[]} */
 let logBuffer = [];
+/** Dedup keys for server replay + SignalR overlap after reconnect. */
+const seenLogKeys = new Set();
+
+function logEntryKey(at, kind, message) {
+  return `${at || ''}|${kind || ''}|${message || ''}`;
+}
 
 function formatLogTs(isoOrDate) {
   try {
@@ -87,7 +93,24 @@ function rehydrateFuzzLog() {
 
 function clearFuzzLog() {
   logBuffer = [];
+  seenLogKeys.clear();
   if (logEl) logEl.innerHTML = '';
+}
+
+function appendLogUnique(message, cls = '', at = null) {
+  const key = logEntryKey(at, cls, message);
+  if (seenLogKeys.has(key)) return;
+  seenLogKeys.add(key);
+  appendLog(message, cls, at);
+}
+
+function mergeServerLogs(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) return;
+  for (const e of entries) {
+    appendLogUnique(e.message || '', (e.kind || 'info').toLowerCase(), e.at);
+  }
+  if (document.getElementById('view-fuzz')?.classList.contains('visible'))
+    rehydrateFuzzLog();
 }
 
 function appendLog(line, cls = '', at = null) {
@@ -105,6 +128,56 @@ function appendLog(line, cls = '', at = null) {
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function isFuzzSessionActive(s) {
+  if (!s) return false;
+  if (s.running) return true;
+  const phase = (s.phase || '').toLowerCase();
+  return phase === 'starting' || phase === 'running' || phase === 'stopping';
+}
+
+function applyFuzzSessionStatus(s) {
+  if (!s) return;
+  const active = isFuzzSessionActive(s);
+  startBtn.disabled = active;
+  stopBtn.disabled = !active;
+
+  if (s.configPath) {
+    const sel = document.getElementById('fuzz-target');
+    if (sel && [...sel.options].some((o) => o.value === s.configPath))
+      sel.value = s.configPath;
+  }
+
+  if (active) {
+    const iter = Number(s.iterations) > 0 ? `iter ${s.iterations} · ` : '';
+    setStatus(`${iter}${s.phase}: ${s.lastMessage || '…'}`);
+    return;
+  }
+
+  const phase = (s.phase || 'idle').toLowerCase();
+  if (phase === 'idle') {
+    setStatus('Idle');
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+    return;
+  }
+
+  setStatus(`${s.phase}: ${s.lastMessage || ''}`);
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+}
+
+async function syncFuzzSession({ fetchLogs = true } = {}) {
+  const s = await api.get('/api/fuzz/status');
+  applyFuzzSessionStatus(s);
+  if (fetchLogs) {
+    try {
+      const data = await api.get('/api/fuzz/logs');
+      mergeServerLogs(data.logs);
+    } catch { /* older server or logs not ready yet */ }
+  }
+  return s;
 }
 
 function switchView(name) {
@@ -2377,9 +2450,17 @@ let hub;
 async function connectHub() {
   hub = new signalR.HubConnectionBuilder().withUrl('/hubs/fuzz').withAutomaticReconnect().build();
 
+  hub.onreconnected(async () => {
+    try {
+      await syncFuzzSession();
+      appendLogUnique('Reconnected — resynced live session', 'info');
+    } catch { /* poll will retry */ }
+  });
+
   hub.on('fuzzStarted', (e) => {
     setStatus(`Running ${e.project}…`);
     startBtn.disabled = true;
+    stopBtn.disabled = false;
     stalkProject = e.project || stalkProject;
     stalkServerTimeline = [];
     stalkLiveTimeline = [];
@@ -2392,7 +2473,7 @@ async function connectHub() {
 
   hub.on('fuzzLog', (e) => {
     const kind = (e.kind || 'info').toLowerCase();
-    appendLog(e.message || '', kind, e.at);
+    appendLogUnique(e.message || '', kind, e.at);
   });
 
   hub.on('fuzzIteration', (e) => {
@@ -2419,9 +2500,10 @@ async function connectHub() {
   });
 
   hub.on('fuzzCompleted', (e) => {
-    appendLog(`Done — ${e.iterations} iters, ${e.crashesFound} crashes, +${e.corpusAdded} corpus`, 'ok');
+    appendLogUnique(`Done — ${e.iterations} iters, ${e.crashesFound} crashes, +${e.corpusAdded} corpus`, 'ok');
     setStatus('Completed');
     startBtn.disabled = false;
+    stopBtn.disabled = true;
     resolveCrashIdForIteration(-1).finally(() => {
       loadDashboard({
         applyWidgets: stalkFollowLive,
@@ -2432,16 +2514,18 @@ async function connectHub() {
   });
 
   hub.on('fuzzStopped', (e) => {
-    appendLog(`Stopped: ${e.reason}`, 'warn');
+    appendLogUnique(`Stopped: ${e.reason}`, 'warn');
     setStatus('Stopped');
     startBtn.disabled = false;
+    stopBtn.disabled = true;
     loadDashboard({ applyWidgets: stalkFollowLive, force: stalkFollowLive }).catch(() => {});
   });
 
   hub.on('fuzzError', (e) => {
-    appendLog(`Error!!!! ${e.message}`, 'crash');
+    appendLogUnique(`Error!!!! ${e.message}`, 'crash');
     setStatus('Error');
     startBtn.disabled = false;
+    stopBtn.disabled = true;
   });
 
   await hub.start();
@@ -2613,10 +2697,17 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
 });
 
 stopBtn.addEventListener('click', async () => {
+  stopBtn.disabled = true;
+  setStatus('stopping: Sending stop…');
   try {
-    await api.post('/api/fuzz/stop', {});
+    const s = await api.post('/api/fuzz/stop', {});
+    applyFuzzSessionStatus(s);
+    appendLogUnique('Stop requested — waiting for teardown…', 'warn');
   } catch (err) {
-    appendLog(err.message, 'crash');
+    appendLogUnique(err.message, 'crash');
+    try {
+      await syncFuzzSession({ fetchLogs: false });
+    } catch { /* ignore */ }
   }
 });
 
@@ -3222,16 +3313,14 @@ document.getElementById('proxy-to-scare-session')?.addEventListener('click', asy
 async function pollStatus() {
   try {
     const s = await api.get('/api/fuzz/status');
-    if (s.running) {
-      startBtn.disabled = true;
-      setStatus(`${s.phase}: ${s.lastMessage || '…'}`);
+    applyFuzzSessionStatus(s);
+    if (isFuzzSessionActive(s)) {
       stalkPollTick += 1;
       if (stalkPollTick % 3 === 0 && document.getElementById('view-dashboard').classList.contains('visible')) {
         // Pinned selection: refresh timeline/crash-id map only — keep stalker widgets frozen.
         loadDashboard({ applyWidgets: stalkFollowLive, force: stalkFollowLive }).catch(() => {});
       }
-    } else if (s.phase === 'idle') {
-      startBtn.disabled = false;
+    } else {
       stalkPollTick = 0;
     }
   } catch { /* ignore */ }
@@ -5638,6 +5727,7 @@ async function init() {
   await loadBundlesView();
   await loadCrashes();
   await connectHub();
+  await syncFuzzSession().catch(() => {});
   try {
     const savedAgent = localStorage.getItem(LABS_AGENT_KEY) || '';
     const agentInput = document.getElementById('labs-agent-url');
