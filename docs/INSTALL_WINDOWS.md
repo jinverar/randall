@@ -97,6 +97,29 @@ Manual backup: [winlibs.com](https://winlibs.com/) (x86_64 POSIX UCRT `.zip`) / 
 
 ---
 
+## 5b. Install recording tools (Sysinternals + companions)
+
+For Procmon / ProcDump / TCPVCon / DebugView / Handle / ListDLLs / snapshots / Strings bookends, download the official [Sysinternals Suite](https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite) into `tools/`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
+# Sysinternals only:  ...\install-recording-tools.ps1 -SysinternalsOnly
+# Skip Frida:         ...\install-recording-tools.ps1 -SkipFrida
+```
+
+Idempotent; soft-fails per tool. **Frida** (`pip install frida-tools`) runs by default when Python is present. **API Monitor** is best-effort (manual steps printed if the rohitab URL fails). **wpr** / **pktmon** are built into Windows — no download.
+
+Umbrella (gcc + DynamoRIO + recording):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
+# Skip large DynamoRIO zip:  ...\install-lab-tools.ps1 -SkipDynamoRio
+```
+
+See [tools/README.md](../tools/README.md) and [RECORDING.md](RECORDING.md).
+
+---
+
 ## 6. Build lab targets
 
 Many Windows 10/11 images ship with PowerShell **ExecutionPolicy = Restricted**, so this fails:

@@ -108,7 +108,7 @@ Dynamic instrumentation without rebuilding the target:
 - Instrument parsers / decoders live  
 
 ```powershell
-# pip install frida-tools  (or Frida releases)
+# Via installer (default) or: python -m pip install frida-tools
 # After Target Runtime starts — PID from UI / doctor / Process Explorer
 frida -p <pid> -l projects/local/myapp/hooks.js
 ```
@@ -327,7 +327,16 @@ randall doctor -c projects/local/myapp.yaml
 
 ## Where to put tools (`tools/` or PATH)
 
-Binaries are **not** committed. On the **fuzz host**, copy from the [Sysinternals Suite](https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite) / [TCPView](https://learn.microsoft.com/en-us/sysinternals/downloads/tcpview):
+Binaries are **not** committed. On the **fuzz host**, prefer the installer (Suite zip → `tools/`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
+# Sysinternals only / skip Frida:
+#   ...\install-recording-tools.ps1 -SysinternalsOnly
+#   ...\install-recording-tools.ps1 -SkipFrida
+```
+
+Or copy manually from the [Sysinternals Suite](https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite) / [TCPView](https://learn.microsoft.com/en-us/sysinternals/downloads/tcpview):
 
 | Tool | Placement | Status |
 |------|-----------|--------|
@@ -345,13 +354,12 @@ Binaries are **not** committed. On the **fuzz host**, copy from the [Sysinternal
 | pktmon | Built-in Windows | Wired |
 | wpr (ETW) | Built-in Windows (`System32\wpr.exe`) | Wired (`etwCapture`) |
 | DynamoRIO / gflags / WinDbg | see [tools/README.md](../tools/README.md) | Wired / SDK |
-| API Monitor / Frida / WinAFL / Lighthouse | Install yourself | GUI companion / External |
+| API Monitor | `tools/API Monitor/apimonitor-x64.exe` (installer best-effort) | GUI companion |
+| Frida | `pip install frida-tools` (installer default; `-SkipFrida`) | External companion |
 
 ```powershell
-copy Procmon64.exe, procdump64.exe, tcpvcon64.exe, Dbgview.exe tools\
-copy handle64.exe, listdlls64.exe, pslist64.exe, sigcheck64.exe, strings64.exe, accesschk64.exe tools\
-# optional: vmmap64.exe, procexp64.exe, PsInfo64.exe
-randall doctor -c projects/local/myapp.yaml
+powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
+dotnet run --project src/Randall.Cli -- doctor -c projects/local/myapp.yaml
 ```
 
 ---
@@ -394,7 +402,7 @@ Open the run folder on the fuzz host (path printed as `Run journal: ...` at star
 ## Custom app on a VM (short path)
 
 1. Snapshot the VM.  
-2. Deploy Randfuzz + target; drop Suite tools under `tools/`.  
+2. Deploy Randfuzz + target; run `powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1` (or copy Suite tools under `tools/`).  
 3. Create `projects/local/myapp.yaml` (Scare Floor or template).  
 4. On the VM: `randall agent --port 5000` → open that URL.  
 5. Target Runtime start → confirm listen port.  

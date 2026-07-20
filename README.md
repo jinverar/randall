@@ -48,7 +48,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
 # gcc alone:             ...\install-gcc.ps1   (-Verbose for logs)
 # After gcc install: open a new shell before using gcc elsewhere
 
-# 3) Optional — coverage (DynamoRIO). IMPORTANT: may take a while (large zip; slow networks).
+# 3) Recording companions (Sysinternals Suite → tools\; optional Frida / API Monitor)
+powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
+# Or umbrella: gcc + DynamoRIO + recording → ...\install-lab-tools.ps1
+
+# 4) Optional — coverage (DynamoRIO). IMPORTANT: may take a while (large zip; slow networks).
 #    Or manual: download DynamoRIO-Windows-*.zip, unzip, then rename the folder to
 #    exactly tools\dynamorio (NOT tools\DynamoRIO-Windows-*) so
 #    tools\dynamorio\bin64\drrun.exe exists (see Optional — DynamoRIO below).
@@ -56,10 +60,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
 $env:DYNAMORIO_HOME = (Resolve-Path tools\dynamorio).Path
 
-# 4) Preflight
+# 5) Preflight
 dotnet run --project src\Randall.Cli -- doctor -c projects\vulnserver.yaml
 
-# 5) Web UI
+# 6) Web UI
 dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000
 ```
 

@@ -2,7 +2,7 @@ namespace Randall.Infrastructure;
 
 /// <summary>
 /// Resolve Sysinternals binaries from <c>tools/</c>, PATH, or common install folders.
-/// Binaries are not committed — copy from the Sysinternals Suite (see tools/README.md).
+/// Binaries are not committed — run scripts/install-recording-tools.ps1 (see tools/README.md).
 /// </summary>
 public static class SysinternalsToolPaths
 {

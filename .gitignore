@@ -24,6 +24,8 @@ logs/
 tools/dynamorio/
 tools/DynamoRIO-*/
 tools/mingw64/
+tools/*.exe
+tools/API Monitor/
 targets/vulnserver/*
 !targets/vulnserver/.gitkeep
 targets/vulnhttp/*

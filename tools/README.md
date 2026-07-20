@@ -2,6 +2,22 @@
 
 Third-party binaries used by Randall live here. They are **not** committed — install locally after clone.
 
+## Quick install (recommended)
+
+After clone, pull Sysinternals (+ optional Frida / API Monitor) into `tools/`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
+# Sysinternals only:  ...\install-recording-tools.ps1 -SysinternalsOnly
+# Skip Frida:         ...\install-recording-tools.ps1 -SkipFrida
+# Umbrella (gcc + DynamoRIO + recording):
+powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
+```
+
+Idempotent — skips binaries already present unless `-Force`. Soft-fails per tool with a summary. See [docs/RECORDING.md](../docs/RECORDING.md).
+
+**Built-in (no download):** `wpr.exe` (ETW) and `pktmon.exe` ship with Windows.
+
 ## gcc / MinGW (Scream native helpers)
 
 Needed for `scream_crash.exe` / `scream_av.dll`. Primary install is a **WinLibs zip** (no winget/admin) under `tools/mingw64` (gitignored) or `%LOCALAPPDATA%\Randfuzz\mingw64`, then user PATH.
@@ -14,7 +30,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1 -Verbose
 Order: WinLibs zip → optional winget / Chocolatey. Open a **new** shell after install if another window still lacks `gcc`. `build-all-lab-targets.ps1` runs this when gcc is missing unless you pass `-SkipGcc`. See [docs/INSTALL_WINDOWS.md](../docs/INSTALL_WINDOWS.md).
 ## Procmon (Sysinternals) — optional run bookends
 
-For `fuzz.procmonCapture: true` / Fuzz UI **Procmon capture**, drop the binary on the **fuzz host**:
+For `fuzz.procmonCapture: true` / Fuzz UI **Procmon capture**, install via `install-recording-tools.ps1` or drop the binary on the **fuzz host**:
 
 ```
 tools/Procmon64.exe
@@ -34,7 +50,7 @@ Also accepted: `tools/procdump64.exe`, `PATH`, or `PROCDUMP_PATH`. Dumps land un
 
 ## TCPVCon (Sysinternals) — optional network connection bookends
 
-For `fuzz.tcpvconCapture: true` / Fuzz UI **TCPVCon (network connections)**, drop the CLI from the [TCPView](https://learn.microsoft.com/en-us/sysinternals/downloads/tcpview) package on the **fuzz host**:
+For `fuzz.tcpvconCapture: true` / Fuzz UI **TCPVCon (network connections)**, the Suite installer copies the CLI (also in the [TCPView](https://learn.microsoft.com/en-us/sysinternals/downloads/tcpview) package) to:
 
 ```
 tools/tcpvcon64.exe
@@ -62,7 +78,7 @@ Also accepted on `PATH`. Capture writes `data/runs/<runId>/debugview.log` (Win32
 
 ## Sysinternals snapshots — Handle / ListDLLs / PsList (+ SigCheck / AccessChk / VMMap)
 
-For `fuzz.sysinternalsSnapshots: true` / Fuzz UI **Sysinternals snapshots**, copy from the [Sysinternals Suite](https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite):
+For `fuzz.sysinternalsSnapshots: true` / Fuzz UI **Sysinternals snapshots**, `install-recording-tools.ps1` copies from the [Sysinternals Suite](https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite):
 
 ```
 tools/handle64.exe
@@ -87,7 +103,10 @@ tools/strings64.exe
 Writes `data/crashes/<project>/<crash>_strings.txt` beside the crashing `.bin`. Opt-in (can be slow on huge payloads). Soft-fails if missing.
 
 ```powershell
-# Typical Suite drop-in
+# Preferred: Suite installer
+powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1 -SysinternalsOnly
+
+# Manual Suite drop-in (if you already extracted the zip)
 copy Dbgview.exe tools\
 copy tcpvcon64.exe tools\
 copy handle64.exe tools\
@@ -97,6 +116,11 @@ copy sigcheck64.exe tools\
 copy strings64.exe tools\
 copy accesschk64.exe tools\
 ```
+
+## Frida / API Monitor (GUI companions)
+
+- **Frida:** `install-recording-tools.ps1` runs `python -m pip install frida-tools` by default (soft-fail if Python/pip missing). Use `-SkipFrida` / `-IncludeFrida`. Not injected by Randfuzz — attach yourself to the target PID.
+- **API Monitor:** best-effort download from rohitab; on failure, print manual steps. Expected layout: `tools/API Monitor/apimonitor-x64.exe`.
 
 ## DynamoRIO (coverage-guided stalking)
 

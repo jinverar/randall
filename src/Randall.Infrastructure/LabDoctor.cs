@@ -119,14 +119,14 @@ public static class LabDoctor
             Add("procmon", procmonExe is not null ? "ok" : "warn",
                 procmonExe is not null
                     ? $"ProcmonCapture enabled → {procmonExe}"
-                    : "ProcmonCapture enabled but Procmon not found (tools/ or PATH)");
+                    : "ProcmonCapture enabled but Procmon not found — run scripts/install-recording-tools.ps1");
         }
         else
         {
             Add("procmon", procmonExe is not null ? "ok" : "warn",
                 procmonExe is not null
                     ? $"{procmonExe} (set fuzz.procmonCapture: true to bookend runs)"
-                    : "Procmon not found — optional .pml bookends disabled");
+                    : "Procmon not found — optional .pml bookends disabled (scripts/install-recording-tools.ps1)");
         }
 
         var tcpvconExe = TcpvconCapture.DiscoverExecutable();
@@ -135,14 +135,14 @@ public static class LabDoctor
             Add("tcpvcon", tcpvconExe is not null ? "ok" : "warn",
                 tcpvconExe is not null
                     ? $"TcpvconCapture enabled → {tcpvconExe}"
-                    : "TcpvconCapture enabled but tcpvcon/tcpvcon64 not found (tools/ or PATH)");
+                    : "TcpvconCapture enabled but tcpvcon not found — run scripts/install-recording-tools.ps1");
         }
         else
         {
             Add("tcpvcon", tcpvconExe is not null ? "ok" : "warn",
                 tcpvconExe is not null
                     ? $"{tcpvconExe} (set fuzz.tcpvconCapture: true for network connection bookends)"
-                    : "tcpvcon not found — optional network connection snapshots disabled");
+                    : "tcpvcon not found — optional network snapshots disabled (scripts/install-recording-tools.ps1)");
         }
 
         var procdumpExe = DebuggerTools.FindProcDump();
@@ -159,7 +159,7 @@ public static class LabDoctor
                 Add("procdumpOnCrash", procdumpExe is not null ? "ok" : "warn",
                     procdumpExe is not null
                         ? $"ProcdumpOnCrash enabled → {procdumpExe}"
-                        : "ProcdumpOnCrash enabled but ProcDump not found (tools/ or PATH)");
+                        : "ProcdumpOnCrash enabled but ProcDump not found — run scripts/install-recording-tools.ps1");
             }
         }
         else
@@ -167,7 +167,7 @@ public static class LabDoctor
             Add("procdump", procdumpExe is not null ? "ok" : "warn",
                 procdumpExe is not null
                     ? $"{procdumpExe} (set fuzz.procdumpOnCrash: true when not using Scream wait)"
-                    : "ProcDump not found — optional -e -ma arm disabled");
+                    : "ProcDump not found — optional -e -ma arm disabled (scripts/install-recording-tools.ps1)");
         }
 
         var pktmonExe = PktmonCapture.DiscoverExecutable();
@@ -208,14 +208,14 @@ public static class LabDoctor
             Add("debugView", dbgviewExe is not null ? "ok" : "warn",
                 dbgviewExe is not null
                     ? $"DebugViewCapture enabled → {dbgviewExe}"
-                    : "DebugViewCapture enabled but Dbgview.exe not found (tools/ or PATH)");
+                    : "DebugViewCapture enabled but Dbgview.exe not found — run scripts/install-recording-tools.ps1");
         }
         else
         {
             Add("debugView", dbgviewExe is not null ? "ok" : "warn",
                 dbgviewExe is not null
                     ? $"{dbgviewExe} (set fuzz.debugViewCapture: true for OutputDebugString)"
-                    : "Dbgview.exe not found — optional DebugView bookends disabled");
+                    : "Dbgview.exe not found — optional DebugView bookends disabled (scripts/install-recording-tools.ps1)");
         }
 
         var handleExe = SysinternalsToolPaths.FindHandle();
@@ -231,14 +231,14 @@ public static class LabDoctor
             Add("sysinternalsSnapshots", coreSnap + extraSnap > 0 ? "ok" : "warn",
                 coreSnap + extraSnap > 0
                     ? $"SysinternalsSnapshots enabled → core {coreSnap}/3, extras {extraSnap}/3 (sigcheck/accesschk/vmmap)"
-                    : "SysinternalsSnapshots enabled but no Suite CLI tools found (tools/ or PATH)");
+                    : "SysinternalsSnapshots enabled but no Suite CLI tools — run scripts/install-recording-tools.ps1");
         }
         else
         {
             Add("sysinternalsSnapshots", coreSnap + extraSnap > 0 ? "ok" : "warn",
                 coreSnap + extraSnap > 0
                     ? $"Sysinternals CLI tools present (core {coreSnap}/3, extras {extraSnap}/3) — set fuzz.sysinternalsSnapshots: true"
-                    : "Handle/ListDLLs/PsList not found — optional snapshot bundle disabled");
+                    : "Handle/ListDLLs/PsList not found — optional snapshots disabled (scripts/install-recording-tools.ps1)");
         }
 
         var stringsExe = SysinternalsToolPaths.FindStrings();
@@ -247,14 +247,14 @@ public static class LabDoctor
             Add("stringsOnCrash", stringsExe is not null ? "ok" : "warn",
                 stringsExe is not null
                     ? $"StringsOnCrash enabled → {stringsExe}"
-                    : "StringsOnCrash enabled but strings64.exe not found (tools/ or PATH)");
+                    : "StringsOnCrash enabled but strings64.exe not found — run scripts/install-recording-tools.ps1");
         }
         else
         {
             Add("strings", stringsExe is not null ? "ok" : "warn",
                 stringsExe is not null
                     ? $"{stringsExe} (set fuzz.stringsOnCrash: true to dump strings on crashing input)"
-                    : "strings64.exe not found — optional strings-on-crash disabled");
+                    : "strings64.exe not found — optional strings-on-crash disabled (scripts/install-recording-tools.ps1)");
         }
 
         var dbg = DebuggerTools.Probe();
