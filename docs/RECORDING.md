@@ -159,7 +159,8 @@ wpr -stop data\runs\<id>\manual-etw.etl "Randfuzz manual"
 |------|---------|--------|----------------|
 | **ProcDump** | Full dump on unhandled exception | **Wired** | `fuzz.procdumpOnCrash: true` when no Scream — `tools/procdump.exe` |
 | **Scream** (`debuggerMode: wait`) | First-party second-chance minidump | **Wired** | UI **Wait** / `debuggerMode: wait` (preferred over ProcDump) |
-| **WinDbg Preview** | Dump / live analysis | **Wired** | `debuggerMode`, open-on-crash |
+| **WinDbg Preview** | Dump / live analysis | **Wired** | `debuggerMode`, open-on-crash — install via `scripts/install-debuggers.ps1` (winget `Microsoft.WinDbg`) |
+| **WinDbg (classic) / cdb** | Attach / open dump / wait fallback | **Wired** | Same installer → SDK Debugging Tools (`windbg.exe` / `cdb.exe`) |
 | **WinDbg TTD** | Time-travel for hard crashes | **External** | Record/replay outside Randfuzz |
 | **LiveKD** | Kernel debug without reboot | **External** | Run interactively when investigating drivers |
 | **DebugView** | OutputDebugString / app debug spew | **Wired** | `fuzz.debugViewCapture: true` → `tools/Dbgview.exe` → `debugview.log` |
@@ -319,9 +320,12 @@ Template: [templates/tcp-runtime.yaml](templates/tcp-runtime.yaml).
 - **Recording profile** → Off · First triage · Network / protocol · Deep dive · **Parser / RE** · Custom  
 - **RE companions** → API Monitor + Frida guidance (not injected; expand with Parser / RE)  
 - **Advanced** → Procmon · ETW/WPR · TCPVCon · ProcDump · pktmon · **tshark pcap** · DebugView · snapshots · Strings  
-- **Doctor** probes the Suite tools + `wpr` / `pktmon` / `tshark` above  
+- **Doctor** probes the Suite tools + `wpr` / `pktmon` / `tshark` + WinDbg Preview / classic / cdb  
 
 ```powershell
+# Debuggers for Scream wait / open dump (Admin for classic SDK tools):
+powershell -ExecutionPolicy Bypass -File .\scripts\install-debuggers.ps1
+
 randall fuzz -c projects/local/myapp.yaml --debugger wait
 randall doctor -c projects/local/myapp.yaml
 ```
@@ -378,7 +382,7 @@ Or copy manually from the [Sysinternals Suite](https://learn.microsoft.com/en-us
 | pktmon | Built-in Windows | Wired |
 | tshark | Wireshark install / `tools/tshark.exe` / PATH | Wired (`tsharkCapture`) — optional; see [tools/README.md](../tools/README.md) |
 | wpr (ETW) | Built-in Windows (`System32\wpr.exe`) | Wired (`etwCapture`) |
-| DynamoRIO / gflags / WinDbg | see [tools/README.md](../tools/README.md) | Wired / SDK |
+| DynamoRIO / gflags / WinDbg / cdb | `install-debuggers.ps1` / [tools/README.md](../tools/README.md) | Wired / SDK |
 | API Monitor | `tools/API Monitor/apimonitor-x64.exe` (installer best-effort) | GUI companion |
 | Frida | `pip install frida-tools` (installer default; `-SkipFrida`) | External companion |
 

@@ -11,8 +11,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
 # Sysinternals only:  ...\install-recording-tools.ps1 -SysinternalsOnly
 # Skip Frida:         ...\install-recording-tools.ps1 -SkipFrida
 # Optional Wireshark: ...\install-recording-tools.ps1 -IncludeWireshark
-# Umbrella (gcc + DynamoRIO + recording):
+# Debuggers (WinDbg Preview + classic windbg / cdb):
+powershell -ExecutionPolicy Bypass -File .\scripts\install-debuggers.ps1
+# Umbrella (gcc + DynamoRIO + recording + debuggers):
 powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
+# Skip debuggers:     ...\install-lab-tools.ps1 -SkipDebuggers
 ```
 
 Idempotent — skips binaries already present unless `-Force`. Soft-fails per tool with a summary. See [docs/RECORDING.md](../docs/RECORDING.md).
@@ -145,6 +148,23 @@ copy accesschk64.exe tools\
 
 - **Frida:** `install-recording-tools.ps1` runs `python -m pip install frida-tools` by default (soft-fail if Python/pip missing). Use `-SkipFrida` / `-IncludeFrida`. Not injected by Randfuzz — attach yourself to the target PID.
 - **API Monitor:** best-effort download from rohitab; on failure, print manual steps. Expected layout: `tools/API Monitor/apimonitor-x64.exe`.
+
+## WinDbg Preview / classic WinDbg / cdb
+
+Used for attach, open-dump (`randall debug open`), and cdb as a headless wait-mode fallback. Doctor / stalk tool status show **ready** when found.
+
+| Tool | Typical path | Install |
+|------|--------------|---------|
+| WinDbg Preview | `%LOCALAPPDATA%\Microsoft\WindowsApps\WinDbgX.exe` or `DbgX.Shell.exe` | `winget install Microsoft.WinDbg` |
+| WinDbg (classic) | `C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\windbg.exe` | SDK **Debugging Tools for Windows** |
+| cdb | same `Debuggers\x64\cdb.exe` | same SDK feature |
+
+```powershell
+# Prefer elevated console for classic Debuggers (winsdksetup)
+powershell -ExecutionPolicy Bypass -File .\scripts\install-debuggers.ps1
+```
+
+Soft-fails with Store / SDK links if winget or elevation is unavailable. Also included by default in `install-lab-tools.ps1` (`-SkipDebuggers` to omit).
 
 ## DynamoRIO (coverage-guided stalking)
 

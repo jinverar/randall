@@ -109,14 +109,35 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
 
 Idempotent; soft-fails per tool. **Frida** (`pip install frida-tools`) runs by default when Python is present. **API Monitor** is best-effort (manual steps printed if the rohitab URL fails). **wpr** / **pktmon** are built into Windows — no download.
 
-Umbrella (gcc + DynamoRIO + recording):
+Umbrella (gcc + DynamoRIO + recording + debuggers):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
 # Skip large DynamoRIO zip:  ...\install-lab-tools.ps1 -SkipDynamoRio
+# Skip WinDbg / cdb:         ...\install-lab-tools.ps1 -SkipDebuggers
 ```
 
 See [tools/README.md](../tools/README.md) and [RECORDING.md](RECORDING.md).
+
+---
+
+## 5c. Install debuggers (WinDbg Preview + classic / cdb)
+
+For Scream wait fallbacks, attach, and open-dump from Crashes / `randall debug open`:
+
+```powershell
+# Standalone (Admin recommended for classic SDK Debuggers)
+powershell -ExecutionPolicy Bypass -File .\scripts\install-debuggers.ps1
+```
+
+| Tool | Source | Notes |
+|------|--------|--------|
+| **WinDbg Preview** | `winget` `Microsoft.WinDbg` | Store/MSIX; may need interactive Store on some VMs |
+| **WinDbg (classic)** + **cdb** | Windows SDK feature `OptionId.WindowsDesktopDebuggers` | Needs elevation; installs under `Windows Kits\10\Debuggers\x64` |
+
+Manual: [WinDbg download](https://aka.ms/windbg/download) · [Windows SDK](https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/) (select only **Debugging Tools for Windows**). Soft-fails print these links.
+
+Doctor probes `debugger:windbg-preview`, `debugger:windbg`, `debugger:cdb` (paths match `DebuggerTools`).
 
 ---
 
@@ -211,7 +232,8 @@ dotnet run --project src\Randall.Cli -- doctor -c projects\vulnserver.yaml
 ```
 
 Expect `[✓] project`, `[✓] target`, and **Ready to fuzz**.  
-`[!] dynamorio` is OK if you skipped step 7.
+`[!] dynamorio` is OK if you skipped step 7.  
+After step 5c, debugger checks should be **ok** (paths to WinDbgX / `windbg.exe` / `cdb.exe`) instead of warn/missing.
 
 ---
 

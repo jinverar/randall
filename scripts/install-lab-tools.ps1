@@ -1,9 +1,10 @@
-# Umbrella lab installer: gcc + DynamoRIO + recording tools (Sysinternals / Frida / API Monitor).
+# Umbrella lab installer: gcc + DynamoRIO + recording tools + debuggers (WinDbg / cdb).
 # Each step is optional via -Skip* switches. Uses ExecutionPolicy Bypass-friendly -File invocation.
 #
 # Examples:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SkipDynamoRio
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SkipDebuggers
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SysinternalsOnly
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SkipGcc -SkipDynamoRio -SkipFrida
 [CmdletBinding()]
@@ -12,6 +13,7 @@ param(
     [switch]$SkipGcc,
     [switch]$SkipDynamoRio,
     [switch]$SkipRecordingTools,
+    [switch]$SkipDebuggers,
     [switch]$SysinternalsOnly,
     [switch]$IncludeFrida,
     [switch]$SkipFrida,
@@ -78,6 +80,15 @@ if (-not $SkipRecordingTools) {
 } else {
     Write-Host ""
     Write-Host "======== Recording tools ======== (skipped)" -ForegroundColor DarkGray
+}
+
+if (-not $SkipDebuggers -and -not $SysinternalsOnly) {
+    $dbgArgs = @()
+    if ($Force) { $dbgArgs += "-Force" }
+    Invoke-Step -Name "Debuggers (WinDbg / cdb)" -ScriptPath (Join-Path $Scripts "install-debuggers.ps1") -ScriptArgs $dbgArgs
+} else {
+    Write-Host ""
+    Write-Host "======== Debuggers ======== (skipped)" -ForegroundColor DarkGray
 }
 
 Write-Host ""
