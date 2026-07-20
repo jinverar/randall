@@ -4,7 +4,9 @@
 
 There is no separate `target_recorder` binary. Recording is wired through **FuzzEngine** + **Target Runtime**. (`ProcessMonitor` is the internal long-lived start/detect-death/restart helper — not Sysinternals Procmon.)
 
-**Related:** [STALKING.md](STALKING.md) · [TARGET_RUNTIME.md](TARGET_RUNTIME.md) · [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · [tools/README.md](../tools/README.md)
+**Related:** [STALKING.md](STALKING.md) · [TARGET_RUNTIME.md](TARGET_RUNTIME.md) · [CUSTOM_TARGETS.md](CUSTOM_TARGETS.md) · [tools/README.md](../tools/README.md) · install: [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md) · [README](../README.md)
+
+> **IMPORTANT:** **pktmon** and **ETW/WPR** recording need Randfuzz (`randall serve` / `randall agent`) run from an **Administrator** terminal on the fuzz host. Without elevation those captures soft-skip with a warning; Procmon and other bookends still work unelevated.
 
 **Status legend**
 

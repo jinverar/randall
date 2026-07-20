@@ -109,6 +109,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
 
 Idempotent; soft-fails per tool. **Frida** (`pip install frida-tools`) runs by default when Python is present. **API Monitor** is best-effort (manual steps printed if the rohitab URL fails). **wpr** / **pktmon** are built into Windows — no download.
 
+> **IMPORTANT:** **pktmon** and **ETW/WPR** need Randfuzz (`randall serve` / `randall agent`) from an **Administrator** terminal — see [RECORDING.md](RECORDING.md).
+
 Umbrella (gcc + DynamoRIO + recording + debuggers):
 
 ```powershell
