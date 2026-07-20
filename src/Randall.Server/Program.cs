@@ -856,6 +856,13 @@ app.MapPost("/api/fuzz/stop", (FuzzSessionManager sessions) =>
     return Results.Ok(sessions.Status);
 });
 
+app.MapPost("/api/recorders/stop", () =>
+{
+    // Emergency orphan cleanup — normal Stop already disposes armed bookends in FuzzEngine.
+    var result = RecordingTeardown.StopHostCaptures();
+    return Results.Ok(result);
+});
+
 app.MapGet("/api/proxy/status", (ProxyManager proxy) => proxy.Status);
 
 app.MapGet("/api/proxy/messages", (ProxyManager proxy) =>

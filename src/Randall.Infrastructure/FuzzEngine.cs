@@ -940,116 +940,81 @@ public sealed class FuzzEngine
         }
         finally
         {
-            debuggerWait?.Dispose();
-            procdumpArm?.Dispose();
-            if (useCoverageTcp)
-                stalk.StopLongLivedAsync(longLived, cancellationToken).GetAwaiter().GetResult();
-            if (sysinternalsSnap is { AnyToolFound: true } || tcpvcon is { Available: true })
+            // Capture end PID before stalk/runtime tear down kills the process.
+            int? endPid = null;
+            try
             {
-                int? endPid = null;
-                try
-                {
-                    if (longLived is { HasExited: false })
-                        endPid = longLived.Id;
-                }
-                catch
-                {
-                    /* ignore */
-                }
-
-                if (sysinternalsSnap is { AnyToolFound: true })
-                {
-                    try
-                    {
-                        sysinternalsSnap.CaptureDisarm(endPid);
-                        Console.WriteLine($"Sysinternals snapshots: {sysinternalsSnap.SnapshotDir}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Sysinternals snapshots: {ex.Message}");
-                    }
-                    finally
-                    {
-                        sysinternalsSnap.Dispose();
-                    }
-                }
-                else
-                {
-                    sysinternalsSnap?.Dispose();
-                }
-
-                if (tcpvcon is { Available: true })
-                {
-                    try
-                    {
-                        tcpvcon.CaptureDisarm(endPid);
-                        Console.WriteLine($"TCPVCon snapshots: {tcpvcon.CaptureDir}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"TCPVCon: {ex.Message}");
-                    }
-                    finally
-                    {
-                        tcpvcon.Dispose();
-                    }
-                }
-                else
-                {
-                    tcpvcon?.Dispose();
-                }
+                if (longLived is { HasExited: false })
+                    endPid = longLived.Id;
             }
-            else
+            catch
             {
-                sysinternalsSnap?.Dispose();
-                tcpvcon?.Dispose();
+                /* ignore */
             }
 
-            if (debugView is not null)
+            try { debuggerWait?.Dispose(); }
+            catch { /* ignore */ }
+
+            try
             {
-                debugView.Stop();
-                if (File.Exists(debugView.LogPath) && new FileInfo(debugView.LogPath).Length > 0)
-                    Console.WriteLine($"DebugView log: {debugView.LogPath}");
-                else if (debugView.LastError is not null)
-                    Console.WriteLine($"DebugView: {debugView.LastError}");
-                debugView.Dispose();
+                if (useCoverageTcp)
+                    stalk.StopLongLivedAsync(longLived, CancellationToken.None).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                /* ignore — never skip recorder teardown */
             }
 
-            if (procmon is not null)
+            // Single path: every armed recorder stopped/disposed even if one step faults.
+            RecordingTeardown.DisposeArmed(
+                progress,
+                endPid,
+                procdumpArm,
+                sysinternalsSnap,
+                tcpvcon,
+                debugView,
+                procmon,
+                pktmon,
+                etw);
+            procdumpArm = null;
+            sysinternalsSnap = null;
+            tcpvcon = null;
+            debugView = null;
+            procmon = null;
+            pktmon = null;
+            etw = null;
+
+            try { runtime?.Dispose(); }
+            catch { /* ignore */ }
+
+            try
             {
-                procmon.Stop();
-                if (File.Exists(procmon.PmlPath))
-                    Console.WriteLine($"Procmon saved: {procmon.PmlPath}");
-                procmon.Dispose();
+                if (inProcess is not null)
+                {
+                    FuzzAnalystLog.Info(progress, $"Harness final: {inProcess.Stats.Format()}");
+                    inProcess.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
             }
-            if (pktmon is not null)
+            catch
             {
-                pktmon.Stop();
-                if (File.Exists(pktmon.EtlPath))
-                    Console.WriteLine($"pktmon saved: {pktmon.EtlPath}");
-                else if (pktmon.LastError is not null)
-                    Console.WriteLine($"pktmon: {pktmon.LastError}");
-                pktmon.Dispose();
+                /* ignore */
             }
-            if (etw is not null)
+
+            try
             {
-                etw.Stop();
-                if (File.Exists(etw.EtlPath))
-                    Console.WriteLine($"ETW/WPR saved: {etw.EtlPath}");
-                else if (etw.LastError is not null)
-                    Console.WriteLine($"ETW/WPR: {etw.LastError}");
-                etw.Dispose();
+                if (persistentServer is not null)
+                    persistentServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
             }
-            runtime?.Dispose();
-            if (inProcess is not null)
+            catch
             {
-                FuzzAnalystLog.Info(progress, $"Harness final: {inProcess.Stats.Format()}");
-                inProcess.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                /* ignore */
             }
-            if (persistentServer is not null)
-                persistentServer.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            options.Progress?.OnTargetPid(null);
-            journal?.Complete(iterations, crashCount, coverage.GetTopHotEdges());
+
+            try { options.Progress?.OnTargetPid(null); }
+            catch { /* ignore */ }
+
+            try { journal?.Complete(iterations, crashCount, coverage.GetTopHotEdges()); }
+            catch { /* ignore */ }
         }
 
         var runResult = new FuzzRunResult(iterations, corpusAdded, crashCount, crashes);

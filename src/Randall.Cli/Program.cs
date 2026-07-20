@@ -33,6 +33,7 @@ return args[0].ToLowerInvariant() switch
     "case" => RunCase(args.Skip(1).ToArray()),
     "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
     "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
+    "recorders" or "recorder" => RunRecorders(args.Skip(1).ToArray()),
     "harness-worker" => RunHarnessWorker(args.Skip(1).ToArray()),
     _ => Unknown(args[0]),
 };
@@ -80,6 +81,7 @@ static void PrintHelp()
           randall runtime start --id X --exe path [--arg a]* [--port N]
           randall runtime stop|restart <id>
           randall runtime stop-all
+          randall recorders stop         Stop orphaned Procmon/DebugView/ProcDump/WPR/pktmon
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
           randall serve [--port N] [--bind host]   Web UI + API (localhost)
@@ -1966,6 +1968,42 @@ static int RunHarnessWorker(string[] args)
     }
 
     return NativeHarnessWorkerHost.Run(dll, export);
+}
+
+static int RunRecorders(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall recorders stop
+
+            Stops orphaned host captures left behind after a hard kill / disconnect:
+              Procmon (/Terminate), DebugView, ProcDump, WPR (-cancel), pktmon stop,
+              plus the agent remote Procmon slot.
+
+            Normal fuzz end and UI/CLI Stop already tear down armed recorders via FuzzEngine.
+            Use this when GUI tools or WPR/pktmon are still running afterward.
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    if (sub is not ("stop" or "stop-all" or "stopall"))
+    {
+        Console.Error.WriteLine("Usage: randall recorders stop");
+        return 1;
+    }
+
+    var result = RecordingTeardown.StopHostCaptures();
+    Console.WriteLine(result.Message);
+    foreach (var item in result.Items)
+    {
+        var path = string.IsNullOrWhiteSpace(item.Path) ? "" : $" → {item.Path}";
+        Console.WriteLine($"  {item.Name}{path}: {item.Status}");
+    }
+
+    return result.Ok ? 0 : 1;
 }
 
 static int RunRuntime(string[] args)

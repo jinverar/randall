@@ -63,6 +63,15 @@ public sealed record FuzzSessionStatusDto(
     int? TargetPid = null,
     string? DebuggerMode = null);
 
+/// <summary>One recorder stopped during fuzz teardown or <c>randall recorders stop</c>.</summary>
+public sealed record RecordingStopItemDto(string Name, string? Path, string Status);
+
+/// <summary>Result of stopping armed / orphaned Sysinternals + Windows captures.</summary>
+public sealed record RecordingStopResultDto(
+    bool Ok,
+    string Message,
+    IReadOnlyList<RecordingStopItemDto> Items);
+
 public sealed record CorpusStatsDto(
     string Project,
     int SeedFiles,

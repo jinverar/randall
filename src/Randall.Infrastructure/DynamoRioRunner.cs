@@ -151,11 +151,13 @@ public sealed class DynamoRioRunner
     {
         if (process is { HasExited: false })
         {
-            process.Kill(entireProcessTree: true);
+            try { process.Kill(entireProcessTree: true); }
+            catch { /* ignore */ }
             try { await process.WaitForExitAsync(cancellationToken); }
             catch { /* ignore */ }
         }
-        process?.Dispose();
+        try { process?.Dispose(); }
+        catch { /* ignore */ }
     }
 }
 

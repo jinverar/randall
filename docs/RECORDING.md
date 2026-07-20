@@ -323,6 +323,27 @@ randall fuzz -c projects/local/myapp.yaml --debugger wait
 randall doctor -c projects/local/myapp.yaml
 ```
 
+### Stopping captures
+
+Armed bookends stop automatically when the run **completes**, the user hits **Stop**, or the engine faults (`try/finally` → `RecordingTeardown`). The live log shows a line like `Recording stopped: procmon → …, debugview → …`.
+
+| Action | What it does |
+|--------|----------------|
+| **Stop** (Campaign) / cancel fuzz | Ends the run **and** stops every armed recorder |
+| **Stop recording** (Campaign) | Emergency orphan cleanup only — kills leftover Procmon/DebugView/ProcDump and runs `wpr -cancel` / `pktmon stop` |
+| `randall recorders stop` | Same orphan cleanup from the CLI (after a hard kill / agent disconnect) |
+| `POST /api/recorders/stop` | Same as above on the lab agent / serve host |
+
+Verify nothing is left running:
+
+```powershell
+Get-Process Procmon*, Dbgview*, procdump* -ErrorAction SilentlyContinue
+wpr -status          # should show no active session (or cancel with recorders stop)
+pktmon status        # capture should be stopped
+```
+
+Normal **Stop** is enough for day-to-day runs. Use **Stop recording** / `randall recorders stop` only if a GUI tool or WPR/pktmon session is still up after the fuzz exited.
+
 ---
 
 ## Where to put tools (`tools/` or PATH)

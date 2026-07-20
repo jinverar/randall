@@ -354,6 +354,7 @@
           </label>
           <p id="fuzz-recording-hint" class="hint">
             Artifacts → <code>data/runs/…</code>
+            · <strong>Stop</strong> ends the run and stops captures
             · See <button type="button" class="linkish" data-help="RECORDING.md">Help → Recording</button>
           </p>
           <p id="fuzz-recording-elev" class="hint fuzz-recording-elev hidden">
@@ -417,7 +418,8 @@
           </details>
           <div class="btn-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>
-            <button type="button" class="btn" id="fuzz-stop">Stop</button>
+            <button type="button" class="btn" id="fuzz-stop" title="Stop fuzz — also stops Procmon, DebugView, WPR, pktmon, ProcDump">Stop</button>
+            <button type="button" class="btn" id="fuzz-stop-recorders" title="Kill orphaned Procmon/DebugView/ProcDump and cancel WPR/pktmon (if tools were left running)">Stop recording</button>
             <button type="button" class="btn" id="fuzz-doctor">Doctor</button>
             <button type="button" class="btn" id="fuzz-attach-dbg">Attach debugger</button>
           </div>

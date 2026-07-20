@@ -2618,6 +2618,21 @@ stopBtn.addEventListener('click', async () => {
   }
 });
 
+document.getElementById('fuzz-stop-recorders')?.addEventListener('click', async () => {
+  try {
+    const r = await api.post('/api/recorders/stop', {});
+    appendLog(r.message || 'Recording stopped', 'warn');
+    if (Array.isArray(r.items)) {
+      for (const it of r.items) {
+        const path = it.path ? ` → ${it.path}` : '';
+        appendLog(`  ${it.name}${path}: ${it.status}`, 'info');
+      }
+    }
+  } catch (err) {
+    appendLog(err.message, 'crash');
+  }
+});
+
 document.getElementById('fuzz-log-clear')?.addEventListener('click', () => {
   clearFuzzLog();
 });
