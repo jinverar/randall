@@ -2770,10 +2770,10 @@ html[data-theme="light"] .stalk-node-g.selected .stalk-node {
   z-index: 80;
   min-width: 11rem;
   padding: 0.3rem;
-  background: #161021;
+  background: var(--stalk-panel-bg);
   border: 1px solid var(--stalk-border);
   border-radius: 8px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 10px 28px var(--shadow);
 }
 .stalk-ctx-menu.hidden { display: none; }
 .stalk-ctx-menu button {
@@ -2789,8 +2789,8 @@ html[data-theme="light"] .stalk-node-g.selected .stalk-node {
   font-size: 0.78rem;
 }
 .stalk-ctx-menu button:hover {
-  background: rgba(108, 182, 255, 0.14);
-  color: #fff;
+  background: var(--surface-hover);
+  color: var(--text);
 }
 .stalk-ctx-menu .sep {
   height: 1px;
