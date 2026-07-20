@@ -35,7 +35,7 @@ Prefer opening `http://<vm-ip>:5000` on the agent and fuzzing there; pull packs 
 | **Long campaigns** (hours+) | Prefer **ETW/WPR** (`fuzz.etwCapture`) over Procmon | Lower overhead than Procmon for multi-hour runs; open ETL in WPA / PerfView / UIforETW. Keep Procmon for short interactive drills |
 | **Crashes appearing, no Scream** | **+ ProcDump on crash** | Only when `debuggerMode: none`. Skipped if Scream/attach already holds the process |
 | **ODS / DbgPrint logging** | **+ DebugView** | Win32 OutputDebugString → `debugview.log`. Kernel DbgPrint needs elevated DebugView `/k` (not armed by default) |
-| **Network / protocol** | **+ TCPVCon** + **pktmon** + **tshark pcap** | Connection bookends; pktmon ETL + Wireshark `fuzz.pcapng` (Npcap/admin often required) |
+| **Network / protocol** | **+ TCPVCon** + **pktmon** + **tshark pcap** | Connection bookends; pktmon ETL + Wireshark `fuzz.pcapng`. **pktmon and ETW/WPR need an elevated Randfuzz process** (`randall serve` / `randall agent` as Administrator); tshark needs Npcap (admin often required). Without elevation they soft-skip with a clear warning instead of failing at stop. |
 | **File format / parser deep dive** | Procmon or ETW + snapshots + **API Monitor** (GUI) + Scream + DebugView | Procmon/ETW show load paths; **API Monitor** shows call args (CreateFile, ReadFile, heap APIs) Procmon does not |
 | **Internal buffers / no recompile** | **Frida** (GUI companion) beside the run | Dynamic hooks, dump buffers, stalk parsers without rebuilding |
 | **Interesting crash payload** | **+ Strings on crash** | Opt-in — avoids surprise cost on huge inputs |
@@ -208,7 +208,7 @@ Run together: **Procmon or ETW** (Wired) + **API Monitor** (GUI) + **Process Exp
 | **Intel PIN** | DBI / coverage research | **External** |
 | **Lighthouse / Ghidra / IDA / Binary Ninja / x64dbg** | Coverage viz / RE / triage | **External** — stalk export helps ([STALKING.md](STALKING.md)) |
 | **Boofuzz** | Network protocol fuzzing | Related lineage — Randfuzz Campaign |
-| **pktmon** | NIC ETL | **Wired** — `fuzz.pktmonCapture` |
+| **pktmon** | NIC ETL | **Wired** — `fuzz.pktmonCapture` (**elevated** Randfuzz required) |
 | **tshark** | Live pcapng | **Wired** — `fuzz.tsharkCapture` → `fuzz.pcapng` |
 | **TCPVCon** | Connection snapshots (TCPView CLI) | **Wired** — `fuzz.tcpvconCapture` |
 | **Frida / API Monitor / Detours** | Dynamic observation | **GUI companion** / **External** — see [API Monitor & Frida](#api-monitor-frida) |
@@ -328,6 +328,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-debuggers.ps1
 
 randall fuzz -c projects/local/myapp.yaml --debugger wait
 randall doctor -c projects/local/myapp.yaml
+
+# pktmon + ETW/WPR need an elevated Randfuzz process (same box as the target):
+# Right-click terminal → Run as administrator, then:
+randall serve
+# or: randall agent
 ```
 
 ### Stopping captures
@@ -418,8 +423,8 @@ Only **one** debugger can attach. Prefer **Scream** (`debuggerMode: wait`). Use 
 | **PsInfo** | No — headless CLI | Snapshots: **arm only** (optional) | No | Missing skipped | `sysinternals/arm-psinfo.txt` |
 | **TCPVCon** | No — headless CLI | Arm / disarm / crash (own knobs) | No | Missing → `tcpvcon-capture.txt` says skipped | `tcpvcon/arm.txt` + `tcpvcon-capture.txt` |
 | **DebugView** | Tray (`/t`); may flash briefly | Whole run when enabled | Kernel `/k` needs admin (not default) | Missing exe soft-fail | `debugview.log` + `debugview-capture.txt` |
-| **ETW / WPR** | No — headless `wpr.exe` | Whole run when enabled | **Often needs elevation**; denied → soft-fail | Missing/denied → warn | `fuzz-etw.etl` + `etw-capture.txt` |
-| **pktmon** | No — headless | Whole run when enabled | **Often needs elevation**; denied → soft-fail | Missing/denied → warn | `fuzz-pktmon.etl` + `pktmon-capture.txt` |
+| **ETW / WPR** | No — headless `wpr.exe` | Whole run when enabled | **Needs elevated Randfuzz** (Administrator). Also blocked if Windows performance profiling policy denies WPR (`0xc5585011`) | Unelevated / policy / missing → one warn at arm; no stop spam | `fuzz-etw.etl` + `etw-capture.txt` |
+| **pktmon** | No — headless | Whole run when enabled | **Needs elevated Randfuzz** (Administrator) | Unelevated / denied → one warn at arm; no stop spam | `fuzz-pktmon.etl` + `pktmon-capture.txt` |
 | **tshark** | No — headless console | Whole run when enabled | **Npcap + often elevation**; try without UAC first, soft-fail if denied | Missing Wireshark/tshark → warn + install hint | `fuzz.pcapng` + `tshark-capture.txt` |
 | **ProcDump** | No — headless console | Armed for duration; dump on exception | Usually fine | Skipped if Scream/attach already holds process; missing exe soft-fail | `data/crashes/<project>/dumps/procdump_*.dmp` (not under runs/) |
 

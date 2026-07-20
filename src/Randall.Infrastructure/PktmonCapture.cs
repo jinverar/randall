@@ -4,11 +4,10 @@ namespace Randall.Infrastructure;
 
 /// <summary>
 /// Windows Packet Monitor bookend — <c>pktmon start/stop</c> into an ETL under the run journal.
-/// Built into recent Windows 10/11; often needs elevation. Missing/denied → warn + continue.
+/// Built into recent Windows 10/11; requires an elevated Randfuzz process. Missing/denied → warn + continue.
 /// </summary>
 public sealed class PktmonCapture : IDisposable
 {
-    private Process? _startProbe;
     private bool _disposed;
     private bool _stopped;
 
@@ -66,7 +65,17 @@ public sealed class PktmonCapture : IDisposable
             return missing;
         }
 
-        // Stop any prior capture so the ETL path is free.
+        if (!WindowsElevation.IsProcessElevated())
+        {
+            var unelevated = new PktmonCapture(etl, meta)
+            {
+                LastError = WindowsElevation.AdminHint,
+            };
+            TryWriteMeta(unelevated, "skipped — not elevated");
+            return unelevated;
+        }
+
+        // Stop any prior capture so the ETL path is free (best-effort; ignore "no session").
         try
         {
             RunPktmon(exe, "stop", waitMs: 8000);
@@ -89,22 +98,12 @@ public sealed class PktmonCapture : IDisposable
             var (code, stdout, stderr) = RunPktmon(exe, $"start --capture --comp nics -f \"{etl}\"", waitMs: 15_000);
             if (code != 0)
             {
-                capture.LastError = string.IsNullOrWhiteSpace(stderr)
-                    ? $"pktmon start exit {code}: {stdout.Trim()}"
-                    : stderr.Trim();
-                if (capture.LastError.Contains("access", StringComparison.OrdinalIgnoreCase) ||
-                    capture.LastError.Contains("elevat", StringComparison.OrdinalIgnoreCase) ||
-                    code == 5)
-                {
-                    capture.LastError += " (try elevated console / admin agent)";
-                }
-
+                capture.LastError = FormatStartFailure(code, stdout, stderr);
                 TryWriteMeta(capture, "start failed");
                 return capture;
             }
 
             capture.IsRunning = true;
-            capture._startProbe = null;
             TryWriteMeta(capture, "running");
         }
         catch (Exception ex)
@@ -121,9 +120,17 @@ public sealed class PktmonCapture : IDisposable
         if (_stopped) return;
         _stopped = true;
 
+        // Never call pktmon stop unless we actually started — avoids
+        // "Cannot obtain current state" spam for skipped/failed starts.
+        if (!IsRunning)
+            return;
+
         var exe = DiscoverExecutable();
         if (exe is null)
+        {
+            IsRunning = false;
             return;
+        }
 
         try
         {
@@ -131,9 +138,13 @@ public sealed class PktmonCapture : IDisposable
             IsRunning = false;
             if (code != 0 && LastError is null)
             {
-                LastError = string.IsNullOrWhiteSpace(stderr)
-                    ? $"pktmon stop exit {code}: {stdout.Trim()}"
-                    : stderr.Trim();
+                var detail = CombineOutput(stdout, stderr);
+                if (IsNotAvailableMessage(detail))
+                    LastError = $"{WindowsElevation.AdminHint} (pktmon: {TrimOneLine(detail)})";
+                else
+                    LastError = string.IsNullOrWhiteSpace(detail)
+                        ? $"pktmon stop exit {code}"
+                        : detail;
             }
 
             // Optional human-readable summary next to the ETL (best-effort).
@@ -147,13 +158,9 @@ public sealed class PktmonCapture : IDisposable
         }
         catch (Exception ex)
         {
-            LastError = ex.Message;
+            IsRunning = false;
+            LastError ??= ex.Message;
             TryWriteMeta(this, "stop exception");
-        }
-        finally
-        {
-            _startProbe?.Dispose();
-            _startProbe = null;
         }
     }
 
@@ -161,8 +168,51 @@ public sealed class PktmonCapture : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        if (IsRunning || !_stopped)
+        if (IsRunning)
             Stop();
+        else
+            _stopped = true;
+    }
+
+    private static string FormatStartFailure(int code, string stdout, string stderr)
+    {
+        var detail = CombineOutput(stdout, stderr);
+        if (IsNotAvailableMessage(detail) ||
+            detail.Contains("access", StringComparison.OrdinalIgnoreCase) ||
+            detail.Contains("elevat", StringComparison.OrdinalIgnoreCase) ||
+            detail.Contains("denied", StringComparison.OrdinalIgnoreCase) ||
+            code == 5)
+        {
+            var tip = WindowsElevation.AdminHint;
+            return string.IsNullOrWhiteSpace(detail)
+                ? tip
+                : $"{tip} ({TrimOneLine(detail)})";
+        }
+
+        return string.IsNullOrWhiteSpace(detail)
+            ? $"pktmon start exit {code}"
+            : detail;
+    }
+
+    private static bool IsNotAvailableMessage(string text) =>
+        text.Contains("Cannot obtain current state", StringComparison.OrdinalIgnoreCase) ||
+        text.Contains("cannot find the file specified", StringComparison.OrdinalIgnoreCase);
+
+    private static string CombineOutput(string stdout, string stderr)
+    {
+        var err = (stderr ?? "").Trim();
+        var out_ = (stdout ?? "").Trim();
+        if (err.Length > 0 && out_.Length > 0)
+            return err + " | " + out_;
+        return err.Length > 0 ? err : out_;
+    }
+
+    private static string TrimOneLine(string text)
+    {
+        var line = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        while (line.Contains("  ", StringComparison.Ordinal))
+            line = line.Replace("  ", " ", StringComparison.Ordinal);
+        return line.Length > 180 ? line[..177] + "..." : line;
     }
 
     private static (int ExitCode, string Stdout, string Stderr) RunPktmon(string exe, string args, int waitMs)

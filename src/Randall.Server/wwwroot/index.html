@@ -358,7 +358,7 @@
             · See <button type="button" class="linkish" data-help="RECORDING.md">Help → Recording</button>
           </p>
           <p id="fuzz-recording-elev" class="hint fuzz-recording-elev hidden">
-            Network / Deep dive enable pktmon + tshark pcap (Deep dive also adds ETW) — Npcap/admin often required.
+            Network / Deep dive enable pktmon (+ ETW on Deep dive) — <strong>needs Admin</strong> for pktmon/ETW; tshark needs Npcap (admin often required).
           </p>
           <details class="fuzz-re-companions" id="fuzz-re-companions">
             <summary>RE companions</summary>
@@ -395,17 +395,17 @@
               <input type="checkbox" id="fuzz-procdump" />
               ProcDump on crash
             </label>
-            <label class="checkbox" title="NIC packet ETL bookend (built-in) — often needs elevation">
+            <label class="checkbox" title="NIC packet ETL bookend (built-in) — needs Admin (elevated agent/server)">
               <input type="checkbox" id="fuzz-pktmon" />
-              pktmon
+              pktmon (needs Admin)
             </label>
             <label class="checkbox" title="Wireshark tshark → fuzz.pcapng — needs tshark/Npcap; often needs elevation">
               <input type="checkbox" id="fuzz-tshark" />
               tshark pcap
             </label>
-            <label class="checkbox" title="WPR light FileIO/Registry/DiskIO/Network → fuzz-etw.etl — often needs elevation">
+            <label class="checkbox" title="WPR light FileIO/Registry/DiskIO/Network → fuzz-etw.etl — needs Admin (elevated agent/server)">
               <input type="checkbox" id="fuzz-etw" />
-              ETW (WPR)
+              ETW (WPR) (needs Admin)
             </label>
             <label class="checkbox" title="OutputDebugString → debugview.log — needs Dbgview.exe in tools/ or PATH">
               <input type="checkbox" id="fuzz-debugview" />

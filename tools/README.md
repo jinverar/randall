@@ -66,7 +66,7 @@ Also accepted: `tools/tcpvcon.exe`, or those names on `PATH`. Captures at arm / 
 
 ## pktmon — built into Windows
 
-`fuzz.pktmonCapture` uses `%SystemRoot%\System32\pktmon.exe` (no download). Often needs an elevated console/agent. Writes `data/runs/<runId>/fuzz-pktmon.etl`.
+`fuzz.pktmonCapture` uses `%SystemRoot%\System32\pktmon.exe` (no download). **Requires an elevated Randfuzz process** (`randall serve` / `randall agent` as Administrator); otherwise soft-skips with a clear warning. Writes `data/runs/<runId>/fuzz-pktmon.etl`.
 
 ## tshark / Wireshark — optional pcap bookend
 
@@ -91,7 +91,7 @@ For TCP/UDP projects, tshark applies an optional BPF filter `host <transport.hos
 
 ## ETW / WPR — built into Windows
 
-`fuzz.etwCapture` uses `%SystemRoot%\System32\wpr.exe` (Windows Performance Recorder). Soft-fails if missing or denied. Starts light FileIO + Registry + DiskIO + Network profiles (`-filemode`), stops to `data/runs/<runId>/fuzz-etw.etl` (+ `etw-capture.txt` meta). Open in WPA / PerfView / UIforETW. Prefer over Procmon for long campaigns; see [docs/RECORDING.md](../docs/RECORDING.md).
+`fuzz.etwCapture` uses `%SystemRoot%\System32\wpr.exe` (Windows Performance Recorder). **Requires an elevated Randfuzz process**; also soft-fails if Windows performance profiling policy blocks WPR (`0xc5585011`). Starts light FileIO + Registry + DiskIO + Network profiles (`-filemode`), stops to `data/runs/<runId>/fuzz-etw.etl` (+ `etw-capture.txt` meta). Open in WPA / PerfView / UIforETW. Prefer over Procmon for long campaigns; see [docs/RECORDING.md](../docs/RECORDING.md).
 
 ## DebugView (Sysinternals) — optional OutputDebugString capture
 

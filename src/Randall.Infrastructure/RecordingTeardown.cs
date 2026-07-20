@@ -115,7 +115,9 @@ public static class RecordingTeardown
                 return null;
             var path = pktmon.EtlPath;
             var wasRunning = pktmon.IsRunning;
-            pktmon.Stop();
+            // Skip stop when never started (unelevated / start failed) — avoids second error.
+            if (wasRunning)
+                pktmon.Stop();
             pktmon.Dispose();
             if (!wasRunning && !File.Exists(path))
                 return null;
@@ -147,7 +149,9 @@ public static class RecordingTeardown
                 return null;
             var path = etw.EtlPath;
             var wasRunning = etw.IsRunning;
-            etw.Stop();
+            // Skip stop when never started (unelevated / WPR policy / start failed).
+            if (wasRunning)
+                etw.Stop();
             etw.Dispose();
             if (!wasRunning && !File.Exists(path))
                 return null;

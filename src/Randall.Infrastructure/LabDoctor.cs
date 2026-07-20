@@ -171,18 +171,22 @@ public static class LabDoctor
         }
 
         var pktmonExe = PktmonCapture.DiscoverExecutable();
+        var elevated = WindowsElevation.IsProcessElevated();
         if (project.Fuzz.PktmonCapture)
         {
-            Add("pktmon", pktmonExe is not null ? "ok" : "warn",
-                pktmonExe is not null
-                    ? $"PktmonCapture enabled → {pktmonExe} (often needs elevation)"
-                    : "PktmonCapture enabled but pktmon.exe not found");
+            if (pktmonExe is null)
+                Add("pktmon", "warn", "PktmonCapture enabled but pktmon.exe not found");
+            else if (!elevated)
+                Add("pktmon", "warn",
+                    $"PktmonCapture enabled → {pktmonExe} — {WindowsElevation.AdminHint}");
+            else
+                Add("pktmon", "ok", $"PktmonCapture enabled → {pktmonExe} (elevated)");
         }
         else
         {
             Add("pktmon", pktmonExe is not null ? "ok" : "warn",
                 pktmonExe is not null
-                    ? $"{pktmonExe} (set fuzz.pktmonCapture: true to bookend runs; may need admin)"
+                    ? $"{pktmonExe} (set fuzz.pktmonCapture: true — needs Admin)"
                     : "pktmon not found — optional packet bookends disabled");
         }
 
@@ -205,16 +209,19 @@ public static class LabDoctor
         var wprExe = EtwCapture.DiscoverExecutable();
         if (project.Fuzz.EtwCapture)
         {
-            Add("etw", wprExe is not null ? "ok" : "warn",
-                wprExe is not null
-                    ? $"EtwCapture enabled → {wprExe} (often needs elevation)"
-                    : "EtwCapture enabled but wpr.exe not found");
+            if (wprExe is null)
+                Add("etw", "warn", "EtwCapture enabled but wpr.exe not found");
+            else if (!elevated)
+                Add("etw", "warn",
+                    $"EtwCapture enabled → {wprExe} — {WindowsElevation.AdminHint}");
+            else
+                Add("etw", "ok", $"EtwCapture enabled → {wprExe} (elevated)");
         }
         else
         {
             Add("etw", wprExe is not null ? "ok" : "warn",
                 wprExe is not null
-                    ? $"{wprExe} (set fuzz.etwCapture: true for WPR ETL bookends; may need admin)"
+                    ? $"{wprExe} (set fuzz.etwCapture: true for WPR ETL — needs Admin)"
                     : "wpr.exe not found — optional ETW bookends disabled");
         }
 
