@@ -20,6 +20,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
 
 Idempotent — skips binaries already present unless `-Force`. Soft-fails per tool with a summary. See [docs/RECORDING.md](../docs/RECORDING.md).
 
+**Daily updates:** use [update-lab.ps1](../scripts/update-lab.ps1) (`git pull` + rebuild). Re-run installers here only for first setup or when adding tools (`update-lab.ps1 -InstallTools`).
+
 **Built-in (no download):** `wpr.exe` (ETW) and `pktmon.exe` ship with Windows.
 
 **Optional (large):** Wireshark / `tshark` for `fuzz.tsharkCapture` → `fuzz.pcapng`. Not installed by default — use `-IncludeWireshark` on the recording installer, or install manually (see below).

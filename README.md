@@ -71,6 +71,24 @@ dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000
 
 If you see *“running scripts is disabled on this system”*, that Bypass form is the fix (or run once: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`).
 
+### Updating the VM (after first install)
+
+**Clone once, pull + rebuild** — do not re-download the GitHub ZIP or re-run full tool installs every time. Binaries under `tools/` (DynamoRIO, Sysinternals, MinGW) stay on disk; `git pull` only refreshes source.
+
+```powershell
+cd $env:USERPROFILE\Projects\randall   # or wherever you cloned
+
+# Stop Randall.Server first if it is running (avoids locked DLLs during rebuild)
+powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1
+# Re-install tools only when scripts/docs say so:  ...\update-lab.ps1 -InstallTools
+
+dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000
+```
+
+Migrating off `Downloads\randall-main` ZIP: clone fresh (above), **copy your existing `tools\` folder into the clone once** (gcc, dynamorio, Sysinternals exes are gitignored), run `install-lab-tools.ps1` only if something is still missing. Keep secrets in `projects/local/` or `.env` — also gitignored.
+
+Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md#updating-the-vm-after-first-install).
+
 Open **[http://127.0.0.1:5000](http://127.0.0.1:5000)** — Dashboard (stalker CFG), Fuzz, Crashes, Case builder, Help.
 
 Smoke:

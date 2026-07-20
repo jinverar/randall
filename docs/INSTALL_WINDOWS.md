@@ -53,7 +53,54 @@ git clone https://github.com/jinverar/randall.git
 cd randall
 ```
 
-If you already unpacked a ZIP (e.g. under `Downloads\randall-main\`), either clone fresh as above, or replace that tree with a clone / pull so you have the latest scripts.
+If you already unpacked a ZIP (e.g. under `Downloads\randall-main\`), migrate once:
+
+1. Clone fresh (commands above) into e.g. `%USERPROFILE%\Projects\randall`
+2. **Copy** `tools\` from the old ZIP tree into the clone (DynamoRIO, MinGW, Sysinternals — not in git)
+3. Use `git pull` + `update-lab.ps1` from then on; retire the Downloads folder
+
+---
+
+## Updating the VM (after first install)
+
+Day-to-day updates: **pull source, rebuild** — no ZIP, no full tool reinstall.
+
+```powershell
+cd $env:USERPROFILE\Projects\randall
+
+# Stop Randall.Server / agent first if running (Ctrl+C) — avoids locked DLLs during rebuild
+powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1
+```
+
+What it does:
+
+| Step | Action |
+|------|--------|
+| `git pull` | Latest source (fails clearly if this folder is not a clone) |
+| `dotnet build` | Randall.Cli, Randall.Server, libraries |
+| `build-all-lab-targets.ps1` | vulnserver, vulnhttp, vulnftp, vulnssh, vulntftp, vulnrpc, vulnsmb, ScreamCrash |
+| `tools\` | **Not** touched unless you pass `-InstallTools` |
+
+Useful flags:
+
+```powershell
+# Skip pull (already up to date)
+powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -SkipPull
+
+# Refresh third-party tools (idempotent; skips existing binaries)
+powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -InstallTools
+
+# .NET only — skip native lab targets
+powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -SkipLabTargets
+```
+
+Then restart the UI if needed:
+
+```powershell
+dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000
+```
+
+**Gitignored (safe across pulls):** `tools/dynamorio/`, `tools/mingw64/`, `tools/*.exe`, `data/`, `projects/local/`, `.env` — see [.gitignore](../.gitignore). Pull never deletes them.
 
 ---
 
@@ -287,7 +334,8 @@ For real dumps / memory lens, **fuzz on the agent UI** — see [LAB_AGENT.md](LA
 | DynamoRIO download “forever” | Patience (large zip), or browser-download + unzip then **rename** to exactly `tools\dynamorio` (not `tools\DynamoRIO-Windows-*`; or use `-ZipPath`); re-run resumes via curl/BITS; `-Skip` only if skipping coverage for now |
 | Port 5000 in use | Stop other Server/agent processes |
 | OOM / very slow | Raise VM RAM; avoid every lab + DynamoRIO at once |
-| Old ZIP of the repo | Prefer `git clone` / `git pull` so install scripts stay current |
+| Old ZIP of the repo | Clone once; copy `tools\` into clone; then `update-lab.ps1` |
+| `git pull` / update fails | Confirm `.git` exists; not a ZIP extract — see [Updating the VM](#updating-the-vm-after-first-install) |
 | Clone / TLS errors | Fix VM date/time; check proxy |
 
 ---
