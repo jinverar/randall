@@ -290,7 +290,7 @@ public static class TargetRuntimeService
         {
             // Try kill by last known pid if we lost the handle
             if (slot.LastKnownPid is int orphanPid)
-                TryKillPid(orphanPid);
+                TryKillPid(orphanPid, slot.WaitPort, slot.WaitProtocol);
 
             slot.LastMessage = "Already stopped";
             slot.Process = null;
@@ -301,15 +301,24 @@ public static class TargetRuntimeService
         try
         {
             var pid = slot.Process!.Id;
-            slot.Process.Kill(entireProcessTree: true);
-            slot.Process.WaitForExit(5000);
             try { slot.LastExitCode = slot.Process.HasExited ? slot.Process.ExitCode : null; }
             catch { /* ignore */ }
+
+            var killOk = ProcessTreeKill.TryKillTree(pid, out var killErr);
+            if (!killOk && slot.WaitPort is int stopPort)
+            {
+                ProcessTreeKill.TryKillPortListeners(stopPort, slot.WaitProtocol, out _);
+                killOk = !ProcessTreeKill.IsAlive(pid);
+            }
+
+            try { slot.Process.WaitForExit(3000); } catch { /* ignore */ }
             slot.Process.Dispose();
             slot.Process = null;
             slot.LastKnownPid = pid;
             slot.StoppedAtUtc = DateTimeOffset.UtcNow;
-            slot.LastMessage = $"Stopped (was PID {pid})";
+            slot.LastMessage = killOk
+                ? $"Stopped (was PID {pid})"
+                : $"Stopped PID {pid} with warnings: {killErr ?? "some tree processes may remain"}";
             Persist();
             return Describe(slot);
         }
@@ -347,7 +356,7 @@ public static class TargetRuntimeService
         {
             var host = string.IsNullOrWhiteSpace(req.WaitHost) ? "127.0.0.1" : req.WaitHost!;
             var proto = string.IsNullOrWhiteSpace(req.WaitProtocol) ? "tcp" : req.WaitProtocol!;
-            if (!WaitUntilPortFree(host, waitPort, proto, TimeSpan.FromSeconds(5)))
+            if (!WaitUntilPortFree(host, waitPort, proto, TimeSpan.FromSeconds(8), killListeners: true))
             {
                 return Fail(id,
                     $"Restart blocked: {host}:{waitPort} still accepting (stop labs/orphan listeners on this port)");
@@ -613,20 +622,11 @@ public static class TargetRuntimeService
         catch { return false; }
     }
 
-    private static void TryKillPid(int pid)
+    private static void TryKillPid(int pid, int? waitPort = null, string? waitProtocol = null)
     {
-        try
-        {
-            var p = Process.GetProcessById(pid);
-            if (!p.HasExited)
-            {
-                p.Kill(entireProcessTree: true);
-                p.WaitForExit(3000);
-            }
-
-            p.Dispose();
-        }
-        catch { /* ignore */ }
+        ProcessTreeKill.TryKillTree(pid, out _);
+        if (waitPort is int port)
+            ProcessTreeKill.TryKillPortListeners(port, waitProtocol ?? "tcp", out _);
     }
 
     private static string ResolveExecutable(string path, string repoRoot)
@@ -662,18 +662,13 @@ public static class TargetRuntimeService
     }
 
     /// <summary>True when nothing accepts on host:port (safe to bind a new listener).</summary>
-    private static bool WaitUntilPortFree(string host, int port, string protocol, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (!ProbePort(host, port, protocol))
-                return true;
-            Thread.Sleep(100);
-        }
-
-        return !ProbePort(host, port, protocol);
-    }
+    private static bool WaitUntilPortFree(
+        string host,
+        int port,
+        string protocol,
+        TimeSpan timeout,
+        bool killListeners = false) =>
+        ProcessTreeKill.WaitUntilPortFree(host, port, protocol, timeout, killListeners);
 
     private static bool ProbePort(string host, int port, string protocol)
     {

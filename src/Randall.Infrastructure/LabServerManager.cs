@@ -100,12 +100,17 @@ public static class LabServerManager
         if (TargetRuntimeService.IsManagedRunning(def.Id) || TargetRuntimeService.Status(def.Id).Executable is not null)
         {
             var st = TargetRuntimeService.Stop(def.Id);
+            ProcessTreeKill.TryKillPortListeners(def.Port, def.Protocol, out _);
             // Also clear orphans with the same image name
             foreach (var p in FindAllRunning(def))
             {
                 try
                 {
-                    if (!p.HasExited) { p.Kill(entireProcessTree: true); p.WaitForExit(3000); }
+                    if (!p.HasExited)
+                    {
+                        ProcessTreeKill.TryKillTree(p.Id, out _);
+                        p.WaitForExit(3000);
+                    }
                 }
                 catch { /* ignore */ }
                 finally { p.Dispose(); }
@@ -129,7 +134,7 @@ public static class LabServerManager
             {
                 if (!p.HasExited)
                 {
-                    p.Kill(entireProcessTree: true);
+                    ProcessTreeKill.TryKillTree(p.Id, out _);
                     p.WaitForExit(3000);
                     killed++;
                 }

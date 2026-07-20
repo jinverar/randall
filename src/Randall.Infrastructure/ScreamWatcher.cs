@@ -336,17 +336,8 @@ public sealed class ScreamWatcher : IDisposable
 
     private void TerminateTarget(uint exceptionCode)
     {
-        try
-        {
-            using var p = Process.GetProcessById(_pid);
-            if (!p.HasExited)
-                p.Kill(entireProcessTree: true);
+        if (ProcessTreeKill.TryKillTree(_pid, out _))
             return;
-        }
-        catch
-        {
-            /* fall through */
-        }
 
         var h = OpenProcess(Native.ProcessTerminate, false, _pid);
         if (h != IntPtr.Zero)

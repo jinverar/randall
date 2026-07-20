@@ -39,7 +39,7 @@ public sealed class ProcessMonitor : IDisposable
     {
         if (_process is { HasExited: false })
         {
-            _process.Kill(entireProcessTree: true);
+            ProcessTreeKill.TryKillTree(_process.Id, out _);
             _process.Dispose();
         }
         _process = null;
