@@ -260,6 +260,43 @@ public sealed class FuzzEngine
                 await ArmDebuggerAsync(longLived);
         }
 
+        async Task<Process?> RestartLongLivedAsync(int iteration)
+        {
+            if (runtime is null)
+                return longLived;
+
+            FuzzAnalystLog.Warn(progress,
+                "Cannot reach target or process died; restarting via Target Runtime…",
+                iteration);
+            FuzzAnalystLog.Step(progress, "Restarting target", iteration);
+            Process? proc = null;
+            TargetRuntimeStatusDto? rst = null;
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                await Task.Delay(300 + attempt * 400, cancellationToken);
+                (proc, rst) = await runtime.RestartAsync(cancellationToken);
+                if (rst.Ok && (runtime.IsRemote || proc is { HasExited: false }))
+                    break;
+                FuzzAnalystLog.Warn(progress,
+                    $"Target Runtime restart attempt {attempt + 1}/3: {rst.Message}",
+                    iteration);
+            }
+
+            FuzzAnalystLog.Info(progress,
+                $"Target Runtime restart: {rst?.Message ?? "(no status)"}", iteration);
+            if (rst is { Ok: false } || (!runtime.IsRemote && proc is null or { HasExited: true }))
+            {
+                FuzzAnalystLog.Warn(progress,
+                    "Target did not come back — stop labs/orphans on the project port, then retry",
+                    iteration);
+                return proc;
+            }
+
+            if (!runtime.IsRemote)
+                await ArmDebuggerAsync(proc);
+            return proc;
+        }
+
         async Task ArmDebuggerAsync(Process? proc)
         {
             debuggerWait?.Dispose();
@@ -940,24 +977,20 @@ public sealed class FuzzEngine
                         newEdges));
 
                     if (runtime is not null)
-                    {
-                        FuzzAnalystLog.Warn(progress,
-                            "Cannot reach target or process died; restarting via Target Runtime…",
-                            iterations);
-                        FuzzAnalystLog.Step(progress, "Restarting target", iterations);
-                        await Task.Delay(300, cancellationToken);
-                        var (proc, rst) = await runtime.RestartAsync(cancellationToken);
-                        longLived = proc;
-                        FuzzAnalystLog.Info(progress, $"Target Runtime restart: {rst.Message}", iterations);
-                        if (!runtime.IsRemote)
-                            await ArmDebuggerAsync(longLived);
-                    }
+                        longLived = await RestartLongLivedAsync(iterations);
                 }
                 else
                 {
                     FuzzAnalystLog.Ok(progress, iteration: iterations);
                     if (result.Detail is not null and not "ok" and not "")
                         FuzzAnalystLog.Info(progress, $"Info: {result.Detail}", iterations);
+
+                    // Bind/start failures are not fuzz crashes, but the server is still dead — bring it back.
+                    var needsInfraRestart = runtime is not null &&
+                        (result.Detail?.Contains("bind/start failure", StringComparison.OrdinalIgnoreCase) == true ||
+                         longLived is { HasExited: true });
+                    if (needsInfraRestart)
+                        longLived = await RestartLongLivedAsync(iterations);
                 }
             }
         }

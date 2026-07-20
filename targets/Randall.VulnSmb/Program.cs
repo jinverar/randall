@@ -43,7 +43,18 @@ internal static class Program
         Console.WriteLine($"Randall VulnSmb (NBSS+SMB2-shaped) TCP on {host}:{port} (use --host 0.0.0.0 to expose all interfaces)");
         Console.WriteLine("Lab only — Negotiate → SessionSetup → TreeConnect → Create/Write (Create overflows long names).");
         using var listener = new TcpListener(host, port);
-        listener.Start();
+        // Allow quick rebind after crash/restart (Windows exclusive bind → WSAEADDRINUSE 10048).
+        listener.ExclusiveAddressUse = false;
+        listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+        try
+        {
+            listener.Start();
+        }
+        catch (SocketException ex) when (ex.SocketErrorCode is SocketError.AddressAlreadyInUse)
+        {
+            Console.Error.WriteLine($"bind failed: address already in use ({host}:{port}) — {ex.Message}");
+            return 10048;
+        }
 
         while (true)
         {

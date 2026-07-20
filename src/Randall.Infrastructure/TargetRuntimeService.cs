@@ -164,7 +164,8 @@ public static class TargetRuntimeService
                 LastMessage = "Started",
             };
 
-            Thread.Sleep(200);
+            // UseShellExecute can delay the real entrypoint; give bind a moment before HasExited.
+            Thread.Sleep(400);
             if (proc.HasExited)
             {
                 slot.LastExitCode = proc.ExitCode;
@@ -181,6 +182,22 @@ public static class TargetRuntimeService
             if (slot.WaitPort is int port)
             {
                 var reachable = WaitForPort(slot.WaitHost, port, slot.WaitProtocol, TimeSpan.FromSeconds(3));
+                // ProbePort sees *any* listener — re-check our process so a stale orphan is not "success".
+                if (proc.HasExited)
+                {
+                    slot.LastExitCode = proc.ExitCode;
+                    slot.StoppedAtUtc = DateTimeOffset.UtcNow;
+                    slot.LastKnownPid = proc.Id;
+                    slot.Process = null;
+                    slot.LastMessage = reachable
+                        ? $"Exited during bind (code {proc.ExitCode}); {slot.WaitHost}:{port} still has another listener"
+                        : $"Exited during bind (code {proc.ExitCode})";
+                    Slots[slot.Id] = slot;
+                    try { proc.Dispose(); } catch { /* ignore */ }
+                    Persist();
+                    return Describe(slot) with { Ok = false };
+                }
+
                 slot.LastMessage = reachable
                     ? $"Started PID {proc.Id}; {slot.WaitHost}:{port} accepting"
                     : $"Started PID {proc.Id}; waiting for {slot.WaitHost}:{port} (not accepting yet)";
@@ -325,7 +342,22 @@ public static class TargetRuntimeService
         if (IsAlive(slot.Process) || slot.LastKnownPid is not null)
             Stop(id);
 
-        Thread.Sleep(300);
+        // Avoid WSAEADDRINUSE when the previous listener has not released the port yet.
+        if (req.WaitPort is int waitPort)
+        {
+            var host = string.IsNullOrWhiteSpace(req.WaitHost) ? "127.0.0.1" : req.WaitHost!;
+            var proto = string.IsNullOrWhiteSpace(req.WaitProtocol) ? "tcp" : req.WaitProtocol!;
+            if (!WaitUntilPortFree(host, waitPort, proto, TimeSpan.FromSeconds(5)))
+            {
+                return Fail(id,
+                    $"Restart blocked: {host}:{waitPort} still accepting (stop labs/orphan listeners on this port)");
+            }
+        }
+        else
+        {
+            Thread.Sleep(300);
+        }
+
         return Start(req);
     }
 
@@ -627,6 +659,20 @@ public static class TargetRuntimeService
         }
 
         return false;
+    }
+
+    /// <summary>True when nothing accepts on host:port (safe to bind a new listener).</summary>
+    private static bool WaitUntilPortFree(string host, int port, string protocol, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (!ProbePort(host, port, protocol))
+                return true;
+            Thread.Sleep(100);
+        }
+
+        return !ProbePort(host, port, protocol);
     }
 
     private static bool ProbePort(string host, int port, string protocol)

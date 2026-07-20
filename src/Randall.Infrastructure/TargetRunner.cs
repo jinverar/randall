@@ -173,6 +173,14 @@ public static class TargetRunner
         if (!server.HasExited)
             return new TargetRunResult(false, null, null, "ok", lastResponse);
 
+        // Bind/start failures (e.g. WSAEADDRINUSE 10048) are infrastructure — not fuzz findings.
+        if (IsInfrastructureExitCode(server.ExitCode))
+        {
+            return new TargetRunResult(
+                false, server.ExitCode, null,
+                $"server exited (bind/start failure code {server.ExitCode})", lastResponse);
+        }
+
         string? dumpPath = null;
         if (IsCrashExitCode(server.ExitCode) && yamlPath is not null)
         {
@@ -277,6 +285,12 @@ public static class TargetRunner
 
     public static bool IsCrashExitCode(int code) =>
         code is unchecked((int)0xC0000005) or unchecked((int)0xC0000409) or (< 0 and not -1);
+
+    /// <summary>Port-in-use / bind failures — not target faults under fuzz input.</summary>
+    public static bool IsInfrastructureExitCode(int code) =>
+        code is 10048 // WSAEADDRINUSE (Windows)
+            or 98     // EADDRINUSE (Linux)
+            or 48;    // EADDRINUSE (some BSD/macOS)
 
     private static string EscapeArg(string arg)
     {
