@@ -14,7 +14,7 @@ Randfuzz ("Randall") is a Windows-oriented fuzzer written entirely in C#/.NET 8 
 
 ### Environment: this VM is Linux, the product is Windows-focused
 - The build and the two entrypoints (CLI + ASP.NET Core server) are cross-platform and run fine on this Linux VM.
-- Windows-only features are expected to soft-skip or be unavailable here: minidumps, Page Heap/gflags, pktmon, ETW/WPR, and the PowerShell-built native `.exe` lab targets (e.g. `targets/vulnserver/randall-vulnserver.exe`). `dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml` reporting these as `[!]` missing is normal on Linux, not a setup failure.
+- Windows-only features are expected to soft-skip or be unavailable here: Page Heap/gflags, pktmon, ETW/WPR, WinDbg minidumps, and the PowerShell-built native `.exe` lab targets (e.g. `targets/vulnserver/randall-vulnserver.exe`). On Linux, fatal-signal crashes collect kernel cores into `data/crashes/<project>/dumps/*.core` when `ulimit -c unlimited` and a file `kernel.core_pattern` (e.g. `/tmp/core.%e.%p`) are set. `dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml` reporting Windows tools as `[!]` missing is normal on Linux, not a setup failure.
 - DynamoRIO coverage **is** supported on Linux when installed: `scripts/install-dynamorio.sh` → `tools/dynamorio/bin64/drrun`. Without it, stalking falls back to corpus-novelty (doctor `dynamorio` warn is OK).
 - The `scripts/*.ps1` installers/build scripts are Windows/PowerShell only; do not run them here. Use the `.sh` counterparts on Linux (`install-linux-tools.sh`, `install-dynamorio.sh`, `build-lab-targets.sh`).
 

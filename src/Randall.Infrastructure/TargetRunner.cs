@@ -91,7 +91,7 @@ public static class TargetRunner
 
         if (!exited)
         {
-            dumpPath = MiniDumpWriter.TryWriteDump(process, dumpsDir, $"hang_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
+            dumpPath = CrashDumpWriter.TryWrite(process, dumpsDir, $"hang_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
             process.Kill(entireProcessTree: true);
             try { File.Delete(tempFile); } catch { /* ignore */ }
             return new TargetRunResult(true, null, dumpPath, "hang/timeout");
@@ -103,8 +103,8 @@ public static class TargetRunner
         var crashed = IsCrashExitCode(code);
         if (crashed)
         {
-            dumpPath = MiniDumpWriter.TryWriteDump(
-                process, dumpsDir, $"file_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
+            dumpPath = CrashDumpWriter.TryWrite(
+                process, dumpsDir, $"file_{DateTime.UtcNow:yyyyMMdd_HHmmss}", allowExited: true);
         }
 
         return new TargetRunResult(crashed, code, dumpPath, crashed ? "abnormal exit" : "ok");
@@ -199,15 +199,39 @@ public static class TargetRunner
         }
 
         string? dumpPath = null;
-        if (IsCrashExitCode(server.ExitCode) && yamlPath is not null)
+        if (yamlPath is not null)
         {
             var dumpsDir = Path.Combine(
                 ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir), "dumps");
-            dumpPath = MiniDumpWriter.TryWriteDump(
-                server, dumpsDir, $"tcp_{server.Id}_{DateTime.UtcNow:yyyyMMdd_HHmmssfff}", allowExited: true);
+            // Always attempt platform dump on TCP server death — Linux cores need the pid even
+            // when the exit code is a plain non-zero (native SIGSEGV is typically 128+sig).
+            dumpPath = CrashDumpWriter.TryWrite(
+                server, dumpsDir, $"tcp_{server.Id}_{DateTime.UtcNow:yyyyMMdd_HHmmssfff}",
+                allowExited: true);
         }
 
-        return new TargetRunResult(true, server.ExitCode, dumpPath, "server exited", lastResponse);
+        var detail = DescribeServerExit(server.ExitCode);
+        return new TargetRunResult(true, server.ExitCode, dumpPath, detail, lastResponse);
+    }
+
+    private static string DescribeServerExit(int exitCode)
+    {
+        if (exitCode is >= 129 and <= 159)
+        {
+            var sig = exitCode - 128;
+            var name = sig switch
+            {
+                4 => "SIGILL",
+                6 => "SIGABRT",
+                7 => "SIGBUS",
+                8 => "SIGFPE",
+                11 => "SIGSEGV",
+                _ => $"signal {sig}",
+            };
+            return $"server exited ({name} / {exitCode})";
+        }
+
+        return exitCode == 0 ? "server exited" : $"server exited (code {exitCode})";
     }
 
     public static Task<TargetRunResult> FinishTcpRunFromGraph(

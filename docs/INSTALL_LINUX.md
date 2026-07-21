@@ -127,10 +127,22 @@ For the sharpest signal, build the target under AddressSanitizer:
 `clang -g -fsanitize=address,undefined target.c -o target` — ASan reports (UAF, heap/stack overflow,
 double-free) are classified too.
 
+## Crash cores (Linux Scream counterpart)
+
+When a native target dies with a fatal signal (e.g. SIGSEGV → exit 139), Randfuzz copies the kernel
+core into `data/crashes/<project>/dumps/*.core` (plus a `.linux.json` sidecar). Enable local cores:
+
+```bash
+ulimit -c unlimited
+sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
+```
+
+Then triage with gdb/GEF or `randall heaptriage --exe <p> --core <core>`.
+
 ## What is Windows-only
 
 These features only execute on Windows (the doctor hides them under the Linux platform): minidumps
 via the Scream watcher, Page Heap/gflags, pktmon, ETW/WPR, Procmon, WinDbg/cdb, and the Sysinternals
-snapshots. On Linux the counterparts above (gdb/GEF, strace, tcpdump, perf, valgrind, ASan) fill the
-same roles. **DynamoRIO coverage** is available on both OSes when installed (`install-dynamorio.sh`
-on Linux, `install-dynamorio.ps1` on Windows).
+snapshots. On Linux the counterparts above (gdb/GEF, core capture, strace, tcpdump, perf, valgrind,
+ASan) fill the same roles. **DynamoRIO coverage** is available on both OSes when installed
+(`install-dynamorio.sh` on Linux, `install-dynamorio.ps1` on Windows).
