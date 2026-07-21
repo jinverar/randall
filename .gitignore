@@ -46,6 +46,7 @@ targets/screamcrash/*
 targets/vulnlab/vulnlab-*
 targets/forksrv-demo/forksrv_demo
 targets/forksrv-demo/randall_forksrv_helper
+targets/aflpp-harness/crashy_parse
 targets/local/
 *.db
 *.dmp

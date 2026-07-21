@@ -213,6 +213,11 @@ static async Task<int> RunFuzzAsync(string[] args)
         maxIterations = int.MaxValue;
 
     Console.WriteLine($"Fuzzing: {project.Name} ({project.Kind}) — {project.Description}");
+    var engineId = ExternalEngineCampaign.Normalize(project.Fuzz.Engine);
+    if (ExternalEngineCampaign.IsExternal(engineId))
+        Console.WriteLine($"Engine: {engineId} (external campaign — docs/ENGINE_ADAPTERS.md)");
+    else
+        Console.WriteLine("Engine: randall (own generation + stalk)");
     if (dryRun)
         Console.WriteLine("[dry-run mode]");
     if (coverage || project.Fuzz.CoverageGuided)

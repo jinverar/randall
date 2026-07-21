@@ -29,6 +29,10 @@ public static class DoctorCheckPlatform
         if (id.StartsWith("debugger:", StringComparison.OrdinalIgnoreCase))
             return PlatformScope.Windows;
 
+        // External engine selection is Linux-only when set to aflpp/honggfuzz; still show on all hosts.
+        if (id.Equals("fuzz.engine", StringComparison.OrdinalIgnoreCase))
+            return PlatformScope.Cross;
+
         return WindowsIds.Contains(id) ? PlatformScope.Windows : PlatformScope.Cross;
     }
 }

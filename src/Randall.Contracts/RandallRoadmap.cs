@@ -68,6 +68,7 @@ public static class RandallRoadmap
             new("p8-power", "Corpus energy power schedule", true, null),
             new("p8-flows", "Stateful TCP session flows", true, null),
             new("p8-clusters", "Crash clustering for triage", true, "/api/crashes/clusters"),
+            new("p8-aflpp", "AFL++ / honggfuzz campaign adapters", true, "docs/ENGINE_ADAPTERS.md"),
         ]),
         new(9, "Lab readiness", "complete",
         [

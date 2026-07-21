@@ -44,7 +44,8 @@ scripts/install-linux-tools.sh --engines  # also install AFL++ (optional externa
 | **DynamoRIO** (`drrun` + `drcov`) | **optional** coverage-guided stalking (`edges` / `novel`) | same (Windows zip) |
 
 > **Own engine by default.** AFL++/honggfuzz are optional adapters, never required — Randfuzz's own
-> generation + stalk engine drives fuzzing unless you explicitly opt into an adapter per project.
+> generation + stalk engine drives fuzzing unless you set `fuzz.engine: aflpp` or `honggfuzz` on a
+> file/harness project. See [ENGINE_ADAPTERS.md](ENGINE_ADAPTERS.md).
 
 ### Optional — DynamoRIO (edge coverage on Linux)
 

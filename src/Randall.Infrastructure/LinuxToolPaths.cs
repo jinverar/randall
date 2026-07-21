@@ -13,16 +13,17 @@ public static class LinuxToolPaths
 
     /// <summary>
     /// Optional coverage-guided engine adapters. Like DynamoRIO, these are detected and offered but
-    /// never required — Randfuzz's own engine remains the default. Enable per project on Linux to
-    /// borrow their speed / comparison-solving (CMPLOG); crashes + corpora interop back into Randfuzz.
+    /// never required — Randfuzz's own engine remains the default. Set <c>fuzz.engine: aflpp</c> or
+    /// <c>honggfuzz</c> on a Linux file/harness project to run a real campaign
+    /// (<see cref="ExternalEngineCampaign"/>); crashes + queue corpora sync back into Randfuzz.
     /// </summary>
     public static readonly IReadOnlyList<LinuxTool> OptionalEngines =
     [
         new("linux:afl", "afl-fuzz",
-            "OPTIONAL external adapter — AFL++ coverage-guided engine (fork-server + CMPLOG); not required",
+            "OPTIONAL — AFL++ campaign via fuzz.engine: aflpp (fork-server + CMPLOG); not required",
             "apt install afl++  (or build AFLplusplus)", "AFL_PATH"),
         new("linux:honggfuzz", "honggfuzz",
-            "OPTIONAL external adapter — honggfuzz coverage-guided engine; not required",
+            "OPTIONAL — honggfuzz campaign via fuzz.engine: honggfuzz; not required",
             "apt install honggfuzz  (or build from source)", "HONGGFUZZ_PATH"),
     ];
 

@@ -137,6 +137,22 @@ public sealed class TransportConfig
 public sealed class FuzzConfig
 {
     /// <summary>
+    /// Fuzz engine: <c>randall</c> (default generation + stalk), <c>aflpp</c> (AFL++ campaign),
+    /// or <c>honggfuzz</c>. External engines are Linux file/harness campaigns — crashes and
+    /// queue corpora sync back into Randfuzz. See docs/ENGINE_ADAPTERS.md.
+    /// </summary>
+    public string Engine { get; set; } = "randall";
+    /// <summary>
+    /// Wall-clock seconds for an external engine campaign (<c>afl-fuzz -V</c> / honggfuzz runtime).
+    /// 0 = run until cancelled (Ctrl-C / session stop). Ignored when <see cref="Engine"/> is randall.
+    /// </summary>
+    public int EngineTimeoutSec { get; set; }
+    /// <summary>
+    /// Extra args inserted before <c>--</c> for AFL++ (e.g. <c>-Q</c> QEMU, <c>-c 0</c> CMPLOG).
+    /// Space-separated. Ignored by the Randall engine.
+    /// </summary>
+    public string EngineExtraArgs { get; set; } = "";
+    /// <summary>
     /// out-of-process (default) — spawn/file/TCP Target Runtime.
     /// in-process — feed bytes into a harness DLL (managed in-engine or native worker).
     /// </summary>

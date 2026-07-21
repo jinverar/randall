@@ -1,0 +1,20 @@
+name: aflpp-harness
+description: AFL++ campaign smoke — file harness (crash on '!'). Not a product target; proves fuzz.engine aflpp + crash sync.
+kind: file
+target:
+  executable: ../targets/aflpp-harness/crashy_parse
+  args:
+    - "@@"
+  timeoutMs: 1000
+transport:
+  type: file
+  extension: .bin
+fuzz:
+  engine: aflpp
+  engineTimeoutSec: 20
+  maxIterations: 400
+  corpusDir: ../data/corpus/aflpp-harness
+  crashesDir: ../data/crashes/aflpp-harness
+seeds:
+  - seeds/aflpp_ok.txt
+mutators: []

@@ -23,6 +23,9 @@ public sealed class FuzzEngine
         FuzzRunOptions options,
         CancellationToken cancellationToken = default)
     {
+        if (ExternalEngineCampaign.IsExternal(project.Fuzz.Engine))
+            return await ExternalEngineCampaign.RunAsync(project, yamlPath, options, cancellationToken);
+
         var dryRun = options.DryRun;
         var coverageGuided = options.CoverageGuided || project.Fuzz.CoverageGuided;
         var maxIterations = options.MaxIterations ?? project.Fuzz.MaxIterations;
