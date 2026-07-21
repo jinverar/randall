@@ -30,6 +30,7 @@ return args[0].ToLowerInvariant() switch
     "checksec" => RunCheckSec(args.Skip(1).ToArray()),
     "pattern" => RunPattern(args.Skip(1).ToArray()),
     "exploitdev" or "expdev" => RunExploitDev(args.Skip(1).ToArray()),
+    "exploit" => RunExploit(args.Skip(1).ToArray()),
     "memory" or "lens" => RunMemoryLens(args.Skip(1).ToArray()),
     "stalk" => RunStalk(args.Skip(1).ToArray()),
     "debug" => RunDebug(args.Skip(1).ToArray()),
@@ -70,6 +71,10 @@ static void PrintHelp()
           randall pattern create -l N       Cyclic (mona-style) pattern for offset discovery
           randall pattern offset -q <val> [-l N]   Find offset of a value/register in the pattern
           randall exploitdev --exe <p> --core <c> [--pattern-len N]   Faulting registers + RIP offset
+          randall exploit guide --exe <p> [--core c] [--pattern-len N] [--host H --port P]
+                                            Exploit-guided dev: crash -> tailored next-step playbook
+          randall exploit template --exe <p> [--host H --port P] [--offset N] [-o exploit.py]
+                                            Generate a pwntools exploit skeleton
           randall memory -i <crash-guid>    Memory lens (UAF fill, regions, neighborhood)
           randall memory --pid N            Live VirtualQueryEx sample
           randall stalk layers -p <project>              List stalk layers
@@ -662,6 +667,90 @@ static int RunPattern(string[] args)
     return 1;
 }
 
+static int RunExploit(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall exploit guide --exe <path> [--core <core>] [--pattern-len N] [--host H] [--port P]
+              randall exploit template --exe <path> [--host H] [--port P] [--offset N] [-o exploit.py]
+            """);
+        return 0;
+    }
+    var sub = args[0].ToLowerInvariant();
+    var rest = args.Skip(1).ToArray();
+    return sub switch
+    {
+        "guide" => RunExploitGuide(rest),
+        "template" => RunExploitTemplate(rest),
+        _ => Unknown($"exploit {args[0]}"),
+    };
+}
+
+static int RunExploitGuide(string[] args)
+{
+    string? exe = null, core = null, host = "127.0.0.1", project = null;
+    int? patternLen = null; int port = 9999;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--exe" && i + 1 < args.Length) exe = args[++i];
+        else if (args[i] is "--core" && i + 1 < args.Length) core = args[++i];
+        else if (args[i] is "--pattern-len" && i + 1 < args.Length && int.TryParse(args[++i], out var n)) patternLen = n;
+        else if (args[i] is "--host" && i + 1 < args.Length) host = args[++i];
+        else if (args[i] is "--port" && i + 1 < args.Length && int.TryParse(args[++i], out var p)) port = p;
+        else if (args[i] is "--project" && i + 1 < args.Length) project = args[++i];
+    }
+    if (exe is null) { Console.Error.WriteLine("Usage: randall exploit guide --exe <path> [--core c] [--pattern-len N] [--host H] [--port P]"); return 1; }
+    exe = ExecutableResolver.FindExisting(Path.GetFullPath(exe)) ?? Path.GetFullPath(exe);
+    if (!File.Exists(exe)) { Console.Error.WriteLine($"exe not found: {exe}"); return 1; }
+    core = core is null ? null : Path.GetFullPath(core);
+
+    var plan = ExploitGuide.Build(exe, core, patternLen, project, host!, port);
+    Console.WriteLine($"╔═ Exploit-guided development: {plan.Target} ═╗");
+    Console.WriteLine($"  difficulty: {plan.Difficulty}");
+    Console.WriteLine("  findings:");
+    foreach (var f in plan.Findings) Console.WriteLine($"    • {f}");
+    Console.WriteLine();
+    foreach (var s in plan.Steps)
+    {
+        Console.WriteLine($"  [{s.Number}] {s.Title}");
+        Console.WriteLine($"       why: {s.Why}");
+        foreach (var c in s.Commands) Console.WriteLine($"       $ {c}");
+        Console.WriteLine();
+    }
+    return 0;
+}
+
+static int RunExploitTemplate(string[] args)
+{
+    string? exe = null, host = "127.0.0.1", outPath = null;
+    int port = 9999; int? offset = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--exe" && i + 1 < args.Length) exe = args[++i];
+        else if (args[i] is "--host" && i + 1 < args.Length) host = args[++i];
+        else if (args[i] is "--port" && i + 1 < args.Length && int.TryParse(args[++i], out var p)) port = p;
+        else if (args[i] is "--offset" && i + 1 < args.Length && int.TryParse(args[++i], out var o)) offset = o;
+        else if (args[i] is "-o" or "--out" && i + 1 < args.Length) outPath = args[++i];
+    }
+    if (exe is null) { Console.Error.WriteLine("Usage: randall exploit template --exe <path> [--host H] [--port P] [--offset N] [-o exploit.py]"); return 1; }
+    var resolved = ExecutableResolver.FindExisting(Path.GetFullPath(exe)) ?? Path.GetFullPath(exe);
+    var mit = MitigationInspector.Inspect(resolved);
+    var script = PwntoolsExporter.Generate(resolved, host!, port, offset, nxOff: !mit.Nx, pieOff: !mit.Pie);
+    if (outPath is not null)
+    {
+        File.WriteAllText(outPath, script);
+        Console.WriteLine($"Wrote pwntools skeleton → {outPath}");
+        Console.WriteLine("Edit the TODOs, then: python3 " + outPath);
+    }
+    else
+    {
+        Console.WriteLine(script);
+    }
+    return 0;
+}
+
 static int RunExploitDev(string[] args)
 {
     string? exe = null, core = null;
@@ -711,8 +800,20 @@ static int RunExploitDev(string[] args)
                 Console.WriteLine($"  {reg.ToUpperInvariant()} controlled at offset {off}  ({val})");
             }
         }
+        // x86-64: a ret to a bad address faults at the ret, so the saved return address is on the
+        // stack — scan it to recover the control offset (findmsp).
+        foreach (var w in ExploitDevTools.CoreStackWords(exe, core))
+        {
+            var off = PatternTools.Offset(w, patternLen.Value);
+            if (off >= 0)
+            {
+                any = true;
+                Console.WriteLine($"  saved return address (stack) controlled at offset {off}  ({w})");
+                break;
+            }
+        }
         if (!any)
-            Console.WriteLine($"  No register held cyclic-pattern bytes at len {patternLen} " +
+            Console.WriteLine($"  No register/stack slot held cyclic-pattern bytes at len {patternLen} " +
                 "(canary/PIE tier, partial overwrite, or wrong --pattern-len).");
         else
             Console.WriteLine("  → pad to the offset, then place your value in that register's slot.");

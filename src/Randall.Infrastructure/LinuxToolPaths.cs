@@ -120,6 +120,41 @@ public static class LinuxToolPaths
     private static string Combine(string home, string relative) =>
         string.IsNullOrEmpty(home) ? relative : Path.Combine(home, relative);
 
+    /// <summary>
+    /// Detects the pwntools Python library (the exploit-dev workhorse for building/sending payloads).
+    /// Returns the python interpreter that can <c>import pwn</c>, or null. Best-effort with a short
+    /// timeout so it's safe to call from the doctor.
+    /// </summary>
+    public static string? FindPwntools()
+    {
+        foreach (var py in new[] { "python3", "python" })
+        {
+            var exe = FindOnPath(py);
+            if (exe is null) continue;
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = exe,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                psi.ArgumentList.Add("-c");
+                psi.ArgumentList.Add("import pwn,pwnlib,sys;sys.stdout.write(getattr(pwnlib,'__version__',''))");
+                using var p = System.Diagnostics.Process.Start(psi);
+                if (p is null) continue;
+                var ver = p.StandardOutput.ReadToEnd();
+                p.StandardError.ReadToEnd();
+                if (p.WaitForExit(6000) && p.ExitCode == 0)
+                    return $"{exe} (pwntools {ver.Trim()})";
+            }
+            catch { /* try next */ }
+        }
+        return null;
+    }
+
     /// <summary>Resolves a catalog tool to a concrete path, or null when not installed.</summary>
     public static string? Find(LinuxTool tool)
     {

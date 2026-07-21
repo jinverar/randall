@@ -27,12 +27,14 @@ mkdir -p "$OUT"
 # Common: keep the vulnerable strcpy/printf patterns compilable (warnings, not errors).
 COMMON="-w"
 
-echo "==> basic   (no canary, execstack/NX off, no PIE)"
-$CC $COMMON -O0 -fno-stack-protector -z execstack -no-pie -D_FORTIFY_SOURCE=0 \
+# -fomit-frame-pointer on the basic/nx tiers gives a textbook saved-RIP overwrite (the epilogue is
+# `ret`, not `leave;ret`), so a cyclic overflow controls RIP directly — the clean teaching case.
+echo "==> basic   (no canary, execstack/NX off, no PIE, direct RIP control)"
+$CC $COMMON -O0 -fno-stack-protector -fomit-frame-pointer -z execstack -no-pie -D_FORTIFY_SOURCE=0 \
     "$SRC" -o "$OUT/vulnlab-basic"
 
-echo "==> nx      (NX/DEP on, no canary, no PIE)"
-$CC $COMMON -O0 -fno-stack-protector -no-pie -D_FORTIFY_SOURCE=0 \
+echo "==> nx      (NX/DEP on, no canary, no PIE, direct RIP control)"
+$CC $COMMON -O0 -fno-stack-protector -fomit-frame-pointer -no-pie -D_FORTIFY_SOURCE=0 \
     "$SRC" -o "$OUT/vulnlab-nx"
 
 echo "==> aslr    (NX on + PIE/ASLR, no canary)"

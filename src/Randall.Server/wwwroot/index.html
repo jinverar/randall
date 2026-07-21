@@ -15,7 +15,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=platform-selector-3" />
+  <link rel="stylesheet" href="/css/app.css?v=platform-selector-4" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -449,6 +449,11 @@
               Mitigation ladder + <code>checksec</code> + ASLR/DEP toggles:
               <button type="button" class="linkish" data-help="MITIGATION_LAB.md">Help → Mitigation Lab</button>
               (basic overflow → NX → ASLR → modern hardened).
+            </p>
+            <p class="hint">
+              Crash → guided exploit playbook (offset → strategy → pwntools):
+              <button type="button" class="linkish" data-help="EXPLOIT_GUIDE.md">Help → Exploit Guide</button>
+              — <code>randall exploit guide</code> uses gdb/GEF + pwntools.
             </p>
           </details>
           <div class="btn-row">
@@ -1233,6 +1238,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=platform-selector-3"></script>
+  <script type="module" src="/js/app.js?v=platform-selector-4"></script>
 </body>
 </html>

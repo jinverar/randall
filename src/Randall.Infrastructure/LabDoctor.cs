@@ -307,6 +307,13 @@ public static class LabDoctor
                 ? $"{gdbEnhancement.Kind} active → {gdbEnhancement.Path} (enhanced gdb crash triage)"
                 : "no gdb enhancement — install GEF (recommended): bash -c \"$(curl -fsSL https://gef.blah.cat/sh)\" (or pwndbg / peda)");
 
+        // pwntools — exploit-dev library for building/sending payloads and the guided workflow.
+        var pwntools = LinuxToolPaths.FindPwntools();
+        Add("linux:pwntools", pwntools is not null ? "ok" : "warn",
+            pwntools is not null
+                ? $"{pwntools} — payload crafting + randall exploit template"
+                : "pwntools not found — pip install --user pwntools (exploit scripting)");
+
         // Heap-corruption detection readiness (tcache poisoning / double-free / UAF / overflow).
         // glibc's built-in tcache hardening is always available on Linux; ASan (clang) + GEF add depth.
         var asanReady = LinuxToolPaths.Find(LinuxToolPaths.Catalog.First(t => t.Id == "linux:clang")) is not null;
