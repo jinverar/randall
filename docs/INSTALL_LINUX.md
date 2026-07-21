@@ -73,6 +73,10 @@ extensionless apphost on Linux, and Randfuzz resolves either automatically.
 ```bash
 scripts/build-lab-targets.sh              # all .NET lab targets
 scripts/build-lab-targets.sh vulnserver   # just one
+scripts/build-mitigation-lab.sh           # native vulnlab tiers (SIGSEGV practice)
+# AFL FORKSRV demo (target + native helper):
+gcc -O0 -g -o targets/forksrv-demo/forksrv_demo targets/forksrv-demo/forksrv_demo.c
+gcc -O2 -o targets/forksrv-demo/randall_forksrv_helper targets/forksrv-demo/randall_forksrv_helper.c
 ```
 
 ## 5. Preflight + fuzz

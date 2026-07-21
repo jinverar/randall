@@ -5,13 +5,12 @@ using Randall.Contracts;
 namespace Randall.Infrastructure;
 
 /// <summary>
-/// Warm / persistent out-of-process target — one long-lived process fed many
-/// length-prefixed stdin cases (Randall persistent stdio protocol).
-/// <para>
-/// <c>forkServer: true</c> on Windows uses the same warm worker (no Unix
-/// <c>fork</c>). Classic AFL <c>FORKSRV_FD</c> handshake is Linux-oriented and
-/// reserved for a future native shim; see docs/PERSISTENT.md.
-/// </para>
+/// Warm / persistent out-of-process target.
+/// <list type="bullet">
+/// <item>Linux + <c>forkServer: true</c>: try AFL classic <c>FORKSRV_FD</c> (198/199) via
+/// <see cref="AflForkServer"/>; fall back to warm stdio if the target does not handshake.</item>
+/// <item>Otherwise: Randall length-prefixed stdin protocol (see docs/PERSISTENT.md).</item>
+/// </list>
 /// </summary>
 public sealed class PersistentTargetServer : IAsyncDisposable
 {
@@ -19,6 +18,7 @@ public sealed class PersistentTargetServer : IAsyncDisposable
     private readonly string _yamlPath;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private Process? _proc;
+    private AflForkServer? _afl;
     private string _mode = "stdio-persistent";
 
     public string Mode => _mode;
@@ -34,7 +34,6 @@ public sealed class PersistentTargetServer : IAsyncDisposable
     {
         if (InProcessSession.IsInProcess(project))
             return false;
-        // Out-of-process: opt-in only (null/false = cold spawn per case via normal runners).
         var persistent = project.Fuzz.Persistent ?? false;
         var forkServer = project.Fuzz.ForkServer ?? false;
         if (!persistent && !forkServer)
@@ -47,10 +46,21 @@ public sealed class PersistentTargetServer : IAsyncDisposable
     {
         var server = new PersistentTargetServer(project, yamlPath);
         var forkServer = project.Fuzz.ForkServer ?? project.Fuzz.Persistent ?? false;
+
+        if (forkServer && OperatingSystem.IsLinux())
+        {
+            server._afl = AflForkServer.TryStart(project, yamlPath);
+            if (server._afl is not null)
+            {
+                server._mode = server._afl.Mode;
+                return server;
+            }
+        }
+
         server._mode = forkServer
             ? (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
                 ? "warm-stdio (forkServer/Windows)"
-                : "warm-stdio (forkServer)")
+                : "warm-stdio (forkServer; no FORKSRV handshake)")
             : "stdio-persistent";
         server.EnsureWorker();
         return server;
@@ -61,6 +71,13 @@ public sealed class PersistentTargetServer : IAsyncDisposable
         await _gate.WaitAsync(ct);
         try
         {
+            if (_afl is not null)
+            {
+                var aflResult = await _afl.RunAsync(payload, ct);
+                IterationsOnWorker = _afl.IterationsOnWorker;
+                return aflResult;
+            }
+
             EnsureWorker();
             var result = await SendStdioAsync(payload, ct);
             IterationsOnWorker++;
@@ -93,16 +110,17 @@ public sealed class PersistentTargetServer : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(exe))
             throw new InvalidOperationException("Persistent/fork-server mode needs target.executable");
 
-        exe = ProjectLoader.ResolvePath(_yamlPath, exe);
-        if (!File.Exists(exe))
-            throw new FileNotFoundException("Persistent target not found", exe);
+        var declared = ProjectLoader.ResolvePath(_yamlPath, exe);
+        exe = ExecutableResolver.FindExisting(declared)
+              ?? throw new FileNotFoundException("Persistent target not found", declared);
 
         var workDir = string.IsNullOrWhiteSpace(_project.Target.WorkingDirectory)
             ? Path.GetDirectoryName(exe) ?? ProjectLoader.ResolveProjectRoot(_yamlPath)
             : ProjectLoader.ResolvePath(_yamlPath, _project.Target.WorkingDirectory);
 
         var args = _project.Target.Args
-            .Where(a => !a.Contains("{file}", StringComparison.OrdinalIgnoreCase))
+            .Where(a => !a.Contains("{file}", StringComparison.OrdinalIgnoreCase)
+                        && !a.Contains("@@", StringComparison.Ordinal))
             .ToList();
 
         var psi = new ProcessStartInfo
@@ -181,11 +199,16 @@ public sealed class PersistentTargetServer : IAsyncDisposable
         catch { /* ignore */ }
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         KillWorker();
+        if (_afl is not null)
+        {
+            await _afl.DisposeAsync();
+            _afl = null;
+        }
+
         _gate.Dispose();
-        return ValueTask.CompletedTask;
     }
 
     private static string EscapeArg(string a) =>

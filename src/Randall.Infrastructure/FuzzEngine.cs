@@ -241,6 +241,10 @@ public sealed class FuzzEngine
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && (project.Fuzz.ForkServer ?? false))
                 FuzzAnalystLog.Info(progress,
                     "forkServer on Windows = warm stdio process (AFL FORKSRV_FD is Linux-only)");
+            else if (OperatingSystem.IsLinux() && (project.Fuzz.ForkServer ?? false)
+                     && persistentServer.Mode.Contains("forksrv", StringComparison.OrdinalIgnoreCase))
+                FuzzAnalystLog.Info(progress,
+                    "forkServer on Linux = AFL classic FORKSRV_FD (198/199)");
         }
         else if (!useCoverageTcp && project.Target.LongLived &&
             (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) ||

@@ -71,9 +71,29 @@ Without these flags, Randfuzz uses normal per-case spawn (non-persistent OOP).
 | Platform | `forkServer` behavior |
 |----------|------------------------|
 | **Windows** | Warm persistent process (no `fork`). Same idea as winAFL persistent mode, not AFL `FORKSRV_FD`. |
-| **Linux** | Same warm stdio worker today. Classic AFL `FORKSRV_FD` (198/199) needs a native shim — planned. |
+| **Linux** | Prefer classic AFL `FORKSRV_FD` (198/199) when the target handshakes; otherwise warm stdio. |
 
-For network services (`kind: tcp` + `longLived`), Target Runtime already keeps the server warm. Use `persistent`/`forkServer` for **harness / stdio** targets.
+### Linux AFL FORKSRV_FD
+
+When `forkServer: true` on Linux, Randfuzz tries an AFL classic forkserver via the native
+helper `randall_forksrv_helper` (CLR never forks). The target must:
+
+1. Write a 4-byte hello to fd **199**
+2. Loop: read 4 bytes from fd **198**, `fork()`, write child pid to **199**, `waitpid`, write status to **199**
+3. Child consumes `{file}` / `@@` input (helper rewrites the file each case)
+
+Demo:
+
+```bash
+gcc -O0 -g -o targets/forksrv-demo/forksrv_demo targets/forksrv-demo/forksrv_demo.c
+gcc -O2 -o targets/forksrv-demo/randall_forksrv_helper targets/forksrv-demo/randall_forksrv_helper.c
+dotnet run --project src/Randall.Cli -- fuzz -c projects/forksrv-demo.yaml
+# Expect mode afl-forksrv and crashes when mutators insert '!'
+```
+
+Targets that do not speak FORKSRV (or missing helper) fall back to warm stdio automatically.
+
+For network services (`kind: tcp` + `longLived`), Target Runtime already keeps the server warm. Use `persistent`/`forkServer` for **harness / stdio / file** targets.
 
 ---
 

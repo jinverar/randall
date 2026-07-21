@@ -1,0 +1,24 @@
+name: forksrv-demo
+description: Linux AFL classic FORKSRV_FD demo — file target that crashes on '!'
+kind: file
+target:
+  executable: ../targets/forksrv-demo/forksrv_demo
+  args:
+    - "{file}"
+  timeoutMs: 2000
+transport:
+  type: file
+  extension: .bin
+fuzz:
+  maxIterations: 200
+  persistent: true
+  forkServer: true
+  corpusDir: ../data/corpus/forksrv-demo
+  crashesDir: ../data/crashes/forksrv-demo
+seeds:
+  - seeds/forksrv_ok.txt
+mutators:
+  - bitflip
+  - havoc
+  - insert
+  - interesting

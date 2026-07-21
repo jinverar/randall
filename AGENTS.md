@@ -24,6 +24,9 @@ Randfuzz ("Randall") is a Windows-oriented fuzzer written entirely in C#/.NET 8 
 - CLI: `dotnet run --project src/Randall.Cli -- <command>` (e.g. `targets`, `doctor -c projects/vulnserver.yaml`, `fuzz -c projects/<profile>.yaml`).
 - There is no automated test suite (no xunit/nunit/MSTest projects). "Testing" here means building + running the CLI/server and exercising a fuzz run.
 
+### Linux AFL FORKSRV_FD
+- With `fuzz.forkServer: true` on Linux, Randfuzz tries classic AFL `FORKSRV_FD` (198/199) via the native helper `targets/forksrv-demo/randall_forksrv_helper` (build with `gcc`). Demo: `projects/forksrv-demo.yaml` (crashes when input contains `!`). Targets that do not handshake fall back to warm stdio.
+
 ### Fuzzing on Linux (cross-platform)
 - The stock `projects/*.yaml` reference Windows `.exe` paths, but the same .NET lab targets build to an extensionless apphost on Linux and `ExecutableResolver` resolves either. Build them with `scripts/build-lab-targets.sh [name]` (publishes to `targets/<name>/randall-<name>`), then `doctor`/`fuzz` the stock profile works on Linux (verified: vulnserver fuzz finds crashes over TCP).
 - The fully cross-platform, no-external-target path is the in-process managed harness: `dotnet build targets/Randall.HarnessDemo` then `dotnet run --project src/Randall.Cli -- fuzz -c projects/harness-demo.yaml` (reliably finds crashes, artifacts in `data/crashes/harness-demo/`).
