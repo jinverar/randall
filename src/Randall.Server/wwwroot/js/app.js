@@ -2353,6 +2353,7 @@ function selectNextUnique() {
 function paintCrashInvestigate() {
   applyCrashFilters();
   renderActiveCrashFilters();
+  renderScreamCanisters();
   renderCrashTimeline();
   renderCrashClassBars();
   renderCrashClusterChips();
@@ -2378,6 +2379,101 @@ function paintCrashInvestigate() {
       box.innerHTML = '<p class="empty">Brush the timeline or pick an event to investigate.</p>';
     }
   }
+}
+
+function canisterFillPct(count, capacity) {
+  if (!count) return 0;
+  const ratio = Math.min(1, Math.sqrt(count / Math.max(1, capacity)));
+  return Math.max(6, Math.round(ratio * 100));
+}
+
+function canisterArtForFill(pct) {
+  if (pct <= 0) return '/img/canisters/canister-empty.jpg';
+  if (pct < 34) return '/img/canisters/canister-low.jpg';
+  if (pct < 67) return '/img/canisters/canister-mid.jpg';
+  return '/img/canisters/canister-full.jpg';
+}
+
+function pressureLabel(pct) {
+  if (pct <= 0) return 'PRESSURE IDLE';
+  if (pct < 25) return 'PRESSURE LOW';
+  if (pct < 55) return 'PRESSURE BUILDING';
+  if (pct < 85) return 'PRESSURE HIGH';
+  return 'PRESSURE CRITICAL';
+}
+
+function renderScreamCanisters() {
+  const rack = document.getElementById('scream-canister-rack');
+  const status = document.getElementById('scream-harvest-status');
+  const pressure = document.getElementById('scream-harvest-pressure');
+  if (!rack) return;
+
+  const all = crashState.all || [];
+  const uniqueKeys = new Set();
+  for (const c of all) {
+    uniqueKeys.add(crashClusterKey(c) || c.id);
+  }
+  const unique = uniqueKeys.size;
+  const bySev = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const c of all) {
+    const s = crashSev(c);
+    if (bySev[s] != null) bySev[s] += 1;
+    else bySev.low += 1;
+  }
+
+  const harvestPct = canisterFillPct(unique, 40);
+  const slots = [
+    { id: 'harvest', label: 'Harvest', count: unique, capacity: 40, sevFilter: '', cls: 'harvest', title: 'Unique bottled screams (clusters)' },
+    { id: 'critical', label: 'Critical', count: bySev.critical, capacity: 12, sevFilter: 'critical', cls: 'critical', title: 'Critical severity canisters' },
+    { id: 'high', label: 'High', count: bySev.high, capacity: 20, sevFilter: 'high', cls: 'high', title: 'High severity canisters' },
+    { id: 'medium', label: 'Medium', count: bySev.medium, capacity: 30, sevFilter: 'medium', cls: 'medium', title: 'Medium severity canisters' },
+    { id: 'low', label: 'Low', count: bySev.low, capacity: 40, sevFilter: 'low', cls: 'low', title: 'Low severity canisters' },
+  ];
+
+  if (status) {
+    status.textContent = all.length
+      ? `${all.length} scream${all.length === 1 ? '' : 's'} captured · ${unique} unique canister${unique === 1 ? '' : 's'} on the rack`
+      : 'No screams bottled yet — scare a target from the Fuzz tab.';
+  }
+  if (pressure) {
+    pressure.textContent = pressureLabel(harvestPct);
+    pressure.classList.toggle('critical', harvestPct >= 85);
+  }
+
+  const activeSev = document.getElementById('crash-sev-filter')?.value || '';
+  rack.innerHTML = slots.map((s) => {
+    const pct = canisterFillPct(s.count, s.capacity);
+    const art = canisterArtForFill(pct);
+    const active = s.sevFilter && activeSev === s.sevFilter ? 'active' : '';
+    const filling = pct > 0 ? 'filling' : '';
+    return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling}" role="listitem"
+      data-sev="${s.sevFilter}" data-fill="${pct}" title="${s.title}"
+      style="--fill: ${pct}%">
+      <div class="scream-canister-vessel">
+        <img class="scream-canister-art" src="${art}" alt="" width="186" height="280" loading="lazy" />
+        <div class="scream-canister-liquid" aria-hidden="true"></div>
+      </div>
+      <div class="scream-canister-meta">
+        <span class="scream-canister-label">${s.label}</span>
+        <span class="scream-canister-count">${s.count}</span>
+      </div>
+      <span class="scream-canister-pct">${pct}% full</span>
+    </button>`;
+  }).join('');
+
+  rack.querySelectorAll('.scream-canister').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const sev = btn.dataset.sev || '';
+      const sel = document.getElementById('crash-sev-filter');
+      if (!sel) return;
+      if (!sev) {
+        sel.value = '';
+      } else {
+        sel.value = sel.value === sev ? '' : sev;
+      }
+      paintCrashInvestigate();
+    });
+  });
 }
 
 async function loadCrashes(project = '') {

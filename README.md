@@ -19,7 +19,7 @@ I don't just throw bytes at parsers and hope. I **camouflage** valid-looking tra
 | 🦎 **Camouflage** — blend in | Valid shells, plausible protocols, MITM that looks like normal traffic |
 | 🐛 **Competitive** — always hunting the edge | Coverage-guided inputs that hit **new** paths |
 | 🧪 **Sneak the factory** | Stalk unexplored code with DynamoRIO |
-| 💥 **Scream Extractor energy** | Crash capture — dumps, dedup, Ghidra export |
+| 💥 **Collect the screams** | Crash capture — scare the target, bottle the scream in a **scream canister** (dump + dedup + triage) |
 | 🕵️ **Another trick up my sleeve** | Havoc, dictionaries, session flows, plugins, in-process harnesses |
 
 Full parody mapping: [docs/LORE.md](docs/LORE.md)

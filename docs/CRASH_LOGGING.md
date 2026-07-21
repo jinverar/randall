@@ -48,6 +48,10 @@ Superset of index fields plus triage-oriented data:
 
 API: `GET /api/crashes/{id}` returns `sidecar` when present.
 
+## Scream canisters (UI)
+
+The Crashes tab frames saved crashes as a **scare-floor harvest**: canisters fill as unique crashes and severity buckets grow (art + live liquid). See [LORE.md](LORE.md) and `docs/assets/canisters/`.
+
 ## Minidumps
 
 Captured on:
