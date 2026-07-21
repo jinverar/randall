@@ -30,6 +30,8 @@ Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
 Fresh VM or bare metal. Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md).
 
+> **Running on Linux?** Randfuzz is cross-platform — see [docs/INSTALL_LINUX.md](docs/INSTALL_LINUX.md) for the Linux lab (gdb/GEF, strace, tcpdump, valgrind, ASan) plus heap-bug triage. Pick the fuzzing platform in the UI sidebar (Auto / Windows / Linux).
+
 **Need:** [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) · [Git](https://git-scm.com/download/win) · PowerShell · network (MinGW gcc zip for Scream; winget optional) · ~8 GB RAM recommended
 
 Prefer **`git clone` / `git pull`** over a GitHub ZIP of the repo — you get script fixes without re-downloading the whole tree. If you already unpacked a ZIP under Downloads, clone fresh (or `git pull` on a real clone) so you pick up the zip-based `install-gcc.ps1`.

@@ -23,7 +23,13 @@ Randfuzz ("Randall") is a Windows-oriented fuzzer written entirely in C#/.NET 8 
 - CLI: `dotnet run --project src/Randall.Cli -- <command>` (e.g. `targets`, `doctor -c projects/vulnserver.yaml`, `fuzz -c projects/<profile>.yaml`).
 - There is no automated test suite (no xunit/nunit/MSTest projects). "Testing" here means building + running the CLI/server and exercising a fuzz run.
 
-### Fuzzing without Windows targets
-- Most `projects/*.yaml` profiles (vulnserver, vulnhttp, etc.) require a Windows lab-target `.exe` and will fail on Linux with "Executable not found".
-- The fully cross-platform end-to-end path is the in-process managed harness: build it once with `dotnet build targets/Randall.HarnessDemo`, then run `dotnet run --project src/Randall.Cli -- fuzz -c projects/harness-demo.yaml`. This exercises the real fuzz engine (mutators, corpus, crash capture) and reliably finds crashes, writing artifacts to `data/crashes/harness-demo/`.
-- YAML `target.harness`/`executable` paths are resolved relative to the YAML file's directory (`projects/`), not the process CWD.
+### Fuzzing on Linux (cross-platform)
+- The stock `projects/*.yaml` reference Windows `.exe` paths, but the same .NET lab targets build to an extensionless apphost on Linux and `ExecutableResolver` resolves either. Build them with `scripts/build-lab-targets.sh [name]` (publishes to `targets/<name>/randall-<name>`), then `doctor`/`fuzz` the stock profile works on Linux (verified: vulnserver fuzz finds crashes over TCP).
+- The fully cross-platform, no-external-target path is the in-process managed harness: `dotnet build targets/Randall.HarnessDemo` then `dotnet run --project src/Randall.Cli -- fuzz -c projects/harness-demo.yaml` (reliably finds crashes, artifacts in `data/crashes/harness-demo/`).
+- YAML `target.harness`/`executable` paths resolve relative to the YAML file's directory (`projects/`), not the process CWD.
+
+### Platform selector + Linux toolchain
+- Fuzzing platform is selectable (UI sidebar Auto/Windows/Linux, or `doctor --platform`, API `/api/doctor?platform=` and `/api/platform`). `doctor` tags each check `windows`/`linux`/`cross` and shows only the selected OS's rows — so on Linux the Windows tool noise is hidden and the Linux toolchain appears.
+- Linux triage tools are installed via `scripts/install-linux-tools.sh` (gdb/lldb/strace/ltrace/tcpdump/valgrind/clang + GEF). GEF is the preferred gdb enhancement; detection also finds pwndbg/peda. AFL++/honggfuzz are OPTIONAL external engine adapters (like DynamoRIO) — never the default.
+- `randall heaptriage --exe <p> [--input f | --core f | --text-file f]` runs a target under glibc heap hardening (or analyzes a core with gdb+GEF) and classifies memory-corruption crashes (tcache poisoning/double-free, UAF, heap/stack overflow) with CWE + difficulty tier + training audience.
+- Core-dump triage needs a real core: on this VM `kernel.core_pattern` may pipe to systemd/apport — set `sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p` and `ulimit -c unlimited` to get local core files.
