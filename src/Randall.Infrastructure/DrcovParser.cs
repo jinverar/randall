@@ -29,10 +29,16 @@ public static partial class DrcovParser
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
 
-                if (line.Contains("module id", StringComparison.OrdinalIgnoreCase))
+                // Header row: "module id, start, size:" (not a BB entry).
+                if (line.Contains("module id", StringComparison.OrdinalIgnoreCase) &&
+                    !line.Contains("module[", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                var match = BbLine().Match(line);
+                // Windows/classic dump_text: "  9, 0x00001234, 16"
+                // Linux dump_text (DRCOV v3): "module[  9]: 0x00001234,  16"
+                var match = BbLineCsv().Match(line);
+                if (!match.Success)
+                    match = BbLineModuleBracket().Match(line);
                 if (!match.Success)
                     continue;
 
@@ -53,7 +59,10 @@ public static partial class DrcovParser
     public static int CountEdges(string tracePath) => ParseEdges(tracePath).Count;
 
     [GeneratedRegex(@"^\s*(\d+)\s*,\s*(0x[0-9a-fA-F]+)\s*,\s*(\d+)")]
-    private static partial Regex BbLine();
+    private static partial Regex BbLineCsv();
+
+    [GeneratedRegex(@"^\s*module\[\s*(\d+)\s*\]\s*:\s*(0x[0-9a-fA-F]+)\s*,\s*(\d+)")]
+    private static partial Regex BbLineModuleBracket();
 }
 
 public sealed class CoverageSet(string? persistPath = null)

@@ -36,12 +36,15 @@ public static class TargetRunner
         if (string.IsNullOrWhiteSpace(exe))
             return null;
 
-        exe = ProjectLoader.ResolvePath(yamlPath, exe);
-        if (!File.Exists(exe))
+        var declared = ProjectLoader.ResolvePath(yamlPath, exe);
+        var existing = ExecutableResolver.FindExisting(declared);
+        if (existing is null)
         {
-            Console.Error.WriteLine($"Target not found: {exe}");
+            Console.Error.WriteLine($"Target not found: {declared}");
             return null;
         }
+
+        exe = existing;
 
         var args = project.Target.Args.Select(a =>
             a.Replace("{file}", filePath ?? "", StringComparison.OrdinalIgnoreCase)).ToList();

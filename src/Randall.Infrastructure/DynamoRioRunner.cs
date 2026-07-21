@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Randall.Contracts;
 
 namespace Randall.Infrastructure;
@@ -115,9 +116,10 @@ public sealed class DynamoRioRunner
         }
 
         Directory.CreateDirectory(traceDir);
-        var targetExe = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
-        if (!File.Exists(targetExe))
-            return new DrcovRunResult(false, null, null, $"Target not found: {targetExe}");
+        var declared = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
+        var targetExe = ExecutableResolver.FindExisting(declared);
+        if (targetExe is null)
+            return new DrcovRunResult(false, null, null, $"Target not found: {declared}");
 
         var inputFile = Path.Combine(traceDir, $"input_{Guid.NewGuid():N}.bin");
         await File.WriteAllBytesAsync(inputFile, input, cancellationToken);
@@ -160,8 +162,9 @@ public sealed class DynamoRioRunner
         if (!IsAvailable)
             return null;
 
-        var targetExe = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
-        if (!File.Exists(targetExe))
+        var declared = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
+        var targetExe = ExecutableResolver.FindExisting(declared);
+        if (targetExe is null)
             return null;
 
         Directory.CreateDirectory(traceDir);
@@ -188,8 +191,13 @@ public sealed class DynamoRioRunner
     {
         if (!Directory.Exists(traceDir))
             return null;
+        // Prefer non-empty logs — SIGKILL'd drrun leaves a 0-byte placeholder that would
+        // otherwise win on LastWriteTime and starve CoverageSet of edges.
         return Directory.EnumerateFiles(traceDir, "*.log")
-            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .Select(p => new FileInfo(p))
+            .Where(f => f.Exists && f.Length > 0)
+            .OrderByDescending(f => f.LastWriteTimeUtc)
+            .Select(f => f.FullName)
             .FirstOrDefault();
     }
 
@@ -197,14 +205,48 @@ public sealed class DynamoRioRunner
     {
         if (process is { HasExited: false })
         {
-            try { process.Kill(entireProcessTree: true); }
+            // drcov only flushes the BB table on a clean exit. SIGKILL leaves a 0-byte .log
+            // (common on Linux). Ask nicely first, then escalate.
+            try
+            {
+                if (!OperatingSystem.IsWindows())
+                    TryUnixSignal(process.Id, SigTerm);
+                else
+                    process.Kill(entireProcessTree: true);
+            }
             catch { /* ignore */ }
-            try { await process.WaitForExitAsync(cancellationToken); }
+
+            try
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(TimeSpan.FromSeconds(3));
+                await process.WaitForExitAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try { process.Kill(entireProcessTree: true); }
+                catch { /* ignore */ }
+                try { await process.WaitForExitAsync(cancellationToken); }
+                catch { /* ignore */ }
+            }
             catch { /* ignore */ }
         }
         try { process?.Dispose(); }
         catch { /* ignore */ }
     }
+
+    private const int SigTerm = 15;
+
+    private static void TryUnixSignal(int pid, int signal)
+    {
+        if (pid <= 0)
+            return;
+        try { UnixKill(pid, signal); }
+        catch { /* ignore — fall through to Kill() */ }
+    }
+
+    [DllImport("libc", EntryPoint = "kill", SetLastError = true)]
+    private static extern int UnixKill(int pid, int sig);
 }
 
 public sealed record DrcovRunResult(
