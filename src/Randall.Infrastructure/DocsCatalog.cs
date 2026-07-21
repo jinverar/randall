@@ -12,6 +12,7 @@ public static class DocsCatalog
         ("HOWTO_STALK_GENERIC_APP.md", "How to: stalk a generic application", "Getting started"),
         ("CUSTOM_TARGETS.md", "Custom targets (YAML → Target profile)", "Getting started"),
         ("CASE_BUILDER.md", "Scare Floor — recipes, seeds & dictionaries", "Getting started"),
+        ("RECIPE_CATALOG.md", "Recipe catalog (file formats / protocols / web)", "Getting started"),
         ("HARNESS_DESIGN.md", "Harness design principles", "Getting started"),
         ("IN_PROCESS.md", "In-process vs out-of-process", "Getting started"),
         ("PERSISTENT.md", "Persistent mode & fork server", "Getting started"),
