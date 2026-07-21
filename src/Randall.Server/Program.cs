@@ -37,18 +37,41 @@ app.MapGet("/api/health", () => new HealthDto("Randfuzz by Randall", "0.16.0-alp
 app.MapGet("/api/ui/prefs", () => Results.Ok(UiPrefsStore.Get()));
 app.MapPut("/api/ui/prefs", (UiPrefsUpdateRequest request) =>
 {
-    if (!UiPrefsStore.IsValidTheme(request.Theme))
+    // Merge onto current prefs so a theme-only or platform-only PUT leaves the other field intact.
+    var current = UiPrefsStore.Get();
+
+    var theme = request.Theme ?? current.Theme;
+    if (!UiPrefsStore.IsValidTheme(theme))
         return Results.BadRequest(new { error = "theme must be dark, light, or cyber" });
-    var saved = UiPrefsStore.Save(new UiPrefsDto(request.Theme));
+
+    var platform = request.Platform ?? current.Platform;
+    if (!UiPrefsStore.IsValidPlatform(platform))
+        return Results.BadRequest(new { error = "platform must be auto, windows, or linux" });
+
+    var saved = UiPrefsStore.Save(new UiPrefsDto(theme, platform));
     return Results.Ok(saved);
 });
-app.MapGet("/api/doctor", (string configPath) =>
+
+// Host OS + currently resolved fuzzing platform, so the UI can default the selector and
+// show only OS-relevant options. "auto" resolves to the real host.
+app.MapGet("/api/platform", () =>
+{
+    var prefs = UiPrefsStore.Get();
+    return Results.Ok(new PlatformInfoDto(
+        PlatformResolver.Host,
+        PlatformResolver.Resolve(prefs.Platform),
+        PlatformScope.Selectable));
+});
+
+app.MapGet("/api/doctor", (string configPath, string? platform) =>
 {
     if (string.IsNullOrWhiteSpace(configPath))
         return Results.BadRequest(new { error = "configPath required" });
     try
     {
-        return Results.Ok(LabDoctor.Examine(Path.GetFullPath(configPath)));
+        // Fall back to the stored platform preference when the caller doesn't specify one.
+        var scope = platform ?? UiPrefsStore.Get().Platform;
+        return Results.Ok(LabDoctor.Examine(Path.GetFullPath(configPath), platform: scope));
     }
     catch (Exception ex)
     {

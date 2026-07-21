@@ -28,10 +28,42 @@ public sealed record LegInfoDto(string Id, string Title, string Summary);
 
 public sealed record HealthDto(string Name, string Version, string Status);
 
-/// <summary>Console UI preferences persisted under data/ui-prefs.json.</summary>
-public sealed record UiPrefsDto(string Theme = "light");
+/// <summary>
+/// OS platform vocabulary shared by the doctor, UI preferences, and tool discovery.
+/// <c>windows</c>/<c>linux</c> scope tool-specific behavior; <c>cross</c> marks checks/options
+/// that apply everywhere; <c>auto</c> (selection only) resolves to the host OS.
+/// </summary>
+public static class PlatformScope
+{
+    public const string Windows = "windows";
+    public const string Linux = "linux";
+    public const string Cross = "cross";
+    public const string Auto = "auto";
 
-public sealed record UiPrefsUpdateRequest(string Theme);
+    /// <summary>Values a user may pick in the platform selector.</summary>
+    public static readonly IReadOnlyList<string> Selectable = [Auto, Windows, Linux];
+
+    public static bool IsSelectable(string? value) =>
+        !string.IsNullOrWhiteSpace(value) &&
+        Selectable.Contains(value.Trim().ToLowerInvariant());
+
+    /// <summary>True when a check/option tagged <paramref name="scope"/> is visible for <paramref name="resolved"/>.</summary>
+    public static bool VisibleFor(string scope, string resolved) =>
+        string.Equals(scope, Cross, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(scope, resolved, StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>Host OS plus the currently resolved fuzzing platform (for the UI selector).</summary>
+public sealed record PlatformInfoDto(string Host, string Resolved, IReadOnlyList<string> Selectable);
+
+/// <summary>
+/// Console UI preferences persisted under data/ui-prefs.json.
+/// <c>Platform</c> is the user's chosen fuzzing platform (<c>auto</c>/<c>windows</c>/<c>linux</c>);
+/// <c>HostPlatform</c> is server-computed (never persisted) so the UI knows the real host OS.
+/// </summary>
+public sealed record UiPrefsDto(string Theme = "light", string Platform = "auto", string? HostPlatform = null);
+
+public sealed record UiPrefsUpdateRequest(string? Theme = null, string? Platform = null);
 
 public sealed record FuzzStartRequest(
     string ConfigPath,

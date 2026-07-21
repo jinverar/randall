@@ -8,19 +8,28 @@ namespace Randall.Infrastructure;
 /// <summary>Preflight checks before a lab fuzz run — run with <c>randall doctor</c>.</summary>
 public static class LabDoctor
 {
-    public static DoctorReportDto Examine(string yamlPath, bool requireTarget = false)
+    public static DoctorReportDto Examine(string yamlPath, bool requireTarget = false, string? platform = null)
     {
         yamlPath = Path.GetFullPath(yamlPath);
+        var host = PlatformResolver.Host;
+        var resolvedPlatform = PlatformResolver.Resolve(platform);
         var checks = new List<DoctorCheckDto>();
         ProjectConfig? project = null;
 
         void Add(string id, string status, string message) =>
-            checks.Add(new DoctorCheckDto(id, status, message));
+            checks.Add(new DoctorCheckDto(id, status, message, DoctorCheckPlatform.Classify(id)));
+
+        DoctorReportDto Finish(string projectName, IReadOnlyList<DoctorCheckDto> all)
+        {
+            var visible = all.Where(c => PlatformScope.VisibleFor(c.Platform, resolvedPlatform)).ToList();
+            var ok = !visible.Any(c => c.Status == "fail");
+            return new DoctorReportDto(projectName, ok, visible, resolvedPlatform, host);
+        }
 
         if (!File.Exists(yamlPath))
         {
             Add("project", "fail", $"Project file not found: {yamlPath}");
-            return new DoctorReportDto(Path.GetFileNameWithoutExtension(yamlPath), false, checks);
+            return Finish(Path.GetFileNameWithoutExtension(yamlPath), checks);
         }
 
         try
@@ -31,7 +40,7 @@ public static class LabDoctor
         catch (Exception ex)
         {
             Add("project", "fail", ex.Message);
-            return new DoctorReportDto(Path.GetFileNameWithoutExtension(yamlPath), false, checks);
+            return Finish(Path.GetFileNameWithoutExtension(yamlPath), checks);
         }
 
         foreach (var seed in project.Seeds)
@@ -280,6 +289,17 @@ public static class LabDoctor
                     : "strings64.exe not found — optional strings-on-crash disabled (scripts/install-recording-tools.ps1)");
         }
 
+        // Linux fuzzing / triage toolchain — the Unix counterparts to the Windows stack above.
+        // Reported on every host so users previewing "linux" from Windows see install hints too.
+        foreach (var tool in LinuxToolPaths.Catalog)
+        {
+            var found = LinuxToolPaths.Find(tool);
+            Add(tool.Id, found is not null ? "ok" : "warn",
+                found is not null
+                    ? $"{found} — {tool.Role}"
+                    : $"{tool.Command} not found — {tool.InstallHint} ({tool.Role})");
+        }
+
         var dbg = DebuggerTools.Probe();
         foreach (var t in dbg.Tools)
         {
@@ -371,7 +391,6 @@ public static class LabDoctor
                 Add("sessionGraph", "warn", w);
         }
 
-        var ready = !checks.Any(c => c.Status == "fail");
-        return new DoctorReportDto(project.Name, ready, checks);
+        return Finish(project.Name, checks);
     }
 }

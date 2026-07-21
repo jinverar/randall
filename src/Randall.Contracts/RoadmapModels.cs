@@ -70,9 +70,15 @@ public sealed record CrashClusterDto(
     string? ExceptionHint = null,
     string? FaultAddress = null);
 
-public sealed record DoctorCheckDto(string Id, string Status, string Message);
+/// <summary>
+/// One preflight check. <c>Platform</c> is a <see cref="PlatformScope"/> value
+/// (<c>windows</c>/<c>linux</c>/<c>cross</c>) so the UI can show only OS-relevant rows.
+/// </summary>
+public sealed record DoctorCheckDto(string Id, string Status, string Message, string Platform = "cross");
 
 public sealed record DoctorReportDto(
     string Project,
     bool Ready,
-    IReadOnlyList<DoctorCheckDto> Checks);
+    IReadOnlyList<DoctorCheckDto> Checks,
+    string Platform = "cross",
+    string HostPlatform = "cross");

@@ -593,21 +593,25 @@ static int RunDoctor(string[] args)
 {
     string? config = null;
     var strict = false;
+    string? platform = null;
     for (var i = 0; i < args.Length; i++)
     {
         if (args[i] is "-c" or "--config" && i + 1 < args.Length)
             config = args[++i];
         else if (args[i] is "--strict")
             strict = true;
+        else if (args[i] is "--platform" && i + 1 < args.Length)
+            platform = args[++i];
     }
 
     if (config is null)
     {
-        Console.Error.WriteLine("Usage: randall doctor -c projects/vulnserver.yaml [--strict]");
+        Console.Error.WriteLine("Usage: randall doctor -c projects/vulnserver.yaml [--strict] [--platform auto|windows|linux]");
         return 1;
     }
 
-    var report = LabDoctor.Examine(Path.GetFullPath(config), requireTarget: strict);
+    var report = LabDoctor.Examine(Path.GetFullPath(config), requireTarget: strict, platform: platform);
+    Console.WriteLine($"Platform: fuzzing={report.Platform} (host={report.HostPlatform})");
     foreach (var check in report.Checks)
     {
         var icon = check.Status switch { "ok" => "✓", "warn" => "!", _ => "✗" };
