@@ -781,8 +781,16 @@ static int RunExploitDev(string[] args)
         return 1;
     }
 
-    Console.WriteLine($"exploitdev: {Path.GetFileName(exe)}  core={Path.GetFileName(core)}");
-    foreach (var reg in new[] { "rip", "rsp", "rbp", "rax", "rdi", "rsi" })
+    var is32 = regs.ContainsKey("eip");
+    var ipReg = is32 ? "eip" : "rip";
+    var spExpr = is32 ? "$esp" : "$rsp";
+    var wordFmt = is32 ? "wx" : "gx";
+    var regList = is32
+        ? new[] { "eip", "esp", "ebp", "eax", "ebx", "ecx", "edx" }
+        : new[] { "rip", "rsp", "rbp", "rax", "rdi", "rsi" };
+
+    Console.WriteLine($"exploitdev: {Path.GetFileName(exe)}  core={Path.GetFileName(core)}  ({(is32 ? "x86 / EIP" : "x86-64 / RIP")})");
+    foreach (var reg in regList)
         if (regs.TryGetValue(reg, out var v)) Console.WriteLine($"  {reg,-4}= {v}");
 
     if (patternLen is not null)
@@ -790,7 +798,7 @@ static int RunExploitDev(string[] args)
         Console.WriteLine();
         Console.WriteLine("  ══ cyclic-pattern control (mona findmsp) ══");
         var any = false;
-        foreach (var reg in new[] { "rip", "rbp", "rsp", "rax", "rdi", "rsi", "rdx" })
+        foreach (var reg in regList)
         {
             if (!regs.TryGetValue(reg, out var val)) continue;
             var off = PatternTools.Offset(val, patternLen.Value);
@@ -800,9 +808,9 @@ static int RunExploitDev(string[] args)
                 Console.WriteLine($"  {reg.ToUpperInvariant()} controlled at offset {off}  ({val})");
             }
         }
-        // x86-64: a ret to a bad address faults at the ret, so the saved return address is on the
-        // stack — scan it to recover the control offset (findmsp).
-        foreach (var w in ExploitDevTools.CoreStackWords(exe, core))
+        // A ret to a bad address faults at the ret, so the saved return address is on the
+        // stack — scan it to recover the control offset (findmsp). Arch-aware (esp/wx vs rsp/gx).
+        foreach (var w in ExploitDevTools.CoreStackWords(exe, core, 40, spExpr, wordFmt))
         {
             var off = PatternTools.Offset(w, patternLen.Value);
             if (off >= 0)

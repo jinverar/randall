@@ -1,0 +1,9 @@
+name: netcat-blast
+description: Generic byte blast — a single fuzzable payload (no protocol structure)
+blocks:
+  - type: bytes
+    name: payload
+    mutable: true
+    minSize: 4
+    maxSize: 8192
+    seedFile: seeds/vulnlab_echo.txt

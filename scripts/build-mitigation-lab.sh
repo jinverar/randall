@@ -45,6 +45,16 @@ echo "==> modern  (canary + NX + PIE + full RELRO + FORTIFY, -O2)"
 $CC $COMMON -O2 -fstack-protector-all -fPIE -pie -Wl,-z,relro,-z,now -D_FORTIFY_SOURCE=2 \
     "$SRC" -o "$OUT/vulnlab-modern"
 
+# 32-bit tier (EIP control) — needs gcc-multilib (apt install gcc-multilib libc6-dev-i386).
+if echo 'int main(){return 0;}' | "$CC" -m32 -x c - -o /tmp/.rf_m32test 2>/dev/null; then
+  rm -f /tmp/.rf_m32test
+  echo "==> x86    (32-bit, no canary/NX/PIE — textbook EIP control)"
+  $CC $COMMON -m32 -O0 -fno-stack-protector -fomit-frame-pointer -z execstack -no-pie -fno-pie -D_FORTIFY_SOURCE=0 \
+      "$SRC" -o "$OUT/vulnlab-x86"
+else
+  echo "==> x86    (skipped — no 32-bit multilib; apt install gcc-multilib libc6-dev-i386)"
+fi
+
 chmod +x "$OUT"/vulnlab-* 2>/dev/null || true
 
 echo

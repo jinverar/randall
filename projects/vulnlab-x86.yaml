@@ -1,0 +1,29 @@
+name: vulnlab-x86
+description: Randall VulnLab (32-bit) — EIP-control practice; ECHO stack overflow (no NX/ASLR/canary)
+kind: tcp
+target:
+  executable: ../targets/vulnlab/vulnlab-x86
+  args: ["-p", "9995"]
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 9995
+  receiveTimeoutMs: 1500
+sessionCommands:
+  - name: ECHO
+    model: protocols/vulnlab_echo.yaml
+    readBanner: true
+fuzz:
+  maxIterations: 1000
+  corpusDir: ../data/corpus/vulnlab-x86
+  crashesDir: ../data/crashes/vulnlab-x86
+seeds:
+  - seeds/vulnlab_echo.txt
+mutators:
+  - bitflip
+  - havoc
+  - expand
+  - boundary
+  - insert

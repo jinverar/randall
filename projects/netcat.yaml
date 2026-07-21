@@ -1,0 +1,28 @@
+name: netcat
+description: Fuzz netcat (nc.openbsd) over TCP — honest control target (nc has ~no parser to crash)
+kind: tcp
+target:
+  executable: /usr/bin/nc.openbsd
+  args: ["-l", "-k", "-p", "9994"]
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 9994
+  receiveTimeoutMs: 800
+sessionCommands:
+  - name: BLAST
+    model: protocols/netcat_blast.yaml
+fuzz:
+  maxIterations: 1000
+  corpusDir: ../data/corpus/netcat
+  crashesDir: ../data/crashes/netcat
+seeds:
+  - seeds/vulnlab_echo.txt
+mutators:
+  - bitflip
+  - havoc
+  - expand
+  - boundary
+  - insert
