@@ -135,6 +135,20 @@ public static class TargetRunner
 
             if (!ResponseMatcher.Matches(lastResponse, tcpOptions.ExpectResponse))
             {
+                // Overflows often kill the server before a valid reply — still check process death.
+                if (server is not null)
+                {
+                    var finished = await FinishTcpRun(project, server, yamlPath, lastResponse, cancellationToken);
+                    if (finished.Crashed)
+                    {
+                        return finished with
+                        {
+                            Detail =
+                                $"{finished.Detail}; response mismatch expect={tcpOptions.ExpectResponse} got={ResponseMatcher.Describe(lastResponse)}",
+                        };
+                    }
+                }
+
                 return new TargetRunResult(
                     false,
                     null,
@@ -265,6 +279,21 @@ public static class TargetRunner
 
                 if (!ResponseMatcher.Matches(lastResponse, step.Options.ExpectResponse))
                 {
+                    // Lab overflows often Exit() before writing expectResponse — detect the scream.
+                    if (server is not null)
+                    {
+                        var finished = await FinishTcpRun(
+                            project, server, yamlPath, lastResponse, cancellationToken);
+                        if (finished.Crashed)
+                        {
+                            return finished with
+                            {
+                                Detail =
+                                    $"{finished.Detail}; step {i} response mismatch expect={step.Options.ExpectResponse} got={ResponseMatcher.Describe(lastResponse)}",
+                            };
+                        }
+                    }
+
                     return new TargetRunResult(
                         false,
                         null,

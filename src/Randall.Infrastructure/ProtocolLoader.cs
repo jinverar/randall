@@ -204,7 +204,7 @@ public static class ModelFuzzer
         Random rng,
         bool syncLengthFields = false,
         int havocDepth = 6) =>
-        BuildPayload(model, seeds, mutator, rng, syncLengthFields, havocDepth, targetField: null);
+        BuildPayload(model, seeds, mutator, rng, syncLengthFields, havocDepth, targetField: null, syncNbssLength: false);
 
     public static byte[] BuildPayload(
         BlockModel model,
@@ -213,12 +213,23 @@ public static class ModelFuzzer
         Random rng,
         bool syncLengthFields,
         int havocDepth,
-        FieldRegion? targetField)
+        FieldRegion? targetField) =>
+        BuildPayload(model, seeds, mutator, rng, syncLengthFields, havocDepth, targetField, syncNbssLength: false);
+
+    public static byte[] BuildPayload(
+        BlockModel model,
+        IReadOnlyDictionary<string, byte[]> seeds,
+        IMutator mutator,
+        Random rng,
+        bool syncLengthFields,
+        int havocDepth,
+        FieldRegion? targetField,
+        bool syncNbssLength)
     {
         var baseline = model.Render(seeds);
         var mutable = model.GetMutableFields(seeds);
         if (mutable.Count == 0)
-            return model.FinalizeMessage(baseline, syncLengthFields);
+            return MaybeSyncNbss(model.FinalizeMessage(baseline, syncLengthFields), syncNbssLength, fieldName: null);
 
         var lengthFields = mutable.Where(f => f.Kind == "length").ToList();
         IReadOnlyList<FieldRegion> pool = targetField is not null
@@ -229,7 +240,7 @@ public static class ModelFuzzer
 
         var field = targetField ?? pool[rng.Next(pool.Count)];
         if (field.Offset + field.Length > baseline.Length && field.Kind is not "string" and not "choices")
-            return model.FinalizeMessage(baseline, syncLengthFields);
+            return MaybeSyncNbss(model.FinalizeMessage(baseline, syncLengthFields), syncNbssLength, field.Name);
 
         var slice = field.Offset + field.Length <= baseline.Length
             ? baseline.AsSpan(field.Offset, field.Length).ToArray()
@@ -247,7 +258,15 @@ public static class ModelFuzzer
             mutated = mutator.Mutate(slice).ToArray();
 
         var patched = model.PatchField(baseline, field, mutated);
-        return model.FinalizeMessage(patched, syncLengthFields);
+        var finalized = model.FinalizeMessage(patched, syncLengthFields);
+        return MaybeSyncNbss(finalized, syncNbssLength, field.Name);
+    }
+
+    private static byte[] MaybeSyncNbss(byte[] message, bool syncNbssLength, string? fieldName)
+    {
+        if (!syncNbssLength || NbssFraming.IsNbssLengthField(fieldName))
+            return message;
+        return NbssFraming.TrySyncLength(message);
     }
 
     private static byte[] MutateIntegerField(byte[] bytes, FieldRegion field, Random rng)

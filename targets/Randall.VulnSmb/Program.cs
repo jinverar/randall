@@ -220,6 +220,10 @@ internal static unsafe class VulnHandlers
         // After 64-byte SMB2 header, treat rest as "name" region
         var name = pdu.Length > 64 ? pdu[64..] : ReadOnlySpan<byte>.Empty;
         const int stackSize = 96;
+        // Lab scream: long Create names overflow the tiny buffer (managed runtimes
+        // won't reliably SIGSEGV on stackalloc OOB — exit like other .NET lab targets).
+        if (name.Length > stackSize)
+            Environment.Exit(unchecked((int)0xC0000005));
         var buf = stackalloc byte[stackSize];
         for (var i = 0; i < name.Length; i++)
             buf[i] = name[i];
@@ -229,6 +233,8 @@ internal static unsafe class VulnHandlers
     {
         var data = pdu.Length > 64 ? pdu[64..] : ReadOnlySpan<byte>.Empty;
         const int stackSize = 128;
+        if (data.Length > stackSize)
+            Environment.Exit(unchecked((int)0xC0000005));
         var buf = stackalloc byte[stackSize];
         for (var i = 0; i < data.Length; i++)
             buf[i] = data[i];
@@ -237,6 +243,8 @@ internal static unsafe class VulnHandlers
     public static void CrashableStub(ReadOnlySpan<byte> stub)
     {
         const int stackSize = 64;
+        if (stub.Length > stackSize)
+            Environment.Exit(unchecked((int)0xC0000005));
         var buf = stackalloc byte[stackSize];
         for (var i = 0; i < stub.Length; i++)
             buf[i] = stub[i];

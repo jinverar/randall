@@ -60,6 +60,8 @@ fuzz:
   maxIterations: 800
   sessionFlowBias: 0.65
   sessionGraphBias: 0.35
+  # Expand/insert grow SMB bodies; keep NBSS 24-bit length matched so VulnSmb sees them.
+  syncNbssLength: true
   corpusDir: ../data/corpus/vulnsmb
   crashesDir: ../data/crashes/vulnsmb
 seeds:

@@ -488,7 +488,8 @@ public sealed class FuzzEngine
                         var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, project.Model);
                         payload = ModelFuzzer.BuildPayload(
                             model, protoSeeds, mutator, rng,
-                            project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth, planned.TargetField);
+                            project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth, planned.TargetField,
+                            project.Fuzz.SyncNbssLength);
                         var baseline = model.Render(protoSeeds);
                         parentInputHash = InputHash.StackHash(baseline);
                         seedSource = "model";
@@ -564,7 +565,8 @@ public sealed class FuzzEngine
                     var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, project.Model);
                     payload = ModelFuzzer.BuildPayload(
                         model, protoSeeds, mutator, rng,
-                        project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth);
+                        project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth,
+                        targetField: null, project.Fuzz.SyncNbssLength);
                     commandName = $"model/{model.Name}";
                     parentInputHash = InputHash.StackHash(model.Render(protoSeeds));
                     seedSource = "model";
@@ -667,15 +669,32 @@ public sealed class FuzzEngine
                     result = result with { Detail = $"post_receive: {pluginAbort}" };
 
                 // Remote agent: no local Process handle — poll Target Runtime for death.
-                if (runtime is { IsRemote: true } && !result.Crashed &&
+                // Local longLived: also promote death when TargetRunner returned a soft mismatch.
+                if (!result.Crashed && runtime is not null &&
                     await runtime.HasExitedAsync(longLived, cancellationToken))
                 {
                     var st = await runtime.StatusAsync(cancellationToken);
                     result = result with
                     {
                         Crashed = true,
-                        ExitCode = st.LastExitCode,
-                        Detail = "remote target exited (Target Runtime)",
+                        ExitCode = st.LastExitCode ?? (longLived is { HasExited: true } ? longLived.ExitCode : null),
+                        Detail = runtime.IsRemote
+                            ? "remote target exited (Target Runtime)"
+                            : (result.Detail is { Length: > 0 }
+                                ? $"server exited; {result.Detail}"
+                                : "server exited"),
+                    };
+                }
+                else if (!result.Crashed && longLived is { HasExited: true } &&
+                         !TargetRunner.IsInfrastructureExitCode(longLived.ExitCode))
+                {
+                    result = result with
+                    {
+                        Crashed = true,
+                        ExitCode = longLived.ExitCode,
+                        Detail = result.Detail is { Length: > 0 }
+                            ? $"server exited; {result.Detail}"
+                            : "server exited",
                     };
                 }
 
@@ -1140,11 +1159,15 @@ public sealed class FuzzEngine
                 return new CommandPayloadBuild(
                     ModelFuzzer.BuildPayload(
                         model, protoSeeds, mutator, rng,
-                        project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth, targetField),
+                        project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth, targetField,
+                        project.Fuzz.SyncNbssLength),
                     parentInputHash, seedSource, seedFiles);
             }
+            var baselineMsg = model.FinalizeMessage(baseline, project.Fuzz.SyncLengthFields);
+            if (project.Fuzz.SyncNbssLength)
+                baselineMsg = NbssFraming.TrySyncLength(baselineMsg);
             return new CommandPayloadBuild(
-                model.FinalizeMessage(baseline, project.Fuzz.SyncLengthFields),
+                baselineMsg,
                 parentInputHash, seedSource, seedFiles);
         }
 

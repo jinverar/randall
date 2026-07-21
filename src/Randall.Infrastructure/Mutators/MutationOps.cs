@@ -113,7 +113,8 @@ internal static class MutationOps
     {
         if (a.Length == 0) return b.ToArray();
         if (b.Length == 0) return a.ToArray();
-        var splitA = rng.Next(1, a.Length);
+        // Next(min, maxExclusive) requires max > min — length-1 seeds must not throw.
+        var splitA = a.Length == 1 ? 1 : rng.Next(1, a.Length);
         var splitB = rng.Next(0, b.Length);
         var result = new byte[splitA + (b.Length - splitB)];
         a.AsSpan(0, splitA).CopyTo(result);

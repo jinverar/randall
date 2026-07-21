@@ -123,8 +123,10 @@ public static class FuzzEngineHelpers
             if (mutate)
                 return ModelFuzzer.BuildPayload(
                     model, protoSeeds, mutator, rng,
-                    project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth);
-            return model.FinalizeMessage(model.Render(protoSeeds), project.Fuzz.SyncLengthFields);
+                    project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth,
+                    targetField: null, project.Fuzz.SyncNbssLength);
+            var msg = model.FinalizeMessage(model.Render(protoSeeds), project.Fuzz.SyncLengthFields);
+            return project.Fuzz.SyncNbssLength ? NbssFraming.TrySyncLength(msg) : msg;
         }
 
         var body = mutate ? mutator.Mutate(cmd.Seed).ToArray() : cmd.Seed;
