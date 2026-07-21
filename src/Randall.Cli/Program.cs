@@ -1756,6 +1756,9 @@ static int RunCase(string[] args)
                     Promote Scare Floor blocks → projects/.../protocols/*.yaml
               randall case idl -p <project> --name stub --file iface.idl
                     Minimal typedef struct → protocols/*.yaml stub field map
+              randall case catalog [--category C] [--search Q]   Browse the fuzzing recipe catalog
+              randall case catalog --categories                  List catalog categories + counts
+              randall case catalog --instantiate <id> [--name p] Create a project from a recipe
               randall case packs                              List protocol packs
               randall case packs --load ID -p <project>       Load pack recipe into project recipes/
               randall case recipes -p <project>               List Scare Floor recipes
@@ -1787,6 +1790,7 @@ static int RunCase(string[] args)
             "idl" => CaseIdl(rest),
             "packs" or "pack" => CasePacks(rest),
             "recipes" or "recipe" => CaseRecipes(rest),
+            "catalog" => CaseCatalog(rest),
             "mutators" or "mutator" => CaseMutators(rest),
             _ => Unknown($"case {args[0]}"),
         };
@@ -1802,6 +1806,50 @@ static int CaseOps()
 {
     foreach (var op in CaseRecipeEngine.ListOps())
         Console.WriteLine($"{op.Id,-12} {op.Name} — {op.Description}");
+    return 0;
+}
+
+static int CaseCatalog(string[] args)
+{
+    string? category = null, search = null, instantiate = null, name = null;
+    var local = true;
+    var showCats = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "--category" or "-c" when i + 1 < args.Length: category = args[++i]; break;
+            case "--search" or "-s" when i + 1 < args.Length: search = args[++i]; break;
+            case "--instantiate" or "--create" when i + 1 < args.Length: instantiate = args[++i]; break;
+            case "--name" or "-n" when i + 1 < args.Length: name = args[++i]; break;
+            case "--public": local = false; break;
+            case "--categories": showCats = true; break;
+        }
+    }
+
+    if (instantiate is not null)
+    {
+        var r = RecipeCatalog.Instantiate(instantiate, name, local);
+        Console.WriteLine(r.Message);
+        if (r.Path is not null) Console.WriteLine(r.Path);
+        return r.Ok ? 0 : 1;
+    }
+
+    if (showCats)
+    {
+        Console.WriteLine($"Recipe catalog — {RecipeCatalog.Count} recipes across categories:");
+        foreach (var cat in RecipeCatalog.Categories())
+            Console.WriteLine($"  {cat} ({RecipeCatalog.List(cat).Count})");
+        return 0;
+    }
+
+    var entries = RecipeCatalog.List(category, search);
+    Console.WriteLine($"Recipe catalog ({entries.Count}/{RecipeCatalog.Count})" +
+        (category is not null ? $" · category={category}" : "") + (search is not null ? $" · search={search}" : "") + ":");
+    foreach (var e in entries)
+        Console.WriteLine($"  {e.Id,-16} [{e.Kind,-4}] {e.Category,-18} {e.Name}  — {string.Join(",", e.Tags)}");
+    Console.WriteLine();
+    Console.WriteLine("Create a project:  randall case catalog --instantiate <id> [--name <proj>] [--public]");
     return 0;
 }
 

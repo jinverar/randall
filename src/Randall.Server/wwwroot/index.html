@@ -15,7 +15,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=platform-selector-4" />
+  <link rel="stylesheet" href="/css/app.css?v=platform-selector-5" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -559,6 +559,28 @@
             More detail: <button type="button" class="linkish" data-help="CASE_BUILDER.md">Scare Floor help</button>
             · <button type="button" class="linkish" data-help="CUSTOM_TARGETS.md">Custom targets</button>
             · <button type="button" class="linkish" data-help="LORE.md">Lore</button></p>
+        </div>
+
+        <!-- Recipe catalog -->
+        <div class="panel case-step-panel">
+          <div class="case-step-heading">
+            <span class="case-step-num">★</span>
+            <div>
+              <h2>Recipe catalog <span id="recipe-catalog-count" class="tool-count"></span></h2>
+              <p class="hint">Browse fuzzing recipes by target class (file formats, protocols, web) — instantiate a ready-to-fuzz project in one click. Modeled on exploit-db / beSTORM target classes.</p>
+            </div>
+          </div>
+          <div class="case-target-row">
+            <label>Category
+              <select id="recipe-catalog-category"><option value="all">All</option></select>
+            </label>
+            <label class="case-grow">Search
+              <input type="text" id="recipe-catalog-search" placeholder="pdf, ftp, sqli, buffer-overflow…" />
+            </label>
+          </div>
+          <div id="recipe-catalog-list" class="recipe-catalog-list" aria-live="polite">
+            <span class="hint">Loading catalog…</span>
+          </div>
         </div>
 
         <!-- Step 1: Target -->
@@ -1238,6 +1260,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=platform-selector-4"></script>
+  <script type="module" src="/js/app.js?v=platform-selector-5"></script>
 </body>
 </html>

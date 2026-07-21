@@ -490,6 +490,48 @@ body.nav-collapsed .nav-reopen { display: flex; }
 .platform-badge-linux { border-color: #2e9e5b; color: #2e9e5b; background: rgba(46,158,91,0.10); }
 .platform-badge-win { border-color: #3b82c4; color: #3b82c4; background: rgba(59,130,196,0.10); }
 
+/* Recipe catalog (Scare Floor) */
+.recipe-catalog-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.recipe-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  background: var(--btn-face);
+}
+
+.recipe-card-main { min-width: 0; }
+.recipe-kind {
+  margin-left: 0.4rem;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent-dim, #888);
+  border-radius: 3px;
+  padding: 0 0.25rem;
+}
+.recipe-cat { margin-left: 0.35rem; font-size: 0.66rem; color: var(--muted); }
+.recipe-tags { margin-top: 0.25rem; display: flex; flex-wrap: wrap; gap: 0.2rem; }
+.recipe-tag {
+  font-size: 0.6rem;
+  color: var(--muted);
+  background: var(--nav-active-bg, rgba(128,128,128,0.12));
+  border-radius: 3px;
+  padding: 0 0.25rem;
+}
+.recipe-make { white-space: nowrap; flex-shrink: 0; }
+
 html[data-theme="cyber"] body {
   background-image:
     linear-gradient(rgba(0, 229, 192, 0.03) 1px, transparent 1px),

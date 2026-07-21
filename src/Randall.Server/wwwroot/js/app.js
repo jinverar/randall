@@ -566,6 +566,81 @@ async function loadHealth() {
   document.getElementById('health-label').textContent = `${h.name} ${h.version} · ${h.status}`;
 }
 
+// —— Recipe catalog (Scare Floor): browse target-class recipes and instantiate projects ——
+let recipeCatalogInit = false;
+
+async function loadRecipeCatalog() {
+  const listEl = document.getElementById('recipe-catalog-list');
+  if (!listEl) return;
+  try {
+    const catSel = document.getElementById('recipe-catalog-category');
+    const search = document.getElementById('recipe-catalog-search')?.value || '';
+    const category = catSel?.value || 'all';
+    const data = await api.get(
+      `/api/case/catalog?category=${encodeURIComponent(category)}&search=${encodeURIComponent(search)}`);
+
+    const countEl = document.getElementById('recipe-catalog-count');
+    if (countEl) countEl.textContent = `(${data.entries.length}/${data.count})`;
+
+    // Populate categories once.
+    if (!recipeCatalogInit && catSel && Array.isArray(data.categories)) {
+      for (const c of data.categories) {
+        const o = document.createElement('option');
+        o.value = c; o.textContent = c;
+        catSel.appendChild(o);
+      }
+      recipeCatalogInit = true;
+    }
+
+    if (!data.entries.length) {
+      listEl.innerHTML = '<span class="hint">No recipes match.</span>';
+      return;
+    }
+    listEl.innerHTML = data.entries.map((e) => `
+      <div class="recipe-card">
+        <div class="recipe-card-main">
+          <strong>${escapeAttr(e.name)}</strong>
+          <span class="recipe-kind">${escapeAttr(e.kind)}</span>
+          <span class="recipe-cat">${escapeAttr(e.category)}</span>
+          <div class="recipe-tags">${(e.tags || []).map((t) => `<span class="recipe-tag">${escapeAttr(t)}</span>`).join('')}</div>
+        </div>
+        <button type="button" class="btn primary recipe-make" data-id="${escapeAttr(e.id)}" data-name="${escapeAttr(e.id)}">Create project</button>
+      </div>`).join('');
+
+    listEl.querySelectorAll('.recipe-make').forEach((btn) => {
+      btn.addEventListener('click', () => instantiateRecipe(btn.dataset.id));
+    });
+  } catch (err) {
+    listEl.innerHTML = `<span class="hint">Catalog error: ${escapeAttr(err.message)}</span>`;
+  }
+}
+
+async function instantiateRecipe(id) {
+  try {
+    const r = await api.post('/api/case/catalog/instantiate', { id, localFolder: true });
+    setStatus(r.message || `Created project from ${id}`);
+    await loadTargets();                 // refresh Target dropdowns with the new project
+    const caseSel = document.getElementById('case-project');
+    if (caseSel) {
+      // select the newly created project (id is the default name)
+      for (const opt of caseSel.options) {
+        if (opt.value.includes(`${id}.yaml`) || opt.textContent.startsWith(id)) { caseSel.value = opt.value; break; }
+      }
+      refreshCaseProject?.();
+    }
+  } catch (err) {
+    setStatus(`Recipe create failed: ${err.message}`);
+  }
+}
+
+function initRecipeCatalog() {
+  document.getElementById('recipe-catalog-category')?.addEventListener('change', () => loadRecipeCatalog());
+  let t = null;
+  document.getElementById('recipe-catalog-search')?.addEventListener('input', () => {
+    clearTimeout(t); t = setTimeout(() => loadRecipeCatalog(), 250);
+  });
+}
+
 let stalkProject = null;
 /** Server/history timeline from last /api/stalk payload (persists across live ticks). */
 let stalkServerTimeline = [];
@@ -3817,6 +3892,7 @@ async function loadCaseBuilder() {
     caseSel.value = fuzzName;
   await refreshCaseProject();
   await refreshCasePacks();
+  await loadRecipeCatalog();
   renderCaseSteps();
 }
 
@@ -5901,6 +5977,7 @@ async function init() {
   initNavToggle();
   await initThemePicker();
   await initPlatformPicker();
+  initRecipeCatalog();
   applyRemoteLabChrome();
   await loadHealth();
   await loadTargets();

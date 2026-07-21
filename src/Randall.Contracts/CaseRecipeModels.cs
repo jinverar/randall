@@ -241,3 +241,29 @@ public sealed record SessionGraphSaveRequest(
     string Start,
     string? Mutate,
     IReadOnlyList<SessionGraphEdgeDto> Edges);
+
+/// <summary>One browsable fuzzing recipe in the target catalog (file format / protocol / web).</summary>
+public sealed record RecipeCatalogEntryDto(
+    string Id,
+    string Name,
+    string Category,
+    string Kind,          // file | tcp | udp | http
+    string Description,
+    IReadOnlyList<string> Tags,
+    int? Port,
+    string? Extension,
+    IReadOnlyList<string> Mutators,
+    int DictionaryCount);
+
+/// <summary>Full catalog entry incl. a seed preview + dictionary (for detail view / instantiate).</summary>
+public sealed record RecipeCatalogDetailDto(
+    RecipeCatalogEntryDto Entry,
+    string SeedHexPreview,
+    int SeedLength,
+    IReadOnlyList<string> Dictionary);
+
+/// <summary>Create a working project from a catalog recipe.</summary>
+public sealed record RecipeInstantiateRequest(
+    string Id,
+    string? Name = null,
+    bool LocalFolder = true);

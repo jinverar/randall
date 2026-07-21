@@ -818,6 +818,36 @@ app.MapPost("/api/case/idl", (CaseIdlRequest request) =>
     }
 });
 
+// —— Recipe catalog (browsable fuzzing target templates: file formats / protocols / web) ——
+app.MapGet("/api/case/catalog", (string? category, string? search) =>
+    Results.Ok(new
+    {
+        count = RecipeCatalog.Count,
+        categories = RecipeCatalog.Categories(),
+        entries = RecipeCatalog.List(category, search),
+    }));
+
+app.MapGet("/api/case/catalog/{id}", (string id) =>
+{
+    var detail = RecipeCatalog.Get(id);
+    return detail is null ? Results.NotFound() : Results.Ok(detail);
+});
+
+app.MapPost("/api/case/catalog/instantiate", (RecipeInstantiateRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Id))
+        return Results.BadRequest(new { error = "id required" });
+    try
+    {
+        var result = RecipeCatalog.Instantiate(request.Id, request.Name, request.LocalFolder);
+        return result.Ok ? Results.Ok(result) : Results.BadRequest(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/case/packs", () => Results.Ok(CaseRecipeStore.ListPacks()));
 
 app.MapGet("/api/case/packs/{id}", (string id) =>
