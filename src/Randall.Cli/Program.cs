@@ -28,6 +28,8 @@ return args[0].ToLowerInvariant() switch
     "analyze" => RunAnalyze(args.Skip(1).ToArray()),
     "heaptriage" or "heap" => RunHeapTriage(args.Skip(1).ToArray()),
     "checksec" => RunCheckSec(args.Skip(1).ToArray()),
+    "pattern" => RunPattern(args.Skip(1).ToArray()),
+    "exploitdev" or "expdev" => RunExploitDev(args.Skip(1).ToArray()),
     "memory" or "lens" => RunMemoryLens(args.Skip(1).ToArray()),
     "stalk" => RunStalk(args.Skip(1).ToArray()),
     "debug" => RunDebug(args.Skip(1).ToArray()),
@@ -65,6 +67,9 @@ static void PrintHelp()
           randall heaptriage --exe <path> [--input f] [--core f] [--no-harden] [-- args…]
                                             Linux heap crash triage (tcache/UAF/overflow classifier)
           randall checksec --exe <path>     ELF exploit-mitigation report (NX/canary/PIE/RELRO/FORTIFY) + ASLR state
+          randall pattern create -l N       Cyclic (mona-style) pattern for offset discovery
+          randall pattern offset -q <val> [-l N]   Find offset of a value/register in the pattern
+          randall exploitdev --exe <p> --core <c> [--pattern-len N]   Faulting registers + RIP offset
           randall memory -i <crash-guid>    Memory lens (UAF fill, regions, neighborhood)
           randall memory --pid N            Live VirtualQueryEx sample
           randall stalk layers -p <project>              List stalk layers
@@ -617,6 +622,101 @@ static int RunExport(string[] args)
     }
 
     Console.WriteLine($"Triage bundle exported to:\n  {bundle.ExportPath}");
+    return 0;
+}
+
+static int RunPattern(string[] args)
+{
+    if (args.Length == 0)
+    {
+        Console.Error.WriteLine("Usage: randall pattern create -l <len>");
+        Console.Error.WriteLine("       randall pattern offset -q <ascii|0xhex> [-l <patternLen>]");
+        return 1;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    int len = PatternTools.MaxUnique;
+    string? query = null;
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] is "-l" or "--length" && i + 1 < args.Length && int.TryParse(args[++i], out var n)) len = n;
+        else if (args[i] is "-q" or "--query" && i + 1 < args.Length) query = args[++i];
+    }
+
+    if (sub == "create")
+    {
+        if (len > PatternTools.MaxUnique)
+            Console.Error.WriteLine($"warning: {len} > {PatternTools.MaxUnique} unique max — pattern will repeat.");
+        Console.WriteLine(PatternTools.Create(len));
+        return 0;
+    }
+    if (sub == "offset")
+    {
+        if (query is null) { Console.Error.WriteLine("offset needs -q <ascii|0xhex>"); return 1; }
+        var off = PatternTools.Offset(query, len);
+        if (off < 0) { Console.WriteLine($"'{query}' not found in cyclic pattern (len {len})."); return 1; }
+        Console.WriteLine($"Offset of {query} = {off} bytes");
+        return 0;
+    }
+    Console.Error.WriteLine($"Unknown pattern subcommand '{sub}' (create|offset)");
+    return 1;
+}
+
+static int RunExploitDev(string[] args)
+{
+    string? exe = null, core = null;
+    int? patternLen = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--exe" && i + 1 < args.Length) exe = args[++i];
+        else if (args[i] is "--core" && i + 1 < args.Length) core = args[++i];
+        else if (args[i] is "--pattern-len" && i + 1 < args.Length && int.TryParse(args[++i], out var n)) patternLen = n;
+    }
+
+    if (exe is null || core is null)
+    {
+        Console.Error.WriteLine("Usage: randall exploitdev --exe <path> --core <core> [--pattern-len N]");
+        Console.Error.WriteLine("  Reads faulting registers from the core (gdb) and, with --pattern-len,");
+        Console.Error.WriteLine("  reports the cyclic-pattern offset that controls RIP (mona findmsp style).");
+        return 1;
+    }
+    exe = ExecutableResolver.FindExisting(Path.GetFullPath(exe)) ?? Path.GetFullPath(exe);
+    core = Path.GetFullPath(core);
+    if (!File.Exists(exe)) { Console.Error.WriteLine($"exe not found: {exe}"); return 1; }
+    if (!File.Exists(core)) { Console.Error.WriteLine($"core not found: {core}"); return 1; }
+
+    var regs = ExploitDevTools.CoreRegisters(exe, core);
+    if (regs.Count == 0)
+    {
+        Console.Error.WriteLine("Could not read registers (gdb missing or core unreadable).");
+        return 1;
+    }
+
+    Console.WriteLine($"exploitdev: {Path.GetFileName(exe)}  core={Path.GetFileName(core)}");
+    foreach (var reg in new[] { "rip", "rsp", "rbp", "rax", "rdi", "rsi" })
+        if (regs.TryGetValue(reg, out var v)) Console.WriteLine($"  {reg,-4}= {v}");
+
+    if (patternLen is not null)
+    {
+        Console.WriteLine();
+        Console.WriteLine("  ══ cyclic-pattern control (mona findmsp) ══");
+        var any = false;
+        foreach (var reg in new[] { "rip", "rbp", "rsp", "rax", "rdi", "rsi", "rdx" })
+        {
+            if (!regs.TryGetValue(reg, out var val)) continue;
+            var off = PatternTools.Offset(val, patternLen.Value);
+            if (off >= 0)
+            {
+                any = true;
+                Console.WriteLine($"  {reg.ToUpperInvariant()} controlled at offset {off}  ({val})");
+            }
+        }
+        if (!any)
+            Console.WriteLine($"  No register held cyclic-pattern bytes at len {patternLen} " +
+                "(canary/PIE tier, partial overwrite, or wrong --pattern-len).");
+        else
+            Console.WriteLine("  → pad to the offset, then place your value in that register's slot.");
+    }
     return 0;
 }
 
