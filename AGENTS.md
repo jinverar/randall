@@ -38,3 +38,8 @@ Randfuzz ("Randall") is a Windows-oriented fuzzer written entirely in C#/.NET 8 
 - `scripts/build-mitigation-lab.sh` compiles `targets/vulnlab/vulnlab.c` (native C TCP vuln service) at four tiers: `vulnlab-{basic,nx,aslr,modern}` (no-mitigation → canary+NX+PIE+RELRO+FORTIFY). Built binaries are gitignored; the `.c` source is committed.
 - `randall checksec --exe <path>` reports NX/canary/PIE/RELRO/FORTIFY (via `readelf`) plus live ASLR state. ASLR is a runtime kernel setting: `sudo sysctl kernel.randomize_va_space=<0|1|2>` (or `setarch -R <exe>` per run). Changing it needs root (sudo works on this VM); restore to `2` after experiments.
 - `projects/vulnlab.yaml` fuzzes the basic tier (real SIGSEGV over TCP, unlike the .NET lab targets which simulate a crash via `Environment.Exit`). Point `target.executable` at another tier to practise against NX/ASLR/canary. Details in `docs/MITIGATION_LAB.md`.
+
+### Stalking: profiles, bench, unlimited
+- `randall fuzz --profile basic|fuzz|fuzzier` ramps intensity (iterations, havoc depth, power schedule, graph bias, mutators). `--unlimited` runs until stopped (Ctrl-C) / crash budget. `StalkProfiles` defines the presets.
+- `randall stalk bench -c <project> [--profiles a,b,c] [--scale N]` runs each profile and prints a comparison (iters/crashes/unique/corpus+/novel/edges/secs/crash-per-1k). `--scale` multiplies iteration budgets. Full runs can take several minutes; scale down for quick checks.
+- On stock Linux there's no DynamoRIO coverage backend, so stalking uses corpus-novelty feedback: `corpus+` (frontier growth) is the signal; `edges`/`novel` stay 0 until a native Linux coverage backend lands. Details in `docs/STALKING.md`.

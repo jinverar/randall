@@ -146,6 +146,8 @@ static async Task<int> RunFuzzAsync(string[] args)
     string? debuggerMode = null;
     string? debuggerKind = null;
     bool? openOnCrash = null;
+    string? profile = null;
+    var unlimited = false;
     for (var i = 0; i < args.Length; i++)
     {
         if (args[i] is "-c" or "--config" && i + 1 < args.Length)
@@ -157,6 +159,10 @@ static async Task<int> RunFuzzAsync(string[] args)
         else if (args[i] is "--max-iterations" && i + 1 < args.Length &&
                  int.TryParse(args[++i], out var max))
             maxIterations = max;
+        else if (args[i] is "--profile" or "--stalk-profile" && i + 1 < args.Length)
+            profile = args[++i];
+        else if (args[i] is "--unlimited")
+            unlimited = true;
         else if (args[i] is "--debugger" && i + 1 < args.Length)
             debuggerMode = args[++i];
         else if (args[i] is "--debugger-kind" && i + 1 < args.Length)
@@ -170,12 +176,32 @@ static async Task<int> RunFuzzAsync(string[] args)
         Console.Error.WriteLine(
             "Usage: randall fuzz -c projects/vulnserver.yaml [--dry-run] [--coverage] [--max-iterations N]");
         Console.Error.WriteLine(
+            "       [--profile basic|fuzz|fuzzier] [--unlimited]  (unlimited bug stalking — stop with Ctrl-C)");
+        Console.Error.WriteLine(
             "       [--debugger none|attach|wait|both] [--debugger-kind auto|windbg|windbg-preview] [--open-on-crash]");
         return 1;
     }
 
     var yamlPath = Path.GetFullPath(config);
     var project = ProjectLoader.Load(yamlPath);
+
+    if (profile is not null)
+    {
+        if (!StalkProfiles.IsKnown(profile))
+        {
+            Console.Error.WriteLine($"Unknown --profile '{profile}'. Use: {string.Join(" | ", StalkProfiles.Names)}");
+            return 1;
+        }
+        var covAvail = coverage || project.Fuzz.CoverageGuided || DynamoRioRunner.Discover().IsAvailable;
+        var applied = StalkProfiles.Apply(project, profile, covAvail);
+        coverage = coverage || applied.CoverageGuided;
+        Console.WriteLine($"Stalk profile: {applied.Name} — {applied.Blurb}");
+    }
+
+    // Unlimited stalking: run until stopped (Ctrl-C) or the crash budget is hit.
+    if (unlimited)
+        maxIterations = int.MaxValue;
+
     Console.WriteLine($"Fuzzing: {project.Name} ({project.Kind}) — {project.Description}");
     if (dryRun)
         Console.WriteLine("[dry-run mode]");
@@ -984,6 +1010,7 @@ static int RunStalk(string[] args)
               randall stalk compare -p <project> [layerId…]
               randall stalk export -p <project> --format idc|ghidra|edges [-o dir] [layerId…]
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
+              randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
             """);
         return 0;
     }
@@ -996,8 +1023,72 @@ static int RunStalk(string[] args)
         "compare" => StalkCompare(rest),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
+        "bench" => StalkBench(rest),
         _ => Unknown($"stalk {args[0]}"),
     };
+}
+
+static int StalkBench(string[] args)
+{
+    string? config = null;
+    var profiles = new List<string>(StalkProfiles.Names);
+    var scale = 1.0;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-c" or "--config" && i + 1 < args.Length) config = args[++i];
+        else if (args[i] is "--profiles" && i + 1 < args.Length)
+            profiles = args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        else if (args[i] is "--scale" && i + 1 < args.Length && double.TryParse(args[++i], out var s))
+            scale = s;
+    }
+
+    if (config is null)
+    {
+        Console.Error.WriteLine("Usage: randall stalk bench -c projects/vulnserver.yaml [--profiles basic,fuzz,fuzzier] [--scale N]");
+        return 1;
+    }
+    foreach (var p in profiles)
+        if (!StalkProfiles.IsKnown(p)) { Console.Error.WriteLine($"Unknown profile '{p}'. Use: {string.Join(" | ", StalkProfiles.Names)}"); return 1; }
+
+    return StalkBenchAsync(Path.GetFullPath(config), profiles, scale).GetAwaiter().GetResult();
+}
+
+static async Task<int> StalkBenchAsync(string yamlPath, List<string> profiles, double scale)
+{
+    var covAvail = DynamoRioRunner.Discover().IsAvailable;
+    Console.WriteLine($"Stalk bench: {Path.GetFileNameWithoutExtension(yamlPath)}  (coverage backend: {(covAvail ? "DynamoRIO" : "corpus-novelty")})");
+    Console.WriteLine();
+
+    var rows = new List<(string Profile, int Iters, int Crashes, int Unique, int Corpus, int Novel, int Edges, double Secs)>();
+    foreach (var name in profiles)
+    {
+        var project = ProjectLoader.Load(yamlPath);
+        var prof = StalkProfiles.Apply(project, name, covAvail,
+            iterationsOverride: (int)Math.Max(1, Math.Round(StalkProfiles.Get(name).Iterations * scale)));
+        var sink = new StalkBenchSink();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        Console.WriteLine($"→ running '{name}' ({project.Fuzz.MaxIterations} iters, havoc={project.Fuzz.HavocDepth}, power={project.Fuzz.PowerSchedule}, graphBias={project.Fuzz.SessionGraphBias})…");
+        var engine = new FuzzEngine();
+        var result = await engine.RunAsync(project, yamlPath,
+            new FuzzRunOptions(false, project.Fuzz.CoverageGuided, project.Fuzz.MaxIterations, sink));
+        sw.Stop();
+        var unique = result.Crashes.Select(c => c.StackHash).Distinct().Count();
+        rows.Add((name, result.Iterations, result.CrashesFound, unique, result.CorpusAdded,
+            sink.NovelInputs, sink.MaxEdges, sw.Elapsed.TotalSeconds));
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Comparison (stalking intensity):");
+    Console.WriteLine($"  {"profile",-9} {"iters",6} {"crashes",8} {"unique",7} {"corpus+",8} {"novel",6} {"edges",6} {"secs",7} {"crash/1k",9}");
+    Console.WriteLine($"  {new string('-', 74)}");
+    foreach (var r in rows)
+    {
+        var per1k = r.Iters > 0 ? r.Crashes * 1000.0 / r.Iters : 0;
+        Console.WriteLine($"  {r.Profile,-9} {r.Iters,6} {r.Crashes,8} {r.Unique,7} {r.Corpus,8} {r.Novel,6} {r.Edges,6} {r.Secs,7:F1} {per1k,9:F1}");
+    }
+    Console.WriteLine();
+    Console.WriteLine("novel = inputs that expanded the frontier (stalking signal); edges = coverage edges (DynamoRIO only).");
+    return 0;
 }
 
 static int StalkLayers(string[] args)
@@ -2262,4 +2353,21 @@ static int Unknown(string command)
     Console.Error.WriteLine($"Unknown command: {command}");
     PrintHelp();
     return 1;
+}
+
+/// <summary>Silent progress sink for `stalk bench` — records the stalking signal (frontier novelty + edges).</summary>
+sealed class StalkBenchSink : Randall.Infrastructure.IFuzzProgressSink
+{
+    public int NovelInputs { get; private set; }
+    public int MaxEdges { get; private set; }
+
+    public void OnStarted(string project, string kind) { }
+    public void OnIteration(Randall.Infrastructure.FuzzIterationEvent e)
+    {
+        if (e.NewCoverage) NovelInputs++;
+        if (e.CoverageEdgeTotal > MaxEdges) MaxEdges = e.CoverageEdgeTotal;
+    }
+    public void OnCompleted(Randall.Core.FuzzRunResult result) { }
+    public void OnStopped(string reason) { }
+    public void OnError(string message) { }
 }

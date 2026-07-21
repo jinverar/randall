@@ -1,113 +1,57 @@
-# Stalking bugs — reference
+# Stalking: intensity profiles, comparison, and unlimited runs
 
-**Start here for the research process:** [STALK_LOOP.md](STALK_LOOP.md) — baseline → basic fuzz → advanced → crash study → repeat.
+"Stalking" is Randfuzz's coverage/feedback‑driven exploration — favoring inputs that reach new code
+and branching through the session graph (the graph on the Dashboard / Session graph tab). This adds
+three intensity presets, a side‑by‑side comparison, and unbounded ("unlimited") runs.
 
-This page is the short reference (UI tags, backends, API/CLI). Inspired by DynamoRIO drcov + Dynapstalker / PaiMei Pstalker: you only find bugs in code you execute.
+## Intensity profiles
 
----
+| Profile | Iterations | Havoc depth | Power schedule | Graph bias | Coverage‑guided | Mutators |
+|---------|-----------|-------------|----------------|------------|-----------------|----------|
+| **basic** | 100 | 2 | off | 0.10 | off | bitflip, insert |
+| **fuzz** | 500 | 8 | on | 0.25 | if available | + havoc, interesting, dictionary, arith |
+| **fuzzier** | 2000 | 16 | on | 0.40 | if available | + expand, boundary, splice |
 
-## Where the loop runs
-
-| Mode | Coverage layers + dumps | Notes |
-|------|-------------------------|--------|
-| **Lab host** (`randall serve` or `randall agent`, fuzz in that UI) | Full stalk loop | **Do this** for baseline / fuzzed / fuzzier |
-| **Laptop + `target.agentUrl` only** | Process remote; coverage/dumps weak | Lifecycle control, not the stalk loop |
-
-Details and click-path: [STALK_LOOP.md](STALK_LOOP.md). Offline dumps: [TARGET_RUNTIME.md](TARGET_RUNTIME.md)#remote-lab-workflow-dumps--lens--offline-import.
-
----
-
-## Layer tags (Stalking bugs UI)
-
-| Tag | Meaning |
-|-----|---------|
-| `baseline` | Normal use / happy path |
-| `fuzzed` | First / basic fuzz campaign |
-| `fuzzier` | Improved cases — record as many rounds as you want |
-| `crash` | Path around a saved crash (often auto-recorded) |
-| `custom` | Anything else (label it) |
-
-Record via drcov path, crash id, or **From corpus edges**. Layers live under `data/stalk/<project>/`.
-
----
-
-## Coverage backends (`fuzz.stalkMode`)
-
-| Mode | Backend |
-|------|---------|
-| `auto` | DynamoRIO if installed, else **native PC stalk** |
-| `external` | DynamoRIO drcov (full BB) |
-| `native` | Debug-event PC samples → drcov-compatible log (coarse) |
-| `none` | No coverage instrumentation |
-
-Procmon / TCPVCon / DebugView / Sysinternals snapshots / pktmon / tshark / ProcDump bookends: `fuzz.procmonCapture`, `fuzz.tcpvconCapture`, `fuzz.debugViewCapture`, `fuzz.sysinternalsSnapshots`, `fuzz.pktmonCapture`, `fuzz.tsharkCapture`, `fuzz.procdumpOnCrash` (or Fuzz tab checkboxes). Full operator guide (tools PATH, Page Heap, remote VM): [RECORDING.md](RECORDING.md).
-
----
-
-## UI
-
-**Stalking bugs** nav tab:
-
-- Add layers: baseline / fuzzed / fuzzier / crash / custom  
-- Compare deltas and block map  
-- Export: IDA IDC, Ghidra script, raw edges  
-- Tool status: DynamoRIO, native PC stalk, Scream, Procmon, WinDbg, remote agent  
-
----
-
-## API
-
-- `GET /api/stalking/{project}` — workspace  
-- `POST /api/stalking/layers` — record layer  
-- `POST /api/stalking/layers/from-crash` — `{ crashId, tag? }`  
-- `POST /api/stalking/layers/from-corpus` — `{ project, tag? }`  
-- `GET /api/stalking/{project}/compare`  
-- `POST /api/stalking/export` — `{ project, layerIds, format: idc|ghidra|edges }`  
-- `GET /api/remote/tools` · `POST /api/remote/procmon/start|stop` — lab agent  
-
----
-
-## CLI
-
-```
-randall stalk layers -p <project>
-randall stalk compare -p <project> [layerId…]
-randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
-randall stalk from-crash -i <crash-guid> [--tag crash]
+```bash
+dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml --profile fuzzier
 ```
 
-Fuzz campaigns auto-record a `crash` stalk layer when a crash is saved.
+## Compare intensities (stalk bench)
 
----
+Runs the same target at each profile and prints a comparison:
 
-## Debugger attach / wait / analyze
-
-For long-lived local targets (`target.longLived: true`):
-
-| Mode | Behavior |
-|------|----------|
-| `none` | MiniDumpWriter on process exit (default) |
-| `wait` | **Scream** → second-chance / fatal minidump → auto-analyze |
-| `attach` | WinDbg / Preview attached with `g` |
-| `both` | Scream wait during fuzz + open dump in GUI after crash |
-
-```yaml
-fuzz:
-  debuggerMode: wait
-  debuggerKind: windbg-preview
-  debuggerOpenOnCrash: true
+```bash
+dotnet run --project src/Randall.Cli -- stalk bench -c projects/vulnserver.yaml [--profiles basic,fuzz,fuzzier] [--scale N]
 ```
 
+Example (vulnserver, `--scale 0.25`):
+
 ```
-randall scream selftest
-randall fuzz -c projects/vulnserver.yaml --debugger wait --open-on-crash
-randall analyze -i <crash-guid>
-randall memory -i <crash-guid>
+profile    iters  crashes  unique  corpus+  novel  edges    secs  crash/1k
+--------------------------------------------------------------------------
+basic         25        2       2       18      0      0    16.4      80.0
+fuzz         125        8       8       64      0      0    78.7      64.0
+fuzzier      500       56      56      196      0      0   332.1     112.0
 ```
 
----
+- **corpus+** = inputs kept because they expanded the frontier — the stalking signal available on
+  every platform.
+- **edges/novel** = DynamoRIO coverage‑edge deltas (Windows, or Linux with DynamoRIO installed).
+- **crash/1k** = crashes per 1000 iterations — efficiency of the profile.
 
-## Related
+`--scale` multiplies each profile's iteration budget (e.g. `--scale 2` doubles them).
 
-- [STALK_LOOP.md](STALK_LOOP.md) — full process in research order  
-- [TARGET_RUNTIME.md](TARGET_RUNTIME.md) · [LAB_AGENT.md](LAB_AGENT.md) · [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md) · [CASE_BUILDER.md](CASE_BUILDER.md)
+## Unlimited bug stalking
+
+Run until you stop it (Ctrl‑C) or the crash budget is hit — no fixed iteration cap:
+
+```bash
+dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnlab.yaml --profile fuzzier --unlimited
+```
+
+## Coverage backend note
+
+On Windows (or Linux with DynamoRIO), stalking uses drcov edge coverage. On stock Linux the backend
+resolves to **corpus‑novelty** feedback (frontier growth), so `corpus+` is the signal and `edges` is
+0. Roadmap: a native Linux coverage backend (SanitizerCoverage / perf) to populate `edges` without
+DynamoRIO.
