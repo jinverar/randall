@@ -31,6 +31,7 @@ public static class BuiltInMutators
                 "arith" => new ArithMutator(rng),
                 "duplicate" or "dup" => new DuplicateMutator(rng),
                 "shuffle" => new ShuffleMutator(rng),
+                "cyclic" or "pattern" => new CyclicMutator(rng),
                 "splice" when context.PickAlternateSeed is not null =>
                     new SpliceMutator(rng, context.PickAlternateSeed),
                 _ => null,
@@ -154,6 +155,23 @@ internal sealed class InsertBlobMutator(Random rng) : IMutator
         input.CopyTo(buf);
         rng.NextBytes(buf.AsSpan(input.Length));
         return buf;
+    }
+}
+
+/// <summary>
+/// Exploit-dev practice mutator — replace/expand the payload with a Metasploit-style cyclic
+/// pattern so a crash can be turned into "RIP/saved-return at offset N".
+/// </summary>
+internal sealed class CyclicMutator(Random rng) : IMutator
+{
+    public string Name => "cyclic";
+    public ReadOnlyMemory<byte> Mutate(ReadOnlyMemory<byte> input)
+    {
+        // Prefer overflow-sized patterns for stack-smash labs (64–800), keep unique range.
+        var len = rng.Next(64, 801);
+        if (input.Length > len)
+            len = Math.Min(input.Length + rng.Next(32, 200), PatternTools.MaxUnique);
+        return Encoding.ASCII.GetBytes(PatternTools.Create(len));
     }
 }
 

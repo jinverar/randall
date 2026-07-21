@@ -117,8 +117,10 @@ static void PrintHelp()
           arith        Single-byte arithmetic delta
           duplicate    Repeat a random seed chunk
           shuffle      Swap short spans in the seed
+          cyclic       Metasploit-style pattern (exploit-dev offset practice)
 
         Docs: docs/CUSTOM_TARGETS.md · docs/CASE_BUILDER.md · docs/TARGETS.md
+        Exploit-dev practice: projects/vulnlab-offset.yaml (cyclic → CONTROL offset)
         """);
 }
 

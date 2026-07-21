@@ -1,0 +1,27 @@
+name: vulnlab-offset
+description: Exploit-dev practice — VulnLab basic tier with cyclic patterns to learn RIP/saved-return offsets
+kind: tcp
+target:
+  executable: ../targets/vulnlab/vulnlab-basic
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 9999
+  receiveTimeoutMs: 1500
+sessionCommands:
+  - name: ECHO
+    model: protocols/vulnlab_echo.yaml
+    readBanner: true
+fuzz:
+  maxIterations: 40
+  autoAnalyzeCrash: true
+  corpusDir: ../data/corpus/vulnlab-offset
+  crashesDir: ../data/crashes/vulnlab-offset
+seeds:
+  - seeds/vulnlab_cyclic.txt
+mutators:
+  - cyclic
+  - expand
+  - insert

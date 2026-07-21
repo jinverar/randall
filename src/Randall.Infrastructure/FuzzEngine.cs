@@ -955,6 +955,14 @@ public sealed class FuzzEngine
                         {
                             try
                             {
+                                byte[]? crashInput = null;
+                                try
+                                {
+                                    if (File.Exists(saved.InputPath))
+                                        crashInput = await File.ReadAllBytesAsync(saved.InputPath, cancellationToken);
+                                }
+                                catch { /* ignore */ }
+
                                 var linux = LinuxCrashAnalysisWriter.Analyze(
                                     crashesDir,
                                     saved.Id,
@@ -962,7 +970,8 @@ public sealed class FuzzEngine
                                     targetExeResolved,
                                     exitCode: result.ExitCode,
                                     patternLen: null,
-                                    projectName: project.Name);
+                                    projectName: project.Name,
+                                    crashInput: crashInput);
                                 Console.WriteLine(
                                     $"  linux triage: {linux.SummaryLine} → {linux.AnalysisPath}");
                                 if (linux.HeapTriagePath is not null)

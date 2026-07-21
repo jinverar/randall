@@ -13,6 +13,7 @@ Enable via project YAML `mutators:` or **Fuzz → Case builder** checkboxes. New
 | `boundary` | Replace byte with 0, 1, 0x7F, 0x80, 0xFF | Classic boundary testing |
 | `interesting` | Inject known-dangerous integers at 1/2/4/8-byte alignment | libFuzzer `ExtractAndExecuteOne` |
 | `havoc` | Stack 2–N random ops (flip, arith, truncate, expand, insert, duplicate, shuffle) | AFL havoc stage |
+| `cyclic` / `pattern` | Metasploit-style cyclic buffer for EIP/RIP offset practice | mona `pattern_create` |
 | `dictionary` | Overwrite or insert project tokens | AFL `-x` / Boofuzz `s_string` |
 | `splice` | Crossover two corpus inputs at random split | AFL splice / genetic fuzzing |
 | `expand` | Append large run (length / buffer stress) | Generation fuzzers |

@@ -46,10 +46,15 @@ public static partial class LinuxCrashAnalysisWriter
         string? exePath,
         int? exitCode = null,
         int? patternLen = null,
-        string? projectName = null)
+        string? projectName = null,
+        byte[]? crashInput = null)
     {
         var exe = ExecutableResolver.FindExisting(exePath) ?? exePath;
         var stub = SeedFromExitAndSidecar(corePath, exitCode);
+        patternLen ??= crashInput is { Length: > 0 }
+            ? PatternTools.TryInferPatternLength(crashInput)
+            : null;
+        patternLen ??= crashInput is { Length: >= 16 } ? crashInput.Length : null;
 
         LinuxCrashTriage.TriageResult triage;
         string? error = null;
@@ -119,13 +124,20 @@ public static partial class LinuxCrashAnalysisWriter
         File.WriteAllText(heapPath, JsonSerializer.Serialize(heapDto, JsonOptions));
 
         string? guidePath = null;
+        string? summaryOverride = null;
         if (!string.IsNullOrWhiteSpace(exe) && File.Exists(exe))
         {
             try
             {
-                var guide = ExploitGuide.Build(exe, corePath, patternLen, projectName);
+                var guide = ExploitGuide.Build(
+                    exe, corePath, patternLen, projectName, crashInput: crashInput);
                 guidePath = Path.Combine(crashesDir, $"{crashId:N}_exploit_guide.json");
                 File.WriteAllText(guidePath, JsonSerializer.Serialize(guide, JsonOptions));
+                if (guide.ControlledRegister is not null && guide.ControlledOffset is int off)
+                {
+                    summaryOverride =
+                        $"CONTROL {guide.ControlledRegister.ToUpperInvariant()} @ offset {off}";
+                }
             }
             catch
             {
@@ -133,9 +145,10 @@ public static partial class LinuxCrashAnalysisWriter
             }
         }
 
-        var summary = triage.Finding is { } f
-            ? $"{f.Primitive} ({f.Category}) tier={f.Tier} {f.Cwe}"
-            : $"{hint}" + (fault is not null ? $" @ {fault}" : "");
+        var summary = summaryOverride
+                      ?? (triage.Finding is { } f
+                          ? $"{f.Primitive} ({f.Category}) tier={f.Tier} {f.Cwe}"
+                          : $"{hint}" + (fault is not null ? $" @ {fault}" : ""));
 
         return new AutoAnalyzeResult(analysis, analysisPath, heapPath, guidePath, summary);
     }

@@ -144,7 +144,10 @@ sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
 With `fuzz.autoAnalyzeCrash` (default **on**), each captured core also gets:
 - `*_analysis.json` — signal / fault hint (catalog-compatible)
 - `*_heap_triage.json` — gdb backtrace + heap/stack classifier
-- `*_exploit_guide.json` — mitigation + next-step playbook (no payloads)
+- `*_exploit_guide.json` — mitigation + next-step playbook; **CONTROL @ offset** when the
+  crashing input (or a cyclic pattern) lands in a register / saved return
+
+Skill practice: `projects/vulnlab-offset.yaml` (cyclic mutator on VulnLab basic).
 
 Manual: `randall heaptriage --exe <p> --core <core>` or `randall exploit guide --exe <p> --core <core>`.
 
