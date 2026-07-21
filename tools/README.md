@@ -177,7 +177,10 @@ Randall uses DynamoRIO `drrun` + `drcov` for optional coverage feedback (`--cove
 After install, this file must exist:
 
 ```
+# Windows
 tools/dynamorio/bin64/drrun.exe
+# Linux
+tools/dynamorio/bin64/drrun
 ```
 
 Randall also auto-detects `tools/DynamoRIO-*` (versioned extract folder) and `DYNAMORIO_HOME`.
@@ -186,25 +189,36 @@ Randall also auto-detects `tools/DynamoRIO-*` (versioned extract folder) and `DY
 
 DynamoRIO is **optional**. **Important:** the install script **may take a while** (large download; slow networks).
 
-**A. Script (progress + resume via curl/BITS)**
+**Windows — script (progress + resume via curl/BITS)**
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1
 ```
 
-**B. Manual download + unzip into `tools`**
+**Linux — script**
 
-1. Download `DynamoRIO-Windows-*.zip` from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases)  
-   (URL pattern: `https://github.com/DynamoRIO/dynamorio/releases/download/<tag>/DynamoRIO-Windows-<version>.zip`).
-2. Extract the zip, then move/rename the top-level folder to `tools\dynamorio` so `tools\dynamorio\bin64\drrun.exe` exists  
-   (or keep `tools\DynamoRIO-*` — Randall auto-detects it).
-3. Or pass the zip to the script instead of extracting by hand:
+```bash
+scripts/install-dynamorio.sh
+# or: scripts/install-dynamorio.sh --tarball ~/Downloads/DynamoRIO-Linux-*.tar.gz
+```
+
+**Manual download into `tools`**
+
+1. Download the OS package from [DynamoRIO releases](https://github.com/DynamoRIO/dynamorio/releases)  
+   (`DynamoRIO-Windows-*.zip` or `DynamoRIO-Linux-*.tar.gz` / AArch64 / ARM variants).
+2. Extract, then move/rename the top-level folder to `tools/dynamorio` so `bin64/drrun[.exe]` exists  
+   (or keep `tools/DynamoRIO-*` — Randall auto-detects it).
+3. Or pass the archive to the script:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\path\to\DynamoRIO-Windows-*.zip
 ```
 
-> **Footnote — coverage later:** `...\install-dynamorio.ps1 -Skip` if you only need crash-finding for now.
+```bash
+scripts/install-dynamorio.sh --tarball /path/to/DynamoRIO-Linux-*.tar.gz
+```
+
+> **Footnote — coverage later:** `install-dynamorio.ps1 -Skip` / `install-dynamorio.sh --skip` if you only need crash-finding for now.
 
 ### Verify
 
@@ -212,6 +226,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPat
 dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml
 ```
 
+```bash
+dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml --platform linux
+```
+
 Web UI **Dashboard** should show **DynamoRIO: Ready** (not Missing).
 
-See also [README.md](../README.md#optional--dynamorio-coverage-guided-stalking) and [docs/FUZZING.md](../docs/FUZZING.md).
+See also [README.md](../README.md#optional--dynamorio-coverage-guided-stalking), [docs/INSTALL_LINUX.md](../docs/INSTALL_LINUX.md), and [docs/FUZZING.md](../docs/FUZZING.md).

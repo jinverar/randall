@@ -3,7 +3,7 @@ using Randall.Contracts;
 
 namespace Randall.Infrastructure;
 
-/// <summary>Leg 4 — Stalk: DynamoRIO drrun + drcov wrapper (Phase 2 scaffold).</summary>
+/// <summary>Leg 4 — Stalk: DynamoRIO drrun + drcov wrapper (Windows + Linux).</summary>
 public sealed class DynamoRioRunner
 {
     public string? DrrunPath { get; init; }
@@ -14,16 +14,16 @@ public sealed class DynamoRioRunner
         var env = Environment.GetEnvironmentVariable("DYNAMORIO_HOME");
         if (!string.IsNullOrWhiteSpace(env))
         {
-            var drrun = Path.Combine(env, "bin64", "drrun.exe");
-            if (File.Exists(drrun))
-                return new DynamoRioRunner { DrrunPath = drrun };
+            var fromEnv = FindDrrunUnder(env);
+            if (fromEnv is not null)
+                return new DynamoRioRunner { DrrunPath = fromEnv };
         }
 
         var repoRoot = CrashCatalog.FindRepoRoot();
         if (repoRoot is not null)
         {
-            var local = Path.Combine(repoRoot, "tools", "dynamorio", "bin64", "drrun.exe");
-            if (File.Exists(local))
+            var local = FindDrrunUnder(Path.Combine(repoRoot, "tools", "dynamorio"));
+            if (local is not null)
                 return new DynamoRioRunner { DrrunPath = local };
 
             var toolsDir = Path.Combine(repoRoot, "tools");
@@ -31,27 +31,72 @@ public sealed class DynamoRioRunner
             {
                 foreach (var dir in Directory.EnumerateDirectories(toolsDir, "DynamoRIO-*"))
                 {
-                    var candidate = Path.Combine(dir, "bin64", "drrun.exe");
-                    if (File.Exists(candidate))
+                    var candidate = FindDrrunUnder(dir);
+                    if (candidate is not null)
                         return new DynamoRioRunner { DrrunPath = candidate };
                 }
             }
         }
 
-        foreach (var candidate in new[]
+        if (OperatingSystem.IsWindows())
         {
-            @"C:\DynamoRIO\bin64\drrun.exe",
-            @"C:\tools\dynamorio\bin64\drrun.exe",
-        })
+            foreach (var home in new[] { @"C:\DynamoRIO", @"C:\tools\dynamorio" })
+            {
+                var candidate = FindDrrunUnder(home);
+                if (candidate is not null)
+                    return new DynamoRioRunner { DrrunPath = candidate };
+            }
+        }
+        else
         {
-            if (File.Exists(candidate))
-                return new DynamoRioRunner { DrrunPath = candidate };
+            foreach (var home in new[]
+                     {
+                         "/opt/dynamorio",
+                         "/usr/local/dynamorio",
+                         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                             "dynamorio"),
+                     })
+            {
+                var candidate = FindDrrunUnder(home);
+                if (candidate is not null)
+                    return new DynamoRioRunner { DrrunPath = candidate };
+            }
         }
 
         return new DynamoRioRunner();
     }
 
+    /// <summary>
+    /// Resolve <c>bin64/drrun[.exe]</c> (preferred) or <c>bin32/drrun[.exe]</c> under a DynamoRIO home.
+    /// </summary>
+    internal static string? FindDrrunUnder(string home)
+    {
+        if (string.IsNullOrWhiteSpace(home) || !Directory.Exists(home))
+            return null;
+
+        foreach (var bin in new[] { "bin64", "bin32" })
+        {
+            foreach (var name in DrrunNames)
+            {
+                var path = Path.Combine(home, bin, name);
+                if (File.Exists(path))
+                    return path;
+            }
+        }
+
+        return null;
+    }
+
+    private static readonly string[] DrrunNames = OperatingSystem.IsWindows()
+        ? ["drrun.exe", "drrun"]
+        : ["drrun", "drrun.exe"];
+
     public bool IsAvailable => !string.IsNullOrWhiteSpace(DrrunPath) && File.Exists(DrrunPath);
+
+    public static string InstallHint =>
+        OperatingSystem.IsWindows()
+            ? "run scripts/install-dynamorio.ps1 or set DYNAMORIO_HOME"
+            : "run scripts/install-dynamorio.sh or set DYNAMORIO_HOME";
 
     public async Task<DrcovRunResult> RunWithCoverageAsync(
         ProjectConfig project,
@@ -66,7 +111,7 @@ public sealed class DynamoRioRunner
                 false,
                 null,
                 null,
-                "DynamoRIO not found — run scripts/install-dynamorio.ps1 or set DYNAMORIO_HOME");
+                $"DynamoRIO not found — {InstallHint}");
         }
 
         Directory.CreateDirectory(traceDir);
@@ -83,7 +128,8 @@ public sealed class DynamoRioRunner
         var psi = new ProcessStartInfo
         {
             FileName = DrrunPath,
-            Arguments = $"-t drcov -dump_text -- \"{targetExe}\" {string.Join(' ', args)}",
+            Arguments =
+                $"-t drcov -dump_text -logdir \"{traceDir}\" -- \"{targetExe}\" {string.Join(' ', args)}",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

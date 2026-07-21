@@ -51,7 +51,8 @@ dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnlab.yaml --profile 
 
 ## Coverage backend note
 
-On Windows (or Linux with DynamoRIO), stalking uses drcov edge coverage. On stock Linux the backend
-resolves to **corpus‑novelty** feedback (frontier growth), so `corpus+` is the signal and `edges` is
-0. Roadmap: a native Linux coverage backend (SanitizerCoverage / perf) to populate `edges` without
-DynamoRIO.
+On Windows (or Linux with DynamoRIO), stalking uses drcov edge coverage. Install on Linux with
+`scripts/install-dynamorio.sh` (expects `tools/dynamorio/bin64/drrun`). On stock Linux without
+DynamoRIO the backend resolves to **corpus‑novelty** feedback (frontier growth), so `corpus+` is the
+signal and `edges` is 0. Roadmap: a native Linux coverage backend (SanitizerCoverage / perf) to
+populate `edges` without DynamoRIO.

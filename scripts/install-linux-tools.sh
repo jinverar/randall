@@ -51,5 +51,8 @@ if command -v gdb >/dev/null 2>&1 && [ ! -f "$HOME/.gdbinit-gef.py" ]; then
 fi
 
 echo
+echo "Optional — DynamoRIO coverage (large download; not installed by this script):"
+echo "  scripts/install-dynamorio.sh"
+echo
 echo "Verify with the doctor (Linux scope):"
 echo "  dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml --platform linux"

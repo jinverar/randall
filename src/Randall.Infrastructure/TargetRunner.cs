@@ -312,8 +312,19 @@ public static class TargetRunner
         return await FinishTcpRun(project, server, yamlPath, lastResponse, cancellationToken);
     }
 
-    public static bool IsCrashExitCode(int code) =>
-        code is unchecked((int)0xC0000005) or unchecked((int)0xC0000409) or (< 0 and not -1);
+    /// <summary>
+    /// Windows NTSTATUS crash codes, or Linux shell-style <c>128+signal</c> (e.g. 139 = SIGSEGV).
+    /// Negative non-<c>-1</c> codes stay treated as abnormal (historical Windows path).
+    /// </summary>
+    public static bool IsCrashExitCode(int code)
+    {
+        if (code is unchecked((int)0xC0000005) or unchecked((int)0xC0000409))
+            return true;
+        // Linux / POSIX: abort on fatal signals often surfaces as 128+signum (SIGINT=130 … SIGSYS=159).
+        if (code is >= 129 and <= 159)
+            return true;
+        return code is < 0 and not -1;
+    }
 
     /// <summary>Port-in-use / bind failures — not target faults under fuzz input.</summary>
     public static bool IsInfrastructureExitCode(int code) =>

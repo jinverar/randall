@@ -99,7 +99,9 @@ public static class LabDoctor
 
         var dr = DynamoRioRunner.Discover();
         Add("dynamorio", dr.IsAvailable ? "ok" : "warn",
-            dr.IsAvailable ? dr.DrrunPath! : "Not found — coverage-guided file fuzz disabled");
+            dr.IsAvailable
+                ? dr.DrrunPath!
+                : $"Not found — coverage-guided stalking disabled ({DynamoRioRunner.InstallHint})");
 
         var stalkMode = (project.Fuzz.StalkMode ?? "auto").Trim().ToLowerInvariant();
         var native = new NativeStalkRunner();

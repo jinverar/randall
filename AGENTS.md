@@ -14,8 +14,9 @@ Randfuzz ("Randall") is a Windows-oriented fuzzer written entirely in C#/.NET 8 
 
 ### Environment: this VM is Linux, the product is Windows-focused
 - The build and the two entrypoints (CLI + ASP.NET Core server) are cross-platform and run fine on this Linux VM.
-- Windows-only features are expected to soft-skip or be unavailable here: minidumps, Page Heap/gflags, pktmon, ETW/WPR, DynamoRIO coverage, and the PowerShell-built native `.exe` lab targets (e.g. `targets/vulnserver/randall-vulnserver.exe`). `dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml` reporting these as `[!]` missing is normal on Linux, not a setup failure.
-- The `scripts/*.ps1` installers/build scripts are Windows/PowerShell only; do not run them here.
+- Windows-only features are expected to soft-skip or be unavailable here: minidumps, Page Heap/gflags, pktmon, ETW/WPR, and the PowerShell-built native `.exe` lab targets (e.g. `targets/vulnserver/randall-vulnserver.exe`). `dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml` reporting these as `[!]` missing is normal on Linux, not a setup failure.
+- DynamoRIO coverage **is** supported on Linux when installed: `scripts/install-dynamorio.sh` → `tools/dynamorio/bin64/drrun`. Without it, stalking falls back to corpus-novelty (doctor `dynamorio` warn is OK).
+- The `scripts/*.ps1` installers/build scripts are Windows/PowerShell only; do not run them here. Use the `.sh` counterparts on Linux (`install-linux-tools.sh`, `install-dynamorio.sh`, `build-lab-targets.sh`).
 
 ### Build / run / test
 - Build everything: `dotnet build Randall.sln` (run from repo root; restores YamlDotNet automatically).
@@ -30,7 +31,7 @@ Randfuzz ("Randall") is a Windows-oriented fuzzer written entirely in C#/.NET 8 
 
 ### Platform selector + Linux toolchain
 - Fuzzing platform is selectable (UI sidebar Auto/Windows/Linux, or `doctor --platform`, API `/api/doctor?platform=` and `/api/platform`). `doctor` tags each check `windows`/`linux`/`cross` and shows only the selected OS's rows — so on Linux the Windows tool noise is hidden and the Linux toolchain appears.
-- Linux triage tools are installed via `scripts/install-linux-tools.sh` (gdb/lldb/strace/ltrace/tcpdump/valgrind/clang + GEF). GEF is the preferred gdb enhancement; detection also finds pwndbg/peda. AFL++/honggfuzz are OPTIONAL external engine adapters (like DynamoRIO) — never the default.
+- Linux triage tools are installed via `scripts/install-linux-tools.sh` (gdb/lldb/strace/ltrace/tcpdump/valgrind/clang + GEF). GEF is the preferred gdb enhancement; detection also finds pwndbg/peda. Optional coverage: `scripts/install-dynamorio.sh` (drcov edges). AFL++/honggfuzz are OPTIONAL external engine adapters — never the default.
 - `randall heaptriage --exe <p> [--input f | --core f | --text-file f]` runs a target under glibc heap hardening (or analyzes a core with gdb+GEF) and classifies memory-corruption crashes (tcache poisoning/double-free, UAF, heap/stack overflow) with CWE + difficulty tier + training audience.
 - Core-dump triage needs a real core: on this VM `kernel.core_pattern` may pipe to systemd/apport — set `sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p` and `ulimit -c unlimited` to get local core files.
 
@@ -42,7 +43,7 @@ Randfuzz ("Randall") is a Windows-oriented fuzzer written entirely in C#/.NET 8 
 ### Stalking: profiles, bench, unlimited
 - `randall fuzz --profile basic|fuzz|fuzzier` ramps intensity (iterations, havoc depth, power schedule, graph bias, mutators). `--unlimited` runs until stopped (Ctrl-C) / crash budget. `StalkProfiles` defines the presets.
 - `randall stalk bench -c <project> [--profiles a,b,c] [--scale N]` runs each profile and prints a comparison (iters/crashes/unique/corpus+/novel/edges/secs/crash-per-1k). `--scale` multiplies iteration budgets. Full runs can take several minutes; scale down for quick checks.
-- On stock Linux there's no DynamoRIO coverage backend, so stalking uses corpus-novelty feedback: `corpus+` (frontier growth) is the signal; `edges`/`novel` stay 0 until a native Linux coverage backend lands. Details in `docs/STALKING.md`.
+- On stock Linux (no DynamoRIO), stalking uses corpus-novelty feedback: `corpus+` (frontier growth) is the signal; `edges`/`novel` stay 0. After `scripts/install-dynamorio.sh`, the same drcov backend as Windows populates `edges`/`novel`. A native Linux coverage backend (SanitizerCoverage / perf) remains on the roadmap for installs without DynamoRIO. Details in `docs/STALKING.md`.
 
 ### Exploit-dev + reverse-engineering
 - `randall checksec --exe <p>` (ELF mitigations + ASLR), and web `GET /api/checksec?configPath=` surfaces the same in the Fuzz view "Target mitigations" panel.

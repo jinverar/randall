@@ -41,9 +41,29 @@ scripts/install-linux-tools.sh --engines  # also install AFL++ (optional externa
 | `valgrind` | memory-error detection | Page Heap (partial) |
 | `clang` | ASan/UBSan sanitizer builds | — |
 | `afl-fuzz` / `honggfuzz` | **optional** external engine adapters (like DynamoRIO) | — |
+| **DynamoRIO** (`drrun` + `drcov`) | **optional** coverage-guided stalking (`edges` / `novel`) | same (Windows zip) |
 
 > **Own engine by default.** AFL++/honggfuzz are optional adapters, never required — Randfuzz's own
 > generation + stalk engine drives fuzzing unless you explicitly opt into an adapter per project.
+
+### Optional — DynamoRIO (edge coverage on Linux)
+
+Coverage is optional. Without it, Linux stalking still works via **corpus-novelty** (`corpus+`).
+Install DynamoRIO when you want real `edges` / `novel` counts (same drcov backend as Windows).
+
+```bash
+scripts/install-dynamorio.sh              # large download; may take a while
+# or: scripts/install-dynamorio.sh --tarball ~/Downloads/DynamoRIO-Linux-*.tar.gz
+# skip for now: scripts/install-dynamorio.sh --skip
+export DYNAMORIO_HOME="$(pwd)/tools/dynamorio"   # optional; auto-detected under tools/
+```
+
+Expect `tools/dynamorio/bin64/drrun`. Verify:
+
+```bash
+dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml --platform linux
+# dynamorio row should be ok → path to drrun
+```
 
 ## 4. Build the lab targets (Linux apphosts)
 
@@ -112,4 +132,5 @@ double-free) are classified too.
 These features only execute on Windows (the doctor hides them under the Linux platform): minidumps
 via the Scream watcher, Page Heap/gflags, pktmon, ETW/WPR, Procmon, WinDbg/cdb, and the Sysinternals
 snapshots. On Linux the counterparts above (gdb/GEF, strace, tcpdump, perf, valgrind, ASan) fill the
-same roles.
+same roles. **DynamoRIO coverage** is available on both OSes when installed (`install-dynamorio.sh`
+on Linux, `install-dynamorio.ps1` on Windows).

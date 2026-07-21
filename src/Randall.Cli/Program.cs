@@ -218,7 +218,7 @@ static async Task<int> RunFuzzAsync(string[] args)
         var dr = DynamoRioRunner.Discover();
         Console.WriteLine(dr.IsAvailable
             ? $"Coverage-guided via DynamoRIO: {dr.DrrunPath}"
-            : "Coverage requested but DynamoRIO not found — run scripts/install-dynamorio.ps1");
+            : $"Coverage requested but DynamoRIO not found — {DynamoRioRunner.InstallHint}");
     }
 
     var mode = debuggerMode ?? project.Fuzz.DebuggerMode;
