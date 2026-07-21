@@ -1,0 +1,22 @@
+# Optional notifications block — merge into a project or campaign YAML.
+# Docs: docs/NOTIFICATIONS.md
+#
+# Secrets stay in env (or a gitignored .env). Do not commit webhook URLs / passwords.
+notifications:
+  enabled: true
+  onUniqueCrash: true
+  onCampaignComplete: false
+  uiBaseUrlEnv: RANDALL_UI_BASE_URL
+  discord:
+    enabled: true
+    webhookUrlEnv: RANDALL_DISCORD_WEBHOOK
+    username: Randfuzz
+  email:
+    enabled: false
+    smtpHostEnv: RANDALL_SMTP_HOST
+    smtpPort: 587
+    useSsl: true
+    fromEnv: RANDALL_SMTP_FROM
+    toEnv: RANDALL_SMTP_TO
+    usernameEnv: RANDALL_SMTP_USER
+    passwordEnv: RANDALL_SMTP_PASSWORD

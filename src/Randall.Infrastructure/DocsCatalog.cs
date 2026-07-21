@@ -21,6 +21,7 @@ public static class DocsCatalog
         ("STALKING.md", "Stalking bugs reference", "Stalk & scream"),
         ("RECORDING.md", "Recording — observation stack & bookends", "Stalk & scream"),
         ("CRASH_ANALYSIS.md", "Crash analysis", "Stalk & scream"),
+        ("NOTIFICATIONS.md", "Discord + email notifications", "Stalk & scream"),
         ("TARGET_RUNTIME.md", "Target Runtime + remote lab", "Stalk & scream"),
         ("LAB_AGENT.md", "Lab agent (remote UI)", "Lab"),
         ("LAB_PRACTICE.md", "Lab practice walkthrough", "Lab"),

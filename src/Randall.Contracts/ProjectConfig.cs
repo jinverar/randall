@@ -26,6 +26,8 @@ public sealed class ProjectConfig
     public List<SessionFlowConfig> SessionFlows { get; set; } = [];
     /// <summary>Response-driven graph (boofuzz s_switch) — branch on server replies.</summary>
     public SessionGraphConfig? SessionGraph { get; set; }
+    /// <summary>Email / Discord alerts on unique crashes — see docs/NOTIFICATIONS.md.</summary>
+    public NotificationsConfig? Notifications { get; set; }
 }
 
 public sealed class SessionGraphConfig

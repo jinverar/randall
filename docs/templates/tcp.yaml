@@ -21,6 +21,13 @@ fuzz:
   corpusDir: ../data/corpus/myservice
   crashesDir: ../data/crashes/myservice
   debuggerMode: none
+# Optional Discord/email — copy docs/templates/notifications.yaml
+# notifications:
+#   enabled: true
+#   onUniqueCrash: true
+#   discord:
+#     enabled: true
+#     webhookUrlEnv: RANDALL_DISCORD_WEBHOOK
 mutators:
   - bitflip
   - havoc

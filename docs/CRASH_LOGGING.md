@@ -48,6 +48,10 @@ Superset of index fields plus triage-oriented data:
 
 API: `GET /api/crashes/{id}` returns `sidecar` when present.
 
+## Outbound notifications
+
+When a project YAML enables `notifications:` and `CrashStore` saves a **new** hash, Randfuzz can post to Discord and/or email. Campaign YAML can alert on completion. See [NOTIFICATIONS.md](NOTIFICATIONS.md).
+
 ## Minidumps
 
 Captured on:

@@ -58,6 +58,7 @@ public static class RandallRoadmap
             new("p7-vuln-models", "Full vulnserver block models", true, null),
             new("p7-local", "Discover gitignored local projects", true, "projects/local/"),
             new("p7-autopilot", "Cursor Automations nightly template", true, "docs/AUTOPILOT.md"),
+            new("p7-notify", "Discord + email notifications (unique crash / campaign)", true, "docs/NOTIFICATIONS.md"),
         ]),
         new(8, "Advanced techniques", "complete",
         [

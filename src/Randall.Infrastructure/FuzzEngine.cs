@@ -826,7 +826,7 @@ public sealed class FuzzEngine
                     var payloadHash = InputHash.StackHash(payload);
                     var expectedInputPath = Path.Combine(crashesDir, $"{project.Name}_{iterations}_{payloadHash}.bin");
 
-                    var saved = crashStore.Save(
+                    var savedResult = crashStore.SaveEx(
                         project.Name,
                         iterations,
                         mutatorLabel,
@@ -868,13 +868,40 @@ public sealed class FuzzEngine
                                 new FuzzSnapshotDto(coverageGuided, dryRun, Path.GetFullPath(yamlPath)),
                                 DateTimeOffset.UtcNow);
                         });
+                    var saved = savedResult.Crash;
 
                     Console.WriteLine(
                         $"CRASH #{crashCount} iter={iterations} {mutatorLabel} " +
                         $"detail={result.Detail} saved={saved.InputPath}" +
+                        (savedResult.IsNew ? "" : " (dedup)") +
                         (saved.MiniDumpPath is not null ? $" dump={saved.MiniDumpPath}" : "") +
                         (saved.SidecarPath is not null ? $" sidecar={saved.SidecarPath}" : "") +
                         (crashTag is not null ? $" tag={crashTag}" : ""));
+
+                    if (savedResult.IsNew && project.Notifications is { Enabled: true, OnUniqueCrash: true })
+                    {
+                        try
+                        {
+                            var alert = NotificationDispatcher.BuildCrashAlert(
+                                project.Notifications,
+                                saved,
+                                WindowsExceptionHints.Describe(result.ExitCode),
+                                result.Detail);
+                            var notifyResults = await NotificationDispatcher.NotifyCrashAsync(
+                                project.Notifications, alert, cancellationToken);
+                            foreach (var nr in notifyResults)
+                            {
+                                if (nr.Ok)
+                                    FuzzAnalystLog.Info(progress, $"notify/{nr.Channel}: {nr.Message}", iterations);
+                                else
+                                    FuzzAnalystLog.Warn(progress, $"notify/{nr.Channel} failed: {nr.Message}", iterations);
+                            }
+                        }
+                        catch (Exception notifyEx)
+                        {
+                            FuzzAnalystLog.Warn(progress, $"notify: {notifyEx.Message}", iterations);
+                        }
+                    }
 
                     if (wantStringsOnCrash && !string.IsNullOrWhiteSpace(saved.InputPath))
                     {

@@ -24,6 +24,7 @@ return args[0].ToLowerInvariant() switch
     "bundle" => RunBundle(args.Skip(1).ToArray()),
     "export" => RunExport(args.Skip(1).ToArray()),
     "doctor" => RunDoctor(args.Skip(1).ToArray()),
+    "notify" => await RunNotifyAsync(args.Skip(1).ToArray()),
     "graph" => RunGraph(args.Skip(1).ToArray()),
     "analyze" => RunAnalyze(args.Skip(1).ToArray()),
     "memory" or "lens" => RunMemoryLens(args.Skip(1).ToArray()),
@@ -58,6 +59,7 @@ static void PrintHelp()
           randall bundle export -c projects/vulnserver.yaml -o bundles/vulnserver.zip
           randall bundle import -i bundles/vulnserver.zip -o projects/imported
           randall doctor -c <project>     Preflight lab checks before fuzzing
+          randall notify test -c <project|campaign>   Test Discord/email channels
           randall graph -c <project>        Validate sessionGraph + print Mermaid
           randall analyze -i <crash-guid>   Minidump triage (registers, fault PC)
           randall memory -i <crash-guid>    Memory lens (UAF fill, regions, neighborhood)
@@ -620,6 +622,102 @@ static int RunDoctor(string[] args)
         : $"Not ready — fix failures above, then: randall fuzz -c {config} --dry-run");
 
     return report.Ready ? 0 : 1;
+}
+
+static async Task<int> RunNotifyAsync(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall notify test -c projects/local/myservice.yaml
+              randall notify test -c campaigns/nightly-lab.yaml
+
+            Sends a one-shot test message on every enabled Discord/email channel
+            in the YAML notifications: block. Secrets via env:
+              RANDALL_DISCORD_WEBHOOK
+              RANDALL_SMTP_HOST / RANDALL_SMTP_USER / RANDALL_SMTP_PASSWORD
+              RANDALL_SMTP_FROM / RANDALL_SMTP_TO
+            Docs: docs/NOTIFICATIONS.md
+            """);
+        return 0;
+    }
+
+    if (!args[0].Equals("test", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.Error.WriteLine("Unknown notify subcommand. Try: randall notify test -c <yaml>");
+        return 1;
+    }
+
+    string? config = null;
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] is "-c" or "--config" && i + 1 < args.Length)
+            config = args[++i];
+    }
+
+    if (config is null)
+    {
+        Console.Error.WriteLine("Usage: randall notify test -c projects/local/myservice.yaml");
+        return 1;
+    }
+
+    var full = Path.GetFullPath(config);
+    if (!File.Exists(full))
+    {
+        Console.Error.WriteLine($"Not found: {full}");
+        return 1;
+    }
+
+    NotificationsConfig? notifications = null;
+    string source;
+    try
+    {
+        // Prefer project YAML; fall back to campaign YAML.
+        try
+        {
+            var project = ProjectLoader.Load(full);
+            notifications = project.Notifications;
+            source = $"project:{project.Name}";
+        }
+        catch
+        {
+            var campaign = CampaignLoader.Load(full);
+            notifications = campaign.Notifications;
+            source = $"campaign:{campaign.Name}";
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Failed to load YAML: {ex.Message}");
+        return 1;
+    }
+
+    if (notifications is null)
+    {
+        Console.Error.WriteLine(
+            "No notifications: block in YAML. Copy docs/templates/notifications.yaml into your project.");
+        return 1;
+    }
+
+    // Force-enable for the test so operators can dry-run a disabled block.
+    notifications.Enabled = true;
+    if (!notifications.Discord.Enabled && !notifications.Email.Enabled)
+    {
+        Console.Error.WriteLine("Enable discord.enabled and/or email.enabled under notifications:");
+        return 1;
+    }
+
+    Console.WriteLine($"Testing notifications from {source} ({NotificationSettings.Describe(notifications)})…");
+    var results = await NotificationDispatcher.SendTestAsync(notifications);
+    var ok = true;
+    foreach (var r in results)
+    {
+        Console.WriteLine($"  [{(r.Ok ? "ok" : "fail")}] {r.Channel,-8} {r.Message}");
+        if (!r.Ok) ok = false;
+    }
+
+    return ok ? 0 : 1;
 }
 
 static int RunGraph(string[] args)

@@ -161,7 +161,7 @@ Eight capability areas. One chameleon. See [docs/LEGS.md](docs/LEGS.md) for the 
 | 2 | **Mutate** | Generation strategies and field-aware fuzzing |
 | 3 | **Send** | Network, file, stdin, and in-process harness delivery |
 | 4 | **Stalk** | DynamoRIO coverage and frontier detection |
-| 5 | **Scream** | Crash capture, dedup, minidumps |
+| 5 | **Scream** | Crash capture, dedup, minidumps, Discord/email alerts |
 | 6 | **Proxy** | MITM capture and live traffic editing (CANAPE-inspired) |
 | 7 | **Web** | Browser UI + API for lab and remote use |
 | 8 | **Pack** | Portable standalone folders and project bundles |
@@ -322,7 +322,7 @@ Same as **[Install](#install-windows-10--11-vm)** above — clone, build, doctor
 
 **Shipped recently** — Target Runtime (local/remote), crash artifact packs, stalk-loop guides, UI skins (default Light), **in-process harnesses** with persistent / cold / forkServer isolation and harness design contract.
 
-**Phase 15** — execution journal + crash sidecars. Logging: [docs/EXECUTION_LOGGING.md](docs/EXECUTION_LOGGING.md), [docs/CRASH_LOGGING.md](docs/CRASH_LOGGING.md).
+**Phase 15** — execution journal + crash sidecars. Logging: [docs/EXECUTION_LOGGING.md](docs/EXECUTION_LOGGING.md), [docs/CRASH_LOGGING.md](docs/CRASH_LOGGING.md). Discord/email alerts: [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md).
 
 **Phase 16** — edge hit counters, `randall analyze`, pluggable stalk backend. See [docs/CRASH_ANALYSIS.md](docs/CRASH_ANALYSIS.md). Native stalk scaffold is in place; DynamoRIO remains the optional external adapter until native lands.
 

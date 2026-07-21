@@ -7,6 +7,7 @@ Copy a template into `projects/` or `projects/local/`, then edit `name:`, host/p
 | [tcp.yaml](tcp.yaml) | TCP | Remote or local TCP service |
 | [udp.yaml](udp.yaml) | UDP | Datagram service |
 | [file.yaml](file.yaml) | File | CLI/parser that takes a file path |
+| [notifications.yaml](notifications.yaml) | — | Optional Discord/email alert block |
 
 The YAML **`name:`** field is the label shown in the web UI **Target profile** dropdown.
 
