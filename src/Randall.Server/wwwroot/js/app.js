@@ -382,6 +382,83 @@ async function initThemePicker() {
   });
 }
 
+// —— Fuzzing platform selector (Windows vs Linux) ——
+// Filters the Fuzz view (and doctor) to the OS the user is fuzzing. "auto" tracks the host OS
+// reported by /api/platform; explicit windows/linux lets the user preview the other platform.
+const platformState = { host: 'linux', selected: 'auto', resolved: 'linux' };
+
+function platformLabel(p) {
+  if (p === 'windows') return 'Windows';
+  if (p === 'linux') return 'Linux';
+  if (p === 'auto') return 'Auto';
+  return p || '—';
+}
+
+function resolvePlatform(selected, host) {
+  return selected === 'windows' || selected === 'linux' ? selected : host;
+}
+
+function setPlatformLabel() {
+  const el = document.getElementById('platform-label');
+  if (!el) return;
+  const sel = platformState.selected;
+  const selName = sel === 'auto'
+    ? `Auto → ${platformLabel(platformState.resolved)}`
+    : platformLabel(sel);
+  el.textContent = `Platform: ${selName} · host ${platformLabel(platformState.host)}`;
+}
+
+/** Show only controls tagged for the resolved platform; cross-platform controls are untagged. */
+function applyPlatformVisibility() {
+  const resolved = platformState.resolved;
+  document.querySelectorAll('[data-platform-scope]').forEach((el) => {
+    const scope = el.dataset.platformScope;
+    const show = scope === 'cross' || scope === resolved;
+    el.classList.toggle('platform-hidden', !show);
+  });
+  document.querySelectorAll('.platform-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.platform === platformState.selected);
+  });
+}
+
+/** User picked a platform: apply now and persist (browser + server). */
+async function selectPlatform(name) {
+  const sel = ['auto', 'windows', 'linux'].includes(name) ? name : 'auto';
+  platformState.selected = sel;
+  platformState.resolved = resolvePlatform(sel, platformState.host);
+  try { localStorage.setItem('randfuzz.platform', sel); } catch { /* ignore */ }
+  setPlatformLabel();
+  applyPlatformVisibility();
+  try { await api.put('/api/ui/prefs', { platform: sel }); } catch { /* localStorage still restores */ }
+  return sel;
+}
+
+async function initPlatformPicker() {
+  try {
+    const info = await api.get('/api/platform');
+    if (info?.host) platformState.host = info.host;
+  } catch { /* default host stays linux */ }
+
+  let local = null;
+  try { local = localStorage.getItem('randfuzz.platform'); } catch { /* ignore */ }
+  let sel = ['auto', 'windows', 'linux'].includes(local) ? local : null;
+  if (!sel) {
+    try {
+      const prefs = await api.get('/api/ui/prefs');
+      if (['auto', 'windows', 'linux'].includes(prefs?.platform)) sel = prefs.platform;
+    } catch { /* ignore */ }
+  }
+
+  platformState.selected = sel || 'auto';
+  platformState.resolved = resolvePlatform(platformState.selected, platformState.host);
+  setPlatformLabel();
+  applyPlatformVisibility();
+
+  document.querySelectorAll('.platform-btn').forEach((btn) => {
+    btn.addEventListener('click', () => { selectPlatform(btn.dataset.platform).catch(() => {}); });
+  });
+}
+
 async function loadHealth() {
   const h = await api.get('/api/health');
   document.getElementById('health-label').textContent = `${h.name} ${h.version} · ${h.status}`;
@@ -2746,8 +2823,13 @@ document.getElementById('fuzz-doctor').addEventListener('click', async () => {
   box.textContent = 'Running preflight…';
   try {
     const configPath = document.getElementById('fuzz-target').value;
-    const report = await api.get(`/api/doctor?configPath=${encodeURIComponent(configPath)}`);
-    box.innerHTML = report.checks.map((c) => {
+    const plat = (typeof platformState !== 'undefined' && platformState.selected) || 'auto';
+    const report = await api.get(
+      `/api/doctor?configPath=${encodeURIComponent(configPath)}&platform=${encodeURIComponent(plat)}`);
+    const scopeNote = report.platform
+      ? `<div class="hint" style="margin-bottom:0.35rem">Scoped to <strong>${report.platform}</strong> (host ${report.hostPlatform})</div>`
+      : '';
+    box.innerHTML = scopeNote + report.checks.map((c) => {
       const cls = c.status === 'ok' ? 'cov' : c.status === 'warn' ? '' : 'crash';
       return `<div class="${cls}">[${c.status}] ${c.id}: ${c.message}</div>`;
     }).join('') + `<div style="margin-top:0.5rem"><strong>${report.ready ? 'Ready' : 'Not ready'}</strong></div>`;
@@ -5716,6 +5798,7 @@ document.getElementById('case-preset-wav')?.addEventListener('click', () => {
 async function init() {
   initNavToggle();
   await initThemePicker();
+  await initPlatformPicker();
   applyRemoteLabChrome();
   await loadHealth();
   await loadTargets();

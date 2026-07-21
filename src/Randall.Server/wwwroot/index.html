@@ -46,6 +46,12 @@
       <button type="button" class="nav-btn" data-view="legs" title="Eight legs">Eight legs</button>
     </nav>
     <div class="sidebar-foot">
+      <div class="platform-picker" role="group" aria-label="Fuzzing platform">
+        <button type="button" class="platform-btn" data-platform="auto" title="Match the host OS running the fuzzer">Auto</button>
+        <button type="button" class="platform-btn" data-platform="windows" title="Show Windows fuzzing options">Windows</button>
+        <button type="button" class="platform-btn" data-platform="linux" title="Show Linux fuzzing options">Linux</button>
+      </div>
+      <span id="platform-label" class="theme-default-label">Platform: —</span>
       <div class="theme-picker" role="group" aria-label="Default UI skin">
         <button type="button" class="theme-btn" data-theme="dark" title="Switch to Dark and save as your preference">Dark</button>
         <button type="button" class="theme-btn" data-theme="light" title="Switch to Light and save as your preference">Light</button>
@@ -319,7 +325,7 @@
             <input type="checkbox" id="fuzz-coverage" />
             Coverage-guided (file targets + DynamoRIO)
           </label>
-          <label>
+          <label data-platform-scope="windows">
             Debugger
             <select id="fuzz-debugger">
               <option value="none">None (minidump only)</option>
@@ -328,7 +334,7 @@
               <option value="both">Both — Scream wait + open dump after crash</option>
             </select>
           </label>
-          <label>
+          <label data-platform-scope="windows">
             Debugger kind
             <select id="fuzz-debugger-kind">
               <option value="auto">Auto</option>
@@ -337,11 +343,11 @@
               <option value="cdb">cdb</option>
             </select>
           </label>
-          <label class="checkbox">
+          <label class="checkbox" data-platform-scope="windows">
             <input type="checkbox" id="fuzz-open-on-crash" />
             Open dump in debugger after crash
           </label>
-          <label>
+          <label data-platform-scope="windows">
             Recording profile
             <select id="fuzz-recording-profile" title="Presets for observation bookends — Debugger wait is separate">
               <option value="off">Off</option>
@@ -357,10 +363,10 @@
             · <strong>Stop</strong> ends the run and stops captures
             · See <button type="button" class="linkish" data-help="RECORDING.md">Help → Recording</button>
           </p>
-          <p id="fuzz-recording-elev" class="hint fuzz-recording-elev hidden">
+          <p id="fuzz-recording-elev" class="hint fuzz-recording-elev hidden" data-platform-scope="windows">
             Network / Deep dive enable pktmon (+ ETW on Deep dive) — <strong>needs Admin</strong> for pktmon/ETW; tshark needs Npcap (admin often required).
           </p>
-          <details class="fuzz-re-companions" id="fuzz-re-companions">
+          <details class="fuzz-re-companions" id="fuzz-re-companions" data-platform-scope="windows">
             <summary>RE companions</summary>
             <p id="fuzz-re-companions-note" class="hint fuzz-re-note hidden">
               Start API Monitor / Frida on the target PID after Target Runtime starts — Randfuzz does not inject these yet.
@@ -381,7 +387,7 @@
               <button type="button" class="linkish" data-help="RECORDING.md#api-monitor-frida">Open in Help</button>
             </div>
           </details>
-          <details class="fuzz-recording-advanced" id="fuzz-recording-advanced">
+          <details class="fuzz-recording-advanced" id="fuzz-recording-advanced" data-platform-scope="windows">
             <summary>Advanced recording options</summary>
             <label class="checkbox" title="Procmon .pml bookend — needs Procmon in PATH or tools/">
               <input type="checkbox" id="fuzz-procmon" />
@@ -419,6 +425,23 @@
               <input type="checkbox" id="fuzz-strings-crash" />
               Strings on crash
             </label>
+          </details>
+          <details class="fuzz-recording-advanced" id="fuzz-linux-observation" data-platform-scope="linux">
+            <summary>Linux observation toolchain</summary>
+            <p class="hint">
+              Vendor-neutral Unix counterparts to the Windows stack — Randfuzz's own engine drives
+              the fuzzing; these assist tracing and crash triage. Run <strong>Doctor</strong> to see
+              which are installed on this host.
+            </p>
+            <ul class="hint" id="fuzz-linux-tools">
+              <li><code>gdb</code> / <code>lldb</code> — attach + core-dump crash triage (WinDbg counterpart)</li>
+              <li><code>strace</code> / <code>ltrace</code> — syscall / library-call trace (Procmon counterpart)</li>
+              <li><code>tcpdump</code> — packet capture (pktmon counterpart)</li>
+              <li><code>perf</code> — sampling profile (ETW counterpart)</li>
+              <li><code>valgrind</code> — memory-error detection on crashing inputs</li>
+              <li><code>clang</code> — ASan/UBSan sanitizer build instrumentation</li>
+              <li><code>afl-fuzz</code> / <code>honggfuzz</code> — <em>optional</em> external engine adapters (like DynamoRIO); never required, Randfuzz's own engine is the default</li>
+            </ul>
           </details>
           <div class="btn-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>

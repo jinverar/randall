@@ -367,6 +367,45 @@ body.nav-collapsed .nav-reopen { display: flex; }
   line-height: 1.3;
 }
 
+/* Fuzzing platform selector — mirrors the theme picker styling. */
+.platform-picker {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.platform-btn {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--btn-face);
+  color: var(--muted);
+  border-radius: 5px;
+  padding: 0.28rem 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.platform-btn:hover {
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+.platform-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--nav-active-bg);
+}
+
+/* Controls tagged for a non-selected platform are hidden. */
+.platform-hidden {
+  display: none !important;
+}
+
 html[data-theme="cyber"] body {
   background-image:
     linear-gradient(rgba(0, 229, 192, 0.03) 1px, transparent 1px),

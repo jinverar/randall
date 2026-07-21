@@ -12,11 +12,30 @@ public static class LinuxToolPaths
     public sealed record LinuxTool(string Id, string Command, string Role, string InstallHint, string? EnvVar = null);
 
     /// <summary>
-    /// Linux observation / triage toolchain — the vendor-neutral Unix counterparts to Randfuzz's
-    /// Windows Sysinternals + WinDbg stack. These complement Randfuzz's own fuzzing engine; they are
-    /// deliberately NOT third-party fuzzing engines (no AFL/honggfuzz) — coverage-guided fuzzing
-    /// stays on Randfuzz's own stalk backend (with DynamoRIO as an optional external adapter, same
-    /// as on Windows). Ids are prefixed <c>linux:</c> so the doctor/UI can scope them to Linux.
+    /// Optional coverage-guided engine adapters. Like DynamoRIO, these are detected and offered but
+    /// never required — Randfuzz's own engine remains the default. Enable per project on Linux to
+    /// borrow their speed / comparison-solving (CMPLOG); crashes + corpora interop back into Randfuzz.
+    /// </summary>
+    public static readonly IReadOnlyList<LinuxTool> OptionalEngines =
+    [
+        new("linux:afl", "afl-fuzz",
+            "OPTIONAL external adapter — AFL++ coverage-guided engine (fork-server + CMPLOG); not required",
+            "apt install afl++  (or build AFLplusplus)", "AFL_PATH"),
+        new("linux:honggfuzz", "honggfuzz",
+            "OPTIONAL external adapter — honggfuzz coverage-guided engine; not required",
+            "apt install honggfuzz  (or build from source)", "HONGGFUZZ_PATH"),
+    ];
+
+    /// <summary>
+    /// Linux toolchain surfaced by the doctor/UI. Two groups, both prefixed <c>linux:</c>:
+    /// <list type="bullet">
+    /// <item><b>Observation / triage</b> — vendor-neutral Unix counterparts to Randfuzz's Windows
+    /// Sysinternals + WinDbg stack (gdb, strace, tcpdump, perf, valgrind, clang sanitizers).</item>
+    /// <item><b>Optional external engine adapters</b> (see <see cref="OptionalEngines"/>) — AFL++ /
+    /// honggfuzz, treated exactly like the DynamoRIO adapter: auto-detected, never required, and
+    /// never the default. Randfuzz's own generation + stalk engine drives fuzzing unless a user
+    /// explicitly opts into one of these per project.</item>
+    /// </list>
     /// </summary>
     public static readonly IReadOnlyList<LinuxTool> Catalog =
     [
@@ -36,6 +55,7 @@ public static class LinuxToolPaths
             "apt install valgrind", "VALGRIND_PATH"),
         new("linux:clang", "clang", "ASan/UBSan sanitizer build instrumentation (-fsanitize=address,undefined)",
             "apt install clang", "CLANG_PATH"),
+        .. OptionalEngines,
     ];
 
     /// <summary>Resolves a catalog tool to a concrete path, or null when not installed.</summary>
