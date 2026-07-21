@@ -67,3 +67,40 @@ VulnLab with `scripts/build-mitigation-lab.sh`.
 > **Roadmap:** heavier real-world labs (a full Samba container, and modern web app labs such as
 > DVWA / OWASP Juice Shop / a `vulnweb`-style stack) are best run as separate Docker services and
 > pointed at via a TCP/HTTP profile — a `docker-compose` lab bundle is planned.
+
+## Exploit-dev workflow (Immunity / mona style)
+
+Turn a fuzzer crash into a precise offset — the classic `pattern_create` / `pattern_offset` /
+`findmsp` flow, on Linux via gdb:
+
+```bash
+# 1) unique cyclic pattern
+dotnet run --project src/Randall.Cli -- pattern create -l 200
+
+# 2) crash the target with that pattern (e.g. send "ECHO <pattern>" to vulnlab), producing a core
+#    (enable local cores: sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p ; ulimit -c unlimited)
+
+# 3) read faulting registers from the core and find which one holds the pattern (findmsp)
+dotnet run --project src/Randall.Cli -- exploitdev --exe targets/vulnlab/vulnlab-basic --core /tmp/core.* --pattern-len 200
+#   → e.g. "RBP controlled at offset 64"  (or RIP with -fomit-frame-pointer builds)
+
+# 4) look up any register value directly
+dotnet run --project src/Randall.Cli -- pattern offset -q 0x6341326141... -l 200
+```
+
+`exploitdev` scans RIP/RBP/RSP/… so it reports control even when a frame-pointer smash faults in the
+epilogue. Pair it with `checksec` (mitigations) + `heaptriage` (heap primitive) for a full triage.
+
+## Reverse-engineering exports (IDA / Ghidra)
+
+Coverage "stalk" layers export to IDA and Ghidra for colored path/bug review:
+
+```bash
+dotnet run --project src/Randall.Cli -- stalk export -p vulnserver --format idc    -o out/   # IDA .idc
+dotnet run --project src/Randall.Cli -- stalk export -p vulnserver --format ghidra -o out/   # Ghidra .py
+dotnet run --project src/Randall.Cli -- stalk export -p vulnserver --format edges  -o out/   # raw edges
+```
+
+Also available from the web UI **Stalking bugs** tab (IDA IDC / Ghidra buttons). Coverage blocks are
+populated by the DynamoRIO backend (Windows, or Linux with DynamoRIO); until a native Linux coverage
+backend lands, Linux exports carry crash layers with 0 blocks.

@@ -43,3 +43,8 @@ Randfuzz ("Randall") is a Windows-oriented fuzzer written entirely in C#/.NET 8 
 - `randall fuzz --profile basic|fuzz|fuzzier` ramps intensity (iterations, havoc depth, power schedule, graph bias, mutators). `--unlimited` runs until stopped (Ctrl-C) / crash budget. `StalkProfiles` defines the presets.
 - `randall stalk bench -c <project> [--profiles a,b,c] [--scale N]` runs each profile and prints a comparison (iters/crashes/unique/corpus+/novel/edges/secs/crash-per-1k). `--scale` multiplies iteration budgets. Full runs can take several minutes; scale down for quick checks.
 - On stock Linux there's no DynamoRIO coverage backend, so stalking uses corpus-novelty feedback: `corpus+` (frontier growth) is the signal; `edges`/`novel` stay 0 until a native Linux coverage backend lands. Details in `docs/STALKING.md`.
+
+### Exploit-dev + reverse-engineering
+- `randall checksec --exe <p>` (ELF mitigations + ASLR), and web `GET /api/checksec?configPath=` surfaces the same in the Fuzz view "Target mitigations" panel.
+- `randall pattern create -l N` / `pattern offset -q <val> [-l N]` (mona-style cyclic pattern) and `randall exploitdev --exe <p> --core <c> --pattern-len N` (findmsp: faulting registers from a core via gdb + which register holds the pattern). Enable local cores first (`sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p`, `ulimit -c unlimited`).
+- IDA/Ghidra coverage exports already exist: `randall stalk export -p <proj> --format idc|ghidra|edges` (and UI Stalking tab buttons). Blocks are only populated with a coverage backend (DynamoRIO); Linux crash layers currently export 0 blocks.
