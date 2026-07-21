@@ -419,6 +419,42 @@ function applyPlatformVisibility() {
   document.querySelectorAll('.platform-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.platform === platformState.selected);
   });
+  if (resolved === 'linux') renderLinuxToolStatus().catch(() => {});
+}
+
+/** Live green/red probe of the Linux toolchain via the doctor, rendered as chips. */
+async function renderLinuxToolStatus() {
+  const grid = document.getElementById('fuzz-linux-tools');
+  const badge = document.getElementById('fuzz-linux-ready');
+  if (!grid || platformState.resolved !== 'linux') return;
+
+  const targetSel = document.getElementById('fuzz-target');
+  const configPath = targetSel && targetSel.value;
+  if (!configPath) {
+    grid.innerHTML = '<span class="hint">Pick a target profile to probe tools…</span>';
+    if (badge) badge.textContent = '';
+    return;
+  }
+
+  grid.innerHTML = '<span class="hint">Probing toolchain…</span>';
+  try {
+    const report = await api.get(
+      `/api/doctor?configPath=${encodeURIComponent(configPath)}&platform=linux`);
+    const linux = (report.checks || []).filter((c) => c.id.indexOf('linux:') === 0);
+    let ok = 0;
+    grid.innerHTML = linux.map((c) => {
+      const good = c.status === 'ok';
+      if (good) ok += 1;
+      const optional = /optional/i.test(c.message);
+      const name = c.id.replace(/^linux:/, '');
+      const cls = good ? 'tool-ok' : (optional ? 'tool-opt' : 'tool-miss');
+      const icon = good ? '✓' : (optional ? '○' : '✗');
+      return `<span class="tool-chip ${cls}" title="${escapeAttr(c.message)}"><b>${icon}</b> ${escapeAttr(name)}</span>`;
+    }).join('');
+    if (badge) badge.textContent = linux.length ? `(${ok}/${linux.length} ready)` : '';
+  } catch (err) {
+    grid.innerHTML = `<span class="hint">Could not probe toolchain: ${escapeAttr(err.message)}</span>`;
+  }
 }
 
 /** User picked a platform: apply now and persist (browser + server). */
@@ -456,6 +492,13 @@ async function initPlatformPicker() {
 
   document.querySelectorAll('.platform-btn').forEach((btn) => {
     btn.addEventListener('click', () => { selectPlatform(btn.dataset.platform).catch(() => {}); });
+  });
+
+  document.getElementById('fuzz-linux-refresh')?.addEventListener('click',
+    () => renderLinuxToolStatus().catch(() => {}));
+  // Re-probe when the target changes while Linux is active.
+  document.getElementById('fuzz-target')?.addEventListener('change', () => {
+    if (platformState.resolved === 'linux') renderLinuxToolStatus().catch(() => {});
   });
 }
 

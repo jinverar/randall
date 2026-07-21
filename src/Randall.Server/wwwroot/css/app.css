@@ -401,9 +401,64 @@ body.nav-collapsed .nav-reopen { display: flex; }
   background: var(--nav-active-bg);
 }
 
+.platform-ico {
+  margin-right: 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
 /* Controls tagged for a non-selected platform are hidden. */
 .platform-hidden {
   display: none !important;
+}
+
+/* Live Linux toolchain detection grid (Fuzz view). */
+.tool-count {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.linux-tool-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+}
+
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-family: var(--mono, monospace);
+  background: var(--btn-face);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.tool-chip b { font-weight: 700; }
+
+.tool-chip.tool-ok {
+  border-color: #2e9e5b;
+  color: #2e9e5b;
+  background: rgba(46, 158, 91, 0.10);
+}
+
+.tool-chip.tool-miss {
+  border-color: #c2453e;
+  color: #c2453e;
+  background: rgba(194, 69, 62, 0.10);
+}
+
+.tool-chip.tool-opt {
+  border-color: var(--accent-dim, #8a8a8a);
+  color: var(--muted);
+  background: transparent;
+  border-style: dashed;
 }
 
 html[data-theme="cyber"] body {

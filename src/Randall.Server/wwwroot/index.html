@@ -15,7 +15,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=platform-selector-1" />
+  <link rel="stylesheet" href="/css/app.css?v=platform-selector-2" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -47,9 +47,9 @@
     </nav>
     <div class="sidebar-foot">
       <div class="platform-picker" role="group" aria-label="Fuzzing platform">
-        <button type="button" class="platform-btn" data-platform="auto" title="Match the host OS running the fuzzer">Auto</button>
-        <button type="button" class="platform-btn" data-platform="windows" title="Show Windows fuzzing options">Windows</button>
-        <button type="button" class="platform-btn" data-platform="linux" title="Show Linux fuzzing options">Linux</button>
+        <button type="button" class="platform-btn" data-platform="auto" title="Match the host OS running the fuzzer"><span class="platform-ico">⚙</span>Auto</button>
+        <button type="button" class="platform-btn" data-platform="windows" title="Show Windows fuzzing options"><span class="platform-ico">⊞</span>Win</button>
+        <button type="button" class="platform-btn" data-platform="linux" title="Show Linux fuzzing options"><span class="platform-ico">🐧</span>Linux</button>
       </div>
       <span id="platform-label" class="theme-default-label">Platform: —</span>
       <div class="theme-picker" role="group" aria-label="Default UI skin">
@@ -426,23 +426,19 @@
               Strings on crash
             </label>
           </details>
-          <details class="fuzz-recording-advanced" id="fuzz-linux-observation" data-platform-scope="linux">
-            <summary>Linux observation toolchain</summary>
+          <details class="fuzz-recording-advanced" id="fuzz-linux-observation" data-platform-scope="linux" open>
+            <summary>Linux observation toolchain <span id="fuzz-linux-ready" class="tool-count"></span></summary>
             <p class="hint">
-              Vendor-neutral Unix counterparts to the Windows stack — Randfuzz's own engine drives
-              the fuzzing; these assist tracing and crash triage. Run <strong>Doctor</strong> to see
-              which are installed on this host.
+              Vendor-neutral Unix counterparts to the Windows stack — Randfuzz's own engine drives the
+              fuzzing; these assist tracing &amp; crash triage. Live status for the current host:
             </p>
-            <ul class="hint" id="fuzz-linux-tools">
-              <li><code>gdb</code> / <code>lldb</code> — attach + core-dump crash triage (WinDbg counterpart)</li>
-              <li><code>gef</code> — enhanced gdb (preferred; pwndbg / peda also detected) for richer crash inspection</li>
-              <li><code>strace</code> / <code>ltrace</code> — syscall / library-call trace (Procmon counterpart)</li>
-              <li><code>tcpdump</code> — packet capture (pktmon counterpart)</li>
-              <li><code>perf</code> — sampling profile (ETW counterpart)</li>
-              <li><code>valgrind</code> — memory-error detection on crashing inputs</li>
-              <li><code>clang</code> — ASan/UBSan sanitizer build instrumentation</li>
-              <li><code>afl-fuzz</code> / <code>honggfuzz</code> — <em>optional</em> external engine adapters (like DynamoRIO); never required, Randfuzz's own engine is the default</li>
-            </ul>
+            <div id="fuzz-linux-tools" class="linux-tool-grid" aria-live="polite">
+              <span class="hint">Select the Linux platform to probe the toolchain…</span>
+            </div>
+            <p class="hint" style="margin-top:0.5rem">
+              <button type="button" class="btn" id="fuzz-linux-refresh" title="Re-probe installed Linux tools">Refresh</button>
+              <span class="hint"> Missing something? <code>scripts/install-linux-tools.sh</code></span>
+            </p>
           </details>
           <div class="btn-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>
@@ -1226,6 +1222,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=platform-selector-1"></script>
+  <script type="module" src="/js/app.js?v=platform-selector-2"></script>
 </body>
 </html>
