@@ -400,12 +400,20 @@ function resolvePlatform(selected, host) {
 
 function setPlatformLabel() {
   const el = document.getElementById('platform-label');
-  if (!el) return;
-  const sel = platformState.selected;
-  const selName = sel === 'auto'
-    ? `Auto → ${platformLabel(platformState.resolved)}`
-    : platformLabel(sel);
-  el.textContent = `Platform: ${selName} · host ${platformLabel(platformState.host)}`;
+  if (el) {
+    const sel = platformState.selected;
+    const selName = sel === 'auto'
+      ? `Auto → ${platformLabel(platformState.resolved)}`
+      : platformLabel(sel);
+    el.textContent = `Platform: ${selName} · host ${platformLabel(platformState.host)}`;
+  }
+  const badge = document.getElementById('platform-badge');
+  if (badge) {
+    const ico = platformState.resolved === 'windows' ? '⊞' : '🐧';
+    badge.textContent = `${ico} ${platformLabel(platformState.resolved)}`;
+    badge.classList.toggle('platform-badge-win', platformState.resolved === 'windows');
+    badge.classList.toggle('platform-badge-linux', platformState.resolved === 'linux');
+  }
 }
 
 /** Show only controls tagged for the resolved platform; cross-platform controls are untagged. */
@@ -419,7 +427,10 @@ function applyPlatformVisibility() {
   document.querySelectorAll('.platform-btn').forEach((b) => {
     b.classList.toggle('active', b.dataset.platform === platformState.selected);
   });
-  if (resolved === 'linux') renderLinuxToolStatus().catch(() => {});
+  if (resolved === 'linux') {
+    renderLinuxToolStatus().catch(() => {});
+    renderCheckSec().catch(() => {});
+  }
 }
 
 /** Live green/red probe of the Linux toolchain via the doctor, rendered as chips. */
@@ -449,11 +460,54 @@ async function renderLinuxToolStatus() {
       const name = c.id.replace(/^linux:/, '');
       const cls = good ? 'tool-ok' : (optional ? 'tool-opt' : 'tool-miss');
       const icon = good ? '✓' : (optional ? '○' : '✗');
-      return `<span class="tool-chip ${cls}" title="${escapeAttr(c.message)}"><b>${icon}</b> ${escapeAttr(name)}</span>`;
+      return `<span class="tool-chip ${cls}" role="button" tabindex="0" data-msg="${escapeAttr(c.message)}"><b>${icon}</b> ${escapeAttr(name)}</span>`;
     }).join('');
     if (badge) badge.textContent = linux.length ? `(${ok}/${linux.length} ready)` : '';
+
+    // Click a chip → show its full doctor message / install hint.
+    const detail = document.getElementById('fuzz-linux-tool-detail');
+    grid.querySelectorAll('.tool-chip').forEach((chip) => {
+      const show = () => {
+        if (!detail) return;
+        detail.textContent = chip.dataset.msg || '';
+        detail.classList.remove('hidden');
+      };
+      chip.addEventListener('click', show);
+      chip.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(); } });
+    });
   } catch (err) {
     grid.innerHTML = `<span class="hint">Could not probe toolchain: ${escapeAttr(err.message)}</span>`;
+  }
+}
+
+/** Inline checksec — exploit mitigations of the selected target's binary. */
+async function renderCheckSec() {
+  const grid = document.getElementById('fuzz-checksec');
+  if (!grid || platformState.resolved !== 'linux') return;
+  const targetSel = document.getElementById('fuzz-target');
+  const configPath = targetSel && targetSel.value;
+  if (!configPath) return;
+
+  grid.innerHTML = '<span class="hint">Inspecting…</span>';
+  try {
+    const r = await api.get(`/api/checksec?configPath=${encodeURIComponent(configPath)}`);
+    if (!r.hasExecutable) {
+      grid.innerHTML = '<span class="hint">No local binary for this target (remote/managed) — build it to inspect.</span>';
+      return;
+    }
+    const chip = (label, on, good = on) =>
+      `<span class="tool-chip ${good ? 'tool-ok' : 'tool-miss'}"><b>${good ? '✓' : '✗'}</b> ${label}</span>`;
+    const relroGood = r.relro === 'full';
+    grid.innerHTML =
+      `<span class="tool-chip ${'tool-opt'}">tier: ${escapeAttr(r.tier)}</span>` +
+      chip('NX', r.nx) +
+      chip('Canary', r.canary) +
+      chip('PIE', r.pie) +
+      `<span class="tool-chip ${relroGood ? 'tool-ok' : 'tool-miss'}"><b>${relroGood ? '✓' : '✗'}</b> RELRO:${escapeAttr(r.relro)}</span>` +
+      chip('FORTIFY', r.fortify) +
+      `<span class="tool-chip tool-opt" title="system ASLR">ASLR: ${escapeAttr(r.aslr)}</span>`;
+  } catch (err) {
+    grid.innerHTML = `<span class="hint">checksec unavailable: ${escapeAttr(err.message)}</span>`;
   }
 }
 
@@ -494,11 +548,16 @@ async function initPlatformPicker() {
     btn.addEventListener('click', () => { selectPlatform(btn.dataset.platform).catch(() => {}); });
   });
 
-  document.getElementById('fuzz-linux-refresh')?.addEventListener('click',
-    () => renderLinuxToolStatus().catch(() => {}));
+  document.getElementById('fuzz-linux-refresh')?.addEventListener('click', () => {
+    renderLinuxToolStatus().catch(() => {});
+    renderCheckSec().catch(() => {});
+  });
   // Re-probe when the target changes while Linux is active.
   document.getElementById('fuzz-target')?.addEventListener('change', () => {
-    if (platformState.resolved === 'linux') renderLinuxToolStatus().catch(() => {});
+    if (platformState.resolved === 'linux') {
+      renderLinuxToolStatus().catch(() => {});
+      renderCheckSec().catch(() => {});
+    }
   });
 }
 

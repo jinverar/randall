@@ -15,7 +15,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=platform-selector-2" />
+  <link rel="stylesheet" href="/css/app.css?v=platform-selector-3" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -28,6 +28,7 @@
         <strong>Randfuzz</strong>
         <span id="brand-tagline">by Randall · Camouflage · Stalk · Scream</span>
         <span id="remote-lab-badge" class="remote-lab-badge hidden" title="This host is the fuzz box — dumps and memory lens live here">Remote lab</span>
+        <span id="platform-badge" class="platform-badge" title="Active fuzzing platform">—</span>
       </div>
       <button type="button" id="nav-toggle" class="nav-toggle" aria-label="Hide navigation" title="Hide navigation">⟨</button>
     </div>
@@ -434,6 +435,11 @@
             </p>
             <div id="fuzz-linux-tools" class="linux-tool-grid" aria-live="polite">
               <span class="hint">Select the Linux platform to probe the toolchain…</span>
+            </div>
+            <p id="fuzz-linux-tool-detail" class="hint fuzz-tool-detail hidden"></p>
+            <p class="hint" style="margin-top:0.5rem"><strong>Target mitigations</strong> (checksec):</p>
+            <div id="fuzz-checksec" class="linux-tool-grid" aria-live="polite">
+              <span class="hint">Pick a target with a local binary…</span>
             </div>
             <p class="hint" style="margin-top:0.5rem">
               <button type="button" class="btn" id="fuzz-linux-refresh" title="Re-probe installed Linux tools">Refresh</button>
@@ -1227,6 +1233,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=platform-selector-2"></script>
+  <script type="module" src="/js/app.js?v=platform-selector-3"></script>
 </body>
 </html>

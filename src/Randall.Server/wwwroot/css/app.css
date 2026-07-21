@@ -461,6 +461,35 @@ body.nav-collapsed .nav-reopen { display: flex; }
   border-style: dashed;
 }
 
+.tool-chip[role="button"] { cursor: pointer; }
+.tool-chip[role="button"]:hover { filter: brightness(1.15); }
+
+.fuzz-tool-detail {
+  margin-top: 0.4rem;
+  padding: 0.4rem 0.55rem;
+  border-left: 3px solid var(--accent, #2e9e5b);
+  background: var(--btn-face);
+  border-radius: 4px;
+  font-family: var(--mono, monospace);
+  font-size: 0.72rem;
+}
+
+/* Active-platform badge in the brand header. */
+.platform-badge {
+  display: inline-block;
+  margin-top: 0.2rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  width: fit-content;
+}
+
+.platform-badge-linux { border-color: #2e9e5b; color: #2e9e5b; background: rgba(46,158,91,0.10); }
+.platform-badge-win { border-color: #3b82c4; color: #3b82c4; background: rgba(59,130,196,0.10); }
+
 html[data-theme="cyber"] body {
   background-image:
     linear-gradient(rgba(0, 229, 192, 0.03) 1px, transparent 1px),

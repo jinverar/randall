@@ -63,6 +63,37 @@ app.MapGet("/api/platform", () =>
         PlatformScope.Selectable));
 });
 
+// ELF exploit-mitigation report for a project's target executable (Linux checksec) + ASLR state.
+app.MapGet("/api/checksec", (string configPath) =>
+{
+    if (string.IsNullOrWhiteSpace(configPath))
+        return Results.BadRequest(new { error = "configPath required" });
+    try
+    {
+        var yamlPath = Path.GetFullPath(configPath);
+        var project = ProjectLoader.Load(yamlPath);
+        if (string.IsNullOrWhiteSpace(project.Target.Executable))
+            return Results.Ok(new { hasExecutable = false });
+        var exe = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
+        var resolved = ExecutableResolver.FindExisting(exe);
+        if (resolved is null)
+            return Results.Ok(new { hasExecutable = false, missing = exe });
+        var m = MitigationInspector.Inspect(resolved);
+        var aslr = AslrControl.Read();
+        return Results.Ok(new
+        {
+            hasExecutable = true,
+            path = resolved,
+            m.Nx, m.Canary, m.Pie, m.Relro, m.Fortify, m.Tier,
+            aslr = aslr.Label,
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/doctor", (string configPath, string? platform) =>
 {
     if (string.IsNullOrWhiteSpace(configPath))
