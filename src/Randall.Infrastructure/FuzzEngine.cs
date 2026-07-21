@@ -610,8 +610,39 @@ public sealed class FuzzEngine
                 if (useCoverageTcp)
                 {
                     await stalk.StopLongLivedAsync(longLived, cancellationToken);
+                    longLived = null;
+                    var covHost = string.IsNullOrWhiteSpace(project.Transport.Host)
+                        ? "127.0.0.1"
+                        : project.Transport.Host;
+                    var covPort = project.Transport.Port;
+                    // DynamoRIO teardown can leave the listen port busy briefly — wait before respawn.
+                    if (covPort > 0)
+                    {
+                        await PortReadiness.WaitUntilFreeAsync(
+                            covHost, covPort, project.Kind, TimeSpan.FromSeconds(5), cancellationToken);
+                    }
+
                     longLived = stalk.StartLongLivedTarget(project, yamlPath, traceDir);
-                    await Task.Delay(500, cancellationToken);
+                    if (longLived is null)
+                    {
+                        FuzzAnalystLog.Warn(progress,
+                            "Coverage TCP spawn failed — drrun did not start the target",
+                            iterations);
+                        continue;
+                    }
+
+                    // Cold drrun+drcov often needs >500ms before accept(); poll instead of sleeping.
+                    var ready = covPort <= 0 || await PortReadiness.WaitAsync(
+                        covHost, covPort, project.Kind, TimeSpan.FromSeconds(10), cancellationToken);
+                    if (!ready)
+                    {
+                        FuzzAnalystLog.Warn(progress,
+                            $"Coverage TCP spawn: {covHost}:{covPort} not accepting within 10s",
+                            iterations);
+                        await stalk.StopLongLivedAsync(longLived, cancellationToken);
+                        longLived = null;
+                        continue;
+                    }
                 }
 
                 var caseLabel = $"{commandName}/{mutator.Name}";

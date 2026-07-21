@@ -162,8 +162,8 @@ public static class TargetRunner
         }
         catch (Exception ex)
         {
-            if (server is null)
-                return new TargetRunResult(false, null, null, ex.Message, lastResponse);
+            return await ClassifyTcpTransportFailureAsync(
+                project, server, yamlPath, lastResponse, ex, cancellationToken);
         }
 
         return await FinishTcpRun(project, server, yamlPath, lastResponse, cancellationToken);
@@ -308,8 +308,40 @@ public static class TargetRunner
         }
         catch (Exception ex)
         {
-            if (server is null)
+            return await ClassifyTcpTransportFailureAsync(
+                project, server, yamlPath, lastResponse, ex, cancellationToken);
+        }
+
+        return await FinishTcpRun(project, server, yamlPath, lastResponse, cancellationToken);
+    }
+
+    /// <summary>
+    /// Connect/send failures must not report as <c>ok</c> when the server process is still alive
+    /// (common under coverage-TCP when DynamoRIO has not finished binding yet).
+    /// </summary>
+    private static async Task<TargetRunResult> ClassifyTcpTransportFailureAsync(
+        ProjectConfig project,
+        Process? server,
+        string? yamlPath,
+        byte[]? lastResponse,
+        Exception ex,
+        CancellationToken cancellationToken)
+    {
+        if (server is null)
+            return new TargetRunResult(false, null, null, ex.Message, lastResponse);
+
+        try { await Task.Delay(80, cancellationToken); }
+        catch (OperationCanceledException) { throw; }
+        catch { /* ignore */ }
+
+        try
+        {
+            if (!server.HasExited)
                 return new TargetRunResult(false, null, null, ex.Message, lastResponse);
+        }
+        catch
+        {
+            return new TargetRunResult(false, null, null, ex.Message, lastResponse);
         }
 
         return await FinishTcpRun(project, server, yamlPath, lastResponse, cancellationToken);
