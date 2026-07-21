@@ -33,3 +33,8 @@ Randfuzz ("Randall") is a Windows-oriented fuzzer written entirely in C#/.NET 8 
 - Linux triage tools are installed via `scripts/install-linux-tools.sh` (gdb/lldb/strace/ltrace/tcpdump/valgrind/clang + GEF). GEF is the preferred gdb enhancement; detection also finds pwndbg/peda. AFL++/honggfuzz are OPTIONAL external engine adapters (like DynamoRIO) — never the default.
 - `randall heaptriage --exe <p> [--input f | --core f | --text-file f]` runs a target under glibc heap hardening (or analyzes a core with gdb+GEF) and classifies memory-corruption crashes (tcache poisoning/double-free, UAF, heap/stack overflow) with CWE + difficulty tier + training audience.
 - Core-dump triage needs a real core: on this VM `kernel.core_pattern` may pipe to systemd/apport — set `sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p` and `ulimit -c unlimited` to get local core files.
+
+### Mitigation ladder + native vuln service
+- `scripts/build-mitigation-lab.sh` compiles `targets/vulnlab/vulnlab.c` (native C TCP vuln service) at four tiers: `vulnlab-{basic,nx,aslr,modern}` (no-mitigation → canary+NX+PIE+RELRO+FORTIFY). Built binaries are gitignored; the `.c` source is committed.
+- `randall checksec --exe <path>` reports NX/canary/PIE/RELRO/FORTIFY (via `readelf`) plus live ASLR state. ASLR is a runtime kernel setting: `sudo sysctl kernel.randomize_va_space=<0|1|2>` (or `setarch -R <exe>` per run). Changing it needs root (sudo works on this VM); restore to `2` after experiments.
+- `projects/vulnlab.yaml` fuzzes the basic tier (real SIGSEGV over TCP, unlike the .NET lab targets which simulate a crash via `Environment.Exit`). Point `target.executable` at another tier to practise against NX/ASLR/canary. Details in `docs/MITIGATION_LAB.md`.
