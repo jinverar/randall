@@ -15,7 +15,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=platform-selector-5" />
+  <link rel="stylesheet" href="/css/app.css?v=platform-selector-6" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -1001,8 +1001,8 @@
 
     <section id="view-crashes" class="view">
       <header class="page-header crash-page-header">
-        <h1>Crashes</h1>
-        <p>Scan density → isolate a signature → open the best unique hit and read <em>why</em>.</p>
+        <h1>Crashes <span class="canister-badge" title="Every captured crash is a harvested scream — bottled with its dump &amp; triage">🫙 scream canisters</span></h1>
+        <p>You scared the target, it screamed — each crash is bottled in a canister (dump + triage). Scan density → isolate a signature → open the best unique hit and read <em>why</em>.</p>
       </header>
 
       <div class="crash-investigate">
@@ -1169,7 +1169,7 @@
 
       <div class="fuzz-layout" style="margin-top:1.25rem">
         <form id="crashpack-export-form" class="panel fuzz-controls">
-          <h2>Crash artifact pack — export <span class="hint-inline">(this host)</span></h2>
+          <h2>Scream canister — export <span class="hint-inline">(crash artifact pack · this host)</span></h2>
           <p class="hint">Zip <code>data/crashes/&lt;project&gt;</code> — inputs, dumps, analysis, memory lens, optional runs. On the agent: export after fuzzing, then pull into the laptop console.</p>
           <label>
             Project
@@ -1187,7 +1187,7 @@
           <p id="crashpack-export-result" class="status-box">—</p>
         </form>
         <form id="crashpack-import-form" class="panel fuzz-controls">
-          <h2>Crash artifact pack — import</h2>
+          <h2>Scream canister — import <span class="hint-inline">(crash artifact pack)</span></h2>
           <p class="hint">Merge a pack into local <code>data/crashes</code> (paths rewritten). Use after copying a zip or pulling from an agent.</p>
           <label>
             Zip path
@@ -1260,6 +1260,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=platform-selector-5"></script>
+  <script type="module" src="/js/app.js?v=platform-selector-6"></script>
 </body>
 </html>

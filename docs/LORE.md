@@ -15,12 +15,24 @@ In the film, Randall is the master of camouflage, obsessed with beating Sulley, 
 | 🦎 **Camouflages** like a chameleon — nearly invisible | Blends into normal traffic: valid shells, plausible protocols, MITM proxy |
 | 🐛 **Competitive scarer** — wants to beat Sulley | Coverage-guided corpus: prioritize inputs that **beat** the last best path |
 | 🧪 **Sneaks** through the factory undetected | **Stalk** — DynamoRIO drcov, new basic blocks, unexplored code paths |
-| 💥 **Triggers chaos** — Scream Extractor, kidnaps Boo | **Scream** — crash capture, minidumps, triage bundles, Ghidra export |
+| 💥 **Collects screams** — the factory's whole purpose | **Scream** — you *scare* the target, it *screams* (crashes), and you **bottle that scream in a canister** (crash + minidump + triage bundle) |
 | 🕵️ **Another trick up his sleeve** | Havoc stages, dictionary tokens, session flows, RPP plugins |
 | 🏭 **Factory floor** — Monsters, Inc. pipeline | Eight legs: Model → Mutate → Send → Stalk → Scream → Proxy → Web → Pack |
 | 🚪 **Scare Floor** — prep doors / scare attempts | **Scare Floor** UI — case recipes, seeds, dictionaries → Campaign queue |
 
 We are *not* building a Scream Extractor. We are building the thing that finds why your parser would need one. The **Scare Floor** is where test-case recipes get staged before the fuzz shift — homage naming, not an official Disney/Pixar product.
+
+### Scares, screams & canisters (the crash vocabulary)
+
+In the film, Monstropolis runs on **screams collected in canisters** — the scream is the *valuable harvested resource*, not the scary moment. Randfuzz uses the same three-beat vocabulary so a crash is something you **collect**, not just something that happened:
+
+| Term | Meaning in Randfuzz |
+|------|---------------------|
+| **Scare** | The act — send fuzzed input to provoke the target |
+| **Scream** | The target crashes (the exception/signal) |
+| **Scream canister** | The **bottled crash** you keep — input + minidump/core + triage bundle (a crash artifact pack) |
+
+So "Scream" is Leg 5 (crash capture), and a saved crash bundle is a **scream canister** — harvest the screams, don't just hear them.
 
 ---
 
@@ -40,6 +52,7 @@ We are *not* building a Scream Extractor. We are building the thing that finds w
 | Line | Where |
 |------|--------|
 | *Stalk code paths. Scream on crash.* | README, roadmap, vulnserver banner |
+| *Scare it. Bottle the scream.* | Crash capture / scream canisters |
 | *Eight legs, zero mercy.* | RAND command response on lab vulnserver |
 | *Chaos is my code.* | Web UI roadmap caption |
 | *Master of mayhem.* | Web UI (Randfuzz by Randall at the console) |

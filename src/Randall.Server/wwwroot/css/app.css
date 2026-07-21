@@ -532,6 +532,21 @@ body.nav-collapsed .nav-reopen { display: flex; }
 }
 .recipe-make { white-space: nowrap; flex-shrink: 0; }
 
+/* "Scream canister" framing for captured crashes */
+.canister-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent, #2e9e5b);
+  color: var(--accent, #2e9e5b);
+  background: rgba(46, 158, 91, 0.08);
+}
+
 html[data-theme="cyber"] body {
   background-image:
     linear-gradient(rgba(0, 229, 192, 0.03) 1px, transparent 1px),
