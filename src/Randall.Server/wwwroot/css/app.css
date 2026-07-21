@@ -3329,3 +3329,180 @@ html[data-theme="light"] .scream-canister-liquid {
   mix-blend-mode: multiply;
   opacity: 0.55;
 }
+
+/* Live harvest animations + per-test rack polish */
+.scream-harvest-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+}
+
+.scream-harvest-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.scream-harvest-mode-label select {
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.2rem 0.35rem;
+}
+
+.scream-harvest-ram {
+  margin: 0.25rem 0 0;
+  font-size: 0.68rem;
+  opacity: 0.85;
+}
+
+.scream-canister-rack-compact {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.scream-canister-rack-compact .scream-canister {
+  padding: 0.2rem;
+}
+
+.scream-canister-liquid {
+  transition: height 1.05s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scream-canister-vapor {
+  position: absolute;
+  left: 28%;
+  right: 28%;
+  top: 8%;
+  height: 18%;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at bottom, rgba(255, 210, 120, 0.45), transparent 70%);
+  filter: blur(2px);
+}
+
+.scream-canister.filling .scream-canister-vapor,
+.scream-canister.is-live .scream-canister-vapor {
+  opacity: 0.65;
+  animation: scream-vapor-rise 2.4s ease-in-out infinite;
+}
+
+@keyframes scream-vapor-rise {
+  0%, 100% { transform: translateY(6%) scaleX(0.92); opacity: 0.25; }
+  50% { transform: translateY(-8%) scaleX(1.05); opacity: 0.7; }
+}
+
+.scream-canister.pulse .scream-canister-vessel,
+.scream-canister.just-bottled .scream-canister-vessel {
+  animation: scream-canister-pulse 0.9s ease-out 1;
+}
+
+@keyframes scream-canister-pulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+  40% { transform: scale(1.03); box-shadow: 0 0 22px color-mix(in srgb, var(--canister-glow, #d4a017) 55%, transparent); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+}
+
+.scream-canister.is-live .scream-canister-vessel {
+  outline: 1px solid color-mix(in srgb, var(--warn) 70%, var(--border));
+  animation: scream-live-glow 2.2s ease-in-out infinite;
+}
+
+@keyframes scream-live-glow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.12); }
+}
+
+.scream-canister-live-badge {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 0.12rem 0.28rem;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--danger) 85%, #000);
+  color: #fff;
+  animation: scream-live-badge 1.2s steps(2, end) infinite;
+}
+
+@keyframes scream-live-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.scream-canister-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.6rem 0.2rem;
+  color: var(--muted);
+}
+
+.scream-canister-empty img {
+  width: 72px;
+  height: auto;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  opacity: 0.9;
+}
+
+.scream-canister-empty p {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.scream-bottled-toast {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 1.1rem;
+  z-index: 80;
+  max-width: min(22rem, calc(100vw - 2rem));
+  padding: 0.7rem 0.9rem;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, #1a0c0c 82%, var(--danger));
+  color: #f5e6e6;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.scream-bottled-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+html[data-theme="light"] .scream-bottled-toast {
+  background: #fff5f4;
+  color: #5c1018;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scream-canister-liquid,
+  .scream-canister-vapor,
+  .scream-canister.pulse .scream-canister-vessel,
+  .scream-canister.just-bottled .scream-canister-vessel,
+  .scream-canister.is-live .scream-canister-vessel,
+  .scream-canister-live-badge,
+  .scream-bottled-toast {
+    animation: none !important;
+    transition: none !important;
+  }
+}

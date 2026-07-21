@@ -2353,7 +2353,9 @@ function selectNextUnique() {
 function paintCrashInvestigate() {
   applyCrashFilters();
   renderActiveCrashFilters();
-  renderScreamCanisters();
+  // Keep the per-test rack on the full harvest snapshot — never shrink it to the
+  // project-filtered crash list used by the investigate table.
+  paintHarvestViews();
   renderCrashTimeline();
   renderCrashClassBars();
   renderCrashClusterChips();
@@ -2402,78 +2404,326 @@ function pressureLabel(pct) {
   return 'PRESSURE CRITICAL';
 }
 
-function renderScreamCanisters() {
-  const rack = document.getElementById('scream-canister-rack');
-  const status = document.getElementById('scream-harvest-status');
-  const pressure = document.getElementById('scream-harvest-pressure');
+/** Live harvest snapshot — browser UI only (does not touch fuzz-process RAM). */
+let harvestState = {
+  all: [],
+  lastUnique: 0,
+  refreshTimer: null,
+  prevFillById: {},
+  mode: 'projects', // projects | severity
+  liveProject: null,
+};
+
+function harvestUniqueCount(crashes) {
+  const keys = new Set();
+  for (const c of crashes || [])
+    keys.add(crashClusterKey(c) || c.id);
+  return keys.size;
+}
+
+function crashProjectName(c) {
+  return c.project || c.Project || 'unknown';
+}
+
+function projectCanisterHue(name) {
+  let h = 2166136261;
+  const s = String(name || '');
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  // Industrial amber / teal / steel — avoid purple defaults
+  const hues = [22, 34, 48, 78, 152, 188, 204];
+  return hues[Math.abs(h) % hues.length];
+}
+
+function flashScreamBottled(detail = '') {
+  let toast = document.getElementById('scream-bottled-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'scream-bottled-toast';
+    toast.className = 'scream-bottled-toast';
+    toast.setAttribute('role', 'status');
+    document.body.appendChild(toast);
+  }
+  toast.textContent = detail
+    ? `Scream bottled — ${detail}`
+    : 'Scream bottled — canister pressure rising';
+  toast.classList.add('show');
+  clearTimeout(toast._hide);
+  toast._hide = setTimeout(() => toast.classList.remove('show'), 3200);
+}
+
+function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
+  if (mode === 'severity') {
+    const bySev = { critical: 0, high: 0, medium: 0, low: 0 };
+    for (const c of all) {
+      const s = crashSev(c);
+      if (bySev[s] != null) bySev[s] += 1;
+      else bySev.low += 1;
+    }
+    const unique = harvestUniqueCount(all);
+    return [
+      { id: 'harvest', label: compact ? 'All' : 'Harvest', count: unique, capacity: 40, project: '', sevFilter: '', cls: 'harvest', title: 'Unique bottled screams' },
+      { id: 'critical', label: compact ? 'Crit' : 'Critical', count: bySev.critical, capacity: 12, project: '', sevFilter: 'critical', cls: 'critical', title: 'Critical' },
+      { id: 'high', label: 'High', count: bySev.high, capacity: 20, project: '', sevFilter: 'high', cls: 'high', title: 'High' },
+      { id: 'medium', label: compact ? 'Med' : 'Medium', count: bySev.medium, capacity: 30, project: '', sevFilter: 'medium', cls: 'medium', title: 'Medium' },
+      { id: 'low', label: 'Low', count: bySev.low, capacity: 40, project: '', sevFilter: 'low', cls: 'low', title: 'Low' },
+    ];
+  }
+
+  // One canister per test/project (Target profile)
+  const byProject = new Map();
+  for (const c of all) {
+    const p = crashProjectName(c);
+    if (!byProject.has(p)) byProject.set(p, []);
+    byProject.get(p).push(c);
+  }
+
+  let names = [...byProject.keys()].sort((a, b) => {
+    const ua = harvestUniqueCount(byProject.get(a));
+    const ub = harvestUniqueCount(byProject.get(b));
+    if (ub !== ua) return ub - ua;
+    return a.localeCompare(b);
+  });
+
+  // Always surface the live fuzz target even at 0 fills
+  if (harvestState.liveProject && !byProject.has(harvestState.liveProject)) {
+    names = [harvestState.liveProject, ...names];
+    byProject.set(harvestState.liveProject, []);
+  }
+
+  if (compact) names = names.slice(0, 5);
+  else names = names.slice(0, 12);
+
+  if (!names.length) {
+    return [{
+      id: 'empty-slot',
+      label: compact ? 'Idle' : 'Awaiting',
+      count: 0,
+      capacity: 20,
+      project: '',
+      sevFilter: '',
+      cls: 'harvest',
+      title: 'No tests bottled yet',
+    }];
+  }
+
+  return names.map((name) => {
+    const list = byProject.get(name) || [];
+    const unique = harvestUniqueCount(list);
+    const live = harvestState.liveProject && name === harvestState.liveProject;
+    return {
+      id: `proj:${name}`,
+      label: name.length > 14 ? `${name.slice(0, 12)}…` : name,
+      count: unique,
+      capacity: Math.max(8, compact ? 16 : 24),
+      project: name,
+      sevFilter: '',
+      cls: live ? 'harvest live' : 'harvest',
+      title: `${name} — ${unique} unique scream canister${unique === 1 ? '' : 's'}`,
+      hue: projectCanisterHue(name),
+      live,
+    };
+  });
+}
+
+function animateCanisterFills(rack) {
+  const buttons = [...rack.querySelectorAll('.scream-canister[data-slot]')];
+  for (const btn of buttons) {
+    const id = btn.dataset.slot;
+    const target = Number(btn.dataset.targetFill || 0);
+    const from = harvestState.prevFillById[id] ?? 0;
+    btn.style.setProperty('--fill', `${from}%`);
+    // Double rAF so the browser commits the starting fill before transitioning.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        btn.style.setProperty('--fill', `${target}%`);
+        if (target > from) btn.classList.add('just-bottled');
+      });
+    });
+    harvestState.prevFillById[id] = target;
+  }
+}
+
+function renderScreamCanisters(opts = {}) {
+  const rackId = opts.rackId || 'scream-canister-rack';
+  const statusId = opts.statusId || 'scream-harvest-status';
+  const pressureId = opts.pressureId || 'scream-harvest-pressure';
+  const compact = !!opts.compact;
+  const mode = opts.mode || harvestState.mode || 'projects';
+  const rack = document.getElementById(rackId);
+  const status = document.getElementById(statusId);
+  const pressure = document.getElementById(pressureId);
   if (!rack) return;
 
-  const all = crashState.all || [];
-  const uniqueKeys = new Set();
-  for (const c of all) {
-    uniqueKeys.add(crashClusterKey(c) || c.id);
-  }
-  const unique = uniqueKeys.size;
-  const bySev = { critical: 0, high: 0, medium: 0, low: 0 };
-  for (const c of all) {
-    const s = crashSev(c);
-    if (bySev[s] != null) bySev[s] += 1;
-    else bySev.low += 1;
-  }
-
+  const all = opts.crashes || harvestState.all || crashState.all || [];
+  const unique = harvestUniqueCount(all);
   const harvestPct = canisterFillPct(unique, 40);
-  const slots = [
-    { id: 'harvest', label: 'Harvest', count: unique, capacity: 40, sevFilter: '', cls: 'harvest', title: 'Unique bottled screams (clusters)' },
-    { id: 'critical', label: 'Critical', count: bySev.critical, capacity: 12, sevFilter: 'critical', cls: 'critical', title: 'Critical severity canisters' },
-    { id: 'high', label: 'High', count: bySev.high, capacity: 20, sevFilter: 'high', cls: 'high', title: 'High severity canisters' },
-    { id: 'medium', label: 'Medium', count: bySev.medium, capacity: 30, sevFilter: 'medium', cls: 'medium', title: 'Medium severity canisters' },
-    { id: 'low', label: 'Low', count: bySev.low, capacity: 40, sevFilter: 'low', cls: 'low', title: 'Low severity canisters' },
-  ];
+  const slots = buildHarvestSlots(all, { compact, mode });
 
   if (status) {
+    const projects = new Set(all.map(crashProjectName));
     status.textContent = all.length
-      ? `${all.length} scream${all.length === 1 ? '' : 's'} captured · ${unique} unique canister${unique === 1 ? '' : 's'} on the rack`
-      : 'No screams bottled yet — scare a target from the Fuzz tab.';
+      ? (mode === 'projects'
+        ? `${projects.size} test canister${projects.size === 1 ? '' : 's'} · ${unique} unique scream${unique === 1 ? '' : 's'}`
+        : `${all.length} scream${all.length === 1 ? '' : 's'} · ${unique} unique`)
+      : (compact
+        ? 'No screams bottled yet.'
+        : 'No screams bottled yet — scare a target from the Fuzz tab.');
   }
   if (pressure) {
     pressure.textContent = pressureLabel(harvestPct);
     pressure.classList.toggle('critical', harvestPct >= 85);
   }
 
+  const modeEl = document.getElementById('scream-harvest-mode');
+  if (modeEl && !compact) modeEl.value = mode;
+
+  const rose = unique > harvestState.lastUnique;
   const activeSev = document.getElementById('crash-sev-filter')?.value || '';
+  const activeProject = document.getElementById('crash-filter')?.value || '';
+
   rack.innerHTML = slots.map((s) => {
     const pct = canisterFillPct(s.count, s.capacity);
     const art = canisterArtForFill(pct);
-    const active = s.sevFilter && activeSev === s.sevFilter ? 'active' : '';
+    const active = mode === 'severity'
+      ? (!compact && s.sevFilter && activeSev === s.sevFilter ? 'active' : '')
+      : (!compact && s.project && activeProject === s.project ? 'active' : '');
     const filling = pct > 0 ? 'filling' : '';
-    return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling}" role="listitem"
-      data-sev="${s.sevFilter}" data-fill="${pct}" title="${s.title}"
-      style="--fill: ${pct}%">
+    const pulse = (rose && (s.id === 'harvest' || s.live)) ? 'pulse' : '';
+    const live = s.live ? 'is-live' : '';
+    const hue = s.hue != null ? s.hue : null;
+    const style = [
+      `--fill: 0%`,
+      hue != null ? `--canister-glow: hsl(${hue} 78% 48%)` : '',
+    ].filter(Boolean).join(';');
+    return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling} ${pulse} ${live}" role="listitem"
+      data-slot="${s.id}" data-target-fill="${pct}" data-sev="${s.sevFilter || ''}" data-project="${s.project || ''}"
+      data-fill="${pct}" title="${s.title}" style="${style}">
       <div class="scream-canister-vessel">
-        <img class="scream-canister-art" src="${art}" alt="" width="186" height="280" loading="lazy" />
+        <img class="scream-canister-art" src="${art}" alt="" width="186" height="280" loading="lazy" decoding="async" />
         <div class="scream-canister-liquid" aria-hidden="true"></div>
+        <div class="scream-canister-vapor" aria-hidden="true"></div>
+        ${s.live ? '<span class="scream-canister-live-badge">LIVE</span>' : ''}
       </div>
       <div class="scream-canister-meta">
         <span class="scream-canister-label">${s.label}</span>
         <span class="scream-canister-count">${s.count}</span>
       </div>
-      <span class="scream-canister-pct">${pct}% full</span>
+      ${compact ? '' : `<span class="scream-canister-pct">${pct}% full</span>`}
     </button>`;
   }).join('');
+
+  if (!all.length && !compact && mode === 'projects') {
+    rack.insertAdjacentHTML('beforeend', `
+      <div class="scream-canister-empty" role="status">
+        <img src="/canisters/canister-empty.jpg" alt="" width="120" height="180" loading="lazy" decoding="async" />
+        <p>Empty rack — each Target profile gets its own canister as screams bottle.</p>
+      </div>`);
+  }
+
+  animateCanisterFills(rack);
 
   rack.querySelectorAll('.scream-canister').forEach((btn) => {
     btn.addEventListener('click', () => {
       const sev = btn.dataset.sev || '';
+      const project = btn.dataset.project || '';
+      if (compact) {
+        switchView('crashes');
+        const projSel = document.getElementById('crash-filter');
+        const sevSel = document.getElementById('crash-sev-filter');
+        if (mode === 'projects' && projSel && project) {
+          // Ensure option exists
+          if (![...projSel.options].some((o) => o.value === project)) {
+            const opt = document.createElement('option');
+            opt.value = project;
+            opt.textContent = project;
+            projSel.appendChild(opt);
+          }
+          projSel.value = project;
+        }
+        if (mode === 'severity' && sevSel && sev) sevSel.value = sev;
+        loadCrashes(document.getElementById('crash-filter')?.value || '').catch(() => {});
+        return;
+      }
+      if (mode === 'projects') {
+        const projSel = document.getElementById('crash-filter');
+        if (!projSel) return;
+        if (!project) {
+          projSel.value = '';
+        } else {
+          if (![...projSel.options].some((o) => o.value === project)) {
+            const opt = document.createElement('option');
+            opt.value = project;
+            opt.textContent = project;
+            projSel.appendChild(opt);
+          }
+          projSel.value = projSel.value === project ? '' : project;
+        }
+        loadCrashes(projSel.value).catch(() => {});
+        return;
+      }
       const sel = document.getElementById('crash-sev-filter');
       if (!sel) return;
-      if (!sev) {
-        sel.value = '';
-      } else {
-        sel.value = sel.value === sev ? '' : sev;
-      }
+      if (!sev) sel.value = '';
+      else sel.value = sel.value === sev ? '' : sev;
       paintCrashInvestigate();
     });
   });
+
+  harvestState.lastUnique = unique;
+}
+
+function paintHarvestViews() {
+  renderScreamCanisters({
+    rackId: 'scream-canister-rack',
+    statusId: 'scream-harvest-status',
+    pressureId: 'scream-harvest-pressure',
+    mode: harvestState.mode,
+  });
+  renderScreamCanisters({
+    rackId: 'dash-canister-rack',
+    statusId: 'dash-harvest-status',
+    compact: true,
+    mode: 'projects',
+  });
+}
+
+async function refreshHarvest(opts = {}) {
+  // Prefer unfiltered crashes so each test keeps its own canister visible.
+  const project = opts.projectFilter != null
+    ? opts.projectFilter
+    : (opts.singleProject
+      ? (opts.project || document.getElementById('crash-filter')?.value || stalkProject || '')
+      : '');
+  const url = project ? `/api/crashes?project=${encodeURIComponent(project)}` : '/api/crashes';
+  try {
+    const crashes = await api.get(url);
+    const prev = harvestState.lastUnique;
+    harvestState.all = crashes || [];
+    if (opts.syncCrashState || document.getElementById('view-crashes')?.classList.contains('visible')) {
+      // Crash list may be filtered; harvest rack uses full harvestState.all
+      if (opts.repaintInvestigate) paintCrashInvestigate();
+      else paintHarvestViews();
+    } else {
+      paintHarvestViews();
+    }
+    const next = harvestUniqueCount(harvestState.all);
+    if (opts.toast && next > prev)
+      flashScreamBottled(opts.project || harvestState.liveProject || 'lab');
+    return harvestState.all;
+  } catch {
+    paintHarvestViews();
+    return harvestState.all;
+  }
+}
+
+function scheduleHarvestRefresh(opts = {}) {
+  clearTimeout(harvestState.refreshTimer);
+  harvestState.refreshTimer = setTimeout(() => {
+    refreshHarvest(opts).catch(() => {});
+  }, opts.immediate ? 0 : 450);
 }
 
 async function loadCrashes(project = '') {
@@ -2491,6 +2741,11 @@ async function loadCrashes(project = '') {
   const uniq = document.getElementById('crash-unique-only');
   if (uniq) crashState.uniqueOnly = uniq.checked;
   paintCrashInvestigate();
+  // Per-test rack always uses the unfiltered harvest snapshot.
+  if (project)
+    refreshHarvest({}).catch(() => {});
+  else
+    harvestState.all = crashState.all;
 }
 
 document.getElementById('crash-filter')?.addEventListener('change', (e) => {
@@ -2518,6 +2773,15 @@ document.getElementById('crash-clear-filters')?.addEventListener('click', () => 
 document.getElementById('crash-prev')?.addEventListener('click', () => selectCrashOffset(-1));
 document.getElementById('crash-next')?.addEventListener('click', () => selectCrashOffset(1));
 document.getElementById('crash-next-unique')?.addEventListener('click', () => selectNextUnique());
+
+document.getElementById('dash-open-canisters')?.addEventListener('click', () => {
+  switchView('crashes');
+  loadCrashes(document.getElementById('crash-filter')?.value || stalkProject || '').catch(() => {});
+});
+document.getElementById('scream-harvest-mode')?.addEventListener('change', (e) => {
+  harvestState.mode = e.target.value === 'severity' ? 'severity' : 'projects';
+  paintHarvestViews();
+});
 
 document.addEventListener('keydown', (ev) => {
   if (!document.getElementById('view-crashes')?.classList.contains('visible')) return;
@@ -2558,11 +2822,13 @@ async function connectHub() {
     startBtn.disabled = true;
     stopBtn.disabled = false;
     stalkProject = e.project || stalkProject;
+    harvestState.liveProject = e.project || stalkProject || null;
     stalkServerTimeline = [];
     stalkLiveTimeline = [];
     stalkCrashIdByIteration.clear();
     stalkFollowLive = true;
     stalkSelection = null;
+    paintHarvestViews();
     if (document.getElementById('view-dashboard').classList.contains('visible'))
       loadDashboard({ applyWidgets: true, followLive: true }).catch(() => {});
   });
@@ -2570,6 +2836,14 @@ async function connectHub() {
   hub.on('fuzzLog', (e) => {
     const kind = (e.kind || 'info').toLowerCase();
     appendLogUnique(e.message || '', kind, e.at);
+    if (kind === 'crash') {
+      scheduleHarvestRefresh({
+        project: stalkProject,
+        toast: true,
+        syncCrashState: true,
+        repaintInvestigate: document.getElementById('view-crashes')?.classList.contains('visible'),
+      });
+    }
   });
 
   hub.on('fuzzIteration', (e) => {
@@ -2585,6 +2859,14 @@ async function connectHub() {
       crashId: stalkCrashIdByIteration.get(Number(e.iteration)) || null,
     });
     if (stalkLiveTimeline.length > 200) stalkLiveTimeline = stalkLiveTimeline.slice(-200);
+    if (e.crashed) {
+      scheduleHarvestRefresh({
+        project: stalkProject,
+        toast: true,
+        syncCrashState: true,
+        repaintInvestigate: document.getElementById('view-crashes')?.classList.contains('visible'),
+      });
+    }
     if (document.getElementById('view-dashboard').classList.contains('visible')) {
       // Keep growing the bar strip even when pinned; do not clobber CFG/widgets.
       renderTimeline(mergeTimeline());
@@ -2600,6 +2882,7 @@ async function connectHub() {
     setStatus('Completed');
     startBtn.disabled = false;
     stopBtn.disabled = true;
+    harvestState.liveProject = null;
     resolveCrashIdForIteration(-1).finally(() => {
       loadDashboard({
         applyWidgets: stalkFollowLive,
@@ -2607,6 +2890,7 @@ async function connectHub() {
       }).catch(() => {});
     });
     loadCrashes();
+    scheduleHarvestRefresh({ project: stalkProject, immediate: true, syncCrashState: true });
   });
 
   hub.on('fuzzStopped', (e) => {
@@ -2614,6 +2898,8 @@ async function connectHub() {
     setStatus('Stopped');
     startBtn.disabled = false;
     stopBtn.disabled = true;
+    harvestState.liveProject = null;
+    paintHarvestViews();
     loadDashboard({ applyWidgets: stalkFollowLive, force: stalkFollowLive }).catch(() => {});
   });
 

@@ -36,9 +36,11 @@ So "Scream" is Leg 5 (crash capture), and a saved crash bundle is a **scream can
 
 ### Harvest visuals (Crashes tab)
 
-The Crashes view shows a **scare-floor harvest rack**: industrial canisters that fill as unique crashes and severity buckets grow. Empty → low → mid → full art swaps with live liquid fill and a pressure readout (*Scare it. Bottle the scream.*).
+The Crashes view shows a **scare-floor harvest rack**: **one canister per Target profile / test**, filling as that project bottles unique crashes. Toggle **By severity** for the severity rack. Live fuzz runs mark the active test canister. Fill/vapor/pulse animations are CSS in the browser.
 
-Assets live under `docs/assets/canisters/` (docs) and `src/Randall.Server/wwwroot/img/canisters/` (UI). Original factory-horror art — not Disney/Pixar product likenesses.
+**RAM:** canister JPEGs (~30–180 KB each) load only in the **web UI** via `/canisters/*.jpg`. They are **not** mapped into `FuzzEngine`, DynamoRIO, or corpus memory. Closing the browser tab frees that decode cache; headless `randall fuzz` never loads them.
+
+Assets: `docs/assets/canisters/` and `wwwroot/img/canisters/`. Original factory-horror art — not Disney/Pixar product likenesses.
 
 ---
 

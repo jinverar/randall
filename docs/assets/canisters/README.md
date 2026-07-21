@@ -13,3 +13,9 @@ Industrial-horror harvest canisters for the Crashes tab (*Scare it. Bottle the s
 Served by Randall.Server as `/canisters/canister-*.jpg` (same `ServeRepoAsset` pattern as `/randall.png`).
 
 UI copies also under `src/Randall.Server/wwwroot/img/canisters/`. Lore: [LORE.md](../LORE.md).
+
+## UI-only (no fuzz RAM)
+
+These JPEGs are served to the browser. They are **not** loaded by `randall fuzz` / DynamoRIO. Leaving the Crashes tab open costs a few hundred KB of browser image decode at most — irrelevant next to coverage instrumentation.
+
+Original factory art for Randfuzz parody — not Disney/Pixar product likenesses.
