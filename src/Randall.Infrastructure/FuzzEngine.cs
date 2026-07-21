@@ -115,7 +115,8 @@ public sealed class FuzzEngine
         {
             try
             {
-                targetExeResolved = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
+                var declared = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
+                targetExeResolved = ExecutableResolver.FindExisting(declared) ?? declared;
             }
             catch
             {
@@ -946,46 +947,75 @@ public sealed class FuzzEngine
 
                     if (project.Fuzz.AutoAnalyzeCrash && saved.MiniDumpPath is not null)
                     {
-                        var analysis = CrashAnalysisWriter.AnalyzeDump(saved.MiniDumpPath);
-                        if (!analysis.Ok && debuggerWait?.Scream?.ExceptionInfo is { } screamEx)
+                        if (LinuxCrashAnalysisWriter.LooksLikeLinuxCore(saved.MiniDumpPath))
                         {
-                            analysis = new CrashAnalysisDto(
-                                true,
-                                saved.MiniDumpPath,
-                                $"0x{screamEx.ExceptionCode:X8}",
-                                screamEx.ExceptionHint,
-                                screamEx.FaultAddress,
-                                null,
-                                screamEx.Registers,
-                                [],
-                                null);
-                        }
-
-                        var analysisPath = CrashAnalysisWriter.Write(crashesDir, saved.Id, analysis);
-                        if (analysis.Ok)
-                        {
-                            Console.WriteLine(
-                                $"  analysis: {analysis.ExceptionHint} @ {analysis.FaultAddress}" +
-                                (analysis.FaultModule is not null ? $" ({analysis.FaultModule})" : "") +
-                                $" → {analysisPath}");
+                            try
+                            {
+                                var linux = LinuxCrashAnalysisWriter.Analyze(
+                                    crashesDir,
+                                    saved.Id,
+                                    saved.MiniDumpPath,
+                                    targetExeResolved,
+                                    exitCode: result.ExitCode,
+                                    patternLen: null,
+                                    projectName: project.Name);
+                                Console.WriteLine(
+                                    $"  linux triage: {linux.SummaryLine} → {linux.AnalysisPath}");
+                                if (linux.HeapTriagePath is not null)
+                                    Console.WriteLine($"  heap triage → {linux.HeapTriagePath}");
+                                if (linux.ExploitGuidePath is not null)
+                                    Console.WriteLine($"  exploit guide → {linux.ExploitGuidePath}");
+                                FuzzAnalystLog.Info(progress,
+                                    $"[linux-triage] {linux.SummaryLine}", iterations);
+                            }
+                            catch (Exception linuxEx)
+                            {
+                                Console.WriteLine($"  linux triage skipped: {linuxEx.Message}");
+                            }
                         }
                         else
                         {
-                            Console.WriteLine($"  analysis skipped: {analysis.Error}");
-                        }
+                            var analysis = CrashAnalysisWriter.AnalyzeDump(saved.MiniDumpPath);
+                            if (!analysis.Ok && debuggerWait?.Scream?.ExceptionInfo is { } screamEx)
+                            {
+                                analysis = new CrashAnalysisDto(
+                                    true,
+                                    saved.MiniDumpPath,
+                                    $"0x{screamEx.ExceptionCode:X8}",
+                                    screamEx.ExceptionHint,
+                                    screamEx.FaultAddress,
+                                    null,
+                                    screamEx.Registers,
+                                    [],
+                                    null);
+                            }
 
-                        try
-                        {
-                            var lens = MemoryLensAnalyzer.AnalyzeDump(
-                                saved.MiniDumpPath, analysis, longLived?.Id);
-                            var (lensJson, _) = MemoryLensWriter.Write(crashesDir, saved.Id, lens);
-                            foreach (var line in lens.SummaryLines.Take(4))
-                                FuzzAnalystLog.Info(progress, $"[memory] {line}", iterations);
-                            Console.WriteLine($"  memory lens → {lensJson}");
-                        }
-                        catch (Exception lensEx)
-                        {
-                            Console.WriteLine($"  memory lens skipped: {lensEx.Message}");
+                            var analysisPath = CrashAnalysisWriter.Write(crashesDir, saved.Id, analysis);
+                            if (analysis.Ok)
+                            {
+                                Console.WriteLine(
+                                    $"  analysis: {analysis.ExceptionHint} @ {analysis.FaultAddress}" +
+                                    (analysis.FaultModule is not null ? $" ({analysis.FaultModule})" : "") +
+                                    $" → {analysisPath}");
+                            }
+                            else
+                            {
+                                Console.WriteLine($"  analysis skipped: {analysis.Error}");
+                            }
+
+                            try
+                            {
+                                var lens = MemoryLensAnalyzer.AnalyzeDump(
+                                    saved.MiniDumpPath, analysis, longLived?.Id);
+                                var (lensJson, _) = MemoryLensWriter.Write(crashesDir, saved.Id, lens);
+                                foreach (var line in lens.SummaryLines.Take(4))
+                                    FuzzAnalystLog.Info(progress, $"[memory] {line}", iterations);
+                                Console.WriteLine($"  memory lens → {lensJson}");
+                            }
+                            catch (Exception lensEx)
+                            {
+                                Console.WriteLine($"  memory lens skipped: {lensEx.Message}");
+                            }
                         }
                     }
 

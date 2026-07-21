@@ -31,5 +31,24 @@ public static class CrashAnalysisWriter
     public static string? AnalysisPathFor(string crashesDir, Guid crashId) =>
         Path.Combine(crashesDir, $"{crashId:N}_analysis.json");
 
-    public static CrashAnalysisDto AnalyzeDump(string? dumpPath) => MiniDumpAnalyzer.Analyze(dumpPath);
+    public static CrashAnalysisDto AnalyzeDump(string? dumpPath)
+    {
+        if (LinuxCrashAnalysisWriter.LooksLikeLinuxCore(dumpPath))
+        {
+            // Catalog / cluster reload: prefer existing *_analysis.json written at crash time.
+            // Fall back to a lightweight signal-only DTO (full gdb re-triage needs the exe path).
+            return new CrashAnalysisDto(
+                true,
+                dumpPath,
+                null,
+                "linux-core",
+                null,
+                null,
+                null,
+                [],
+                null);
+        }
+
+        return MiniDumpAnalyzer.Analyze(dumpPath);
+    }
 }

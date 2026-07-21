@@ -137,7 +137,12 @@ ulimit -c unlimited
 sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
 ```
 
-Then triage with gdb/GEF or `randall heaptriage --exe <p> --core <core>`.
+With `fuzz.autoAnalyzeCrash` (default **on**), each captured core also gets:
+- `*_analysis.json` — signal / fault hint (catalog-compatible)
+- `*_heap_triage.json` — gdb backtrace + heap/stack classifier
+- `*_exploit_guide.json` — mitigation + next-step playbook (no payloads)
+
+Manual: `randall heaptriage --exe <p> --core <core>` or `randall exploit guide --exe <p> --core <core>`.
 
 ## What is Windows-only
 
