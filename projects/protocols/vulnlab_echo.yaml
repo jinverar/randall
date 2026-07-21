@@ -1,0 +1,11 @@
+name: vulnlab-echo
+description: VulnLab ECHO command — static prefix + mutable payload (stack overflow surface)
+blocks:
+  - type: static
+    value: "ECHO "
+  - type: bytes
+    name: payload
+    mutable: true
+    minSize: 4
+    maxSize: 8192
+    seedFile: seeds/vulnlab_echo.txt

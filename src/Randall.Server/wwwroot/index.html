@@ -439,6 +439,11 @@
               <button type="button" class="btn" id="fuzz-linux-refresh" title="Re-probe installed Linux tools">Refresh</button>
               <span class="hint"> Missing something? <code>scripts/install-linux-tools.sh</code></span>
             </p>
+            <p class="hint">
+              Mitigation ladder + <code>checksec</code> + ASLR/DEP toggles:
+              <button type="button" class="linkish" data-help="MITIGATION_LAB.md">Help → Mitigation Lab</button>
+              (basic overflow → NX → ASLR → modern hardened).
+            </p>
           </details>
           <div class="btn-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>

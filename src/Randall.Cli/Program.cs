@@ -27,6 +27,7 @@ return args[0].ToLowerInvariant() switch
     "graph" => RunGraph(args.Skip(1).ToArray()),
     "analyze" => RunAnalyze(args.Skip(1).ToArray()),
     "heaptriage" or "heap" => RunHeapTriage(args.Skip(1).ToArray()),
+    "checksec" => RunCheckSec(args.Skip(1).ToArray()),
     "memory" or "lens" => RunMemoryLens(args.Skip(1).ToArray()),
     "stalk" => RunStalk(args.Skip(1).ToArray()),
     "debug" => RunDebug(args.Skip(1).ToArray()),
@@ -63,6 +64,7 @@ static void PrintHelp()
           randall analyze -i <crash-guid>   Minidump triage (registers, fault PC)
           randall heaptriage --exe <path> [--input f] [--core f] [--no-harden] [-- args…]
                                             Linux heap crash triage (tcache/UAF/overflow classifier)
+          randall checksec --exe <path>     ELF exploit-mitigation report (NX/canary/PIE/RELRO/FORTIFY) + ASLR state
           randall memory -i <crash-guid>    Memory lens (UAF fill, regions, neighborhood)
           randall memory --pid N            Live VirtualQueryEx sample
           randall stalk layers -p <project>              List stalk layers
@@ -589,6 +591,39 @@ static int RunExport(string[] args)
     }
 
     Console.WriteLine($"Triage bundle exported to:\n  {bundle.ExportPath}");
+    return 0;
+}
+
+static int RunCheckSec(string[] args)
+{
+    string? exe = null;
+    for (var i = 0; i < args.Length; i++)
+        if (args[i] is "--exe" or "-e" && i + 1 < args.Length) exe = args[++i];
+
+    if (exe is null)
+    {
+        Console.Error.WriteLine("Usage: randall checksec --exe <path>");
+        return 1;
+    }
+    exe = Path.GetFullPath(exe);
+    var resolved = ExecutableResolver.FindExisting(exe) ?? exe;
+    if (!File.Exists(resolved)) { Console.Error.WriteLine($"Not found: {exe}"); return 1; }
+
+    var m = MitigationInspector.Inspect(resolved);
+    string yn(bool b) => b ? "✓ enabled" : "✗ MISSING";
+    Console.WriteLine($"checksec: {Path.GetFileName(resolved)}   (tier: {m.Tier})");
+    Console.WriteLine($"  NX / DEP        : {yn(m.Nx)}");
+    Console.WriteLine($"  Stack canary    : {yn(m.Canary)}");
+    Console.WriteLine($"  PIE (ASLR-able) : {yn(m.Pie)}");
+    Console.WriteLine($"  RELRO           : {m.Relro}");
+    Console.WriteLine($"  FORTIFY_SOURCE  : {yn(m.Fortify)}");
+    if (!m.ReadelfUsed)
+        Console.WriteLine("  (readelf unavailable — install binutils for accurate results)");
+
+    var aslr = AslrControl.Read();
+    Console.WriteLine();
+    Console.WriteLine($"System ASLR      : {aslr.Label}" + (aslr.Value is not null ? $" (randomize_va_space={aslr.Value})" : ""));
+    Console.WriteLine($"  change         : {aslr.HowToChange}");
     return 0;
 }
 
