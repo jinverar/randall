@@ -24,7 +24,7 @@ public static class DocsCatalog
         ("RECORDING.md", "Recording — observation stack & bookends", "Stalk & scream"),
         ("CRASH_ANALYSIS.md", "Crash analysis", "Stalk & scream"),
         ("MITIGATION_LAB.md", "Mitigation ladder + vuln services (Linux)", "Stalk & scream"),
-        ("EXPLOIT_GUIDE.md", "Exploit-guided development (Linux)", "Stalk & scream"),
+        ("EXPLOIT_GUIDE.md", "Scream triage — registers & offsets (Linux)", "Stalk & scream"),
         ("TARGET_RUNTIME.md", "Target Runtime + remote lab", "Stalk & scream"),
         ("LAB_AGENT.md", "Lab agent (remote UI)", "Lab"),
         ("LAB_PRACTICE.md", "Lab practice walkthrough", "Lab"),

@@ -3232,3 +3232,498 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
 .stalk-chip.crash { background: #5c1018; border-color: var(--stalk-red); }
 .stalk-chip .addr { color: #e8eef4; }
 .stalk-chip .tag { color: var(--muted); margin-top: 0.15rem; }
+
+/* —— Scream canisters (crash harvest) —— */
+.canister-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  vertical-align: middle;
+  margin-left: 0.45rem;
+  padding: 0.22rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+  color: var(--danger);
+  border-radius: 2px;
+}
+
+.scream-harvest-header {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1.25rem 1.35rem 1.4rem;
+  margin-bottom: 1rem;
+  min-height: 14rem;
+  display: flex;
+  align-items: flex-end;
+  background: #0c1218;
+}
+
+.scream-harvest-hero {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.scream-harvest-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 42%;
+  display: block;
+  filter: saturate(0.85) contrast(1.08);
+}
+
+.scream-harvest-hero-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(100deg, rgba(6, 10, 14, 0.92) 0%, rgba(6, 10, 14, 0.72) 42%, rgba(6, 10, 14, 0.35) 100%),
+    linear-gradient(0deg, rgba(8, 12, 16, 0.75), transparent 55%);
+}
+
+.scream-harvest-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 42rem;
+}
+
+.scream-harvest-header h1,
+.scream-harvest-header p {
+  color: #e8eef4;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+}
+
+.scream-harvest-header p {
+  color: #c5d0de;
+  margin: 0.35rem 0 0;
+}
+
+.scream-harvest {
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem 1.05rem;
+}
+
+.scream-harvest-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.scream-harvest-title {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+}
+
+.scream-harvest-pressure {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border));
+  padding: 0.3rem 0.55rem;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
+}
+
+.scream-harvest-pressure.critical {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+  animation: scream-pressure-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes scream-pressure-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.18); }
+}
+
+.scream-canister-rack {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .scream-canister-rack {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .scream-canister-rack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.scream-canister {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 0.35rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.25s ease;
+}
+
+.scream-canister:hover,
+.scream-canister:focus-visible {
+  border-color: var(--border);
+  background: var(--surface-hover);
+  outline: none;
+}
+
+.scream-canister.active {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+}
+
+.scream-canister-vessel {
+  position: relative;
+  aspect-ratio: 3 / 4.2;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #0c1218;
+  isolation: isolate;
+}
+
+.scream-canister-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center bottom;
+  opacity: 0.92;
+  transition: opacity 0.35s ease, filter 0.35s ease;
+}
+
+.scream-canister-liquid {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  bottom: 14%;
+  height: var(--fill, 0%);
+  max-height: 68%;
+  border-radius: 2px 2px 1px 1px;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--canister-glow, #d4a017) 70%, #fff) 0%,
+      var(--canister-glow, #c47a12) 35%,
+      color-mix(in srgb, var(--canister-glow, #8a3a10) 80%, #1a0804) 100%);
+  box-shadow:
+    0 0 18px color-mix(in srgb, var(--canister-glow, #d4a017) 45%, transparent),
+    inset 0 0 10px rgba(0, 0, 0, 0.35);
+  transition: height 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+  mix-blend-mode: screen;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.scream-canister-liquid::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 8px;
+  background: radial-gradient(ellipse at center, rgba(255, 230, 150, 0.85), transparent 70%);
+  opacity: 0.85;
+  animation: scream-surface-sway 2.8s ease-in-out infinite;
+}
+
+@keyframes scream-surface-sway {
+  0%, 100% { transform: translateX(-2%) scaleX(1); opacity: 0.7; }
+  50% { transform: translateX(2%) scaleX(1.04); opacity: 1; }
+}
+
+.scream-canister[data-fill="0"] .scream-canister-liquid {
+  opacity: 0;
+}
+
+.scream-canister.filling .scream-canister-art {
+  filter: saturate(1.15) brightness(1.05);
+}
+
+.scream-canister.critical {
+  --canister-glow: #e04530;
+}
+.scream-canister.high {
+  --canister-glow: #d97706;
+}
+.scream-canister.medium {
+  --canister-glow: #ca8a04;
+}
+.scream-canister.low {
+  --canister-glow: #4d7c0f;
+}
+.scream-canister.harvest {
+  --canister-glow: #b45309;
+}
+
+.scream-canister-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+}
+
+.scream-canister-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.scream-canister-count {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.scream-canister-pct {
+  display: block;
+  margin-top: 0.1rem;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--muted);
+}
+
+html[data-theme="light"] .scream-harvest-header {
+  box-shadow: 0 8px 24px var(--shadow);
+}
+
+html[data-theme="light"] .scream-canister-liquid {
+  mix-blend-mode: multiply;
+  opacity: 0.55;
+}
+
+/* Live harvest animations + per-test rack polish */
+.scream-harvest-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+}
+
+.scream-harvest-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.scream-harvest-mode-label select {
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.2rem 0.35rem;
+}
+
+.scream-harvest-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.scream-harvest-toggle input {
+  accent-color: var(--accent, #2e9e5b);
+}
+
+.scream-harvest-ram {
+  margin: 0.25rem 0 0;
+  font-size: 0.68rem;
+  opacity: 0.85;
+}
+
+.scream-canister-rack-compact {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.scream-canister-rack-compact .scream-canister {
+  padding: 0.2rem;
+}
+
+.scream-canister-liquid {
+  transition: height 1.05s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scream-canister-vapor {
+  position: absolute;
+  left: 28%;
+  right: 28%;
+  top: 8%;
+  height: 18%;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at bottom, rgba(255, 210, 120, 0.45), transparent 70%);
+  filter: blur(2px);
+}
+
+.scream-canister.filling .scream-canister-vapor,
+.scream-canister.is-live .scream-canister-vapor {
+  opacity: 0.65;
+  animation: scream-vapor-rise 2.4s ease-in-out infinite;
+}
+
+@keyframes scream-vapor-rise {
+  0%, 100% { transform: translateY(6%) scaleX(0.92); opacity: 0.25; }
+  50% { transform: translateY(-8%) scaleX(1.05); opacity: 0.7; }
+}
+
+.scream-canister.pulse .scream-canister-vessel,
+.scream-canister.just-bottled .scream-canister-vessel {
+  animation: scream-canister-pulse 0.9s ease-out 1;
+}
+
+@keyframes scream-canister-pulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+  40% { transform: scale(1.03); box-shadow: 0 0 22px color-mix(in srgb, var(--canister-glow, #d4a017) 55%, transparent); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+}
+
+.scream-canister.is-live .scream-canister-vessel {
+  outline: 1px solid color-mix(in srgb, var(--warn) 70%, var(--border));
+  animation: scream-live-glow 2.2s ease-in-out infinite;
+}
+
+@keyframes scream-live-glow {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.12); }
+}
+
+.scream-canister-live-badge {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 2;
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 0.12rem 0.28rem;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--danger) 85%, #000);
+  color: #fff;
+  animation: scream-live-badge 1.2s steps(2, end) infinite;
+}
+
+@keyframes scream-live-badge {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.scream-canister-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.6rem 0.2rem;
+  color: var(--muted);
+}
+
+.scream-canister-empty img {
+  width: 72px;
+  height: auto;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  opacity: 0.9;
+}
+
+.scream-canister-empty p {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.scream-bottled-toast {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 1.1rem;
+  z-index: 80;
+  max-width: min(22rem, calc(100vw - 2rem));
+  padding: 0.7rem 0.9rem;
+  border-radius: 3px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, #1a0c0c 82%, var(--danger));
+  color: #f5e6e6;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(12px);
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.scream-bottled-toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+html[data-theme="light"] .scream-bottled-toast {
+  background: #fff5f4;
+  color: #5c1018;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scream-canister-liquid,
+  .scream-canister-vapor,
+  .scream-canister.pulse .scream-canister-vessel,
+  .scream-canister.just-bottled .scream-canister-vessel,
+  .scream-canister.is-live .scream-canister-vessel,
+  .scream-canister-live-badge,
+  .scream-bottled-toast {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+
+/* Pref toggles: canisters on by default; animations opt-in (data-scream-anim=on). */
+html[data-scream-canisters="off"] .scream-harvest,
+html[data-scream-canisters="off"] .scream-harvest-dash,
+html[data-scream-canisters="off"] .scream-harvest-hero {
+  display: none !important;
+}
+html[data-scream-canisters="off"] .scream-harvest-header {
+  min-height: 0;
+  padding: 0;
+}
+html:not([data-scream-anim="on"]) .scream-canister-liquid,
+html:not([data-scream-anim="on"]) .scream-canister-vapor,
+html:not([data-scream-anim="on"]) .scream-canister.pulse,
+html:not([data-scream-anim="on"]) .scream-canister.live .scream-canister-vessel,
+html:not([data-scream-anim="on"]) .scream-canister-live-badge,
+html:not([data-scream-anim="on"]) .scream-harvest-pressure.critical,
+html:not([data-scream-anim="on"]) .scream-bottled-toast {
+  animation: none !important;
+  transition: none !important;
+}
+html:not([data-scream-anim="on"]) .scream-canister-liquid {
+  /* Still show fill level instantly — no rise animation. */
+  transition: none !important;
+}

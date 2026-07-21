@@ -10,12 +10,18 @@
         var t = localStorage.getItem('randfuzz.theme') || 'light';
         if (t !== 'dark' && t !== 'light' && t !== 'cyber') t = 'light';
         document.documentElement.setAttribute('data-theme', t);
+        var cans = localStorage.getItem('randfuzz.screamCanisters');
+        document.documentElement.setAttribute('data-scream-canisters', cans === '0' ? 'off' : 'on');
+        var anim = localStorage.getItem('randfuzz.screamAnimations');
+        document.documentElement.setAttribute('data-scream-anim', anim === '1' ? 'on' : 'off');
       } catch (e) {
         document.documentElement.setAttribute('data-theme', 'light');
+        document.documentElement.setAttribute('data-scream-canisters', 'on');
+        document.documentElement.setAttribute('data-scream-anim', 'off');
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=platform-selector-6" />
+  <link rel="stylesheet" href="/css/app.css?v=scream-canisters-5" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -108,6 +114,12 @@
             <section class="stalk-panel">
               <h3>Crash summary</h3>
               <dl id="stalk-crash-summary" class="stalk-dl"></dl>
+            </section>
+            <section class="stalk-panel scream-harvest-dash">
+              <h3>Scream harvest</h3>
+              <p class="hint" id="dash-harvest-status">No screams bottled yet.</p>
+              <div class="scream-canister-rack scream-canister-rack-compact" id="dash-canister-rack" role="list"></div>
+              <button type="button" class="btn" id="dash-open-canisters" style="margin-top:0.55rem;width:100%">Open canisters</button>
             </section>
             <section class="stalk-panel">
               <h3>Top new blocks</h3>
@@ -1000,10 +1012,47 @@
     </section>
 
     <section id="view-crashes" class="view">
-      <header class="page-header crash-page-header">
-        <h1>Crashes <span class="canister-badge" title="Every captured crash is a harvested scream — bottled with its dump &amp; triage">🫙 scream canisters</span></h1>
-        <p>You scared the target, it screamed — each crash is bottled in a canister (dump + triage). Scan density → isolate a signature → open the best unique hit and read <em>why</em>.</p>
+      <header class="page-header crash-page-header scream-harvest-header">
+        <div class="scream-harvest-hero" aria-hidden="true">
+          <img src="/canisters/canister-rack.jpg" alt="" width="1182" height="788" loading="lazy" />
+          <div class="scream-harvest-hero-shade"></div>
+        </div>
+        <div class="scream-harvest-copy">
+          <h1>Crashes <span class="canister-badge" title="Every captured crash is a harvested scream — bottled with its dump &amp; triage">scream canisters</span></h1>
+          <p>You scared the target, it screamed — each unique crash is bottled in a canister (dump + triage). Watch the harvest fill. Scan density → isolate a signature → open the best unique hit and read <em>why</em>.</p>
+        </div>
       </header>
+
+      <div class="scream-harvest panel" aria-label="Scream canister harvest">
+        <div class="scream-harvest-head">
+          <div>
+            <h2 class="scream-harvest-title">Scare floor harvest</h2>
+            <p class="hint" id="scream-harvest-status">No screams bottled yet — start a fuzz run.</p>
+            <p class="hint scream-harvest-ram">UI-only art — browser only (fuzzer RAM untouched). Canisters on by default; animations off unless you enable them.</p>
+          </div>
+          <div class="scream-harvest-controls">
+            <label class="scream-harvest-mode-label">
+              Rack
+              <select id="scream-harvest-mode" title="Group canisters by test profile or severity">
+                <option value="projects" selected>By test</option>
+                <option value="severity">By severity</option>
+              </select>
+            </label>
+            <label class="scream-harvest-toggle" title="Show or hide the scare-floor canister rack (on by default)">
+              <input type="checkbox" id="scream-harvest-enabled" checked />
+              Canisters
+            </label>
+            <label class="scream-harvest-toggle" title="Fill/vapor/pulse animations — off by default so fuzzing keeps the CPU">
+              <input type="checkbox" id="scream-harvest-anim" />
+              Animate
+            </label>
+            <span class="scream-harvest-pressure" id="scream-harvest-pressure" title="Harvest pressure from unique crashes">PRESSURE —</span>
+          </div>
+        </div>
+        <div class="scream-canister-rack" id="scream-canister-rack" role="list"></div>
+      </div>
+
+
 
       <div class="crash-investigate">
         <div class="panel crash-timeline-panel">
@@ -1260,6 +1309,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=platform-selector-6"></script>
+  <script type="module" src="/js/app.js?v=scream-canisters-5"></script>
 </body>
 </html>

@@ -23,20 +23,20 @@ public static class UiPrefsStore
         var host = PlatformResolver.Host;
         var path = PrefsPath(repoRoot);
         if (!File.Exists(path))
-            return new UiPrefsDto("light", PlatformScope.Auto, host);
+            return Defaults(host);
 
         try
         {
             var dto = JsonSerializer.Deserialize<UiPrefsDto>(File.ReadAllText(path), JsonOpts);
             if (dto is null)
-                return new UiPrefsDto("light", PlatformScope.Auto, host);
+                return Defaults(host);
             var theme = IsValidTheme(dto.Theme) ? NormalizeTheme(dto.Theme) : "light";
             var platform = NormalizePlatform(dto.Platform);
-            return new UiPrefsDto(theme, platform, host);
+            return new UiPrefsDto(theme, platform, host, dto.ScreamCanisters, dto.ScreamAnimations);
         }
         catch
         {
-            return new UiPrefsDto("light", PlatformScope.Auto, host);
+            return Defaults(host);
         }
     }
 
@@ -47,7 +47,7 @@ public static class UiPrefsStore
         var path = PrefsPath(repoRoot);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         // HostPlatform is intentionally left null on disk — it is a live value stamped by Get().
-        var saved = new UiPrefsDto(theme, platform);
+        var saved = new UiPrefsDto(theme, platform, null, prefs.ScreamCanisters, prefs.ScreamAnimations);
         File.WriteAllText(path, JsonSerializer.Serialize(saved, JsonOpts));
         return saved with { HostPlatform = PlatformResolver.Host };
     }
@@ -61,6 +61,9 @@ public static class UiPrefsStore
 
     public static string NormalizePlatform(string? platform) =>
         PlatformScope.IsSelectable(platform) ? platform!.Trim().ToLowerInvariant() : PlatformScope.Auto;
+
+    private static UiPrefsDto Defaults(string host) =>
+        new("light", PlatformScope.Auto, host, ScreamCanisters: true, ScreamAnimations: false);
 
     private static string PrefsPath(string? repoRoot)
     {

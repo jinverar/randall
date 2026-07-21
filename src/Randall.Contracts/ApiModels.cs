@@ -61,9 +61,18 @@ public sealed record PlatformInfoDto(string Host, string Resolved, IReadOnlyList
 /// <c>Platform</c> is the user's chosen fuzzing platform (<c>auto</c>/<c>windows</c>/<c>linux</c>);
 /// <c>HostPlatform</c> is server-computed (never persisted) so the UI knows the real host OS.
 /// </summary>
-public sealed record UiPrefsDto(string Theme = "light", string Platform = "auto", string? HostPlatform = null);
+public sealed record UiPrefsDto(
+    string Theme = "light",
+    string Platform = "auto",
+    string? HostPlatform = null,
+    bool ScreamCanisters = true,
+    bool ScreamAnimations = false);
 
-public sealed record UiPrefsUpdateRequest(string? Theme = null, string? Platform = null);
+public sealed record UiPrefsUpdateRequest(
+    string? Theme = null,
+    string? Platform = null,
+    bool? ScreamCanisters = null,
+    bool? ScreamAnimations = null);
 
 public sealed record FuzzStartRequest(
     string ConfigPath,

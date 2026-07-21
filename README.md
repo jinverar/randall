@@ -32,7 +32,7 @@ Fresh VM or bare metal. Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_W
 
 > **Running on Linux?** Randfuzz is cross-platform — see [docs/INSTALL_LINUX.md](docs/INSTALL_LINUX.md) for the Linux lab (gdb/GEF, strace, tcpdump, valgrind, ASan) plus heap-bug triage. Pick the fuzzing platform in the UI sidebar (Auto / Windows / Linux).
 >
-> **Linux exploit-guided development:** a fuzzer crash becomes a guided, tool-aware playbook (offset → strategy → pwntools) — see [docs/EXPLOIT_GUIDE.md](docs/EXPLOIT_GUIDE.md), the mitigation ladder in [docs/MITIGATION_LAB.md](docs/MITIGATION_LAB.md), and coverage stalking in [docs/STALKING.md](docs/STALKING.md).
+> **Linux scream triage:** a fuzzer crash becomes a register/offset report (no payloads) — see [docs/EXPLOIT_GUIDE.md](docs/EXPLOIT_GUIDE.md), the mitigation ladder in [docs/MITIGATION_LAB.md](docs/MITIGATION_LAB.md), and coverage stalking in [docs/STALKING.md](docs/STALKING.md).
 >
 > **Recipe catalog:** browse 100+ fuzzing recipes by target class (file formats, protocols, web) and instantiate a ready-to-fuzz project in one click — Fuzz → Scare Floor → Recipe catalog, or `randall case catalog`. See [docs/RECIPE_CATALOG.md](docs/RECIPE_CATALOG.md).
 

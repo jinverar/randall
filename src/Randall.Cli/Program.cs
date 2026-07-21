@@ -71,10 +71,8 @@ static void PrintHelp()
           randall pattern create -l N       Cyclic (mona-style) pattern for offset discovery
           randall pattern offset -q <val> [-l N]   Find offset of a value/register in the pattern
           randall exploitdev --exe <p> --core <c> [--pattern-len N]   Faulting registers + RIP offset
-          randall exploit guide --exe <p> [--core c] [--pattern-len N] [--host H --port P]
-                                            Exploit-guided dev: crash -> tailored next-step playbook
-          randall exploit template --exe <p> [--host H --port P] [--offset N] [-o exploit.py]
-                                            Generate a pwntools exploit skeleton
+          randall exploit guide --exe <p> [--core c] [--pattern-len N]
+                                            Triage playbook: register control + offset counting (no payloads)
           randall memory -i <crash-guid>    Memory lens (UAF fill, regions, neighborhood)
           randall memory --pid N            Live VirtualQueryEx sample
           randall stalk layers -p <project>              List stalk layers
@@ -673,8 +671,8 @@ static int RunExploit(string[] args)
     {
         Console.WriteLine("""
             Usage:
-              randall exploit guide --exe <path> [--core <core>] [--pattern-len N] [--host H] [--port P]
-              randall exploit template --exe <path> [--host H] [--port P] [--offset N] [-o exploit.py]
+              randall exploit guide --exe <path> [--core <core>] [--pattern-len N]
+            Scope: register control + offset counting only. No shellcode / payload templates.
             """);
         return 0;
     }
@@ -683,9 +681,20 @@ static int RunExploit(string[] args)
     return sub switch
     {
         "guide" => RunExploitGuide(rest),
-        "template" => RunExploitTemplate(rest),
+        "template" => RefuseExploitTemplate(),
         _ => Unknown($"exploit {args[0]}"),
     };
+}
+
+static int RefuseExploitTemplate()
+{
+    Console.Error.WriteLine(
+        "exploit template is disabled — Randfuzz stops at register control + offset counting.");
+    Console.Error.WriteLine(
+        "Use: randall exploit guide --exe <path> [--core <core>] [--pattern-len N]");
+    Console.Error.WriteLine(
+        "  or: randall exploitdev / randall pattern offset   (no shellcode, no payloads)");
+    return 2;
 }
 
 static int RunExploitGuide(string[] args)
@@ -707,7 +716,7 @@ static int RunExploitGuide(string[] args)
     core = core is null ? null : Path.GetFullPath(core);
 
     var plan = ExploitGuide.Build(exe, core, patternLen, project, host!, port);
-    Console.WriteLine($"╔═ Exploit-guided development: {plan.Target} ═╗");
+    Console.WriteLine($"╔═ Scream triage (registers + offsets): {plan.Target} ═╗");
     Console.WriteLine($"  difficulty: {plan.Difficulty}");
     Console.WriteLine("  findings:");
     foreach (var f in plan.Findings) Console.WriteLine($"    • {f}");
@@ -718,35 +727,6 @@ static int RunExploitGuide(string[] args)
         Console.WriteLine($"       why: {s.Why}");
         foreach (var c in s.Commands) Console.WriteLine($"       $ {c}");
         Console.WriteLine();
-    }
-    return 0;
-}
-
-static int RunExploitTemplate(string[] args)
-{
-    string? exe = null, host = "127.0.0.1", outPath = null;
-    int port = 9999; int? offset = null;
-    for (var i = 0; i < args.Length; i++)
-    {
-        if (args[i] is "--exe" && i + 1 < args.Length) exe = args[++i];
-        else if (args[i] is "--host" && i + 1 < args.Length) host = args[++i];
-        else if (args[i] is "--port" && i + 1 < args.Length && int.TryParse(args[++i], out var p)) port = p;
-        else if (args[i] is "--offset" && i + 1 < args.Length && int.TryParse(args[++i], out var o)) offset = o;
-        else if (args[i] is "-o" or "--out" && i + 1 < args.Length) outPath = args[++i];
-    }
-    if (exe is null) { Console.Error.WriteLine("Usage: randall exploit template --exe <path> [--host H] [--port P] [--offset N] [-o exploit.py]"); return 1; }
-    var resolved = ExecutableResolver.FindExisting(Path.GetFullPath(exe)) ?? Path.GetFullPath(exe);
-    var mit = MitigationInspector.Inspect(resolved);
-    var script = PwntoolsExporter.Generate(resolved, host!, port, offset, nxOff: !mit.Nx, pieOff: !mit.Pie);
-    if (outPath is not null)
-    {
-        File.WriteAllText(outPath, script);
-        Console.WriteLine($"Wrote pwntools skeleton → {outPath}");
-        Console.WriteLine("Edit the TODOs, then: python3 " + outPath);
-    }
-    else
-    {
-        Console.WriteLine(script);
     }
     return 0;
 }

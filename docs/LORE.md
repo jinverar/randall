@@ -34,6 +34,14 @@ In the film, Monstropolis runs on **screams collected in canisters** — the scr
 
 So "Scream" is Leg 5 (crash capture), and a saved crash bundle is a **scream canister** — harvest the screams, don't just hear them.
 
+### Harvest visuals (Crashes tab)
+
+The Crashes view shows a **scare-floor harvest rack**: industrial canisters that fill as unique crashes grow — one canister per Target profile by default (optional severity rack). Empty → low → mid → full art, a pressure readout, and *Scare it. Bottle the scream.*
+
+**Defaults (CPU-safe):** canisters **on** by default; **animations off** by default (fill still updates instantly). Toggle both on the Crashes harvest panel — prefs persist in `data/ui-prefs.json` + localStorage. Art is browser-only and never loaded by the fuzz process.
+
+Assets: `docs/assets/canisters/` and `src/Randall.Server/wwwroot/img/canisters/`. Served as `/canisters/canister-*.jpg`. Original factory-horror art — not Disney/Pixar product likenesses.
+
 ---
 
 ## Film traits (reference)
