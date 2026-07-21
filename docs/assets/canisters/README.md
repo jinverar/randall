@@ -20,7 +20,7 @@ These JPEGs are served to the browser. They are **not** loaded by `randall fuzz`
 Leaving the Crashes tab open costs a few hundred KB of browser image decode at most — irrelevant
 next to coverage instrumentation.
 
-**Defaults:** canister rack **on**; fill/vapor/pulse **animations off** (toggle on the Crashes
-harvest panel). Instant fill updates still work without animations.
+**Defaults:** canister rack **on**; fill/vapor/pulse **animations off**. The special
+moment is **EIP/RIP control** (badge + full art + EIP CAPTURED), not fill percentage.
 
 Original factory art for Randfuzz parody — not Disney/Pixar product likenesses.

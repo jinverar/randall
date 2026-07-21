@@ -148,21 +148,32 @@ public static class CrashTriage
         if (pc is null)
             return false;
 
-        // Classic research signal: IP in ASCII-ish / non-image range patterns (e.g. 0x41414141)
-        if (pc.StartsWith("414141", StringComparison.OrdinalIgnoreCase) ||
-            pc.Contains("41414141", StringComparison.OrdinalIgnoreCase))
+        // Classic research signal: EIP/RIP smashed to ASCII filler (e.g. 0x41414141 / mona overwrite)
+        if (pc.Contains("41414141", StringComparison.OrdinalIgnoreCase) ||
+            pc.StartsWith("414141", StringComparison.OrdinalIgnoreCase) ||
+            pc.EndsWith("41414141", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // Fault address equals RIP often means execute of bad pointer
-        if (!string.IsNullOrWhiteSpace(fault) && !string.IsNullOrWhiteSpace(rip) &&
-            string.Equals(NormalizePc(fault), NormalizePc(rip), StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        // No module for fault PC → likely not in a known image
-        if (string.IsNullOrWhiteSpace(module) && pc.Length >= 8)
+        // Four repeated printable ASCII bytes in the low dword (AAAA / BBBB / …)
+        if (LooksLikeAsciiDword(pc))
             return true;
 
         return false;
+    }
+
+    /// <summary>True when the low 32 bits look like four repeated ASCII bytes (e.g. 41414141).</summary>
+    private static bool LooksLikeAsciiDword(string pcHex)
+    {
+        var h = pcHex;
+        if (h.Length < 8)
+            return false;
+        var low = h[^8..];
+        var b0 = low[..2];
+        if (!(b0 == low[2..4] && b0 == low[4..6] && b0 == low[6..8]))
+            return false;
+        if (!byte.TryParse(b0, System.Globalization.NumberStyles.HexNumber, null, out var b))
+            return false;
+        return b is >= 0x20 and <= 0x7E;
     }
 
     private static bool LooksLikeStackSmash(string? exceptionCode, string hint, string? rsp, string? rip)

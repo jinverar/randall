@@ -36,9 +36,9 @@ So "Scream" is Leg 5 (crash capture), and a saved crash bundle is a **scream can
 
 ### Harvest visuals (Crashes tab)
 
-The Crashes view shows a **scare-floor harvest rack**: industrial canisters that fill as unique crashes grow — one canister per Target profile by default (optional severity rack). Empty → low → mid → full art, a pressure readout, and *Scare it. Bottle the scream.*
+The Crashes view shows a **scare-floor harvest rack**: one industrial canister per Target profile. Canisters do **not** grade success by fill % — the special seal is when triage thinks a scream **controls EIP/RIP** (ASCII pattern / non-image PC). That canister gets the EIP badge, full art, and an **EIP CAPTURED** pressure readout (toast fires even with animations off).
 
-**Defaults (CPU-safe):** canisters **on** by default; **animations off** by default (fill still updates instantly). Toggle both on the Crashes harvest panel — prefs persist in `data/ui-prefs.json` + localStorage. Art is browser-only and never loaded by the fuzz process.
+**Defaults (CPU-safe):** canisters **on** by default; continuous animations **off** by default. Toggle both on the Crashes harvest panel.
 
 Assets: `docs/assets/canisters/` and `src/Randall.Server/wwwroot/img/canisters/`. Served as `/canisters/canister-*.jpg`. Original factory-horror art — not Disney/Pixar product likenesses.
 

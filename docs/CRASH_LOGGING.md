@@ -50,9 +50,10 @@ API: `GET /api/crashes/{id}` returns `sidecar` when present.
 
 ## Scream canisters (UI)
 
-The Crashes tab frames saved crashes as a **scare-floor harvest**: canisters fill as unique
-crashes grow (one per Target profile by default). Canisters **on** by default; **animations off**
-by default so fuzz campaigns keep the CPU. See [LORE.md](LORE.md) and `docs/assets/canisters/`.
+The Crashes tab frames saved crashes as a **scare-floor harvest**. Canisters do not
+grade by fill % — the special seal is when triage reports **EIP/RIP control**.
+Canisters **on** by default; continuous animations **off** by default. See [LORE.md](LORE.md)
+and `docs/assets/canisters/`.
 
 ## Minidumps
 

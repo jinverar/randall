@@ -2605,16 +2605,16 @@ function selectNextUnique() {
 }
 
 function canisterFillPct(count, capacity) {
+  // Fill is no longer the main signal — EIP/RIP control drives the special state.
+  // Mild presence so empty vs "has screams" still reads at a glance.
   if (!count) return 0;
-  const ratio = Math.min(1, Math.sqrt(count / Math.max(1, capacity)));
-  return Math.max(6, Math.round(ratio * 100));
+  return 28;
 }
 
-function canisterArtForFill(pct) {
-  if (pct <= 0) return '/canisters/canister-empty.jpg';
-  if (pct < 34) return '/canisters/canister-low.jpg';
-  if (pct < 67) return '/canisters/canister-mid.jpg';
-  return '/canisters/canister-full.jpg';
+function canisterArtForSlot(slot) {
+  if (slot.ipControlled) return '/canisters/canister-full.jpg';
+  if (!slot.count) return '/canisters/canister-empty.jpg';
+  return '/canisters/canister-low.jpg';
 }
 
 function pressureLabel(pct) {
@@ -2625,10 +2625,23 @@ function pressureLabel(pct) {
   return 'PRESSURE CRITICAL';
 }
 
+function crashIpControlled(c) {
+  return !!(c?.ipLooksControlled || c?.IpLooksControlled);
+}
+
+function harvestIpControlCount(crashes) {
+  let n = 0;
+  for (const c of crashes || []) {
+    if (crashIpControlled(c)) n += 1;
+  }
+  return n;
+}
+
 /** Live harvest snapshot — browser UI only (does not touch fuzz-process RAM). */
 let harvestState = {
   all: [],
   lastUnique: 0,
+  lastIpCount: 0,
   refreshTimer: null,
   prevFillById: {},
   mode: 'projects', // projects | severity
@@ -2658,9 +2671,11 @@ function projectCanisterHue(name) {
   return hues[Math.abs(h) % hues.length];
 }
 
-function flashScreamBottled(detail = '') {
+function flashScreamBottled(detail = '', { ipControlled = false } = {}) {
   if (document.documentElement.getAttribute('data-scream-canisters') === 'off') return;
-  if (document.documentElement.getAttribute('data-scream-anim') !== 'on') return;
+  // EIP/RIP control is the special moment — always toast (even with animations off).
+  // Ordinary bottled screams only toast when animations are enabled.
+  if (!ipControlled && document.documentElement.getAttribute('data-scream-anim') !== 'on') return;
   let toast = document.getElementById('scream-bottled-toast');
   if (!toast) {
     toast = document.createElement('div');
@@ -2669,29 +2684,45 @@ function flashScreamBottled(detail = '') {
     toast.setAttribute('role', 'status');
     document.body.appendChild(toast);
   }
-  toast.textContent = detail
-    ? `Scream bottled — ${detail}`
-    : 'Scream bottled — canister pressure rising';
+  toast.classList.toggle('eip-capture', !!ipControlled);
+  toast.textContent = ipControlled
+    ? (detail ? `EIP/RIP controlled — ${detail}` : 'EIP/RIP controlled — canister sealed')
+    : (detail ? `Scream bottled — ${detail}` : 'Scream bottled');
   toast.classList.add('show');
   clearTimeout(toast._hide);
-  toast._hide = setTimeout(() => toast.classList.remove('show'), 3200);
+  toast._hide = setTimeout(() => toast.classList.remove('show', 'eip-capture'), ipControlled ? 5200 : 3200);
 }
 
 function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
   if (mode === 'severity') {
     const bySev = { critical: 0, high: 0, medium: 0, low: 0 };
+    let ipHits = 0;
     for (const c of all) {
       const s = crashSev(c);
       if (bySev[s] != null) bySev[s] += 1;
       else bySev.low += 1;
+      if (crashIpControlled(c)) ipHits += 1;
     }
     const unique = harvestUniqueCount(all);
     return [
-      { id: 'harvest', label: compact ? 'All' : 'Harvest', count: unique, capacity: 40, project: '', sevFilter: '', cls: 'harvest', title: 'Unique bottled screams' },
-      { id: 'critical', label: compact ? 'Crit' : 'Critical', count: bySev.critical, capacity: 12, project: '', sevFilter: 'critical', cls: 'critical', title: 'Critical' },
-      { id: 'high', label: 'High', count: bySev.high, capacity: 20, project: '', sevFilter: 'high', cls: 'high', title: 'High' },
-      { id: 'medium', label: compact ? 'Med' : 'Medium', count: bySev.medium, capacity: 30, project: '', sevFilter: 'medium', cls: 'medium', title: 'Medium' },
-      { id: 'low', label: 'Low', count: bySev.low, capacity: 40, project: '', sevFilter: 'low', cls: 'low', title: 'Low' },
+      {
+        id: 'harvest',
+        label: compact ? 'All' : 'Harvest',
+        count: unique,
+        capacity: 40,
+        project: '',
+        sevFilter: '',
+        cls: ipHits ? 'harvest ip-controlled' : 'harvest',
+        title: ipHits
+          ? `Unique screams · ${ipHits} with EIP/RIP control`
+          : 'Unique bottled screams',
+        ipControlled: ipHits > 0,
+        ipCount: ipHits,
+      },
+      { id: 'critical', label: compact ? 'Crit' : 'Critical', count: bySev.critical, capacity: 12, project: '', sevFilter: 'critical', cls: 'critical', title: 'Critical', ipControlled: false, ipCount: 0 },
+      { id: 'high', label: 'High', count: bySev.high, capacity: 20, project: '', sevFilter: 'high', cls: 'high', title: 'High', ipControlled: false, ipCount: 0 },
+      { id: 'medium', label: compact ? 'Med' : 'Medium', count: bySev.medium, capacity: 30, project: '', sevFilter: 'medium', cls: 'medium', title: 'Medium', ipControlled: false, ipCount: 0 },
+      { id: 'low', label: 'Low', count: bySev.low, capacity: 40, project: '', sevFilter: 'low', cls: 'low', title: 'Low', ipControlled: false, ipCount: 0 },
     ];
   }
 
@@ -2704,8 +2735,15 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
   }
 
   let names = [...byProject.keys()].sort((a, b) => {
-    const ua = harvestUniqueCount(byProject.get(a));
-    const ub = harvestUniqueCount(byProject.get(b));
+    const listA = byProject.get(a) || [];
+    const listB = byProject.get(b) || [];
+    const ipA = harvestIpControlCount(listA);
+    const ipB = harvestIpControlCount(listB);
+    // EIP/RIP control floats to the front of the rack
+    if ((ipB > 0) !== (ipA > 0)) return ipB > 0 ? 1 : -1;
+    if (ipB !== ipA) return ipB - ipA;
+    const ua = harvestUniqueCount(listA);
+    const ub = harvestUniqueCount(listB);
     if (ub !== ua) return ub - ua;
     return a.localeCompare(b);
   });
@@ -2729,13 +2767,22 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
       sevFilter: '',
       cls: 'harvest',
       title: 'No tests bottled yet',
+      ipControlled: false,
+      ipCount: 0,
     }];
   }
 
   return names.map((name) => {
     const list = byProject.get(name) || [];
     const unique = harvestUniqueCount(list);
+    const ipCount = harvestIpControlCount(list);
+    const ipControlled = ipCount > 0;
     const live = harvestState.liveProject && name === harvestState.liveProject;
+    const cls = [
+      'harvest',
+      live ? 'live' : '',
+      ipControlled ? 'ip-controlled' : '',
+    ].filter(Boolean).join(' ');
     return {
       id: `proj:${name}`,
       label: name.length > 14 ? `${name.slice(0, 12)}…` : name,
@@ -2743,10 +2790,14 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
       capacity: Math.max(8, compact ? 16 : 24),
       project: name,
       sevFilter: '',
-      cls: live ? 'harvest live' : 'harvest',
-      title: `${name} — ${unique} unique scream canister${unique === 1 ? '' : 's'}`,
+      cls,
+      title: ipControlled
+        ? `${name} — EIP/RIP controlled (${ipCount} scream${ipCount === 1 ? '' : 's'})`
+        : `${name} — ${unique} unique scream${unique === 1 ? '' : 's'}`,
       hue: projectCanisterHue(name),
       live,
+      ipControlled,
+      ipCount,
     };
   });
 }
@@ -2798,59 +2849,83 @@ function renderScreamCanisters(opts = {}) {
 
   const all = opts.crashes || harvestState.all || crashState.all || [];
   const unique = harvestUniqueCount(all);
-  const harvestPct = canisterFillPct(unique, 40);
+  const ipHits = harvestIpControlCount(all);
   const slots = buildHarvestSlots(all, { compact, mode });
 
   if (status) {
     const projects = new Set(all.map(crashProjectName));
-    status.textContent = all.length
-      ? (mode === 'projects'
-        ? `${projects.size} test canister${projects.size === 1 ? '' : 's'} · ${unique} unique scream${unique === 1 ? '' : 's'}`
-        : `${all.length} scream${all.length === 1 ? '' : 's'} · ${unique} unique`)
-      : (compact
+    if (!all.length) {
+      status.textContent = compact
         ? 'No screams bottled yet.'
-        : 'No screams bottled yet — scare a target from the Fuzz tab.');
+        : 'No screams bottled yet — scare a target from the Fuzz tab.';
+    } else if (ipHits > 0) {
+      status.textContent = mode === 'projects'
+        ? `${projects.size} test canister${projects.size === 1 ? '' : 's'} · ${ipHits} EIP/RIP control`
+        : `${ipHits} EIP/RIP-controlled scream${ipHits === 1 ? '' : 's'} · ${unique} unique`;
+    } else {
+      status.textContent = mode === 'projects'
+        ? `${projects.size} test canister${projects.size === 1 ? '' : 's'} · ${unique} unique scream${unique === 1 ? '' : 's'}`
+        : `${all.length} scream${all.length === 1 ? '' : 's'} · ${unique} unique`;
+    }
   }
   if (pressure) {
-    pressure.textContent = pressureLabel(harvestPct);
-    pressure.classList.toggle('critical', harvestPct >= 85);
+    if (ipHits > 0) {
+      pressure.textContent = 'EIP CAPTURED';
+      pressure.classList.add('critical', 'eip-capture');
+      pressure.title = `${ipHits} scream${ipHits === 1 ? '' : 's'} with EIP/RIP looking controlled`;
+    } else {
+      pressure.textContent = all.length ? 'WATCHING' : 'PRESSURE IDLE';
+      pressure.classList.remove('critical', 'eip-capture');
+      pressure.title = 'Special seal triggers when a scream controls EIP/RIP';
+    }
   }
 
   const modeEl = document.getElementById('scream-harvest-mode');
   if (modeEl && !compact) modeEl.value = mode;
 
   const rose = unique > harvestState.lastUnique;
+  const ipRose = ipHits > harvestState.lastIpCount;
   const activeSev = document.getElementById('crash-sev-filter')?.value || '';
   const activeProject = document.getElementById('crash-filter')?.value || '';
 
   rack.innerHTML = slots.map((s) => {
-    const pct = canisterFillPct(s.count, s.capacity);
-    const art = canisterArtForFill(pct);
+    const pct = s.ipControlled ? 100 : canisterFillPct(s.count, s.capacity);
+    const art = canisterArtForSlot(s);
     const active = mode === 'severity'
       ? (!compact && s.sevFilter && activeSev === s.sevFilter ? 'active' : '')
       : (!compact && s.project && activeProject === s.project ? 'active' : '');
     const filling = pct > 0 ? 'filling' : '';
-    const pulse = (rose && (s.id === 'harvest' || s.live)) ? 'pulse' : '';
+    const pulse = ((rose || ipRose) && (s.ipControlled || s.live)) ? 'pulse' : '';
     const live = s.live ? 'is-live' : '';
-    const hue = s.hue != null ? s.hue : null;
+    const ipCls = s.ipControlled ? 'ip-controlled' : '';
+    const hue = s.ipControlled ? 8 : (s.hue != null ? s.hue : null);
     const style = [
       `--fill: 0%`,
-      hue != null ? `--canister-glow: hsl(${hue} 78% 48%)` : '',
+      hue != null ? `--canister-glow: hsl(${hue} 90% 48%)` : '',
     ].filter(Boolean).join(';');
-    return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling} ${pulse} ${live}" role="listitem"
+    const metaCount = s.ipControlled
+      ? (compact ? `EIP×${s.ipCount || 1}` : `EIP ${s.ipCount || 1}`)
+      : String(s.count);
+    const footer = compact
+      ? ''
+      : (s.ipControlled
+        ? '<span class="scream-canister-pct eip">EIP/RIP controlled</span>'
+        : (s.count ? '<span class="scream-canister-pct">watching</span>' : '<span class="scream-canister-pct">empty</span>'));
+    return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling} ${pulse} ${live} ${ipCls}" role="listitem"
       data-slot="${s.id}" data-target-fill="${pct}" data-sev="${s.sevFilter || ''}" data-project="${s.project || ''}"
-      data-fill="${pct}" title="${s.title}" style="${style}">
+      data-fill="${pct}" data-ip="${s.ipControlled ? '1' : '0'}" title="${escapeAttr(s.title)}" style="${style}">
       <div class="scream-canister-vessel">
         <img class="scream-canister-art" src="${art}" alt="" width="186" height="280" loading="lazy" decoding="async" />
         <div class="scream-canister-liquid" aria-hidden="true"></div>
         <div class="scream-canister-vapor" aria-hidden="true"></div>
+        ${s.ipControlled ? '<span class="scream-canister-eip-badge" title="Instruction pointer looks controlled">EIP</span>' : ''}
         ${s.live ? '<span class="scream-canister-live-badge">LIVE</span>' : ''}
       </div>
       <div class="scream-canister-meta">
-        <span class="scream-canister-label">${s.label}</span>
-        <span class="scream-canister-count">${s.count}</span>
+        <span class="scream-canister-label">${escapeAttr(s.label)}</span>
+        <span class="scream-canister-count">${escapeAttr(metaCount)}</span>
       </div>
-      ${compact ? '' : `<span class="scream-canister-pct">${pct}% full</span>`}
+      ${footer}
     </button>`;
   }).join('');
 
@@ -2912,6 +2987,7 @@ function renderScreamCanisters(opts = {}) {
   });
 
   harvestState.lastUnique = unique;
+  harvestState.lastIpCount = ipHits;
 }
 
 function paintHarvestViews() {
@@ -2940,6 +3016,7 @@ async function refreshHarvest(opts = {}) {
   try {
     const crashes = await api.get(url);
     const prev = harvestState.lastUnique;
+    const prevIp = harvestState.lastIpCount;
     harvestState.all = crashes || [];
     if (opts.syncCrashState || document.getElementById('view-crashes')?.classList.contains('visible')) {
       // Crash list may be filtered; harvest rack uses full harvestState.all
@@ -2949,8 +3026,13 @@ async function refreshHarvest(opts = {}) {
       paintHarvestViews();
     }
     const next = harvestUniqueCount(harvestState.all);
-    if (opts.toast && next > prev)
+    const nextIp = harvestIpControlCount(harvestState.all);
+    if (opts.toast && nextIp > prevIp) {
+      const hit = (harvestState.all || []).find(crashIpControlled);
+      flashScreamBottled(hit?.project || opts.project || harvestState.liveProject || 'lab', { ipControlled: true });
+    } else if (opts.toast && next > prev) {
       flashScreamBottled(opts.project || harvestState.liveProject || 'lab');
+    }
     return harvestState.all;
   } catch {
     paintHarvestViews();

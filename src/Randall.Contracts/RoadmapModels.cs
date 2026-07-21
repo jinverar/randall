@@ -31,7 +31,9 @@ public sealed record CrashSummaryDto(
     string? Severity = null,
     string? FaultAddress = null,
     string? ExceptionHint = null,
-    string? ClusterKey = null);
+    string? ClusterKey = null,
+    /// <summary>True when triage thinks EIP/RIP / fault PC looks attacker-controlled (ASCII pattern, non-image, etc.).</summary>
+    bool IpLooksControlled = false);
 
 public sealed record CrashDetailDto(
     CrashSummaryDto Summary,

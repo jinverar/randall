@@ -3637,6 +3637,68 @@ html[data-theme="light"] .scream-canister-liquid {
   50% { opacity: 0.35; }
 }
 
+/* EIP/RIP control — the special seal (not fill-based) */
+.scream-canister.ip-controlled .scream-canister-vessel {
+  outline: 2px solid color-mix(in srgb, #ff3b2f 75%, #ffb347);
+  box-shadow:
+    0 0 0 1px rgba(255, 60, 40, 0.35),
+    0 0 22px rgba(255, 48, 32, 0.45),
+    inset 0 0 30px rgba(255, 80, 40, 0.12);
+}
+.scream-canister.ip-controlled .scream-canister-art {
+  filter: saturate(1.25) contrast(1.08);
+}
+.scream-canister.ip-controlled .scream-canister-liquid {
+  background: linear-gradient(180deg, rgba(255, 90, 40, 0.55), rgba(180, 20, 10, 0.75));
+  opacity: 0.85;
+}
+.scream-canister.ip-controlled .scream-canister-meta,
+.scream-canister.ip-controlled .scream-canister-pct.eip {
+  color: #ffb4a4;
+}
+.scream-canister-eip-badge {
+  position: absolute;
+  top: 0.35rem;
+  left: 0.35rem;
+  z-index: 3;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  padding: 0.18rem 0.34rem;
+  border-radius: 2px;
+  border: 1px solid #ffc4a8;
+  background: linear-gradient(180deg, #ff5a32, #a01010);
+  color: #fff8f4;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 12px rgba(255, 60, 30, 0.55);
+}
+html[data-scream-anim="on"] .scream-canister.ip-controlled .scream-canister-vessel {
+  animation: scream-eip-seal 1.6s ease-in-out infinite;
+}
+html[data-scream-anim="on"] .scream-canister-eip-badge {
+  animation: scream-eip-badge 1.1s ease-in-out infinite;
+}
+@keyframes scream-eip-seal {
+  0%, 100% { filter: brightness(1); box-shadow: 0 0 18px rgba(255, 48, 32, 0.4); }
+  50% { filter: brightness(1.18); box-shadow: 0 0 30px rgba(255, 90, 40, 0.7); }
+}
+@keyframes scream-eip-badge {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+.scream-harvest-pressure.eip-capture {
+  color: #ffd0c4 !important;
+  border-color: #ff5a32 !important;
+  background: color-mix(in srgb, #5a1008 70%, #000);
+  letter-spacing: 0.06em;
+}
+.scream-bottled-toast.eip-capture {
+  border-color: #ff6a3a;
+  background: linear-gradient(135deg, #4a0c0c, #1a0505 60%);
+  color: #ffe8e0;
+  font-weight: 650;
+}
+
 .scream-canister-empty {
   grid-column: 1 / -1;
   display: flex;

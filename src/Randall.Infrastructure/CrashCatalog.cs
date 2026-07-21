@@ -80,7 +80,8 @@ public static class CrashCatalog
                     triage.Severity,
                     triage.FaultAddress ?? analysis?.FaultAddress,
                     triage.ExceptionHint ?? hint,
-                    triage.ClusterKey));
+                    triage.ClusterKey,
+                    triage.IpLooksControlled));
             }
         }
 
