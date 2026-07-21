@@ -26,6 +26,7 @@ return args[0].ToLowerInvariant() switch
     "doctor" => RunDoctor(args.Skip(1).ToArray()),
     "graph" => RunGraph(args.Skip(1).ToArray()),
     "analyze" => RunAnalyze(args.Skip(1).ToArray()),
+    "heaptriage" or "heap" => RunHeapTriage(args.Skip(1).ToArray()),
     "memory" or "lens" => RunMemoryLens(args.Skip(1).ToArray()),
     "stalk" => RunStalk(args.Skip(1).ToArray()),
     "debug" => RunDebug(args.Skip(1).ToArray()),
@@ -60,6 +61,8 @@ static void PrintHelp()
           randall doctor -c <project>     Preflight lab checks before fuzzing
           randall graph -c <project>        Validate sessionGraph + print Mermaid
           randall analyze -i <crash-guid>   Minidump triage (registers, fault PC)
+          randall heaptriage --exe <path> [--input f] [--core f] [--no-harden] [-- args…]
+                                            Linux heap crash triage (tcache/UAF/overflow classifier)
           randall memory -i <crash-guid>    Memory lens (UAF fill, regions, neighborhood)
           randall memory --pid N            Live VirtualQueryEx sample
           randall stalk layers -p <project>              List stalk layers
@@ -587,6 +590,98 @@ static int RunExport(string[] args)
 
     Console.WriteLine($"Triage bundle exported to:\n  {bundle.ExportPath}");
     return 0;
+}
+
+static int RunHeapTriage(string[] args)
+{
+    string? exe = null;
+    string? input = null;
+    string? core = null;
+    string? textFile = null;
+    var harden = true;
+    var targetArgs = new List<string>();
+    for (var i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "--exe" when i + 1 < args.Length: exe = args[++i]; break;
+            case "--input" or "-i" when i + 1 < args.Length: input = args[++i]; break;
+            case "--core" when i + 1 < args.Length: core = args[++i]; break;
+            case "--text-file" when i + 1 < args.Length: textFile = args[++i]; break;
+            case "--no-harden": harden = false; break;
+            case "--": targetArgs.AddRange(args.Skip(i + 1)); i = args.Length; break;
+        }
+    }
+
+    if (!OperatingSystem.IsLinux())
+        Console.WriteLine("Note: heap triage targets Linux glibc/ASan; on this host results are best-effort.\n");
+
+    // Text-only mode: classify a captured stderr/ASan log.
+    if (textFile is not null)
+    {
+        if (!File.Exists(textFile)) { Console.Error.WriteLine($"Not found: {textFile}"); return 1; }
+        var finding = HeapCorruptionClassifier.Classify(File.ReadAllText(textFile));
+        return PrintHeapFinding(finding, null, null);
+    }
+
+    if (exe is null)
+    {
+        Console.Error.WriteLine("Usage: randall heaptriage --exe <path> [--input file] [--core file] [--no-harden] [-- args…]");
+        Console.Error.WriteLine("       randall heaptriage --text-file <stderr.log>");
+        return 1;
+    }
+
+    exe = Path.GetFullPath(exe);
+    if (!File.Exists(exe)) { Console.Error.WriteLine($"Executable not found: {exe}"); return 1; }
+
+    byte[]? stdinBytes = input is not null && File.Exists(input) ? File.ReadAllBytes(input) : null;
+    Console.WriteLine($"Heap triage: {Path.GetFileName(exe)}  (hardening={(harden ? "on" : "off")})");
+    if (harden)
+        Console.WriteLine($"  armed: {LinuxHeapSentinel.Summary}");
+
+    var result = LinuxCrashTriage.RunOnce(exe, targetArgs, stdinBytes, harden);
+    if (core is not null)
+        result = LinuxCrashTriage.AnalyzeCore(result, exe, Path.GetFullPath(core));
+
+    Console.WriteLine($"  exit={result.ExitCode}" +
+        (result.Signal is not null ? $"  signal={result.SignalName}" : "  (clean exit)"));
+    if (!string.IsNullOrWhiteSpace(result.CapturedOutput))
+    {
+        Console.WriteLine("  --- target output (tail) ---");
+        foreach (var line in TailLines(result.CapturedOutput, 8))
+            Console.WriteLine($"  | {line}");
+    }
+    if (result.Backtrace is not null)
+        Console.WriteLine("  (gdb backtrace captured)");
+
+    return PrintHeapFinding(result.Finding, result.Signal, result.SignalName);
+}
+
+static int PrintHeapFinding(HeapCorruptionClassifier.HeapFinding? f, int? signal, string? signalName)
+{
+    Console.WriteLine();
+    if (f is null)
+    {
+        Console.WriteLine(signal is not null
+            ? $"Crash detected ({signalName}) but no memory-corruption signature matched — inspect manually."
+            : "No crash / no memory-corruption signature detected.");
+        return signal is not null ? 2 : 0;
+    }
+
+    Console.WriteLine("  ══ Memory-corruption finding ══");
+    Console.WriteLine($"   primitive : {f.Primitive}");
+    Console.WriteLine($"   category  : {f.Category}   {f.Cwe}");
+    Console.WriteLine($"   severity  : {f.Severity}");
+    Console.WriteLine($"   tier      : {f.Tier}");
+    Console.WriteLine($"   audience  : {f.Audience}");
+    Console.WriteLine($"   evidence  : {f.Evidence}");
+    return 2;
+}
+
+static IEnumerable<string> TailLines(string text, int n)
+{
+    var lines = text.Replace("\r", "").Split('\n', StringSplitOptions.RemoveEmptyEntries);
+    return lines.Length <= n ? lines : lines[^n..];
 }
 
 static int RunDoctor(string[] args)

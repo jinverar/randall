@@ -307,6 +307,15 @@ public static class LabDoctor
                 ? $"{gdbEnhancement.Kind} active → {gdbEnhancement.Path} (enhanced gdb crash triage)"
                 : "no gdb enhancement — install GEF (recommended): bash -c \"$(curl -fsSL https://gef.blah.cat/sh)\" (or pwndbg / peda)");
 
+        // Heap-corruption detection readiness (tcache poisoning / double-free / UAF / overflow).
+        // glibc's built-in tcache hardening is always available on Linux; ASan (clang) + GEF add depth.
+        var asanReady = LinuxToolPaths.Find(LinuxToolPaths.Catalog.First(t => t.Id == "linux:clang")) is not null;
+        var heapLayers = new List<string> { "glibc malloc.check=3 (tcache double-free/poisoning aborts)" };
+        if (asanReady) heapLayers.Add("ASan builds");
+        if (gdbEnhancement is not null) heapLayers.Add($"{gdbEnhancement.Kind} heap-analysis");
+        Add("linux:heap", "ok",
+            $"heap-bug triage ready: {string.Join(" + ", heapLayers)} — classifies tcache/UAF/overflow (randall heaptriage)");
+
         var dbg = DebuggerTools.Probe();
         foreach (var t in dbg.Tools)
         {
