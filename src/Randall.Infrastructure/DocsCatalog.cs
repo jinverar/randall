@@ -8,6 +8,7 @@ public static class DocsCatalog
     public static readonly (string Path, string Title, string Group)[] Index =
     [
         ("INSTALL_WINDOWS.md", "Install (Windows 10/11 VM)", "Getting started"),
+        ("INSTALL_LINUX.md", "Install (Linux)", "Getting started"),
         ("HOWTO_STALK_GENERIC_APP.md", "How to: stalk a generic application", "Getting started"),
         ("CUSTOM_TARGETS.md", "Custom targets (YAML → Target profile)", "Getting started"),
         ("CASE_BUILDER.md", "Scare Floor — recipes, seeds & dictionaries", "Getting started"),
@@ -21,6 +22,8 @@ public static class DocsCatalog
         ("STALKING.md", "Stalking bugs reference", "Stalk & scream"),
         ("RECORDING.md", "Recording — observation stack & bookends", "Stalk & scream"),
         ("CRASH_ANALYSIS.md", "Crash analysis", "Stalk & scream"),
+        ("MITIGATION_LAB.md", "Mitigation ladder + vuln services (Linux)", "Stalk & scream"),
+        ("EXPLOIT_GUIDE.md", "Exploit-guided development (Linux)", "Stalk & scream"),
         ("TARGET_RUNTIME.md", "Target Runtime + remote lab", "Stalk & scream"),
         ("LAB_AGENT.md", "Lab agent (remote UI)", "Lab"),
         ("LAB_PRACTICE.md", "Lab practice walkthrough", "Lab"),
