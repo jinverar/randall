@@ -3075,7 +3075,7 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
   border-radius: 4px;
   padding: 1.25rem 1.35rem 1.4rem;
   margin-bottom: 1rem;
-  min-height: 9.5rem;
+  min-height: 14rem;
   display: flex;
   align-items: flex-end;
   background: #0c1218;

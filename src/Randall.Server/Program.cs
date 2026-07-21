@@ -31,6 +31,20 @@ app.UseStaticFiles(new StaticFileOptions
 
 app.MapGet("/randall.png", () => ServeRepoAsset("docs/assets/randall.png", "randall.png"));
 app.MapGet("/stalker.png", () => ServeRepoAsset("docs/assets/randal_stalking_bugs.png"));
+app.MapGet("/canisters/canister-empty.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-empty.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-empty.jpg"));
+app.MapGet("/canisters/canister-low.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-low.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-low.jpg"));
+app.MapGet("/canisters/canister-mid.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-mid.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-mid.jpg"));
+app.MapGet("/canisters/canister-full.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-full.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-full.jpg"));
+app.MapGet("/canisters/canister-rack.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-rack.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-rack.jpg"));
+app.MapGet("/img/canisters/{file}", (string file) =>
+{
+    var safe = Path.GetFileName(file);
+    if (string.IsNullOrWhiteSpace(safe) || safe.Contains("..", StringComparison.Ordinal))
+        return Results.NotFound();
+    return ServeRepoAsset(
+        Path.Combine("docs/assets/canisters", safe),
+        Path.Combine("src/Randall.Server/wwwroot/img/canisters", safe));
+});
 
 app.MapGet("/api/health", () => new HealthDto("Randfuzz by Randall", "0.16.0-alpha", "phase16-analyze"));
 
@@ -1003,8 +1017,17 @@ static IResult ServeRepoAsset(params string[] relatives)
     foreach (var relative in relatives)
     {
         var path = Path.Combine(repoRoot, relative);
-        if (File.Exists(path))
-            return Results.File(path, "image/png");
+        if (!File.Exists(path))
+            continue;
+        var contentType = Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".webp" => "image/webp",
+            ".gif" => "image/gif",
+            ".svg" => "image/svg+xml",
+            _ => "image/png",
+        };
+        return Results.File(path, contentType);
     }
     return Results.NotFound();
 }

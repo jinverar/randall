@@ -2388,10 +2388,10 @@ function canisterFillPct(count, capacity) {
 }
 
 function canisterArtForFill(pct) {
-  if (pct <= 0) return '/img/canisters/canister-empty.jpg';
-  if (pct < 34) return '/img/canisters/canister-low.jpg';
-  if (pct < 67) return '/img/canisters/canister-mid.jpg';
-  return '/img/canisters/canister-full.jpg';
+  if (pct <= 0) return '/canisters/canister-empty.jpg';
+  if (pct < 34) return '/canisters/canister-low.jpg';
+  if (pct < 67) return '/canisters/canister-mid.jpg';
+  return '/canisters/canister-full.jpg';
 }
 
 function pressureLabel(pct) {

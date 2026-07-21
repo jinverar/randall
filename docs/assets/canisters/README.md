@@ -10,6 +10,6 @@ Industrial-horror harvest canisters for the Crashes tab (*Scare it. Bottle the s
 | `canister-full.jpg` | ~67%+ / pressure critical |
 | `canister-rack.jpg` | Crashes header atmosphere |
 
-UI copies: `src/Randall.Server/wwwroot/img/canisters/`. Lore: [LORE.md](../LORE.md).
+Served by Randall.Server as `/canisters/canister-*.jpg` (same `ServeRepoAsset` pattern as `/randall.png`).
 
-Original factory art for Randfuzz parody — not Disney/Pixar product likenesses.
+UI copies also under `src/Randall.Server/wwwroot/img/canisters/`. Lore: [LORE.md](../LORE.md).
