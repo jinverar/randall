@@ -58,6 +58,68 @@ public static class LinuxToolPaths
         .. OptionalEngines,
     ];
 
+    /// <summary>A detected gdb enhancement (GEF / pwndbg / PEDA) and where it was found.</summary>
+    public sealed record GdbEnhancement(string Kind, string Path);
+
+    /// <summary>
+    /// Detects an installed gdb enhancement for richer crash triage, preferring GEF (modern,
+    /// multi-arch, actively maintained) over pwndbg, then legacy PEDA. Detection looks at env
+    /// overrides, well-known install files, and any <c>source</c> lines in <c>~/.gdbinit</c>.
+    /// Returns the first match by preference, or null when plain gdb has no enhancement.
+    /// </summary>
+    public static GdbEnhancement? FindGdbEnhancement()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrWhiteSpace(home))
+            home = Environment.GetEnvironmentVariable("HOME") ?? "";
+
+        // (Kind, env-var override, candidate install files) in preference order: GEF > pwndbg > PEDA.
+        var candidates = new (string Kind, string EnvVar, string[] Files, string[] InitMarkers)[]
+        {
+            ("gef", "GEF_PATH",
+                [Combine(home, ".gdbinit-gef.py"), Combine(home, ".gef.py"), "/usr/share/gef/gef.py", "/opt/gef/gef.py"],
+                ["gef.py", "gef-"]),
+            ("pwndbg", "PWNDBG_PATH",
+                [Combine(home, "pwndbg/gdbinit.py"), "/usr/share/pwndbg/gdbinit.py", "/opt/pwndbg/gdbinit.py"],
+                ["pwndbg"]),
+            ("peda", "PEDA_PATH",
+                [Combine(home, "peda/peda.py"), "/usr/share/peda/peda.py", "/opt/peda/peda.py"],
+                ["peda.py"]),
+        };
+
+        // Parse ~/.gdbinit once so a `source .../gef.py` style line counts as installed.
+        string gdbInit = "";
+        try
+        {
+            var initPath = Combine(home, ".gdbinit");
+            if (File.Exists(initPath))
+                gdbInit = File.ReadAllText(initPath);
+        }
+        catch { /* ignore unreadable init */ }
+
+        foreach (var (kind, envVar, files, markers) in candidates)
+        {
+            var fromEnv = Environment.GetEnvironmentVariable(envVar);
+            if (!string.IsNullOrWhiteSpace(fromEnv) && File.Exists(fromEnv))
+                return new GdbEnhancement(kind, fromEnv);
+
+            foreach (var file in files)
+            {
+                if (!string.IsNullOrWhiteSpace(file) && File.Exists(file))
+                    return new GdbEnhancement(kind, file);
+            }
+
+            if (gdbInit.Length > 0 &&
+                markers.Any(m => gdbInit.Contains(m, StringComparison.OrdinalIgnoreCase)))
+                return new GdbEnhancement(kind, Combine(home, ".gdbinit"));
+        }
+
+        return null;
+    }
+
+    private static string Combine(string home, string relative) =>
+        string.IsNullOrEmpty(home) ? relative : Path.Combine(home, relative);
+
     /// <summary>Resolves a catalog tool to a concrete path, or null when not installed.</summary>
     public static string? Find(LinuxTool tool)
     {

@@ -300,6 +300,13 @@ public static class LabDoctor
                     : $"{tool.Command} not found — {tool.InstallHint} ({tool.Role})");
         }
 
+        // gdb enhancement (GEF preferred) — richer crash inspection on top of gdb.
+        var gdbEnhancement = LinuxToolPaths.FindGdbEnhancement();
+        Add("linux:gdb-enhance", gdbEnhancement is not null ? "ok" : "warn",
+            gdbEnhancement is not null
+                ? $"{gdbEnhancement.Kind} active → {gdbEnhancement.Path} (enhanced gdb crash triage)"
+                : "no gdb enhancement — install GEF (recommended): bash -c \"$(curl -fsSL https://gef.blah.cat/sh)\" (or pwndbg / peda)");
+
         var dbg = DebuggerTools.Probe();
         foreach (var t in dbg.Tools)
         {
