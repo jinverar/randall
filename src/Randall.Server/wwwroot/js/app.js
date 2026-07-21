@@ -2605,16 +2605,60 @@ function selectNextUnique() {
 }
 
 function canisterFillPct(count, capacity) {
-  // Fill is no longer the main signal — EIP/RIP control drives the special state.
-  // Mild presence so empty vs "has screams" still reads at a glance.
+  // Mild presence only — mood / EIP seal are the real signals (not fill grading).
   if (!count) return 0;
-  return 28;
+  return 22;
+}
+
+/**
+ * Atmosphere thresholds (EIP seal still wins over everything):
+ *   laughter  — 0 unique screams (great / not sinister)
+ *   watching  — 1–2 unique
+ *   toxic     — 3–7 unique, or any critical
+ *   virulent  — ≥8 unique, or ≥3 critical (more toxic / sinister)
+ *   eip       — classic EIP/RIP overwrite seal
+ */
+function scoreHarvestMood({ unique = 0, critical = 0, ipCount = 0 } = {}) {
+  if (ipCount > 0) return 'eip';
+  if (unique <= 0) return 'laughter';
+  if (unique >= 8 || critical >= 3) return 'virulent';
+  if (unique >= 3 || critical >= 1) return 'toxic';
+  return 'watching';
+}
+
+function moodRank(mood) {
+  return ({ laughter: 0, watching: 1, toxic: 2, virulent: 3, eip: 4 })[mood] || 0;
 }
 
 function canisterArtForSlot(slot) {
-  if (slot.ipControlled) return '/canisters/canister-full.jpg';
-  if (!slot.count) return '/canisters/canister-empty.jpg';
-  return '/canisters/canister-low.jpg';
+  const mood = slot.mood || scoreHarvestMood({
+    unique: slot.count || 0,
+    critical: slot.critical || 0,
+    ipCount: slot.ipCount || 0,
+  });
+  if (mood === 'eip' || mood === 'virulent') return '/canisters/canister-full.jpg';
+  if (mood === 'toxic') return '/canisters/canister-mid.jpg';
+  if (mood === 'watching') return '/canisters/canister-low.jpg';
+  return '/canisters/canister-empty.jpg';
+}
+
+function screamCaptionForMood(mood) {
+  return ({
+    laughter: 'laughter',
+    watching: 'yelp',
+    toxic: 'toxic scream',
+    virulent: 'virulent scream',
+    eip: 'EIP seal',
+  })[mood] || 'scream';
+}
+
+function moodHue(mood, fallback) {
+  if (mood === 'eip') return 8;
+  if (mood === 'virulent') return 95; // sickly toxic green
+  if (mood === 'toxic') return 78;
+  if (mood === 'watching') return fallback != null ? fallback : 188;
+  if (mood === 'laughter') return 48; // warm gold
+  return fallback != null ? fallback : 188;
 }
 
 function pressureLabel(pct) {
@@ -2637,6 +2681,38 @@ function harvestIpControlCount(crashes) {
   return n;
 }
 
+function harvestCriticalCount(crashes) {
+  let n = 0;
+  for (const c of crashes || []) {
+    if (crashSev(c) === 'critical') n += 1;
+  }
+  return n;
+}
+
+function markHarvestProjectSeen(name) {
+  if (!name) return;
+  if (!harvestState.seenProjects) harvestState.seenProjects = new Set();
+  const key = String(name);
+  if (harvestState.seenProjects.has(key)) return;
+  harvestState.seenProjects.add(key);
+  try {
+    localStorage.setItem('randfuzz.seenProjects', JSON.stringify([...harvestState.seenProjects]));
+  } catch { /* ignore */ }
+}
+
+function loadSeenHarvestProjects() {
+  try {
+    const raw = localStorage.getItem('randfuzz.seenProjects');
+    if (!raw) return;
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list)) return;
+    if (!harvestState.seenProjects) harvestState.seenProjects = new Set();
+    for (const n of list) {
+      if (n) harvestState.seenProjects.add(String(n));
+    }
+  } catch { /* ignore */ }
+}
+
 /** Live harvest snapshot — browser UI only (does not touch fuzz-process RAM). */
 let harvestState = {
   all: [],
@@ -2646,6 +2722,7 @@ let harvestState = {
   prevFillById: {},
   mode: 'projects', // projects | severity
   liveProject: null,
+  seenProjects: new Set(),
 };
 
 function harvestUniqueCount(crashes) {
@@ -2704,6 +2781,7 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
       if (crashIpControlled(c)) ipHits += 1;
     }
     const unique = harvestUniqueCount(all);
+    const mood = scoreHarvestMood({ unique, critical: bySev.critical, ipCount: ipHits });
     return [
       {
         id: 'harvest',
@@ -2712,17 +2790,39 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
         capacity: 40,
         project: '',
         sevFilter: '',
-        cls: ipHits ? 'harvest ip-controlled' : 'harvest',
+        cls: `harvest mood-${mood}${ipHits ? ' ip-controlled' : ''}`,
         title: ipHits
           ? `Unique screams · ${ipHits} with EIP/RIP control`
-          : 'Unique bottled screams',
+          : `Unique bottled screams · mood ${mood}`,
         ipControlled: ipHits > 0,
         ipCount: ipHits,
+        critical: bySev.critical,
+        mood,
+        scream: screamCaptionForMood(mood),
       },
-      { id: 'critical', label: compact ? 'Crit' : 'Critical', count: bySev.critical, capacity: 12, project: '', sevFilter: 'critical', cls: 'critical', title: 'Critical', ipControlled: false, ipCount: 0 },
-      { id: 'high', label: 'High', count: bySev.high, capacity: 20, project: '', sevFilter: 'high', cls: 'high', title: 'High', ipControlled: false, ipCount: 0 },
-      { id: 'medium', label: compact ? 'Med' : 'Medium', count: bySev.medium, capacity: 30, project: '', sevFilter: 'medium', cls: 'medium', title: 'Medium', ipControlled: false, ipCount: 0 },
-      { id: 'low', label: 'Low', count: bySev.low, capacity: 40, project: '', sevFilter: 'low', cls: 'low', title: 'Low', ipControlled: false, ipCount: 0 },
+      ...['critical', 'high', 'medium', 'low'].map((sev) => {
+        const count = bySev[sev];
+        const sevMood = scoreHarvestMood({
+          unique: count,
+          critical: sev === 'critical' ? count : 0,
+          ipCount: 0,
+        });
+        return {
+          id: sev,
+          label: compact && sev === 'critical' ? 'Crit' : (compact && sev === 'medium' ? 'Med' : sev[0].toUpperCase() + sev.slice(1)),
+          count,
+          capacity: sev === 'critical' ? 12 : sev === 'high' ? 20 : 30,
+          project: '',
+          sevFilter: sev,
+          cls: `${sev} mood-${sevMood}`,
+          title: `${sev} · ${screamCaptionForMood(sevMood)}`,
+          ipControlled: false,
+          ipCount: 0,
+          critical: sev === 'critical' ? count : 0,
+          mood: sevMood,
+          scream: screamCaptionForMood(sevMood),
+        };
+      }),
     ];
   }
 
@@ -2730,25 +2830,38 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
   const byProject = new Map();
   for (const c of all) {
     const p = crashProjectName(c);
+    markHarvestProjectSeen(p);
     if (!byProject.has(p)) byProject.set(p, []);
     byProject.get(p).push(c);
+  }
+
+  if (harvestState.liveProject) markHarvestProjectSeen(harvestState.liveProject);
+
+  // Clean / laughter canisters: fuzz targets we've seen that never screamed
+  for (const name of harvestState.seenProjects || []) {
+    if (!byProject.has(name)) byProject.set(name, []);
   }
 
   let names = [...byProject.keys()].sort((a, b) => {
     const listA = byProject.get(a) || [];
     const listB = byProject.get(b) || [];
-    const ipA = harvestIpControlCount(listA);
-    const ipB = harvestIpControlCount(listB);
-    // EIP/RIP control floats to the front of the rack
-    if ((ipB > 0) !== (ipA > 0)) return ipB > 0 ? 1 : -1;
-    if (ipB !== ipA) return ipB - ipA;
+    const moodA = scoreHarvestMood({
+      unique: harvestUniqueCount(listA),
+      critical: harvestCriticalCount(listA),
+      ipCount: harvestIpControlCount(listA),
+    });
+    const moodB = scoreHarvestMood({
+      unique: harvestUniqueCount(listB),
+      critical: harvestCriticalCount(listB),
+      ipCount: harvestIpControlCount(listB),
+    });
+    if (moodRank(moodB) !== moodRank(moodA)) return moodRank(moodB) - moodRank(moodA);
     const ua = harvestUniqueCount(listA);
     const ub = harvestUniqueCount(listB);
     if (ub !== ua) return ub - ua;
     return a.localeCompare(b);
   });
 
-  // Always surface the live fuzz target even at 0 fills
   if (harvestState.liveProject && !byProject.has(harvestState.liveProject)) {
     names = [harvestState.liveProject, ...names];
     byProject.set(harvestState.liveProject, []);
@@ -2765,10 +2878,13 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
       capacity: 20,
       project: '',
       sevFilter: '',
-      cls: 'harvest',
-      title: 'No tests bottled yet',
+      cls: 'harvest mood-laughter',
+      title: 'No tests bottled yet — laughter on the scare floor',
       ipControlled: false,
       ipCount: 0,
+      critical: 0,
+      mood: 'laughter',
+      scream: 'laughter',
     }];
   }
 
@@ -2776,10 +2892,13 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
     const list = byProject.get(name) || [];
     const unique = harvestUniqueCount(list);
     const ipCount = harvestIpControlCount(list);
+    const critical = harvestCriticalCount(list);
+    const mood = scoreHarvestMood({ unique, critical, ipCount });
     const ipControlled = ipCount > 0;
     const live = harvestState.liveProject && name === harvestState.liveProject;
     const cls = [
       'harvest',
+      `mood-${mood}`,
       live ? 'live' : '',
       ipControlled ? 'ip-controlled' : '',
     ].filter(Boolean).join(' ');
@@ -2792,14 +2911,80 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
       sevFilter: '',
       cls,
       title: ipControlled
-        ? `${name} — EIP/RIP controlled (${ipCount} scream${ipCount === 1 ? '' : 's'})`
-        : `${name} — ${unique} unique scream${unique === 1 ? '' : 's'}`,
-      hue: projectCanisterHue(name),
+        ? `${name} — EIP/RIP controlled (${ipCount}) · sealed`
+        : `${name} — ${screamCaptionForMood(mood)} · ${unique} unique`,
+      hue: moodHue(mood, projectCanisterHue(name)),
       live,
       ipControlled,
       ipCount,
+      critical,
+      mood,
+      scream: screamCaptionForMood(mood),
     };
   });
+}
+
+function canisterFloatiesHtml(mood) {
+  // Lightweight CSS scare / laughter sprites — browser-only, no fuzz RAM.
+  if (mood === 'laughter') {
+    return `<div class="canister-floaties laughter" aria-hidden="true">
+      <span class="floatie smile" style="--t:0"></span>
+      <span class="floatie ha" style="--t:1">ha</span>
+      <span class="floatie smile" style="--t:2"></span>
+    </div>`;
+  }
+  if (mood === 'watching') {
+    return `<div class="canister-floaties watching" aria-hidden="true">
+      <span class="floatie mote" style="--t:0"></span>
+      <span class="floatie mote" style="--t:1"></span>
+    </div>`;
+  }
+  if (mood === 'toxic' || mood === 'virulent' || mood === 'eip') {
+    const n = mood === 'eip' ? 5 : mood === 'virulent' ? 4 : 3;
+    const bits = [];
+    for (let i = 0; i < n; i++) {
+      bits.push(`<span class="floatie scare scare-${i % 3}" style="--t:${i}"></span>`);
+    }
+    if (mood === 'eip' || mood === 'virulent') {
+      bits.push('<span class="floatie skull-haze" style="--t:2"></span>');
+    }
+    return `<div class="canister-floaties ${mood}" aria-hidden="true">${bits.join('')}</div>`;
+  }
+  return '';
+}
+
+function paintHarvestAmbience(root, floorMood, stats = {}) {
+  let layer = root.querySelector('.scream-harvest-ambience');
+  if (!layer) {
+    layer = document.createElement('div');
+    layer.className = 'scream-harvest-ambience';
+    layer.setAttribute('aria-hidden', 'true');
+    root.insertBefore(layer, root.firstChild);
+  }
+  const animOn = document.documentElement.getAttribute('data-scream-anim') === 'on';
+  layer.dataset.mood = floorMood;
+  layer.classList.toggle('anim', animOn);
+
+  if (floorMood === 'laughter') {
+    layer.innerHTML = `
+      <span class="amb smile a0"></span><span class="amb ha a1">ha</span>
+      <span class="amb smile a2"></span><span class="amb ha a3">ha</span>
+      <span class="amb spark a4"></span>`;
+    return;
+  }
+  if (floorMood === 'watching') {
+    layer.innerHTML = `<span class="amb mote a0"></span><span class="amb mote a1"></span>`;
+    return;
+  }
+  // Toxic / virulent / EIP — floating scares that spook humans
+  const density = floorMood === 'eip' ? 7 : floorMood === 'virulent' ? 6 : 4;
+  const parts = [];
+  for (let i = 0; i < density; i++) {
+    const kind = i % 4 === 0 ? 'door' : i % 4 === 1 ? 'human' : i % 4 === 2 ? 'eye' : 'wail';
+    parts.push(`<span class="amb scare ${kind} a${i}" style="--i:${i}"></span>`);
+  }
+  if (stats.ipHits) parts.push('<span class="amb seal-flare"></span>');
+  layer.innerHTML = parts.join('');
 }
 
 function animateCanisterFills(rack) {
@@ -2835,6 +3020,9 @@ function renderScreamCanisters(opts = {}) {
   if (document.documentElement.getAttribute('data-scream-canisters') === 'off') {
     const rack = document.getElementById(opts.rackId || 'scream-canister-rack');
     if (rack) rack.innerHTML = '';
+    const harvestRoot = document.querySelector('.scream-harvest');
+    const amb = harvestRoot?.querySelector('.scream-harvest-ambience');
+    if (amb) amb.innerHTML = '';
     return;
   }
   const rackId = opts.rackId || 'scream-canister-rack';
@@ -2850,33 +3038,54 @@ function renderScreamCanisters(opts = {}) {
   const all = opts.crashes || harvestState.all || crashState.all || [];
   const unique = harvestUniqueCount(all);
   const ipHits = harvestIpControlCount(all);
+  const criticalHits = harvestCriticalCount(all);
   const slots = buildHarvestSlots(all, { compact, mode });
+  const floorMood = slots.reduce(
+    (best, s) => (moodRank(s.mood) > moodRank(best) ? s.mood : best),
+    scoreHarvestMood({ unique, critical: criticalHits, ipCount: ipHits }),
+  );
+
+  if (!compact) {
+    const harvestRoot = rack.closest('.scream-harvest');
+    if (harvestRoot) {
+      harvestRoot.dataset.floorMood = floorMood;
+      paintHarvestAmbience(harvestRoot, floorMood, { unique, ipHits, critical: criticalHits });
+    }
+  }
 
   if (status) {
-    const projects = new Set(all.map(crashProjectName));
-    if (!all.length) {
+    const projects = new Set(slots.map((s) => s.project).filter(Boolean));
+    if (!all.length && ![...harvestState.seenProjects || []].length) {
       status.textContent = compact
-        ? 'No screams bottled yet.'
-        : 'No screams bottled yet — scare a target from the Fuzz tab.';
+        ? 'Scare floor quiet — laughter waiting.'
+        : 'Scare floor quiet — start a fuzz run; clean tests stay on laughter.';
     } else if (ipHits > 0) {
-      status.textContent = mode === 'projects'
-        ? `${projects.size} test canister${projects.size === 1 ? '' : 's'} · ${ipHits} EIP/RIP control`
-        : `${ipHits} EIP/RIP-controlled scream${ipHits === 1 ? '' : 's'} · ${unique} unique`;
+      status.textContent = `${slots.length} canister${slots.length === 1 ? '' : 's'} · ${ipHits} EIP seal · floor ${floorMood}`;
     } else {
-      status.textContent = mode === 'projects'
-        ? `${projects.size} test canister${projects.size === 1 ? '' : 's'} · ${unique} unique scream${unique === 1 ? '' : 's'}`
-        : `${all.length} scream${all.length === 1 ? '' : 's'} · ${unique} unique`;
+      status.textContent = `${slots.length} canister${slots.length === 1 ? '' : 's'} · ${unique} unique · floor ${floorMood}`;
     }
   }
   if (pressure) {
-    if (ipHits > 0) {
+    pressure.classList.remove('critical', 'eip-capture', 'laughter', 'toxic', 'virulent');
+    if (floorMood === 'eip') {
       pressure.textContent = 'EIP CAPTURED';
       pressure.classList.add('critical', 'eip-capture');
-      pressure.title = `${ipHits} scream${ipHits === 1 ? '' : 's'} with EIP/RIP looking controlled`;
+      pressure.title = `${ipHits} EIP/RIP overwrite seal${ipHits === 1 ? '' : 's'}`;
+    } else if (floorMood === 'virulent') {
+      pressure.textContent = 'TOXIC FLOOR';
+      pressure.classList.add('critical', 'virulent');
+      pressure.title = '≥8 unique screams or ≥3 critical — virulent / sinister';
+    } else if (floorMood === 'toxic') {
+      pressure.textContent = 'TOXIC RISING';
+      pressure.classList.add('toxic');
+      pressure.title = '3–7 unique or any critical — toxic screams';
+    } else if (floorMood === 'watching') {
+      pressure.textContent = 'WATCHING';
+      pressure.title = '1–2 unique screams — mild yelps';
     } else {
-      pressure.textContent = all.length ? 'WATCHING' : 'PRESSURE IDLE';
-      pressure.classList.remove('critical', 'eip-capture');
-      pressure.title = 'Special seal triggers when a scream controls EIP/RIP';
+      pressure.textContent = 'LAUGHTER';
+      pressure.classList.add('laughter');
+      pressure.title = 'No screams bottled — scare floor stays great / not sinister';
     }
   }
 
@@ -2889,36 +3098,42 @@ function renderScreamCanisters(opts = {}) {
   const activeProject = document.getElementById('crash-filter')?.value || '';
 
   rack.innerHTML = slots.map((s) => {
-    const pct = s.ipControlled ? 100 : canisterFillPct(s.count, s.capacity);
+    const mood = s.mood || 'watching';
+    const pct = mood === 'eip' ? 100
+      : mood === 'virulent' ? 72
+      : mood === 'toxic' ? 48
+      : mood === 'watching' ? 28
+      : 0;
     const art = canisterArtForSlot(s);
     const active = mode === 'severity'
       ? (!compact && s.sevFilter && activeSev === s.sevFilter ? 'active' : '')
       : (!compact && s.project && activeProject === s.project ? 'active' : '');
     const filling = pct > 0 ? 'filling' : '';
-    const pulse = ((rose || ipRose) && (s.ipControlled || s.live)) ? 'pulse' : '';
+    const pulse = ((rose || ipRose) && (s.ipControlled || s.live || mood === 'virulent')) ? 'pulse' : '';
     const live = s.live ? 'is-live' : '';
-    const ipCls = s.ipControlled ? 'ip-controlled' : '';
-    const hue = s.ipControlled ? 8 : (s.hue != null ? s.hue : null);
+    const hue = moodHue(mood, s.hue);
     const style = [
       `--fill: 0%`,
-      hue != null ? `--canister-glow: hsl(${hue} 90% 48%)` : '',
-    ].filter(Boolean).join(';');
+      `--canister-glow: hsl(${hue} 90% 48%)`,
+      `--mood-accent: hsl(${hue} 85% 55%)`,
+    ].join(';');
     const metaCount = s.ipControlled
       ? (compact ? `EIP×${s.ipCount || 1}` : `EIP ${s.ipCount || 1}`)
-      : String(s.count);
+      : (mood === 'laughter' ? 'ha' : String(s.count));
     const footer = compact
       ? ''
-      : (s.ipControlled
-        ? '<span class="scream-canister-pct eip">EIP/RIP controlled</span>'
-        : (s.count ? '<span class="scream-canister-pct">watching</span>' : '<span class="scream-canister-pct">empty</span>'));
-    return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling} ${pulse} ${live} ${ipCls}" role="listitem"
+      : `<span class="scream-canister-pct mood-${mood}">${escapeAttr(s.scream || screamCaptionForMood(mood))}</span>`;
+    const floaties = compact ? '' : canisterFloatiesHtml(mood);
+    return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling} ${pulse} ${live}" role="listitem"
       data-slot="${s.id}" data-target-fill="${pct}" data-sev="${s.sevFilter || ''}" data-project="${s.project || ''}"
-      data-fill="${pct}" data-ip="${s.ipControlled ? '1' : '0'}" title="${escapeAttr(s.title)}" style="${style}">
+      data-fill="${pct}" data-ip="${s.ipControlled ? '1' : '0'}" data-mood="${mood}" title="${escapeAttr(s.title)}" style="${style}">
       <div class="scream-canister-vessel">
         <img class="scream-canister-art" src="${art}" alt="" width="186" height="280" loading="lazy" decoding="async" />
         <div class="scream-canister-liquid" aria-hidden="true"></div>
         <div class="scream-canister-vapor" aria-hidden="true"></div>
+        ${floaties}
         ${s.ipControlled ? '<span class="scream-canister-eip-badge" title="Instruction pointer looks controlled">EIP</span>' : ''}
+        ${mood === 'laughter' ? '<span class="scream-canister-laugh-badge" title="No screams — scare floor laughter">HA</span>' : ''}
         ${s.live ? '<span class="scream-canister-live-badge">LIVE</span>' : ''}
       </div>
       <div class="scream-canister-meta">
@@ -2933,7 +3148,7 @@ function renderScreamCanisters(opts = {}) {
     rack.insertAdjacentHTML('beforeend', `
       <div class="scream-canister-empty" role="status">
         <img src="/canisters/canister-empty.jpg" alt="" width="120" height="180" loading="lazy" decoding="async" />
-        <p>Empty rack — each Target profile gets its own canister as screams bottle.</p>
+        <p>Empty rack — clean tests laugh here; bottled screams turn the floor toxic.</p>
       </div>`);
   }
 
@@ -3190,6 +3405,7 @@ document.getElementById('scream-harvest-anim')?.addEventListener('change', async
 });
 
 async function initScreamHarvestPrefs() {
+  loadSeenHarvestProjects();
   let cansOn = true;
   let animOn = false;
   try {
@@ -3227,6 +3443,7 @@ async function connectHub() {
     stopBtn.disabled = false;
     stalkProject = e.project || stalkProject;
     harvestState.liveProject = e.project || stalkProject || null;
+    markHarvestProjectSeen(harvestState.liveProject);
     stalkServerTimeline = [];
     stalkLiveTimeline = [];
     stalkCrashIdByIteration.clear();

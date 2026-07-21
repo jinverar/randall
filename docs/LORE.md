@@ -36,11 +36,21 @@ So "Scream" is Leg 5 (crash capture), and a saved crash bundle is a **scream can
 
 ### Harvest visuals (Crashes tab)
 
-The Crashes view shows a **scare-floor harvest rack**: one industrial canister per Target profile. Canisters do **not** grade success by fill % — the special seal is when triage thinks a scream **controls EIP/RIP** (ASCII pattern / non-image PC). That canister gets the EIP badge, full art, and an **EIP CAPTURED** pressure readout (toast fires even with animations off).
+The Crashes view shows a **scare-floor harvest rack**: one industrial canister per Target profile.
+Atmosphere follows fixed thresholds (EIP seal still wins):
 
-**Defaults (CPU-safe):** canisters **on** by default; continuous animations **off** by default. Toggle both on the Crashes harvest panel.
+| Mood | Threshold | Feel |
+|------|-----------|------|
+| **laughter** | 0 unique screams | Great / warm — not sinister |
+| **yelp** (watching) | 1–2 unique | Mild |
+| **toxic** | 3–7 unique, or any critical | Toxic vapors + floating scares |
+| **virulent** | ≥8 unique, or ≥3 critical | More toxic / sinister |
+| **EIP seal** | classic EIP/RIP overwrite | Special seal (badge + EIP CAPTURED) |
 
-Assets: `docs/assets/canisters/` and `src/Randall.Server/wwwroot/img/canisters/`. Served as `/canisters/canister-*.jpg`. Original factory-horror art — not Disney/Pixar product likenesses.
+Floating scare silhouettes (humans / doors / eyes) densify as the floor gets toxic; clean tests
+get laughter wisps instead. Continuous animations stay **off by default**.
+
+Assets: `docs/assets/canisters/` · `/canisters/canister-*.jpg`. Original factory-horror art — not Disney/Pixar product likenesses.
 
 ---
 
