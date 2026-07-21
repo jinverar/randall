@@ -339,11 +339,14 @@ public static class LabDoctor
         if (!string.IsNullOrWhiteSpace(project.Target.Executable))
         {
             var exe = ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
-            if (File.Exists(exe))
-                Add("target", "ok", exe);
+            var existing = ExecutableResolver.FindExisting(exe);
+            if (existing is not null)
+                Add("target", "ok", existing);
             else
                 Add("target", requireTarget ? "fail" : "warn",
-                    $"Missing: {exe} — run scripts/build-vulnserver.ps1");
+                    OperatingSystem.IsWindows()
+                        ? $"Missing: {exe} — run scripts/build-vulnserver.ps1"
+                        : $"Missing: {exe} — build the Linux lab target: scripts/build-lab-targets.sh");
         }
         else if (project.Kind is "tcp" or "udp")
         {

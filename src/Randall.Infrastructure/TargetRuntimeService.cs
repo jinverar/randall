@@ -96,8 +96,11 @@ public static class TargetRuntimeService
 
         repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
         var exe = ResolveExecutable(request.Executable, repoRoot);
-        if (!File.Exists(exe))
+        // Cross-platform: a .exe profile also matches the extensionless Linux/macOS apphost.
+        var existingExe = ExecutableResolver.FindExisting(exe);
+        if (existingExe is null)
             return Fail(request.Id, $"Executable not found: {exe}");
+        exe = existingExe;
 
         RefreshExited();
         if (Slots.TryGetValue(request.Id, out var existing) && IsAlive(existing.Process))
