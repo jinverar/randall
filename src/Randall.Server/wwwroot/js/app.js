@@ -2867,6 +2867,11 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
     byProject.set(harvestState.liveProject, []);
   }
 
+  // Keep the live fuzz target first so its canister stays on-camera during campaigns.
+  if (harvestState.liveProject && names.includes(harvestState.liveProject)) {
+    names = [harvestState.liveProject, ...names.filter((n) => n !== harvestState.liveProject)];
+  }
+
   if (compact) names = names.slice(0, 5);
   else names = names.slice(0, 12);
 
@@ -3218,6 +3223,14 @@ function paintHarvestViews() {
     compact: true,
     mode: 'projects',
   });
+  // Compact rack on the Fuzz campaign so canisters stay visible while live-logging.
+  renderScreamCanisters({
+    rackId: 'fuzz-canister-rack',
+    statusId: 'fuzz-harvest-status',
+    pressureId: 'fuzz-harvest-pressure',
+    compact: true,
+    mode: 'projects',
+  });
 }
 
 async function refreshHarvest(opts = {}) {
@@ -3361,6 +3374,10 @@ document.addEventListener('keydown', (ev) => {
 });
 
 document.getElementById('dash-open-canisters')?.addEventListener('click', () => {
+  switchView('crashes');
+  loadCrashes(document.getElementById('crash-filter')?.value || stalkProject || '').catch(() => {});
+});
+document.getElementById('fuzz-open-canisters')?.addEventListener('click', () => {
   switchView('crashes');
   loadCrashes(document.getElementById('crash-filter')?.value || stalkProject || '').catch(() => {});
 });

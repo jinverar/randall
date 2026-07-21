@@ -21,7 +21,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=scream-canisters-7" />
+  <link rel="stylesheet" href="/css/app.css?v=scream-canisters-9" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -318,6 +318,19 @@
           <div id="labs-campaign-chips" class="labs-campaign-chips"></div>
         </div>
         <button type="button" class="btn" id="labs-open-tab" title="Open Lab servers tab">Manage labs…</button>
+      </div>
+      <div class="scream-harvest scream-harvest-fuzz panel" aria-label="Scream canisters on the fuzz campaign">
+        <div class="scream-harvest-head scream-harvest-head-compact">
+          <div>
+            <h2 class="scream-harvest-title">Scream canisters</h2>
+            <p class="hint" id="fuzz-harvest-status">Bottled as the target screams — live on this campaign.</p>
+          </div>
+          <div class="scream-harvest-controls">
+            <span class="scream-harvest-pressure" id="fuzz-harvest-pressure" title="Harvest pressure from unique crashes">PRESSURE —</span>
+            <button type="button" class="btn" id="fuzz-open-canisters" title="Open full scare-floor harvest">Open rack</button>
+          </div>
+        </div>
+        <div class="scream-canister-rack scream-canister-rack-fuzz" id="fuzz-canister-rack" role="list"></div>
       </div>
       <div class="fuzz-layout">
         <form id="fuzz-form" class="panel fuzz-controls">
@@ -1309,6 +1322,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=scream-canisters-7"></script>
+  <script type="module" src="/js/app.js?v=scream-canisters-9"></script>
 </body>
 </html>

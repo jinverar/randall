@@ -3413,7 +3413,10 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
 
 .scream-canister-vessel {
   position: relative;
+  width: 100%;
+  /* Absolute art has no in-flow size — keep a real box via aspect-ratio + width. */
   aspect-ratio: 3 / 4.2;
+  min-height: 7.5rem;
   border-radius: 3px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -3589,6 +3592,41 @@ html[data-theme="light"] .scream-canister-liquid {
 
 .scream-canister-rack-compact .scream-canister {
   padding: 0.2rem;
+}
+
+/* Compact harvest strip on the Fuzz campaign — canisters stay in-frame while live-logging. */
+.scream-harvest-fuzz {
+  margin: 0 0 0.75rem;
+  padding: 0.65rem 0.85rem 0.75rem;
+}
+
+.scream-harvest-head-compact {
+  margin-bottom: 0.45rem;
+  align-items: center;
+}
+
+.scream-harvest-fuzz .scream-harvest-title {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.scream-canister-rack-fuzz {
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 0.65rem;
+  max-height: none;
+}
+
+.scream-canister-rack-fuzz .scream-canister {
+  padding: 0.3rem;
+}
+
+.scream-canister-rack-fuzz .scream-canister-vessel {
+  aspect-ratio: 186 / 260;
+  min-height: 9.5rem;
+}
+
+.scream-canister-rack-compact .scream-canister-vessel {
+  min-height: 6.5rem;
 }
 
 .scream-canister-liquid {
@@ -4041,6 +4079,7 @@ html[data-theme="light"] .scream-bottled-toast {
 /* Pref toggles: canisters on by default; animations opt-in (data-scream-anim=on). */
 html[data-scream-canisters="off"] .scream-harvest,
 html[data-scream-canisters="off"] .scream-harvest-dash,
+html[data-scream-canisters="off"] .scream-harvest-fuzz,
 html[data-scream-canisters="off"] .scream-harvest-hero {
   display: none !important;
 }
