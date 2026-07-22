@@ -82,6 +82,18 @@ Block models (`docs/MODEL.md`) target named fields. Length fields get ~25% bias 
 
 Set `coverageGuided: true` + `DYNAMORIO_HOME`. Randall parses drcov traces, registers new edges, and prioritizes inputs that expand the frontier (PaiMei / AFL-style stalking).
 
+## Hybrid semantic oracles
+
+Coverage finds new code; oracles catch **incorrect behaviour without a crash** (expect mismatches, differential divergence, metamorphic breaks). Opt in per project:
+
+```yaml
+oracles:
+  enabled: true
+  promoteExpectResponse: true
+```
+
+See [ORACLES.md](ORACLES.md). Findings: `randall oracles -p <project>`.
+
 ## Research references
 
 - **AFL++** — havoc stages, splice, power schedules, dictionaries ([github.com/AFLplusplus/AFLplusplus](https://github.com/AFLplusplus/AFLplusplus))

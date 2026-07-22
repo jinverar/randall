@@ -701,6 +701,7 @@ public sealed class FuzzEngine
 
                 var pluginAbort = await RppResponseHook.RunAsync(
                     project, yamlPath, payload, result.ResponseBytes, cancellationToken);
+                var pluginAbortDetail = pluginAbort;
                 if (pluginAbort is not null && !result.Crashed)
                     result = result with { Detail = $"post_receive: {pluginAbort}" };
 
@@ -810,12 +811,52 @@ public sealed class FuzzEngine
                     corpusAdded++;
                 }
 
+                // Hybrid semantic oracle stack — supplements coverage (docs/ORACLES.md).
+                OracleEvalResult? oracleEval = null;
+                if (OracleEngine.IsEnabled(project))
+                {
+                    var expectPattern = tcpOptions?.ExpectResponse
+                        ?? tcpSequence?.LastOrDefault()?.Options.ExpectResponse;
+                    var oracleObs = new OracleObservation(
+                        project, yamlPath, payload, result, commandName, mutator.Name,
+                        iterations, newEdges, coverage.TotalEdges, pluginAbortDetail, expectPattern);
+                    oracleEval = await OracleEngine.EvaluateAsync(oracleObs, cancellationToken);
+                    OracleEngine.PersistFindings(project, yamlPath, oracleEval);
+                    if (oracleEval.RetainInCorpus && !result.Crashed && oracleEval.Findings.Count > 0)
+                    {
+                        if (corpus.IsNew(payload))
+                        {
+                            corpus.SaveInteresting(payload, "oracle");
+                            corpusAdded++;
+                        }
+                        if (oracleEval.EnergyBoost > 0)
+                            corpus.BoostEnergy(payload, oracleEval.EnergyBoost);
+                    }
+
+                    if (!string.IsNullOrEmpty(oracleEval.Summary))
+                    {
+                        if (oracleEval.MaxSeverity >= OracleSeverity.Violation)
+                            FuzzAnalystLog.Warn(progress,
+                                $"Oracle [{oracleEval.InterestingnessScore}]: {oracleEval.Summary}", iterations);
+                        else
+                            FuzzAnalystLog.Info(progress,
+                                $"Oracle near-miss [{oracleEval.InterestingnessScore}]: {oracleEval.Summary}",
+                                iterations);
+                    }
+                }
+
                 sw.Stop();
+                var iterDetail = result.Detail;
+                if (oracleEval is { Findings.Count: > 0 } && !string.IsNullOrEmpty(oracleEval.Summary))
+                    iterDetail = string.IsNullOrEmpty(iterDetail)
+                        ? $"oracle: {oracleEval.Summary}"
+                        : $"{iterDetail}; oracle: {oracleEval.Summary}";
+
                 journal?.LogIteration(new IterationLogEntry(
                     iterations, DateTimeOffset.UtcNow, commandName, mutator.Name, mutatorChain,
                     parentInputHash, seedSource, payload.Length, InputHash.StackHash(payload),
                     result.Crashed, newEdges, coverage.TotalEdges, sw.ElapsedMilliseconds,
-                    result.Detail, result.ExitCode, stalkBackend, iterTracePath,
+                    iterDetail, result.ExitCode, stalkBackend, iterTracePath,
                     journal?.RunId ?? "", false));
 
                 options.Progress?.OnIteration(new FuzzIterationEvent(
@@ -827,7 +868,7 @@ public sealed class FuzzEngine
                     newEdges,
                     corpus.SeenCount,
                     coverage.TotalEdges,
-                    result.Detail));
+                    iterDetail));
 
                 FuzzAnalystLog.Step(progress, "Monitor / checkAlive", iterations);
 

@@ -26,6 +26,11 @@ public sealed class ProjectConfig
     public List<SessionFlowConfig> SessionFlows { get; set; } = [];
     /// <summary>Response-driven graph (boofuzz s_switch) — branch on server replies.</summary>
     public SessionGraphConfig? SessionGraph { get; set; }
+    /// <summary>
+    /// Hybrid semantic oracle stack — supplements coverage (runtime / invariant /
+    /// differential / metamorphic). See docs/ORACLES.md.
+    /// </summary>
+    public OracleConfig? Oracles { get; set; }
 }
 
 public sealed class SessionGraphConfig

@@ -19,6 +19,7 @@ public static class DocsCatalog
         ("LORE.md", "Mascot lore (Randall)", "Project"),
         ("TARGETS.md", "Lab targets", "Getting started"),
         ("FUZZING.md", "Fuzzing techniques & mutators", "Fuzzing"),
+        ("ORACLES.md", "Hybrid semantic oracles", "Fuzzing"),
         ("STALK_LOOP.md", "Stalk loop (baseline → fuzz → learn)", "Stalk & scream"),
         ("STALKING.md", "Stalking bugs reference", "Stalk & scream"),
         ("RECORDING.md", "Recording — observation stack & bookends", "Stalk & scream"),

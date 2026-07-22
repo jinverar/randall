@@ -16,10 +16,26 @@ sessionCommands:
   - name: ECHO
     model: protocols/vulnlab_echo.yaml
     readBanner: true
+    expectResponse: "ECHO"
 fuzz:
   maxIterations: 1000
   corpusDir: ../data/corpus/vulnlab
   crashesDir: ../data/crashes/vulnlab
+# Hybrid semantic oracles — supplements coverage (docs/ORACLES.md)
+oracles:
+  enabled: true
+  retainOnViolation: true
+  retainOnNearMiss: true
+  promoteExpectResponse: true
+  invariants:
+    - id: echo-max
+      type: maxResponseBytes
+      maxBytes: 65536
+      severity: nearMiss
+  metamorphic:
+    - id: echo-ws
+      type: whitespaceInsensitive
+      severity: nearMiss
 seeds:
   - seeds/vulnlab_echo.txt
 mutators:

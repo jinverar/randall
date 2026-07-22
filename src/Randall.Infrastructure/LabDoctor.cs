@@ -43,6 +43,35 @@ public static class LabDoctor
             return Finish(Path.GetFileNameWithoutExtension(yamlPath), checks);
         }
 
+        if (project.Oracles is { Enabled: true } o)
+        {
+            var bits = new List<string> { "enabled" };
+            if (o.PromoteExpectResponse) bits.Add("expectResponse");
+            if (o.Invariants.Count > 0) bits.Add($"{o.Invariants.Count} invariant(s)");
+            if (o.Differential.Count > 0) bits.Add($"{o.Differential.Count} differential");
+            if (o.Metamorphic.Count > 0) bits.Add($"{o.Metamorphic.Count} metamorphic");
+            Add("oracles", "ok", string.Join(" · ", bits) + " — docs/ORACLES.md");
+            foreach (var d in o.Differential)
+            {
+                if (string.IsNullOrWhiteSpace(d.ReferenceExecutable))
+                {
+                    Add($"oracle.diff:{d.Id}", "warn", "differential rule missing referenceExecutable");
+                    continue;
+                }
+                var refPath = ProjectLoader.ResolvePath(yamlPath, d.ReferenceExecutable);
+                var found = ExecutableResolver.FindExisting(refPath);
+                Add($"oracle.diff:{d.Id}", found is not null ? "ok" : "warn",
+                    found is not null
+                        ? $"reference → {found}"
+                        : $"reference not found: {refPath} (differential soft-skips)");
+            }
+        }
+        else
+        {
+            Add("oracles", "warn",
+                "oracles disabled — set oracles.enabled: true for semantic detection (docs/ORACLES.md)");
+        }
+
         foreach (var seed in project.Seeds)
         {
             try

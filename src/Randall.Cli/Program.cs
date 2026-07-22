@@ -36,6 +36,7 @@ return args[0].ToLowerInvariant() switch
     "debug" => RunDebug(args.Skip(1).ToArray()),
     "scream" => await RunScream(args.Skip(1).ToArray()),
     "case" => RunCase(args.Skip(1).ToArray()),
+    "oracles" or "oracle" => RunOracles(args.Skip(1).ToArray()),
     "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
     "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
     "recorders" or "recorder" => RunRecorders(args.Skip(1).ToArray()),
@@ -86,6 +87,7 @@ static void PrintHelp()
           randall debug attach -p <pid> | -t <project> [--kind …]
           randall fuzz -c <project> --debugger wait|attach|both [--open-on-crash]
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
+          randall oracles [-p name] [--json]   List semantic oracle findings
           randall labs                     List lab servers (running / stopped)
           randall labs start|stop <id>     Start/stop one lab (127.0.0.1)
           randall labs stop-all            Stop every randall-vuln* lab
@@ -119,9 +121,88 @@ static void PrintHelp()
           shuffle      Swap short spans in the seed
           cyclic       Metasploit-style pattern (exploit-dev offset practice)
 
-        Docs: docs/CUSTOM_TARGETS.md · docs/CASE_BUILDER.md · docs/TARGETS.md
+        Docs: docs/CUSTOM_TARGETS.md · docs/CASE_BUILDER.md · docs/TARGETS.md · docs/ORACLES.md
         Exploit-dev practice: projects/vulnlab-offset.yaml (cyclic → CONTROL offset)
         """);
+}
+
+static int RunOracles(string[] args)
+{
+    if (args.Length > 0 && args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            List hybrid semantic oracle findings (docs/ORACLES.md)
+
+            Usage:
+              randall oracles [-p <project>] [--json]
+
+            Findings are written during fuzz when projects enable `oracles:`.
+            Path: data/crashes/<project>/_oracles/oracle_findings.jsonl
+            """);
+        return 0;
+    }
+
+    string? project = null;
+    var json = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "-p" or "--project" when i + 1 < args.Length:
+                project = args[++i];
+                break;
+            case "--json":
+                json = true;
+                break;
+        }
+    }
+
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesRoot = Path.Combine(repo, "data", "crashes");
+    if (!Directory.Exists(crashesRoot))
+    {
+        Console.WriteLine("No oracle findings yet (data/crashes missing).");
+        return 0;
+    }
+
+    var dirs = Directory.EnumerateDirectories(crashesRoot)
+        .Where(d => project is null ||
+                    Path.GetFileName(d).Equals(project, StringComparison.OrdinalIgnoreCase))
+        .Select(d => Path.Combine(d, "_oracles"))
+        .Where(Directory.Exists)
+        .ToList();
+
+    var all = new List<OracleFindingDto>();
+    foreach (var dir in dirs)
+        all.AddRange(new OracleFindingStore(dir).List(project));
+
+    if (all.Count == 0)
+    {
+        Console.WriteLine(project is null
+            ? "No oracle findings yet. Enable oracles: in a project YAML and fuzz."
+            : $"No oracle findings for '{project}'.");
+        return 0;
+    }
+
+    all = all.OrderByDescending(f => f.At).ToList();
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(all,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        return 0;
+    }
+
+    foreach (var f in all.Take(200))
+    {
+        Console.WriteLine(
+            $"{f.At:u} {f.Project} [{f.Severity}/{f.RuleClass}] {f.RuleId} " +
+            $"iter={f.Iteration} hash={f.InputHash[..Math.Min(8, f.InputHash.Length)]} " +
+            $"expected={f.ExpectedRelation} actual={f.ActualRelation}");
+    }
+
+    if (all.Count > 200)
+        Console.WriteLine($"… {all.Count - 200} more (use --json)");
+    return 0;
 }
 
 static int PrintLegs()

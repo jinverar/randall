@@ -47,6 +47,7 @@ dotnet run --project src/Randall.Cli -- replay -c projects/vulnserver.yaml -i da
 | `DynamoRioRunner` — discover `drrun.exe`, run with `-t drcov` | ✅ |
 | `CorpusTracker` — priority queue for new-edge inputs | ✅ |
 | Wire coverage into `FuzzEngine` | ✅ |
+| **Hybrid semantic oracles** (runtime / invariant / differential / metamorphic) | ✅ [ORACLES.md](ORACLES.md) — supplements coverage |
 | Web UI — dashboard, fuzz control, live SignalR log | ✅ |
 | API — `POST /api/fuzz/start`, `/api/fuzz/stop`, `/api/corpus/{project}` | ✅ |
 | Coverage-guided file fuzz | ✅ (`coverageGuided: true` in YAML) |
