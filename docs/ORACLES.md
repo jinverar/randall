@@ -3,17 +3,17 @@
 Coverage answers: *did this input reach new code or crash?*  
 The **Oracle engine** answers: *did the target behave incorrectly while staying alive?*
 
-**Scope:** evaluate observations against rules → emit findings → optional corpus retain/boost.  
-**Not in scope:** AI/human attribution, mistake catalogs, or campaign planning — that is the **Bug Hunter** ([BUG_HUNTER.md](BUG_HUNTER.md)).
+**Scope:** evaluate observations against rules → emit findings → optional corpus retain/boost → **request help** (`OracleNeedDto`) when Magician should intervene.  
+**Not in scope:** AI/human attribution or hunt planning (Bug Hunter); casting spells / summoning helpers (Magician — [MAGICIAN.md](MAGICIAN.md)).
 
 ```text
-Bug Hunter suggests rules / focus     →     Oracle judges each run
-randall hunt …                              randall oracles …
+Bug Hunter suggests rules / focus     →     Oracle judges each run     →     Magician casts / summons
+randall hunt …                              randall oracles …                randall magician …
 ```
 
-Code: `Randall.Infrastructure.Oracles` (`OracleEngine`).
+Code: `Randall.Infrastructure.Oracles` (`OracleEngine`). Needs: `OracleNeeds.FromFindings`.
 
-**Thesis:** as more targets become memory-safe (and more code is LLM-authored), high-value bugs are often **logic / auth / state / semantic** failures that never crash. Oracles carry that judgment half; Bug Hunter decides what to arm; seeds/mutators still chase memory corruption.
+**Thesis:** as more targets become memory-safe (and more code is LLM-authored), high-value bugs are often **logic / auth / state / semantic** failures that never crash. Oracles carry that judgment half; Bug Hunter decides what to arm; the Magician acts when the Oracle needs a knight, army, bots, or hunter; seeds/mutators still chase memory corruption.
 
 The oracle stack **supplements** coverage — it does not replace it. Findings feed corpus energy and `oracle_findings.jsonl`.
 
@@ -42,6 +42,7 @@ Triage + corpus retention (interestingness score)
 | Memory corruption, parser crashes, ASan | Seeds + mutators (+ sanitizer builds) · [AI_SEED.md](AI_SEED.md) |
 | Logic / auth / state / semantic integers / structure | **Oracle** judgment (this doc) |
 | AI vs human focus + which rules to arm | **Bug Hunter** ([BUG_HUNTER.md](BUG_HUNTER.md)) |
+| Act on Oracle needs (spells / summons) | **Magician** ([MAGICIAN.md](MAGICIAN.md)) |
 | Path discovery | Coverage / stalk / AFL++ adapter |
 
 ## Enable semantic rules

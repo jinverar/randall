@@ -1,8 +1,9 @@
 ﻿using System.Diagnostics;
 using Randall.Contracts;
 using Randall.Infrastructure;
-using Randall.Infrastructure.Oracles;
 using Randall.Infrastructure.BugHunt;
+using Randall.Infrastructure.Magician;
+using Randall.Infrastructure.Oracles;
 
 if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
 {
@@ -40,6 +41,7 @@ return args[0].ToLowerInvariant() switch
     "scream" => await RunScream(args.Skip(1).ToArray()),
     "case" => RunCase(args.Skip(1).ToArray()),
     "oracles" or "oracle" => RunOracles(args.Skip(1).ToArray()),
+    "magician" or "mage" or "spell" or "spells" => RunMagician(args.Skip(1).ToArray()),
     "hunt" or "bughunter" or "bug-hunter" => RunHunt(args.Skip(1).ToArray()),
     "ai" => await RunAiAsync(args.Skip(1).ToArray()),
     "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
@@ -94,6 +96,7 @@ static void PrintHelp()
           randall fuzz -c <project> --debugger wait|attach|both [--open-on-crash]
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
           randall oracles [-p name] [--json]   Oracle engine: list findings (judgment/report)
+          randall magician [spells|cast|log]   Magician: spells / summons for Oracle needs
           randall hunt -d <src> [-c yaml --arm]  Bug Hunter: AI/human analysis + arm campaign
           randall hunt attribution|mistakes   Bug Hunter subcommands
           randall ai seed -c <project> […]    Optional AI seed recipe (docs/AI_SEED.md)
@@ -701,6 +704,167 @@ static int RunAiMistakes(string[] args)
     Console.WriteLine($"Seed/Hybrid classes:   {BugHunterMistakes.SeedArmed.Count()}");
     Console.WriteLine("Dictionary: projects/dictionaries/ai_codegen_mistakes.txt");
     Console.WriteLine("Emit YAML starter: randall hunt mistakes --emit-yaml");
+    return 0;
+}
+
+static int RunMagician(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Magician engine — spells & summons (docs/MAGICIAN.md)
+
+            The Oracle judges and can request help (knight / army / bots / hunter).
+            The Magician casts spells on the fuzz campaign and summons helpers.
+
+            Usage:
+              randall magician spells
+              randall magician cast -c <project.yaml> --need knight|army|bots|hunter|dictionary|energy|rearm
+              randall magician [-p <project>] [--json]     # recent casts from spells.jsonl
+
+            Path: data/crashes/<project>/_magician/spells.jsonl
+            """);
+        return 0;
+    }
+
+    var rest = args;
+    var sub = args[0].ToLowerInvariant();
+    if (sub is "spells" or "catalog")
+    {
+        Console.Write(MagicianEngine.DescribeCatalog());
+        return 0;
+    }
+
+    if (sub is "cast")
+    {
+        rest = args.Skip(1).ToArray();
+        string? config = null;
+        string? need = null;
+        string? reason = null;
+        for (var i = 0; i < rest.Length; i++)
+        {
+            switch (rest[i])
+            {
+                case "-c" or "--config" when i + 1 < rest.Length:
+                    config = rest[++i];
+                    break;
+                case "--need" or "-n" when i + 1 < rest.Length:
+                    need = rest[++i];
+                    break;
+                case "--reason" when i + 1 < rest.Length:
+                    reason = rest[++i];
+                    break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(config) || string.IsNullOrWhiteSpace(need))
+        {
+            Console.Error.WriteLine(
+                "Usage: randall magician cast -c projects/ai-badcode-hunt.yaml --need knight|army|bots|hunter|…");
+            return 1;
+        }
+
+        try
+        {
+            var path = Path.GetFullPath(config);
+            var project = ProjectLoader.Load(path);
+            project.Magician ??= new MagicianConfig();
+            project.Magician.Enabled = true;
+            var cast = MagicianEngine.CastNeed(project, path, need, reason);
+            Console.WriteLine($"Magician cast on {project.Name}: {cast.Summary}");
+            foreach (var s in cast.Spells)
+                Console.WriteLine($"  • {s.Spell}" + (s.Summon is null ? "" : $" → summoned {s.Summon}") + $" — {s.Detail}");
+            if (cast.DictionaryTokensAdded.Count > 0)
+                Console.WriteLine($"  tokens: {string.Join(", ", cast.DictionaryTokensAdded.Take(8))}");
+            if (cast.MutatorsEnsured.Count > 0)
+                Console.WriteLine($"  mutators: {string.Join(", ", cast.MutatorsEnsured.Distinct())}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
+
+    // Default: list spell log (also accept "log" / "casts")
+    if (sub is "log" or "casts" or "list")
+        rest = args.Skip(1).ToArray();
+
+    string? projectFilter = null;
+    var json = false;
+    for (var i = 0; i < rest.Length; i++)
+    {
+        switch (rest[i])
+        {
+            case "-p" or "--project" when i + 1 < rest.Length:
+                projectFilter = rest[++i];
+                break;
+            case "--json":
+                json = true;
+                break;
+            case "-c" or "--config" when i + 1 < rest.Length:
+                // convenience: derive project name from yaml
+                try
+                {
+                    var p = ProjectLoader.Load(Path.GetFullPath(rest[++i]));
+                    projectFilter = p.Name;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine(ex.Message);
+                    return 1;
+                }
+                break;
+        }
+    }
+
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesRoot = Path.Combine(repo, "data", "crashes");
+    if (!Directory.Exists(crashesRoot))
+    {
+        Console.WriteLine("No Magician casts yet (data/crashes missing).");
+        return 0;
+    }
+
+    var all = new List<MagicianSpellDto>();
+    foreach (var dir in Directory.EnumerateDirectories(crashesRoot))
+    {
+        if (projectFilter is not null &&
+            !Path.GetFileName(dir).Equals(projectFilter, StringComparison.OrdinalIgnoreCase))
+            continue;
+        var mageDir = Path.Combine(dir, "_magician");
+        if (!Directory.Exists(mageDir))
+            continue;
+        all.AddRange(new MagicianSpellStore(mageDir).List(projectFilter));
+    }
+
+    if (all.Count == 0)
+    {
+        Console.WriteLine(projectFilter is null
+            ? "No Magician casts yet. Enable magician: + oracles: and fuzz, or: randall magician cast -c … --need army"
+            : $"No Magician casts for '{projectFilter}'.");
+        return 0;
+    }
+
+    all = all.OrderByDescending(s => s.At).ToList();
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(all,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        return 0;
+    }
+
+    foreach (var s in all.Take(200))
+    {
+        var summon = s.Summon is null ? "" : $" →{s.Summon}";
+        Console.WriteLine(
+            $"{s.At:u} {s.Project} [{s.Spell}{summon}] iter={s.Iteration} " +
+            $"{s.RuleClass}/{s.RuleId} — {s.Detail}");
+    }
+
+    if (all.Count > 200)
+        Console.WriteLine($"… {all.Count - 200} more (use --json)");
     return 0;
 }
 

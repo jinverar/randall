@@ -156,8 +156,11 @@ randall notify test -c projects/local/myservice.yaml
 | **Power schedule** — energy-weighted corpus picks | ✅ |
 | **Session flows** — multi-step TCP state (STAT→TRUN) | ✅ |
 | **Crash clusters** — triage grouping API + web UI | ✅ |
+| **Oracle** — semantic judgment + foresight needs | ✅ [ORACLES.md](ORACLES.md) |
+| **Bug Hunter** — AI/robot code analysis + arming | ✅ [BUG_HUNTER.md](BUG_HUNTER.md) |
+| **Magician** — spells + summons (knight/army/bots/hunter) | ✅ [MAGICIAN.md](MAGICIAN.md) |
 
-**Techniques guide:** [docs/FUZZING.md](FUZZING.md)
+**Techniques guide:** [docs/FUZZING.md](FUZZING.md) · trinity: Oracle · Magician · Bug Hunter
 
 ---
 

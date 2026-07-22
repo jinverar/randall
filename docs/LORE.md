@@ -19,8 +19,23 @@ In the film, Randall is the master of camouflage, obsessed with beating Sulley, 
 | 🕵️ **Another trick up his sleeve** | Havoc stages, dictionary tokens, session flows, RPP plugins |
 | 🏭 **Factory floor** — Monsters, Inc. pipeline | Eight legs: Model → Mutate → Send → Stalk → Scream → Proxy → Web → Pack |
 | 🚪 **Scare Floor** — prep doors / scare attempts | **Scare Floor** UI — case recipes, seeds, dictionaries → Campaign queue |
+| 🔮 **Oracle** — sees what others miss | **Oracle engine** — monitors runs, judges wrong-but-alive behavior, asks for help |
+| 🪄 **Magician** — tricks up the sleeve | **Magician engine** — casts spells on the target; summons knight / army / bots / Bug Hunter |
 
 We are *not* building a Scream Extractor. We are building the thing that finds why your parser would need one. The **Scare Floor** is where test-case recipes get staged before the fuzz shift — homage naming, not an official Disney/Pixar product.
+
+### Oracle, Magician & the hunt crew
+
+When the **Oracle** watches a campaign and sees a logic/auth/state miss (especially in AI/robot-authored code), it does more than log a finding — it can **request** a helper. The **Magician** answers:
+
+| Summon | Magician power | Real effect |
+|--------|----------------|-------------|
+| **Hunter** | Call the Bug Hunter | Re-arm AI-mistake oracles / dictionary |
+| **Knight** | Stalk the unexplored | Enable coverage-guided stalking |
+| **Army** | Overwhelm the target | Muster a broad mutator set |
+| **Bots** | Analyst helpers | Hint file for `randall ai seed` / `hunt` (off hot path) |
+
+Spells (dictionary boost, havoc surge, energy bless, re-arm) act directly on the live fuzz campaign. Full map: [MAGICIAN.md](MAGICIAN.md).
 
 ### Scares, screams & canisters (the crash vocabulary)
 

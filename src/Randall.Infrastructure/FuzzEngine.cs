@@ -4,9 +4,10 @@ using System.Text;
 using Randall.Contracts;
 using Randall.Core;
 using Randall.Core.Model;
+using Randall.Infrastructure.BugHunt;
+using Randall.Infrastructure.Magician;
 using Randall.Infrastructure.Mutators;
 using Randall.Infrastructure.Oracles;
-using Randall.Infrastructure.BugHunt;
 
 namespace Randall.Infrastructure;
 
@@ -34,7 +35,9 @@ public sealed class FuzzEngine
 
         // Bug Hunter engine: analyze AI/human sources + suggest oracle/dict arming.
         // Oracle engine (below) remains judgment/reporting only.
+        // Magician (after) casts spells / summons when Oracle needs intervention.
         _ = BugHunterEngine.PrepareForFuzz(project, yamlPath, options.Progress);
+        _ = MagicianEngine.PrepareForFuzz(project, yamlPath, options.Progress);
 
         var seeds = LoadAllSeeds(project, yamlPath);
         if (seeds.Count == 0)
@@ -873,6 +876,13 @@ public sealed class FuzzEngine
                     // Advance session facts after evaluation (so pre-auth checks see prior iters only).
                     oracleSession?.Observe(commandName, result);
                     OracleEngine.PersistFindings(project, yamlPath, oracleEval);
+                    if (MagicianEngine.IsEnabled(project))
+                    {
+                        var cast = MagicianEngine.OnOracleEval(
+                            project, yamlPath, oracleEval, corpus, payload, mutators, progress);
+                        if (cast is { CoverageGuidedEnabled: true })
+                            coverageGuided = true;
+                    }
                     if (oracleEval.RetainInCorpus && !result.Crashed && oracleEval.Findings.Count > 0)
                     {
                         if (corpus.IsNew(payload))

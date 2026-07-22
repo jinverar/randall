@@ -2,20 +2,21 @@
 
 The **Bug Hunter** analyzes source (AI vs human), maps common LLM mistake classes, and **arms a fuzz campaign** (suggested oracle rules, dictionary, mutators).
 
-It is a separate engine from the **Oracle** ([ORACLES.md](ORACLES.md)):
+It is a separate engine from the **Oracle** ([ORACLES.md](ORACLES.md)) and the **Magician** ([MAGICIAN.md](MAGICIAN.md)):
 
 | Engine | Role |
 |--------|------|
 | **Bug Hunter** | *What should we look for?* — attribution, mistake catalog, hunt plan, campaign arming |
-| **Oracle** | *Did this run behave wrongly?* — evaluate observations, emit findings, optional retain/boost |
+| **Oracle** | *Did this run behave wrongly?* — evaluate observations, emit findings, request help |
+| **Magician** | *What do we do next?* — cast spells / summon hunter·knight·army·bots when Oracle asks |
 
 ```text
-Bug Hunter                          Oracle
-─────────                          ──────
-scan sources                       observe execution
-attribute AI / human               evaluate rules
-plan mistake classes        →      findings.jsonl
-suggest oracle rules / dict        corpus interestingness
+Bug Hunter                          Oracle                         Magician
+─────────                          ──────                         ────────
+scan sources                       observe execution              receive needs
+attribute AI / human / robots      evaluate rules          →      cast spells
+plan mistake classes        →      findings + needs        →      summon helpers
+suggest oracle rules / dict        corpus interestingness         bless campaign
 ```
 
 Code: `Randall.Infrastructure.BugHunt` (`BugHunterEngine`).
@@ -113,5 +114,6 @@ Web apps: [WEB_FUZZ.md](WEB_FUZZ.md) (`kind: http`).
 ## Related
 
 - [ORACLES.md](ORACLES.md) — judgment / reporting engine
+- [MAGICIAN.md](MAGICIAN.md) — spells / summons when Oracle needs help
 - `projects/dictionaries/ai_codegen_mistakes.txt`
 - `examples/ai-code-sample/handler.c`

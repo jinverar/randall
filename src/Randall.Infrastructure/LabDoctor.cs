@@ -91,6 +91,23 @@ public static class LabDoctor
                 "oracles disabled — set oracles.enabled: true for semantic detection (docs/ORACLES.md)");
         }
 
+        if (project.Magician is { Enabled: true } mag)
+        {
+            var bits = new List<string> { "enabled" };
+            if (mag.AutoCastOnOracle) bits.Add("autoCast");
+            if (mag.BlessOnStart) bits.Add("blessOnStart");
+            if (mag.AllowSummonHunter) bits.Add("hunter");
+            if (mag.AllowSummonKnight) bits.Add("knight");
+            if (mag.AllowSummonArmy) bits.Add("army");
+            if (mag.AllowSummonBots) bits.Add("bots");
+            Add("magician", "ok", string.Join(" · ", bits) + " — docs/MAGICIAN.md");
+        }
+        else
+        {
+            Add("magician", "warn",
+                "magician disabled — optional Oracle→spell intervention (docs/MAGICIAN.md)");
+        }
+
         // Optional external engines (AFL++ / honggfuzz) — fail preflight when selected but missing.
         var engineId = ExternalEngineCampaign.Normalize(project.Fuzz.Engine);
         if (ExternalEngineCampaign.IsExternal(engineId))
