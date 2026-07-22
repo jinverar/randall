@@ -59,6 +59,8 @@ populate `edges` without DynamoRIO.
 
 ## Missed blocks (Dynapstalker / PDF loop)
 
+**Step-by-step tutorial (IDA + Ghidra):** [HOWTO_STALK_IDA_GHIDRA.md](HOWTO_STALK_IDA_GHIDRA.md)
+
 **You cannot find bugs in code you do not execute.** After baseline + fuzz layers, ask what is still
 dark — and *why* — then revise seeds, dictionaries, and mutators.
 

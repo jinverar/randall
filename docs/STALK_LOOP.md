@@ -1,6 +1,7 @@
 # The stalk loop — baseline → fuzz → learn → repeat
 
-**Hands-on checklist for your own app:** [HOWTO_STALK_GENERIC_APP.md](HOWTO_STALK_GENERIC_APP.md) (Help → Getting started).
+**Hands-on checklist for your own app:** [HOWTO_STALK_GENERIC_APP.md](HOWTO_STALK_GENERIC_APP.md) (Help → Getting started).  
+**Color coverage in IDA / Ghidra:** [HOWTO_STALK_IDA_GHIDRA.md](HOWTO_STALK_IDA_GHIDRA.md).
 
 This is the research process Randfuzz is built around (same idea as PaiMei Pstalker / your fuzzing cheat sheet).
 
