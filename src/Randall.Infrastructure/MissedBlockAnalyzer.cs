@@ -125,13 +125,25 @@ public static class MissedBlockAnalyzer
         var hint = mode switch
         {
             "empty" =>
-                "PDF loop: baseline (normal use) → fuzzed → inspect white/missed → revise seeds/dicts/mutators → measure again.",
+                "PDF loop: drrun -t drcov -dump_text (baseline) → again under fuzzer → IDC colors in IDA → white=missed → revise → remeasure.",
             "inventory" =>
-                "Inspect never-hit blocks in IDA/Ghidra (export IDC colors), then apply the high-priority fuzz ideas below.",
+                "Inventory never-hit ≈ IDA white blocks. Export IDC (oldest first), inspect string/memcpy/error paths, apply fuzz ideas, remeasure with a new color.",
             _ =>
-                "Relative mode highlights baseline-only and sparse modules. Import a BB inventory for full never-hit: " +
-                "randall stalk inventory -p " + project + " --import <blocks-or-drcov>",
+                "Relative gaps approximate the PDF without IDA. True white blocks = binary CFG minus hit colors — export IDC to IDA, or: " +
+                "randall stalk inventory -p " + project + " --import <blocks-or-drcov>. " +
+                "One-shot: randall stalk dynapstalker <drcov.log> <exe> <out.idc>",
         };
+
+        // Always surface the PDF "interesting surface" ideas when we have any gaps.
+        if (missed.Count > 0)
+        {
+            foreach (var idea in PdfInterestingSurfaceIdeas())
+            {
+                if (!topIdeas.Any(t => t.Id == idea.Id))
+                    topIdeas = topIdeas.Concat([idea]).ToList();
+            }
+            topIdeas = RankIdeas(topIdeas.ToList(), 12);
+        }
 
         return new StalkMissedReportDto(
             project,
@@ -203,10 +215,16 @@ public static class MissedBlockAnalyzer
                 "Stalking bugs → IDA IDC / Ghidra export"),
         };
 
+        ideas.Insert(0, Idea("interesting-surface", "Hunt string / memcpy surfaces (PDF)",
+            "In IDA, prefer white/missed blocks near strcpy/strcat/sprintf, rep movs*, or manual copy loops — those are high-value for exploitable bugs once reached.",
+            "high",
+            null,
+            "IDA: search for rep movs / string APIs in still-white regions"));
+
         if (LooksStringy(module, addr))
         {
             ideas.Insert(0, Idea("len-havoc", "Length / memcpy surface",
-                "Nearby naming suggests string/copy handling — bias length fields, overflow dictionaries, and framed mutators.",
+                "Module naming suggests CRT/string handling — bias length fields, overflow dictionaries, and framed mutators.",
                 "high",
                 "randall fuzz -c projects/<proj> --profile fuzzier",
                 "Scare Floor → enable havoc + length-aware mutators"));
@@ -501,13 +519,33 @@ public static class MissedBlockAnalyzer
 
     private static string CategoryDescription(string id) => id switch
     {
-        "never-hit" => "In the BB inventory but absent from all campaign hits — classic Dynapstalker white blocks.",
-        "baseline-only" => "Reached during normal use, then abandoned by fuzz layers.",
+        "never-hit" => "In the BB inventory but absent from all campaign hits — classic Dynapstalker / IDA white blocks.",
+        "baseline-only" => "Reached during normal use (PDF yellow), then abandoned by fuzz layers (not re-colored green).",
         "module-sparse" => "Whole modules barely revisited after baseline.",
         "session-unexplored" => "Protocol/session forks that exist in the graph but were not taken.",
-        "frontier-gap" => "Address holes between hit blocks — likely skipped branches.",
+        "frontier-gap" => "Address holes between hit blocks — likely skipped branches (white islands between colored BBs).",
         _ => "",
     };
+
+    private static IEnumerable<MissedFuzzIdeaDto> PdfInterestingSurfaceIdeas() =>
+    [
+        Idea("pdf-white", "Treat IDA white as ground truth",
+            "After loading baseline (yellow) then fuzzed (green) IDC scripts, remaining white blocks are code neither pass executed — that is the PDF definition of missed.",
+            "high",
+            "randall stalk dynapstalker <baseline.log> <exe> base.idc --color 0x00ffff && " +
+            "randall stalk dynapstalker <fuzz.log> <exe> fuzz.idc --color 0x00ff00",
+            "Stalking bugs → IDA IDC export (oldest first)"),
+        Idea("pdf-revise", "Revise fuzzer, then remeasure with a new color",
+            "Change seeds/dicts/mutators to reach interesting white blocks (string copies, error handlers, auth gates), run again under drcov, export a third color for the improved round.",
+            "high",
+            "randall stalk missed -p <project>",
+            "Scare Floor → new recipe → Campaign → record fuzzier layer"),
+        Idea("pdf-error-paths", "Exercise non-happy HTTP/protocol statuses",
+            "PDF baseline includes 404 / non-200 responses. If your baseline was only success paths, record a richer baseline (errors, auth fail, oversized headers) before judging the fuzzer.",
+            "medium",
+            null,
+            "Manual browse / client: trigger 404s and errors under coverage, then re-record baseline"),
+    ];
 
     private static string? FindNearbyHit(HashSet<string> hit, string module, string addr)
     {

@@ -55,16 +55,19 @@ public static class StalkCoverageExport
             sb.AppendLine($"// Color (IDA BGR hex): {layer.ColorHex}");
             sb.AppendLine($"// Blocks: {edges.Count}");
             sb.AppendLine("static main() {");
-            sb.AppendLine("  auto ea;");
+            sb.AppendLine("  auto ea, cur;");
             var color = ParseIdaColor(layer.ColorHex);
             foreach (var edge in edges.OrderBy(e => e))
             {
                 var addr = EdgeAddress(edge);
                 if (addr is null) continue;
-                // Only paint if still default (white=0xFFFFFFFF in IDA graph often) — approximate with always set;
-                // Dynapstalker only recolors white; we document load order.
+                // Dynapstalker: only recolor default/white so earlier layers keep their color.
                 sb.AppendLine($"  ea = {addr};");
-                sb.AppendLine($"  if (ea != BADADDR) SetColor(ea, CIC_ITEM, {color});");
+                sb.AppendLine("  if (ea != BADADDR) {");
+                sb.AppendLine("    cur = GetColor(ea, CIC_ITEM);");
+                sb.AppendLine("    if (cur == 0xFFFFFFFF || cur == -1)");
+                sb.AppendLine($"      SetColor(ea, CIC_ITEM, {color});");
+                sb.AppendLine("  }");
             }
 
             sb.AppendLine("}");
@@ -77,13 +80,18 @@ public static class StalkCoverageExport
             Randfuzz → IDA Pro color import (Dynapstalker workflow)
             =======================================================
             1. Open the target binary in IDA and wait for auto-analysis.
-            2. File → Script file… — load the OLDEST *.idc first (baseline).
-            3. Load later layers in order (fuzzed, fuzzier, crash).
-            4. Earlier colors win on already-painted blocks when using
-               sequential imports; compare novel greens against yellow baseline.
-            5. Jump (G) to interesting PCs from the Stalking bugs view.
+            2. File → Script file… — load the OLDEST *.idc first (baseline / yellow).
+            3. Load later layers in order (fuzzed / green, fuzzier, crash).
+            4. Scripts only paint still-white items — baseline yellow stays yellow.
+            5. Remaining WHITE blocks = missed code (PDF lesson). Review those for
+               string/memcpy / error paths, then revise the fuzzer.
+            6. Jump (G) to interesting PCs from Stalking bugs / missed report.
 
-            Colors are IDA BGR integers (e.g. 0x00FFFF ≈ yellow/cyan).
+            Colors are IDA BGR integers (e.g. 0x00FFFF ≈ yellow/cyan baseline,
+            0x00FF00 ≈ green fuzzed — Randfuzz default layer colors).
+
+            One-shot from a raw drcov log (PDF exercise):
+              randall stalk dynapstalker drcov.log savant.exe out.idc --color 0x00ffff
             """);
         files.Add(readme);
         return new StalkExportResultDto("idc", outDir, total, files);

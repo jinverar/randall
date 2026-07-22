@@ -113,11 +113,14 @@ Crashes during this run also show under **Crashes** (dump + analysis + memory le
 
 **Goal:** deliberately push into code the basic run missed (your cheat’s “modify fuzzer to cover more code”).
 
-1. Inspect novel / missed blocks:
+1. Inspect novel / missed blocks (PDF: white in IDA after yellow baseline + green fuzzed):
    - **Stalking bugs → Missed blocks** (why + ranked fuzz ideas), or  
    - `randall stalk missed -p <project>`  
-   - Optional: import a BB inventory for true never-hit white blocks  
-     (`randall stalk inventory -p <project> --import blocks.txt`), then export IDC/Ghidra colors.
+   - Export IDC/Ghidra (**oldest first** — only paints still-white), or one-shot:  
+     `randall stalk dynapstalker <drcov.log> <exe> <out.idc> --color 0x00ffff`  
+   - Optional: import a BB inventory for never-hit without IDA  
+     (`randall stalk inventory -p <project> --import blocks.txt`)  
+   - Prefer white/missed near string copies / `rep movs*` / error handlers.
 2. Improve the attack surface using the tips:
    - **Scare Floor** — richer recipes, multi-step sessions, better dictionaries  
    - Session graph / protocol model (session-unexplored forks)  

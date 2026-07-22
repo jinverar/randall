@@ -88,6 +88,7 @@ static void PrintHelp()
           randall stalk compare -p <project> [layerIds…] Diff layered coverage
           randall stalk missed -p <project> [--limit N]  Missed blocks + fuzz ideas
           randall stalk inventory -p <project> --import <file>  BB inventory for never-hit
+          randall stalk dynapstalker <drcov.log> <exe> <out.idc> [--color 0x00ffff]
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall stalk from-crash -i <crash-guid> [--tag crash]
           randall scream watch -p <pid> [-o dumpsDir]   Built-in exception dump watcher
@@ -2139,6 +2140,7 @@ static int RunStalk(string[] args)
               randall stalk compare -p <project> [layerId…]
               randall stalk missed -p <project> [--limit 40]
               randall stalk inventory -p <project> --import <blocks.txt|drcov.log>
+              randall stalk dynapstalker <drcov.log> <process.exe> <out.idc> [--color 0x00ffff]
               randall stalk export -p <project> --format idc|ghidra|edges [-o dir] [layerId…]
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
               randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
@@ -2154,11 +2156,51 @@ static int RunStalk(string[] args)
         "compare" => StalkCompare(rest),
         "missed" => StalkMissed(rest),
         "inventory" => StalkInventory(rest),
+        "dynapstalker" or "drcov2idc" => StalkDynapstalker(rest),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
         "bench" => StalkBench(rest),
         _ => Unknown($"stalk {args[0]}"),
     };
+}
+
+static int StalkDynapstalker(string[] args)
+{
+    // PDF / Dynapstalker: <drcov.log> <process.exe> <out.idc> [--color 0x00ffff]
+    string? log = null, process = null, output = null, color = null;
+    var positionals = new List<string>();
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--color" or "-c" && i + 1 < args.Length)
+            color = args[++i];
+        else if (!args[i].StartsWith('-'))
+            positionals.Add(args[i]);
+    }
+
+    if (positionals.Count >= 1) log = positionals[0];
+    if (positionals.Count >= 2) process = positionals[1];
+    if (positionals.Count >= 3) output = positionals[2];
+
+    if (log is null || process is null || output is null)
+    {
+        Console.Error.WriteLine("Usage: randall stalk dynapstalker <drcov.log> <process.exe> <out.idc> [--color 0x00ffff]");
+        Console.Error.WriteLine("  PDF exercise: yellow baseline then green fuzzed (load oldest IDC first in IDA).");
+        Console.Error.WriteLine("  Requires drcov -dump_text logs.");
+        return 1;
+    }
+
+    try
+    {
+        var result = DynapstalkerExport.ExportIdc(Path.GetFullPath(log), process, Path.GetFullPath(output), color);
+        Console.WriteLine($"Dynapstalker IDC: {result.BlockCount} blocks → {result.OutputPath}");
+        Console.WriteLine("IDA: File → Script file — load oldest IDC first; white blocks remain missed.");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
 }
 
 static int StalkMissed(string[] args)
