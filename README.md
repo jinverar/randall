@@ -13,7 +13,7 @@
 I don't just throw bytes at parsers and hope. I **camouflage** valid-looking traffic, **sneak** into code paths nobody's mapped yet, and **scream** when something breaks — dump and all. Randfuzz pulls the good stuff from the giants before us ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei pStalker](https://github.com/OpenRCE/paimei), [DynamoRIO](https://dynamorio.org/)) and runs it as **one stack** — CLI, web UI, portable deploy. Respect to the legends; I'm just the chameleon who wired it together.
 
 <div align="center">
-  <a href="https://cdn.jsdelivr.net/gh/jinverar/randall@main/docs/assets/promo/watch.html">
+  <a href="https://cdn.jsdelivr.net/gh/jinverar/randall@main/docs/assets/promo/randfuzz-commercial-web.mp4">
     <img
       alt="Randfuzz promo trailer — autoplaying preview (click for full trailer with audio)"
       src="docs/assets/promo/randfuzz-commercial-preview.webp"
@@ -21,7 +21,7 @@ I don't just throw bytes at parsers and hope. I **camouflage** valid-looking tra
     />
   </a>
   <br />
-  <em>Preview autoplays above · <a href="https://cdn.jsdelivr.net/gh/jinverar/randall@main/docs/assets/promo/watch.html"><strong>▶ Play full trailer with audio (~80s)</strong></a></em>
+  <em>Preview autoplays above · <a href="https://cdn.jsdelivr.net/gh/jinverar/randall@main/docs/assets/promo/randfuzz-commercial-web.mp4"><strong>▶ Play full trailer with audio (~80s)</strong></a></em>
 </div>
 
 **Randfuzz** is the product. **Randall** is the mascot — named after **Randall Boggs** (*Monsters, Inc.*): master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. Yeah, that's the vibe:
