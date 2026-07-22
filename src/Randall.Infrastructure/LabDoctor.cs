@@ -127,6 +127,15 @@ public static class LabDoctor
             Add("fuzz.engine", "ok", "randall (own generation + stalk engine)");
         }
 
+        // Optional AI seed recipe — never required to fuzz.
+        {
+            var aiSeed = AiSeedSettings.FromEnvironment();
+            Add("ai.seed", aiSeed.HasApiKey ? "ok" : "warn",
+                aiSeed.HasApiKey
+                    ? $"AI seed ready — model={aiSeed.Model} base={aiSeed.BaseUrl} (randall ai seed -c …)"
+                    : $"AI seed optional — set {AiSeedSettings.EnvApiKey} or use --fixture / --dry-run (docs/AI_SEED.md)");
+        }
+
         foreach (var seed in project.Seeds)
         {
             try

@@ -48,6 +48,17 @@ fuzz:
 
 Good tokens: format strings (`%s`, `%n`), long runs, nulls, path traversal, magic headers.
 
+## Optional AI seed recipes
+
+Propose starting seeds + dictionary tokens with an LLM (offline from the fuzz loop):
+
+```bash
+randall ai seed -c projects/vulnlab.yaml --dry-run
+randall ai seed -c projects/vulnlab.yaml --fixture projects/fixtures/ai_seed_fixture.json
+```
+
+See [AI_SEED.md](AI_SEED.md).
+
 ## Corpus power schedule
 
 When `fuzz.powerSchedule: true` (default), Randall tracks **energy** per corpus entry. Inputs that triggered new DynamoRIO edges get boosted weight — similar to AFL's favor high-performing seeds.

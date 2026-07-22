@@ -1,0 +1,29 @@
+{
+  "seeds": [
+    {
+      "name": "echo_ok.txt",
+      "encoding": "utf8",
+      "data": "ECHO hello\n",
+      "note": "valid-ish control seed"
+    },
+    {
+      "name": "echo_long.bin",
+      "encoding": "hex",
+      "data": "4543484f20",
+      "note": "ECHO + space prefix; fuzzer expands the body"
+    },
+    {
+      "name": "boundary.bin",
+      "encoding": "hex",
+      "data": "0000FFFF7F80",
+      "note": "boundary bytes for interesting-int follow-up"
+    }
+  ],
+  "dictionary": [
+    "ECHO ",
+    "hex:0A",
+    "%s%s%s%s",
+    "AAAA"
+  ],
+  "notes": "Fixture recipe for offline ai seed tests — no API key required."
+}

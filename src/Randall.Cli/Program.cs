@@ -41,7 +41,7 @@ return args[0].ToLowerInvariant() switch
     "case" => RunCase(args.Skip(1).ToArray()),
     "oracles" or "oracle" => RunOracles(args.Skip(1).ToArray()),
     "hunt" or "bughunter" or "bug-hunter" => RunHunt(args.Skip(1).ToArray()),
-    "ai" => RunAi(args.Skip(1).ToArray()), // legacy alias → Bug Hunter
+    "ai" => await RunAiAsync(args.Skip(1).ToArray()),
     "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
     "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
     "recorders" or "recorder" => RunRecorders(args.Skip(1).ToArray()),
@@ -95,7 +95,9 @@ static void PrintHelp()
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
           randall oracles [-p name] [--json]   Oracle engine: list findings (judgment/report)
           randall hunt -d <src> [-c yaml --arm]  Bug Hunter: AI/human analysis + arm campaign
-          randall hunt attribution|mistakes   Bug Hunter subcommands (alias: randall ai …)
+          randall hunt attribution|mistakes   Bug Hunter subcommands
+          randall ai seed -c <project> […]    Optional AI seed recipe (docs/AI_SEED.md)
+          randall ai hunt|attribution|mistakes  Aliases → Bug Hunter
           randall labs                     List lab servers (running / stopped)
           randall labs start|stop <id>     Start/stop one lab (127.0.0.1)
           randall labs stop-all            Stop every randall-vuln* lab
@@ -134,11 +136,177 @@ static void PrintHelp()
         """);
 }
 
-static int RunAi(string[] args) => RunHunt(args);
+static async Task<int> RunAiAsync(string[] args)
+{
+    // Dispatcher: seed recipes vs Bug Hunter (hunt/attribution/mistakes).
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Randfuzz AI helpers
+
+            Usage:
+              randall ai seed -c <project.yaml> [--dry-run|--fixture f|--count N|--update-yaml]
+                    Optional LLM seed/dictionary recipe (docs/AI_SEED.md) — not on the fuzz hot path
+              randall ai hunt -d <sourceDir> [-c project.yaml] [--arm]
+              randall ai attribution -d <sourceDir>
+              randall ai mistakes
+                    Bug Hunter aliases (docs/BUG_HUNTER.md) — prefer: randall hunt …
+
+            Env for ai seed:
+              RANDALL_AI_API_KEY or OPENAI_API_KEY
+              RANDALL_AI_BASE_URL   (default https://api.openai.com/v1)
+              RANDALL_AI_MODEL      (default gpt-4o-mini)
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    var rest = args.Skip(1).ToArray();
+    return sub switch
+    {
+        "seed" or "seeds" or "recipe" or "dict" => await RunAiSeedAsync(rest),
+        "hunt" or "badcode" or "bugs" or "plan" or "analyze"
+            or "attribution" or "code" or "scan" or "mistakes" or "catalog"
+            => RunHunt(args),
+        // `randall ai -d …` → Bug Hunter analyze
+        "-d" or "--dir" or "--root" or "-c" or "--config" or "--arm" or "--json"
+            => RunHunt(args),
+        _ => Unknown($"ai {args[0]}"),
+    };
+}
+
+static async Task<int> RunAiSeedAsync(string[] args)
+{
+    string? config = null;
+    string? fixture = null;
+    string? promptHint = null;
+    string? outDir = null;
+    string? dictPath = null;
+    var dryRun = false;
+    var updateYaml = false;
+    var count = 6;
+
+    for (var i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "-c" or "--config" when i + 1 < args.Length:
+                config = args[++i];
+                break;
+            case "--fixture" when i + 1 < args.Length:
+                fixture = args[++i];
+                break;
+            case "--prompt" or "--hint" when i + 1 < args.Length:
+                promptHint = args[++i];
+                break;
+            case "--out-dir" when i + 1 < args.Length:
+                outDir = args[++i];
+                break;
+            case "--dict" when i + 1 < args.Length:
+                dictPath = args[++i];
+                break;
+            case "--count" when i + 1 < args.Length:
+                if (!int.TryParse(args[++i], out count) || count < 1)
+                {
+                    Console.Error.WriteLine("--count must be a positive integer");
+                    return 1;
+                }
+                count = Math.Clamp(count, 1, 32);
+                break;
+            case "--dry-run":
+                dryRun = true;
+                break;
+            case "--update-yaml":
+                updateYaml = true;
+                break;
+            case "-h" or "--help":
+                return await RunAiAsync(["help"]);
+        }
+    }
+
+    if (string.IsNullOrWhiteSpace(config))
+    {
+        Console.Error.WriteLine("Usage: randall ai seed -c <project.yaml> [--dry-run|--fixture f]");
+        return 1;
+    }
+
+    var yamlPath = Path.GetFullPath(config);
+    ProjectConfig project;
+    try { project = ProjectLoader.Load(yamlPath); }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    Console.WriteLine($"AI seed recipe for '{project.Name}' ({project.Kind})");
+
+    if (dryRun)
+    {
+        var prompt = AiSeedRecipe.BuildPrompt(project, yamlPath, count, promptHint);
+        Console.WriteLine("--- prompt ---");
+        Console.WriteLine(prompt);
+        Console.WriteLine("--- end prompt ---");
+        var settings = AiSeedSettings.FromEnvironment();
+        Console.WriteLine(settings.HasApiKey
+            ? $"API key: set ({AiSeedSettings.EnvApiKey} / {AiSeedSettings.EnvApiKeyAlt}) model={settings.Model}"
+            : $"API key: not set — live generate needs {AiSeedSettings.EnvApiKey} or --fixture");
+        return 0;
+    }
+
+    AiSeedRecipe.RecipeResult recipe;
+    try
+    {
+        if (!string.IsNullOrWhiteSpace(fixture))
+        {
+            var fixturePath = Path.GetFullPath(fixture);
+            if (!File.Exists(fixturePath))
+            {
+                Console.Error.WriteLine($"Fixture not found: {fixturePath}");
+                return 1;
+            }
+            Console.WriteLine($"Using fixture: {fixturePath}");
+            recipe = AiSeedRecipe.LoadFixture(fixturePath);
+        }
+        else
+        {
+            var settings = AiSeedSettings.FromEnvironment();
+            Console.WriteLine($"Calling {settings.BaseUrl} model={settings.Model}…");
+            recipe = await AiSeedRecipe.GenerateAsync(project, yamlPath, settings, count, promptHint);
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    if (recipe.Seeds.Count == 0 && recipe.Dictionary.Count == 0)
+    {
+        Console.Error.WriteLine("Recipe contained no seeds or dictionary tokens.");
+        return 1;
+    }
+
+    if (!string.IsNullOrWhiteSpace(recipe.Notes))
+        Console.WriteLine($"Notes: {recipe.Notes}");
+
+    var applied = AiSeedRecipe.Apply(
+        project, yamlPath, recipe, outDir, dictPath, updateYaml);
+
+    foreach (var p in applied.SeedPaths)
+        Console.WriteLine($"  seed → {p}");
+    if (applied.DictionaryPath is not null)
+        Console.WriteLine($"  dict → {applied.DictionaryPath}");
+    Console.WriteLine($"  recipe json → {applied.RecipeJsonPath}");
+    Console.WriteLine(
+        $"Done: {applied.SeedCount} seed(s), {applied.DictionaryCount} dict token(s)." +
+        (updateYaml ? " Project YAML updated." : " Re-run with --update-yaml to wire seeds into the project."));
+    Console.WriteLine("Next: randall fuzz -c " + config);
+    return 0;
+}
 
 static int RunHunt(string[] args)
 {
-    // Top-level `randall hunt …` and legacy `randall ai …` share this entry.
     if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
     {
         Console.WriteLine("""
@@ -152,7 +320,8 @@ static int RunHunt(string[] args)
                     Analyze sources → prioritize AI blocks → suggest oracle/dict arming
               randall hunt attribution -d <sourceDir> [-o outDir] [--json] [--ext .cs,.c,.py]
               randall hunt mistakes [--emit-yaml]
-              randall ai …                 Legacy alias of randall hunt …
+              randall ai seed …            Optional seed recipe (docs/AI_SEED.md)
+              randall ai hunt|mistakes …   Aliases of randall hunt …
 
             Attribution is heuristic. Prefer /* BEGIN AI */ … /* END AI */ annotations.
             Bug Hunter suggests what to look for; Oracle decides if a run was wrong.
@@ -202,7 +371,7 @@ static int RunAiHunt(string[] args)
                 json = true;
                 break;
             case "-h" or "--help":
-                return RunAi(["help"]);
+                return RunHunt(["help"]);
         }
     }
 
@@ -384,7 +553,7 @@ static int RunAiAttribution(string[] args)
                 json = true;
                 break;
             case "-h" or "--help":
-                return RunAi(["help"]);
+                return RunHunt(["help"]);
         }
     }
 
