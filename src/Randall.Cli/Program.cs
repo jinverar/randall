@@ -1,6 +1,8 @@
 ﻿using System.Diagnostics;
 using Randall.Contracts;
 using Randall.Infrastructure;
+using Randall.Infrastructure.Oracles;
+using Randall.Infrastructure.BugHunt;
 
 if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
 {
@@ -37,7 +39,8 @@ return args[0].ToLowerInvariant() switch
     "scream" => await RunScream(args.Skip(1).ToArray()),
     "case" => RunCase(args.Skip(1).ToArray()),
     "oracles" or "oracle" => RunOracles(args.Skip(1).ToArray()),
-    "ai" => RunAi(args.Skip(1).ToArray()),
+    "hunt" or "bughunter" or "bug-hunter" => RunHunt(args.Skip(1).ToArray()),
+    "ai" => RunAi(args.Skip(1).ToArray()), // legacy alias → Bug Hunter
     "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
     "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
     "recorders" or "recorder" => RunRecorders(args.Skip(1).ToArray()),
@@ -88,10 +91,9 @@ static void PrintHelp()
           randall debug attach -p <pid> | -t <project> [--kind …]
           randall fuzz -c <project> --debugger wait|attach|both [--open-on-crash]
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
-          randall oracles [-p name] [--json]   List semantic oracle findings
-          randall ai attribution -d <src>  AI vs human code blocks + mistake focus
-          randall ai hunt -d <src> [-c yaml --arm]  Hunt bugs from AI bad code
-          randall ai mistakes              Common AI-codegen mistake catalog
+          randall oracles [-p name] [--json]   Oracle engine: list findings (judgment/report)
+          randall hunt -d <src> [-c yaml --arm]  Bug Hunter: AI/human analysis + arm campaign
+          randall hunt attribution|mistakes   Bug Hunter subcommands (alias: randall ai …)
           randall labs                     List lab servers (running / stopped)
           randall labs start|stop <id>     Start/stop one lab (127.0.0.1)
           randall labs stop-all            Stop every randall-vuln* lab
@@ -125,39 +127,49 @@ static void PrintHelp()
           shuffle      Swap short spans in the seed
           cyclic       Metasploit-style pattern (exploit-dev offset practice)
 
-        Docs: docs/CUSTOM_TARGETS.md · docs/CASE_BUILDER.md · docs/TARGETS.md · docs/ORACLES.md · docs/AI_CODE_FUZZ.md
+        Docs: docs/ORACLES.md · docs/BUG_HUNTER.md · docs/CUSTOM_TARGETS.md · docs/TARGETS.md
         Exploit-dev practice: projects/vulnlab-offset.yaml (cyclic → CONTROL offset)
         """);
 }
 
-static int RunAi(string[] args)
+static int RunAi(string[] args) => RunHunt(args);
+
+static int RunHunt(string[] args)
 {
+    // Top-level `randall hunt …` and legacy `randall ai …` share this entry.
     if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
     {
         Console.WriteLine("""
-            Randfuzz AI helpers (docs/AI_CODE_FUZZ.md)
+            Bug Hunter engine — AI/human code analysis (docs/BUG_HUNTER.md)
+
+            Separate from the Oracle engine (docs/ORACLES.md), which only judges
+            observations and reports findings.
 
             Usage:
-              randall ai attribution -d <sourceDir> [-o outDir] [--json] [--ext .cs,.c,.py]
-              randall ai hunt -d <sourceDir> [-c project.yaml] [-o outDir] [--arm]
-                    Scan → prioritize AI blocks → arm oracles/dict for AI bad-code bugs
-              randall ai mistakes [--emit-yaml]
-              randall ai code -d <sourceDir>          (alias of attribution)
+              randall hunt -d <sourceDir> [-c project.yaml] [-o outDir] [--arm]
+                    Analyze sources → prioritize AI blocks → suggest oracle/dict arming
+              randall hunt attribution -d <sourceDir> [-o outDir] [--json] [--ext .cs,.c,.py]
+              randall hunt mistakes [--emit-yaml]
+              randall ai …                 Legacy alias of randall hunt …
 
             Attribution is heuristic. Prefer /* BEGIN AI */ … /* END AI */ annotations.
-            Hunt arms semantic oracles for common AI mistakes; seeds still cover memory bugs.
+            Bug Hunter suggests what to look for; Oracle decides if a run was wrong.
             """);
         return 0;
     }
 
     var sub = args[0].ToLowerInvariant();
+    // `randall hunt -d …` (no subcommand) is the analyze/arm entry.
+    if (sub is "-d" or "--dir" or "--root" or "-c" or "--config" or "-o" or "--out" or "--arm" or "--json")
+        return RunAiHunt(args);
+
     var rest = args.Skip(1).ToArray();
     return sub switch
     {
         "attribution" or "code" or "scan" => RunAiAttribution(rest),
-        "hunt" or "badcode" or "bugs" => RunAiHunt(rest),
+        "plan" or "analyze" or "badcode" or "bugs" => RunAiHunt(rest),
         "mistakes" or "catalog" => RunAiMistakes(rest),
-        _ => Unknown($"ai {args[0]}"),
+        _ => Unknown($"hunt {args[0]}"),
     };
 }
 
@@ -198,23 +210,23 @@ static int RunAiHunt(string[] args)
         return 1;
     }
 
-    AiCodeScanDto scan;
-    try { scan = AiCodeAttribution.Scan(dir); }
+    BugHunterScanDto scan;
+    try { scan = BugHunterEngine.Scan(dir); }
     catch (Exception ex)
     {
         Console.Error.WriteLine(ex.Message);
         return 1;
     }
 
-    var plan = AiCodeHunt.BuildPlan(scan);
+    var plan = BugHunterEngine.Plan(scan);
     var dest = outDir ?? Path.Combine(
         CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory(), "data", "ai_code");
     Directory.CreateDirectory(dest);
     try
     {
-        AiCodeAttribution.PersistReport(scan, dest);
-        File.WriteAllText(Path.Combine(dest, "hunt_plan.md"), AiCodeHunt.RenderPlanMarkdown(plan));
-        File.WriteAllText(Path.Combine(dest, "hunt_arm_snippet.yaml"), AiCodeHunt.RenderArmedYamlSnippet());
+        BugHunterAttribution.PersistReport(scan, dest);
+        File.WriteAllText(Path.Combine(dest, "hunt_plan.md"), BugHunterPlanner.RenderPlanMarkdown(plan));
+        File.WriteAllText(Path.Combine(dest, "hunt_arm_snippet.yaml"), BugHunterPlanner.RenderArmedYamlSnippet());
     }
     catch (Exception ex)
     {
@@ -267,17 +279,17 @@ static int RunAiHunt(string[] args)
         }
 
         // Ensure source root is recorded for fuzz-start scans.
-        project.AiCode ??= new AiCodeConfig();
+        project.BugHunter ??= new BugHunterConfig();
         var relRoot = Path.GetRelativePath(ProjectLoader.ResolveProjectRoot(yamlPath), Path.GetFullPath(dir))
             .Replace('\\', '/');
-        if (!project.AiCode.SourceRoots.Any(r => r.Equals(relRoot, StringComparison.OrdinalIgnoreCase) ||
+        if (!project.BugHunter.SourceRoots.Any(r => r.Equals(relRoot, StringComparison.OrdinalIgnoreCase) ||
                                                  r.Equals(dir, StringComparison.OrdinalIgnoreCase)))
-            project.AiCode.SourceRoots.Add(relRoot.StartsWith("..") || relRoot.Contains(':') ? Path.GetFullPath(dir) : relRoot);
+            project.BugHunter.SourceRoots.Add(relRoot.StartsWith("..") || relRoot.Contains(':') ? Path.GetFullPath(dir) : relRoot);
 
-        var note = AiCodeHunt.ArmProject(project, yamlPath, plan);
+        var note = BugHunterEngine.ArmProject(project, yamlPath, plan);
         try
         {
-            AppendHuntArmToYaml(yamlPath, project.AiCode.SourceRoots.Last(), project.DictionaryFile);
+            AppendHuntArmToYaml(yamlPath, project.BugHunter.SourceRoots.Last(), project.DictionaryFile);
         }
         catch (Exception ex)
         {
@@ -294,8 +306,8 @@ static int RunAiHunt(string[] args)
     else
     {
         Console.WriteLine();
-        Console.WriteLine("Arm a project: randall ai hunt -d <src> -c projects/foo.yaml --arm");
-        Console.WriteLine("Then:            randall fuzz -c projects/foo.yaml");
+        Console.WriteLine("Arm a project: randall hunt -d <src> -c projects/foo.yaml --arm");
+        Console.WriteLine("Then:             randall fuzz -c projects/foo.yaml");
     }
 
     return 0;
@@ -304,10 +316,11 @@ static int RunAiHunt(string[] args)
 static void AppendHuntArmToYaml(string yamlPath, string sourceRoot, string? dictionaryFile)
 {
     var text = File.ReadAllText(yamlPath);
-    if (!text.Contains("aiCode:", StringComparison.Ordinal))
+    if (!text.Contains("bugHunter:", StringComparison.Ordinal) &&
+        !text.Contains("aiCode:", StringComparison.Ordinal))
     {
         text = text.TrimEnd() + Environment.NewLine + """
-            aiCode:
+            bugHunter:
               enabled: true
               scanOnFuzzStart: true
               autoArmOracles: true
@@ -318,7 +331,7 @@ static void AppendHuntArmToYaml(string yamlPath, string sourceRoot, string? dict
     }
     else if (!text.Contains(sourceRoot, StringComparison.OrdinalIgnoreCase))
     {
-        // Best-effort: append root under aiCode.sourceRoots if block exists.
+        // Best-effort: append root under bugHunter/aiCode.sourceRoots if block exists.
         var idx = text.IndexOf("sourceRoots:", StringComparison.Ordinal);
         if (idx >= 0)
         {
@@ -383,8 +396,8 @@ static int RunAiAttribution(string[] args)
     if (!string.IsNullOrWhiteSpace(extList))
         exts = extList.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    AiCodeScanDto scan;
-    try { scan = AiCodeAttribution.Scan(dir, exts); }
+    BugHunterScanDto scan;
+    try { scan = BugHunterEngine.Scan(dir, exts); }
     catch (Exception ex)
     {
         Console.Error.WriteLine(ex.Message);
@@ -394,7 +407,7 @@ static int RunAiAttribution(string[] args)
     var dest = outDir ?? Path.Combine(
         CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory(), "data", "ai_code");
     string? reportPath = null;
-    try { reportPath = AiCodeAttribution.PersistReport(scan, dest); }
+    try { reportPath = BugHunterAttribution.PersistReport(scan, dest); }
     catch (Exception ex) { Console.Error.WriteLine($"Warning: could not write report: {ex.Message}"); }
 
     if (json)
@@ -412,7 +425,7 @@ static int RunAiAttribution(string[] args)
     Console.WriteLine();
     Console.WriteLine("Top AI-attributed blocks:");
     foreach (var b in scan.Blocks
-                 .Where(b => b.Provenance is AiCodeProvenance.LikelyAi or AiCodeProvenance.AnnotatedAi)
+                 .Where(b => b.Provenance is BugHunterProvenance.LikelyAi or BugHunterProvenance.AnnotatedAi)
                  .OrderByDescending(b => b.Confidence)
                  .Take(15))
     {
@@ -423,7 +436,7 @@ static int RunAiAttribution(string[] args)
     Console.WriteLine();
     Console.WriteLine("Top human-attributed blocks:");
     foreach (var b in scan.Blocks
-                 .Where(b => b.Provenance is AiCodeProvenance.LikelyHuman or AiCodeProvenance.AnnotatedHuman)
+                 .Where(b => b.Provenance is BugHunterProvenance.LikelyHuman or BugHunterProvenance.AnnotatedHuman)
                  .Take(10))
     {
         Console.WriteLine($"  [{b.Provenance}] {b.Path}:{b.StartLine}-{b.EndLine}");
@@ -447,8 +460,8 @@ static int RunAiMistakes(string[] args)
     if (emitYaml)
     {
         Console.WriteLine("""
-            # Starter snippet — merge into a project YAML (docs/AI_CODE_FUZZ.md)
-            aiCode:
+            # Starter snippet — Bug Hunter + Oracle (docs/BUG_HUNTER.md · docs/ORACLES.md)
+            bugHunter:
               enabled: true
               sourceRoots:
                 - ../targets/local/myservice
@@ -497,7 +510,7 @@ static int RunAiMistakes(string[] args)
 
     Console.WriteLine("Common AI-codegen mistake classes (docs/AI_CODE_FUZZ.md)");
     Console.WriteLine();
-    foreach (var m in AiCodeMistakes.All)
+    foreach (var m in BugHunterMistakes.All)
     {
         Console.WriteLine($"[{m.Id}] {m.Title}");
         Console.WriteLine($"  {m.Description}");

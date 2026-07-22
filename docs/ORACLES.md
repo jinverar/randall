@@ -1,13 +1,21 @@
-# Hybrid semantic oracles
+# Oracle engine (judgment / reporting)
 
 Coverage answers: *did this input reach new code or crash?*  
-Oracles additionally answer: *did the target behave incorrectly while staying alive?*
+The **Oracle engine** answers: *did the target behave incorrectly while staying alive?*
 
-**Thesis:** as more targets become memory-safe (and more code is **LLM-authored**), the high-value fuzzer surface shifts to **logic errors, authz/authn bugs, state-machine violations, semantic integer mistakes, structure assumptions, and resource abuse** — including **common AI-codegen mistakes**. Classic memory-corruption hunting still matters — push those with **seed recipes / dictionaries / mutators**. Oracles carry the semantic half.
+**Scope:** evaluate observations against rules → emit findings → optional corpus retain/boost.  
+**Not in scope:** AI/human attribution, mistake catalogs, or campaign planning — that is the **Bug Hunter** ([BUG_HUNTER.md](BUG_HUNTER.md)).
 
-For AI vs human block attribution + mistake catalog: [AI_CODE_FUZZ.md](AI_CODE_FUZZ.md).
+```text
+Bug Hunter suggests rules / focus     →     Oracle judges each run
+randall hunt …                              randall oracles …
+```
 
-Randfuzz’s oracle stack **supplements** coverage — it does not replace it. Findings feed corpus energy and `oracle_findings.jsonl`.
+Code: `Randall.Infrastructure.Oracles` (`OracleEngine`).
+
+**Thesis:** as more targets become memory-safe (and more code is LLM-authored), high-value bugs are often **logic / auth / state / semantic** failures that never crash. Oracles carry that judgment half; Bug Hunter decides what to arm; seeds/mutators still chase memory corruption.
+
+The oracle stack **supplements** coverage — it does not replace it. Findings feed corpus energy and `oracle_findings.jsonl`.
 
 ## Stack (cheap → expensive)
 
@@ -32,7 +40,8 @@ Triage + corpus retention (interestingness score)
 | Concern | Prefer |
 |---------|--------|
 | Memory corruption, parser crashes, ASan | Seeds + mutators (+ sanitizer builds) · [AI_SEED.md](AI_SEED.md) |
-| Logic / auth / state / semantic integers / structure | **Oracles** (this doc) |
+| Logic / auth / state / semantic integers / structure | **Oracle** judgment (this doc) |
+| AI vs human focus + which rules to arm | **Bug Hunter** ([BUG_HUNTER.md](BUG_HUNTER.md)) |
 | Path discovery | Coverage / stalk / AFL++ adapter |
 
 ## Enable semantic rules
@@ -115,8 +124,9 @@ Each finding: `rule_id`, `rule_class`, `severity`, `input_hash`, `expected_relat
 
 ## What this is not
 
+- Not a bug-hunter / campaign planner (see [BUG_HUNTER.md](BUG_HUNTER.md))
 - Not a replacement for ASan/UBSan on unsafe code
 - Not automatic exploit development
 - Coverage + stalk remain the exploration engine
 
-See also: [FUZZING.md](FUZZING.md) · [AI_SEED.md](AI_SEED.md) · [HARNESS_DESIGN.md](HARNESS_DESIGN.md)
+See also: [BUG_HUNTER.md](BUG_HUNTER.md) · [FUZZING.md](FUZZING.md) · [HARNESS_DESIGN.md](HARNESS_DESIGN.md)

@@ -3,14 +3,14 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Randall.Contracts;
 
-namespace Randall.Infrastructure;
+namespace Randall.Infrastructure.BugHunt;
 
 /// <summary>
-/// Heuristic AI-vs-human source attribution. Not ground truth — combines
-/// explicit annotations, tool markers, and light style signals so oracles/seeds
-/// can focus on AI-attributed regions and common codegen mistakes.
+/// Bug Hunter: heuristic AI-vs-human source attribution. Not ground truth —
+/// combines annotations, tool markers, and light style signals so campaigns
+/// can prioritize AI-attributed regions. Does not judge runtime behavior.
 /// </summary>
-public static partial class AiCodeAttribution
+public static partial class BugHunterAttribution
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = true };
 
@@ -32,7 +32,7 @@ public static partial class AiCodeAttribution
         ("annotation:BEGIN HUMAN", BeginHumanRegex()),
     ];
 
-    public static AiCodeScanDto Scan(
+    public static BugHunterScanDto Scan(
         string root,
         IEnumerable<string>? extensions = null,
         int maxFiles = 2000)
@@ -42,11 +42,11 @@ public static partial class AiCodeAttribution
             throw new DirectoryNotFoundException($"Source root not found: {root}");
 
         var exts = new HashSet<string>(
-            (extensions ?? new AiCodeConfig().Extensions)
+            (extensions ?? new BugHunterConfig().Extensions)
             .Select(e => e.StartsWith('.') ? e.ToLowerInvariant() : "." + e.ToLowerInvariant()),
             StringComparer.OrdinalIgnoreCase);
 
-        var blocks = new List<AiCodeBlockDto>();
+        var blocks = new List<BugHunterBlockDto>();
         var files = 0;
 
         foreach (var file in EnumerateSourceFiles(root, exts))
@@ -65,18 +65,18 @@ public static partial class AiCodeAttribution
         }
 
         // Collapse: if a file has no block markers, attribute whole file from aggregate signals.
-        var ai = blocks.Count(b => b.Provenance is AiCodeProvenance.LikelyAi or AiCodeProvenance.AnnotatedAi);
-        var human = blocks.Count(b => b.Provenance is AiCodeProvenance.LikelyHuman or AiCodeProvenance.AnnotatedHuman);
+        var ai = blocks.Count(b => b.Provenance is BugHunterProvenance.LikelyAi or BugHunterProvenance.AnnotatedAi);
+        var human = blocks.Count(b => b.Provenance is BugHunterProvenance.LikelyHuman or BugHunterProvenance.AnnotatedHuman);
         var unknown = blocks.Count - ai - human;
 
         var focus = SuggestOracleFocus(blocks);
         var mistakes = SuggestMistakes(blocks);
 
-        return new AiCodeScanDto(
+        return new BugHunterScanDto(
             root, files, ai, human, unknown, blocks, focus, mistakes, DateTimeOffset.UtcNow);
     }
 
-    public static string PersistReport(AiCodeScanDto scan, string outDir)
+    public static string PersistReport(BugHunterScanDto scan, string outDir)
     {
         Directory.CreateDirectory(outDir);
         var path = Path.Combine(outDir, $"ai_code_{DateTime.UtcNow:yyyyMMdd_HHmmss}.json");
@@ -86,7 +86,7 @@ public static partial class AiCodeAttribution
         return path;
     }
 
-    public static string ToMarkdown(AiCodeScanDto scan)
+    public static string ToMarkdown(BugHunterScanDto scan)
     {
         var sb = new StringBuilder();
         sb.AppendLine("# AI code attribution report");
@@ -110,7 +110,7 @@ public static partial class AiCodeAttribution
         sb.AppendLine("| Provenance | File | Lines | Confidence | Signals |");
         sb.AppendLine("|------------|------|-------|------------|---------|");
         foreach (var b in scan.Blocks
-                     .OrderByDescending(b => b.Provenance is AiCodeProvenance.AnnotatedAi or AiCodeProvenance.LikelyAi)
+                     .OrderByDescending(b => b.Provenance is BugHunterProvenance.AnnotatedAi or BugHunterProvenance.LikelyAi)
                      .ThenBy(b => b.Path)
                      .ThenBy(b => b.StartLine)
                      .Take(200))
@@ -128,7 +128,7 @@ public static partial class AiCodeAttribution
         sb.AppendLine();
         sb.AppendLine("## AI-attributed previews");
         foreach (var b in scan.Blocks
-                     .Where(b => b.Provenance is AiCodeProvenance.LikelyAi or AiCodeProvenance.AnnotatedAi)
+                     .Where(b => b.Provenance is BugHunterProvenance.LikelyAi or BugHunterProvenance.AnnotatedAi)
                      .Take(40))
         {
             sb.AppendLine();
@@ -176,7 +176,7 @@ public static partial class AiCodeAttribution
         }
     }
 
-    private static IEnumerable<AiCodeBlockDto> ScanFile(string root, string file)
+    private static IEnumerable<BugHunterBlockDto> ScanFile(string root, string file)
     {
         var rel = Path.GetRelativePath(root, file).Replace('\\', '/');
         var lang = Path.GetExtension(file).TrimStart('.').ToLowerInvariant();
@@ -221,13 +221,13 @@ public static partial class AiCodeAttribution
                 var humanVotes = cluster.Hits.Count - aiVotes;
                 var provenance = aiVotes >= humanVotes
                     ? (signals.Any(s => s.StartsWith("annotation:", StringComparison.Ordinal))
-                        ? AiCodeProvenance.AnnotatedAi
-                        : AiCodeProvenance.LikelyAi)
+                        ? BugHunterProvenance.AnnotatedAi
+                        : BugHunterProvenance.LikelyAi)
                     : (signals.Any(s => s.StartsWith("annotation:", StringComparison.Ordinal))
-                        ? AiCodeProvenance.AnnotatedHuman
-                        : AiCodeProvenance.LikelyHuman);
+                        ? BugHunterProvenance.AnnotatedHuman
+                        : BugHunterProvenance.LikelyHuman);
                 var conf = Math.Clamp(0.55 + 0.1 * cluster.Hits.Count, 0.55, 0.95);
-                yield return new AiCodeBlockDto(
+                yield return new BugHunterBlockDto(
                     rel, cluster.Start, cluster.End, lang, provenance, conf, signals,
                     Preview(lines, cluster.Start, cluster.End));
             }
@@ -238,25 +238,25 @@ public static partial class AiCodeAttribution
         var style = ScoreStyle(lines);
         if (style.Score >= 0.65)
         {
-            yield return new AiCodeBlockDto(
-                rel, 1, lines.Length, lang, AiCodeProvenance.LikelyAi, style.Score, style.Signals,
+            yield return new BugHunterBlockDto(
+                rel, 1, lines.Length, lang, BugHunterProvenance.LikelyAi, style.Score, style.Signals,
                 Preview(lines, 1, Math.Min(lines.Length, 40)));
         }
         else if (style.Score <= 0.35)
         {
-            yield return new AiCodeBlockDto(
-                rel, 1, lines.Length, lang, AiCodeProvenance.LikelyHuman, 1.0 - style.Score, style.Signals,
+            yield return new BugHunterBlockDto(
+                rel, 1, lines.Length, lang, BugHunterProvenance.LikelyHuman, 1.0 - style.Score, style.Signals,
                 Preview(lines, 1, Math.Min(lines.Length, 40)));
         }
         else
         {
-            yield return new AiCodeBlockDto(
-                rel, 1, lines.Length, lang, AiCodeProvenance.Unknown, 0.5, style.Signals,
+            yield return new BugHunterBlockDto(
+                rel, 1, lines.Length, lang, BugHunterProvenance.Unknown, 0.5, style.Signals,
                 Preview(lines, 1, Math.Min(lines.Length, 40)));
         }
     }
 
-    private static IEnumerable<AiCodeBlockDto> ExtractMarkedRegions(string rel, string lang, string[] lines)
+    private static IEnumerable<BugHunterBlockDto> ExtractMarkedRegions(string rel, string lang, string[] lines)
     {
         int? aiStart = null;
         int? humanStart = null;
@@ -271,8 +271,8 @@ public static partial class AiCodeAttribution
             }
             else if (EndAiRegex().IsMatch(line) && aiStart is int a0)
             {
-                yield return new AiCodeBlockDto(
-                    rel, a0, i + 1, lang, AiCodeProvenance.AnnotatedAi, 0.98,
+                yield return new BugHunterBlockDto(
+                    rel, a0, i + 1, lang, BugHunterProvenance.AnnotatedAi, 0.98,
                     ["annotation:region-AI"], Preview(lines, a0, i + 1));
                 aiStart = null;
             }
@@ -283,8 +283,8 @@ public static partial class AiCodeAttribution
             }
             else if (EndHumanRegex().IsMatch(line) && humanStart is int h0)
             {
-                yield return new AiCodeBlockDto(
-                    rel, h0, i + 1, lang, AiCodeProvenance.AnnotatedHuman, 0.98,
+                yield return new BugHunterBlockDto(
+                    rel, h0, i + 1, lang, BugHunterProvenance.AnnotatedHuman, 0.98,
                     ["annotation:region-HUMAN"], Preview(lines, h0, i + 1));
                 humanStart = null;
             }
@@ -365,10 +365,10 @@ public static partial class AiCodeAttribution
         return chunk;
     }
 
-    private static IReadOnlyList<string> SuggestOracleFocus(List<AiCodeBlockDto> blocks)
+    private static IReadOnlyList<string> SuggestOracleFocus(List<BugHunterBlockDto> blocks)
     {
         var focus = new List<string>();
-        if (blocks.Any(b => b.Provenance is AiCodeProvenance.LikelyAi or AiCodeProvenance.AnnotatedAi))
+        if (blocks.Any(b => b.Provenance is BugHunterProvenance.LikelyAi or BugHunterProvenance.AnnotatedAi))
         {
             focus.Add("auth");
             focus.Add("state");
@@ -384,13 +384,13 @@ public static partial class AiCodeAttribution
         return focus;
     }
 
-    private static IReadOnlyList<string> SuggestMistakes(List<AiCodeBlockDto> blocks)
+    private static IReadOnlyList<string> SuggestMistakes(List<BugHunterBlockDto> blocks)
     {
-        var aiHeavy = blocks.Count(b => b.Provenance is AiCodeProvenance.LikelyAi or AiCodeProvenance.AnnotatedAi)
+        var aiHeavy = blocks.Count(b => b.Provenance is BugHunterProvenance.LikelyAi or BugHunterProvenance.AnnotatedAi)
                       >= Math.Max(1, blocks.Count / 4);
         return aiHeavy
-            ? AiCodeMistakes.All.Where(m => m.Id != "mem-classic").Select(m => m.Id).Take(8).ToList()
-            : AiCodeMistakes.All.Select(m => m.Id).Take(5).ToList();
+            ? BugHunterMistakes.All.Where(m => m.Id != "mem-classic").Select(m => m.Id).Take(8).ToList()
+            : BugHunterMistakes.All.Select(m => m.Id).Take(5).ToList();
     }
 
     [GeneratedRegex(@"AI[-_ ]?GENERATED|@ai-generated|RANDALL:AI", RegexOptions.IgnoreCase | RegexOptions.Compiled)]

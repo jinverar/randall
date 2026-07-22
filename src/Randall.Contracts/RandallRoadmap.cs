@@ -68,8 +68,8 @@ public static class RandallRoadmap
             new("p8-power", "Corpus energy power schedule", true, null),
             new("p8-flows", "Stateful TCP session flows", true, null),
             new("p8-clusters", "Crash clustering for triage", true, "/api/crashes/clusters"),
-            new("p8-oracles", "Hybrid semantic oracles (runtime/invariant/diff/metamorphic)", true, "docs/ORACLES.md"),
-            new("p8-ai-code", "AI bad-code hunt (attribution → oracles/dict → fuzz)", true, "docs/AI_CODE_FUZZ.md"),
+            new("p8-oracles", "Oracle engine — judgment/reporting (runtime/auth/state/…)", true, "docs/ORACLES.md"),
+            new("p8-bug-hunter", "Bug Hunter engine — AI/human analysis + campaign arming", true, "docs/BUG_HUNTER.md"),
         ]),
         new(9, "Lab readiness", "complete",
         [

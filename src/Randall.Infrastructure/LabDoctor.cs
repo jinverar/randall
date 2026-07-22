@@ -43,18 +43,18 @@ public static class LabDoctor
             return Finish(Path.GetFileNameWithoutExtension(yamlPath), checks);
         }
 
-        if (project.AiCode is { Enabled: true } ai)
+        if (project.BugHunter is { Enabled: true } ai)
         {
             var roots = ai.SourceRoots.Count == 0
                 ? "no sourceRoots"
                 : string.Join(", ", ai.SourceRoots.Take(3));
-            Add("aiCode", "ok",
-                $"enabled · roots={roots} — randall ai attribution (docs/AI_CODE_FUZZ.md)");
+            Add("bugHunter", "ok",
+                $"enabled · roots={roots} — randall hunt (docs/BUG_HUNTER.md)");
         }
         else
         {
-            Add("aiCode", "warn",
-                "aiCode disabled — optional AI-vs-human attribution (docs/AI_CODE_FUZZ.md)");
+            Add("bugHunter", "warn",
+                "bugHunter disabled — optional AI/human analysis (docs/BUG_HUNTER.md)");
         }
 
         if (project.Oracles is { Enabled: true } o)

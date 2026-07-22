@@ -1,6 +1,6 @@
 using Randall.Contracts;
 
-namespace Randall.Infrastructure;
+namespace Randall.Infrastructure.Oracles;
 
 /// <summary>One post-execution observation fed into the oracle stack.</summary>
 public sealed record OracleObservation(

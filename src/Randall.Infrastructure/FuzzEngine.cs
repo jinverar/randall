@@ -5,6 +5,8 @@ using Randall.Contracts;
 using Randall.Core;
 using Randall.Core.Model;
 using Randall.Infrastructure.Mutators;
+using Randall.Infrastructure.Oracles;
+using Randall.Infrastructure.BugHunt;
 
 namespace Randall.Infrastructure;
 
@@ -27,8 +29,9 @@ public sealed class FuzzEngine
         var coverageGuided = options.CoverageGuided || project.Fuzz.CoverageGuided;
         var maxIterations = options.MaxIterations ?? project.Fuzz.MaxIterations;
 
-        // AI bad-code hunt: arm oracles/dictionary and surface AI-attributed blocks first.
-        _ = AiCodeHuntArming.ArmForFuzz(project, yamlPath, options.Progress);
+        // Bug Hunter engine: analyze AI/human sources + suggest oracle/dict arming.
+        // Oracle engine (below) remains judgment/reporting only.
+        _ = BugHunterEngine.PrepareForFuzz(project, yamlPath, options.Progress);
 
         var seeds = LoadAllSeeds(project, yamlPath);
         if (seeds.Count == 0)

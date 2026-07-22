@@ -1,7 +1,7 @@
 using System.Text;
 using Randall.Contracts;
 
-namespace Randall.Infrastructure;
+namespace Randall.Infrastructure.Oracles;
 
 /// <summary>
 /// Tracks semantic session facts across a fuzz run (auth markers, prior commands/responses).

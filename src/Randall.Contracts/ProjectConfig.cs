@@ -27,15 +27,28 @@ public sealed class ProjectConfig
     /// <summary>Response-driven graph (boofuzz s_switch) — branch on server replies.</summary>
     public SessionGraphConfig? SessionGraph { get; set; }
     /// <summary>
-    /// Hybrid semantic oracle stack — supplements coverage (runtime / invariant /
-    /// differential / metamorphic). See docs/ORACLES.md.
+    /// Oracle engine — judgment/reporting only (did the target behave wrongly?).
+    /// See docs/ORACLES.md. Does not plan hunts or attribute AI vs human code.
     /// </summary>
     public OracleConfig? Oracles { get; set; }
+
     /// <summary>
-    /// Optional AI-vs-human source attribution + AI-mistake fuzz focus.
-    /// See docs/AI_CODE_FUZZ.md.
+    /// Bug Hunter engine — AI/human code analysis, mistake catalog, hunt planning,
+    /// and campaign arming (suggests oracle rules / dictionaries). See docs/BUG_HUNTER.md.
+    /// YAML: <c>bugHunter:</c> (preferred) or legacy <c>aiCode:</c>.
     /// </summary>
-    public AiCodeConfig? AiCode { get; set; }
+    public BugHunterConfig? BugHunter { get; set; }
+
+    /// <summary>Legacy YAML alias for <see cref="BugHunter"/> (<c>aiCode:</c>).</summary>
+    public BugHunterConfig? AiCode
+    {
+        get => BugHunter;
+        set
+        {
+            if (value is not null)
+                BugHunter = value;
+        }
+    }
 }
 
 public sealed class SessionGraphConfig

@@ -1,10 +1,10 @@
-namespace Randall.Infrastructure;
+namespace Randall.Infrastructure.BugHunt;
 
 /// <summary>
 /// Catalog of common LLM / AI-codegen mistake classes and how Randfuzz hunts them.
 /// Oracles own semantic failures; seeds/mutators own memory bugs.
 /// </summary>
-public static class AiCodeMistakes
+public static class BugHunterMistakes
 {
     public sealed record MistakeClass(
         string Id,

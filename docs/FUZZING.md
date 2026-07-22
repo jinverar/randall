@@ -82,9 +82,9 @@ Block models (`docs/MODEL.md`) target named fields. Length fields get ~25% bias 
 
 Set `coverageGuided: true` + `DYNAMORIO_HOME`. Randall parses drcov traces, registers new edges, and prioritizes inputs that expand the frontier (PaiMei / AFL-style stalking).
 
-## Hybrid semantic oracles
+## Oracle engine + Bug Hunter
 
-Coverage finds new code; oracles catch **logic / auth / state / semantic-integer / structure / resource** bugs without needing a crash — the high-value surface on memory-safe targets. Opt in per project:
+Coverage finds new code. The **Oracle engine** judges **logic / auth / state / semantic-integer / structure / resource** bugs without needing a crash ([ORACLES.md](ORACLES.md)). The **Bug Hunter** analyzes AI/human sources and suggests which rules/dicts to arm ([BUG_HUNTER.md](BUG_HUNTER.md)). Opt in per project:
 
 ```yaml
 oracles:

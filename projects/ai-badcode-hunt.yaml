@@ -1,10 +1,9 @@
-# Hunt bugs from AI-authored bad code.
-# Workflow: randall ai hunt -d examples/ai-code-sample -c projects/ai-badcode-hunt.yaml --arm
+# Bug Hunter + Oracle demo (docs/BUG_HUNTER.md · docs/ORACLES.md)
+# Workflow: randall hunt -d examples/ai-code-sample -c projects/ai-badcode-hunt.yaml --arm
 #           randall fuzz -c projects/ai-badcode-hunt.yaml
 #           randall oracles -p ai-badcode-hunt
-# Docs: docs/AI_CODE_FUZZ.md
 name: ai-badcode-hunt
-description: Hunt common AI-codegen bugs — attribution → mistake oracles → fuzz (docs/AI_CODE_FUZZ.md)
+description: Bug Hunter + Oracle demo — AI/human analysis then semantic judgment (docs/BUG_HUNTER.md)
 kind: tcp
 target:
   # Demo uses VulnRpc (AI-shaped bind→request). Point at your AI-written service binary.
@@ -34,17 +33,19 @@ sessionGraph:
   mutate: REQUEST
   edges:
     - { from: BIND, when: "BIND_ACK", to: REQUEST }
-aiCode:
+# Bug Hunter engine (analysis + arming). Legacy YAML key aiCode: still accepted.
+bugHunter:
   enabled: true
   scanOnFuzzStart: true
-  autoArmOracles: true
+  autoArmOracles: true      # suggest rules → Oracle engine
   autoArmDictionary: true
   persistReport: true
   sourceRoots:
     - ../examples/ai-code-sample
+# Oracle engine — judgment / reporting only (docs/ORACLES.md)
 oracles:
   enabled: true
-  # Empty sections are filled by the AI mistake pack on fuzz start (aiCode.autoArmOracles).
+  # Empty sections filled by Bug Hunter suggestions on fuzz start.
 fuzz:
   maxIterations: 800
   sessionFlowBias: 0.7

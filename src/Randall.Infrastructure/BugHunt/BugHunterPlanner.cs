@@ -1,24 +1,24 @@
 using System.Text;
 using Randall.Contracts;
 
-namespace Randall.Infrastructure;
+namespace Randall.Infrastructure.BugHunt;
 
 /// <summary>
 /// Turn an attribution scan into an active hunt plan for AI-authored bad code.
 /// </summary>
-public static class AiCodeHunt
+public static class BugHunterPlanner
 {
-    public static AiCodeHuntPlanDto BuildPlan(AiCodeScanDto scan)
+    public static BugHunterPlanDto BuildPlan(BugHunterScanDto scan)
     {
         var aiBlocks = scan.Blocks
-            .Where(b => b.Provenance is AiCodeProvenance.LikelyAi or AiCodeProvenance.AnnotatedAi)
+            .Where(b => b.Provenance is BugHunterProvenance.LikelyAi or BugHunterProvenance.AnnotatedAi)
             .OrderByDescending(b => b.Confidence)
             .ThenByDescending(b => b.EndLine - b.StartLine)
             .ToList();
 
         var mistakes = scan.SuggestedMistakeClasses.Count > 0
             ? scan.SuggestedMistakeClasses
-            : AiCodeMistakes.All.Where(m => m.Id != "mem-classic").Select(m => m.Id).Take(8).ToList();
+            : BugHunterMistakes.All.Where(m => m.Id != "mem-classic").Select(m => m.Id).Take(8).ToList();
 
         var focus = scan.SuggestedOracleFocus.Count > 0
             ? scan.SuggestedOracleFocus
@@ -28,16 +28,16 @@ public static class AiCodeHunt
             ? "No AI-attributed blocks found — hunt still arms semantic oracles; annotate with BEGIN AI for focus."
             : $"Hunt {aiBlocks.Count} AI-attributed block(s) across {aiBlocks.Select(b => b.Path).Distinct().Count()} file(s) for: {string.Join(", ", mistakes.Take(5))}.";
 
-        return new AiCodeHuntPlanDto(
+        return new BugHunterPlanDto(
             scan,
             aiBlocks.Take(40).ToList(),
             mistakes,
             focus,
-            AiCodeOraclePack.DictionaryRelativePath,
+            BugHunterOracleSuggestions.DictionaryRelativePath,
             summary);
     }
 
-    public static string RenderPlanMarkdown(AiCodeHuntPlanDto plan)
+    public static string RenderPlanMarkdown(BugHunterPlanDto plan)
     {
         var sb = new StringBuilder();
         sb.AppendLine("# AI bad-code hunt plan");
@@ -49,7 +49,7 @@ public static class AiCodeHunt
         sb.AppendLine("## Mistake classes");
         foreach (var id in plan.MistakeClasses)
         {
-            var m = AiCodeMistakes.All.FirstOrDefault(x => x.Id == id);
+            var m = BugHunterMistakes.All.FirstOrDefault(x => x.Id == id);
             sb.AppendLine(m is null ? $"- `{id}`" : $"- **{m.Id}** — {m.Title} ({m.HuntWith})");
         }
 
@@ -88,41 +88,42 @@ public static class AiCodeHunt
     public static string RenderArmedYamlSnippet()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("# Armed by: randall ai hunt (docs/AI_CODE_FUZZ.md)");
-        sb.AppendLine("aiCode:");
+        sb.AppendLine("# Armed by Bug Hunter engine (docs/BUG_HUNTER.md)");
+        sb.AppendLine("# Oracle engine remains judgment-only (docs/ORACLES.md)");
+        sb.AppendLine("bugHunter:");
         sb.AppendLine("  enabled: true");
         sb.AppendLine("  scanOnFuzzStart: true");
-        sb.AppendLine("  autoArmOracles: true");
+        sb.AppendLine("  autoArmOracles: true   # suggest rules → Oracle engine");
         sb.AppendLine("  autoArmDictionary: true");
         sb.AppendLine("  sourceRoots:");
         sb.AppendLine("    - ../path/to/ai-written-src");
         sb.AppendLine("dictionaryFile: dictionaries/ai_codegen_mistakes.txt");
         sb.AppendLine("mutators:");
-        foreach (var m in AiCodeOraclePack.RecommendedMutators())
+        foreach (var m in BugHunterOracleSuggestions.RecommendedMutators())
             sb.AppendLine($"  - {m}");
         sb.AppendLine("oracles:");
         sb.AppendLine("  enabled: true");
-        sb.AppendLine("  # autoArmOracles merges auth/state/integer/structure/resource pack if sections empty");
+        sb.AppendLine("  # Bug Hunter fills empty auth/state/integer/structure/resource sections");
         return sb.ToString();
     }
 
     /// <summary>
-    /// Arm a live <see cref="ProjectConfig"/> for AI bad-code hunting (oracles + dict + mutators).
+    /// Arm a live <see cref="ProjectConfig"/> for Bug Hunter (suggests oracles + dict + mutators).
     /// </summary>
-    public static string ArmProject(ProjectConfig project, string yamlPath, AiCodeHuntPlanDto? plan = null)
+    public static string ArmProject(ProjectConfig project, string yamlPath, BugHunterPlanDto? plan = null)
     {
-        project.AiCode ??= new AiCodeConfig();
-        project.AiCode.Enabled = true;
-        project.AiCode.AutoArmOracles = true;
-        project.AiCode.AutoArmDictionary = true;
-        project.AiCode.ScanOnFuzzStart = true;
+        project.BugHunter ??= new BugHunterConfig();
+        project.BugHunter.Enabled = true;
+        project.BugHunter.AutoArmOracles = true;
+        project.BugHunter.AutoArmDictionary = true;
+        project.BugHunter.ScanOnFuzzStart = true;
 
-        project.Oracles = AiCodeOraclePack.MergeInto(project.Oracles);
+        project.Oracles = BugHunterOracleSuggestions.MergeInto(project.Oracles);
 
         if (string.IsNullOrWhiteSpace(project.DictionaryFile))
-            project.DictionaryFile = AiCodeOraclePack.DictionaryRelativePath;
+            project.DictionaryFile = BugHunterOracleSuggestions.DictionaryRelativePath;
 
-        foreach (var m in AiCodeOraclePack.RecommendedMutators())
+        foreach (var m in BugHunterOracleSuggestions.RecommendedMutators())
         {
             if (!project.Mutators.Any(x => x.Equals(m, StringComparison.OrdinalIgnoreCase)))
                 project.Mutators.Add(m);
@@ -130,9 +131,9 @@ public static class AiCodeHunt
 
         var notes = new List<string>
         {
-            "oracles←AI mistake pack",
+            "oracles←Bug Hunter suggestions",
             $"dictionary←{project.DictionaryFile}",
-            $"mutators+=[{string.Join(',', AiCodeOraclePack.RecommendedMutators())}]",
+            $"mutators+=[{string.Join(',', BugHunterOracleSuggestions.RecommendedMutators())}]",
         };
         if (plan is not null)
             notes.Add($"priority AI blocks={plan.PriorityAiBlocks.Count}");

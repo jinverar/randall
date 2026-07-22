@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 using Randall.Contracts;
 using Randall.Infrastructure.Mutators;
 
-namespace Randall.Infrastructure;
+namespace Randall.Infrastructure.Oracles;
 
 public enum OracleSeverity
 {
@@ -24,8 +24,10 @@ public sealed record OracleEvalResult(
     string Summary);
 
 /// <summary>
-/// Hybrid semantic oracle stack focused on logic / auth / state / structure bugs
-/// (especially for memory-safe targets). Coverage still guides exploration.
+/// Oracle engine — judgment and reporting only.
+/// Evaluates observations against configured rules, emits findings, and optionally
+/// signals corpus retain/boost. Does not attribute AI/human code or plan hunts;
+/// that is <c>BugHunt.BugHunterEngine</c>.
 /// </summary>
 public static class OracleEngine
 {

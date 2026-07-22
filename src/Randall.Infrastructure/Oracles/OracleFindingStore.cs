@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Randall.Contracts;
 
-namespace Randall.Infrastructure;
+namespace Randall.Infrastructure.Oracles;
 
 public sealed class OracleFindingStore(string findingsDir)
 {

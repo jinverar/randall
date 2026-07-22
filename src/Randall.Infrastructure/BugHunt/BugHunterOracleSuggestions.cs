@@ -1,12 +1,12 @@
 using Randall.Contracts;
 
-namespace Randall.Infrastructure;
+namespace Randall.Infrastructure.BugHunt;
 
 /// <summary>
-/// Default semantic-oracle pack aimed at common AI-codegen bugs
-/// (auth skips, state order, length lies, structure trust, resource abuse).
+/// Bug Hunter to Oracle bridge: suggested rule pack for common AI-codegen bugs.
+/// Merged into oracles: for the Oracle engine to judge; this type does not evaluate runs.
 /// </summary>
-public static class AiCodeOraclePack
+public static class BugHunterOracleSuggestions
 {
     public const string DictionaryRelativePath = "dictionaries/ai_codegen_mistakes.txt";
 
