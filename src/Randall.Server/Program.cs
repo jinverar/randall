@@ -55,6 +55,7 @@ app.MapGet("/canisters/canister-empty.jpg", () => ServeRepoAsset("docs/assets/ca
 app.MapGet("/canisters/canister-low.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-low.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-low.jpg"));
 app.MapGet("/canisters/canister-mid.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-mid.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-mid.jpg"));
 app.MapGet("/canisters/canister-full.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-full.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-full.jpg"));
+app.MapGet("/canisters/canister-eip.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-eip.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-eip.jpg"));
 app.MapGet("/canisters/canister-rack.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-rack.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-rack.jpg"));
 app.MapGet("/img/canisters/{file}", (string file) =>
 {

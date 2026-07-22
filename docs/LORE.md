@@ -65,12 +65,11 @@ Atmosphere follows fixed thresholds (EIP seal still wins):
 | **yelp** (watching) | 1–2 unique | Mild |
 | **toxic** | 3–7 unique, or any critical | Toxic vapors + floating scares |
 | **virulent** | ≥8 unique, or ≥3 critical | More toxic / sinister |
-| **EIP seal** | classic EIP/RIP overwrite | Special seal (badge + EIP CAPTURED) |
+| **EIP seal** | classic EIP/RIP overwrite | Special seal (`canister-eip.jpg` + badge + EIP CAPTURED) |
 
-Floating scare silhouettes (humans / doors / eyes) densify as the floor gets toxic; clean tests
-get laughter wisps instead. Continuous animations stay **off by default**.
+Each canister shows mood art, a **porthole fill** (progressive toward capacity, mood-floored), and a small **pressure gauge**. Floating scare silhouettes (humans / doors / eyes) densify as the floor gets toxic; clean tests get laughter wisps instead. Continuous animations stay **off by default**.
 
-Assets: `docs/assets/canisters/` · `/canisters/canister-*.jpg`. Original factory-horror art — not Disney/Pixar product likenesses.
+Assets: `docs/assets/canisters/` · `/canisters/canister-*.jpg` (including `canister-eip.jpg`). Original factory-horror art — not Disney/Pixar product likenesses.
 
 ---
 

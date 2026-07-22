@@ -3417,11 +3417,14 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
   /* Absolute art has no in-flow size — keep a real box via aspect-ratio + width. */
   aspect-ratio: 3 / 4.2;
   min-height: 7.5rem;
-  border-radius: 3px;
+  border-radius: 6px;
   overflow: hidden;
-  border: 1px solid var(--border);
-  background: #0c1218;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, #000);
+  background: #0a0e12;
   isolation: isolate;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 8px 18px rgba(0, 0, 0, 0.35);
 }
 
 .scream-canister-art {
@@ -3430,30 +3433,46 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center bottom;
-  opacity: 0.92;
-  transition: opacity 0.35s ease, filter 0.35s ease;
+  object-position: center center;
+  opacity: 0.98;
+  transition: opacity 0.35s ease, filter 0.35s ease, transform 0.45s ease;
+}
+
+/* Porthole mask — aligns CSS liquid with the oval viewing window on the art. */
+.scream-canister-porthole {
+  position: absolute;
+  left: 28%;
+  right: 28%;
+  top: 38%;
+  bottom: 18%;
+  border-radius: 48% / 42%;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+  box-shadow:
+    inset 0 0 10px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .scream-canister-liquid {
   position: absolute;
-  left: 18%;
-  right: 18%;
-  bottom: 14%;
+  left: 0;
+  right: 0;
+  bottom: 0;
   height: var(--fill, 0%);
-  max-height: 68%;
-  border-radius: 2px 2px 1px 1px;
+  max-height: 100%;
+  border-radius: 0;
   background:
     linear-gradient(180deg,
-      color-mix(in srgb, var(--canister-glow, #d4a017) 70%, #fff) 0%,
-      var(--canister-glow, #c47a12) 35%,
-      color-mix(in srgb, var(--canister-glow, #8a3a10) 80%, #1a0804) 100%);
+      color-mix(in srgb, var(--canister-glow, #d4a017) 78%, #fff) 0%,
+      var(--canister-glow, #c47a12) 38%,
+      color-mix(in srgb, var(--canister-glow, #8a3a10) 75%, #1a0804) 100%);
   box-shadow:
-    0 0 18px color-mix(in srgb, var(--canister-glow, #d4a017) 45%, transparent),
+    0 0 16px color-mix(in srgb, var(--canister-glow, #d4a017) 55%, transparent),
     inset 0 0 10px rgba(0, 0, 0, 0.35);
-  transition: height 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: height 1.05s cubic-bezier(0.22, 1, 0.36, 1);
   mix-blend-mode: screen;
-  opacity: 0.72;
+  opacity: 0.78;
   pointer-events: none;
 }
 
@@ -3469,6 +3488,53 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
   animation: scream-surface-sway 2.8s ease-in-out infinite;
 }
 
+/* Analog pressure gauge overlay (top of vessel). */
+.scream-canister-gauge {
+  position: absolute;
+  top: 7%;
+  left: 50%;
+  width: 18%;
+  aspect-ratio: 1;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  border: 1.5px solid rgba(180, 40, 30, 0.85);
+  background:
+    radial-gradient(circle at 50% 55%, #3a1010 0%, #1a0808 70%),
+    conic-gradient(from 220deg, #2a2a2a 0 55%, #8a1a12 55% 100%);
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.5), inset 0 0 4px rgba(255, 80, 40, 0.25);
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.92;
+}
+
+.scream-canister-gauge-needle {
+  position: absolute;
+  left: 50%;
+  bottom: 48%;
+  width: 2px;
+  height: 38%;
+  margin-left: -1px;
+  background: linear-gradient(180deg, #fff6e8, #f0c040);
+  border-radius: 1px;
+  transform-origin: bottom center;
+  transform: rotate(var(--gauge, -110deg));
+  transition: transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+  box-shadow: 0 0 4px rgba(255, 180, 40, 0.55);
+}
+
+.scream-canister-gauge::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22%;
+  height: 22%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #d8d0c4;
+  box-shadow: 0 0 2px #000;
+}
+
 @keyframes scream-surface-sway {
   0%, 100% { transform: translateX(-2%) scaleX(1); opacity: 0.7; }
   50% { transform: translateX(2%) scaleX(1.04); opacity: 1; }
@@ -3478,8 +3544,12 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
   opacity: 0;
 }
 
+.scream-canister[data-fill="0"] .scream-canister-porthole {
+  box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.7);
+}
+
 .scream-canister.filling .scream-canister-art {
-  filter: saturate(1.15) brightness(1.05);
+  filter: saturate(1.12) brightness(1.04);
 }
 
 .scream-canister.critical {
@@ -3524,6 +3594,44 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
   font-family: var(--mono);
   font-size: 0.62rem;
   color: var(--muted);
+}
+
+.scream-canister-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-top: 0.12rem;
+}
+
+.scream-canister-foot .scream-canister-pct {
+  margin-top: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scream-canister-crit {
+  font-size: 0.55rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.08rem 0.28rem;
+  border-radius: 2px;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, #000);
+  background: color-mix(in srgb, var(--danger) 22%, transparent);
+  color: #ffc8b8;
+  flex-shrink: 0;
+}
+
+.scream-canister-fill-readout {
+  font-family: var(--mono);
+  font-size: 0.55rem;
+  color: var(--muted);
+  opacity: 0.85;
+  flex-shrink: 0;
 }
 
 html[data-theme="light"] .scream-harvest-header {
@@ -3629,18 +3737,20 @@ html[data-theme="light"] .scream-canister-liquid {
   min-height: 6.5rem;
 }
 
-.scream-canister-liquid {
-  transition: height 1.05s cubic-bezier(0.22, 1, 0.36, 1);
+.scream-canister-rack-compact .scream-canister-gauge {
+  width: 14%;
+  opacity: 0.75;
 }
 
 .scream-canister-vapor {
   position: absolute;
   left: 28%;
   right: 28%;
-  top: 8%;
-  height: 18%;
+  top: 34%;
+  height: 22%;
   pointer-events: none;
   opacity: 0;
+  z-index: 1;
   background: radial-gradient(ellipse at bottom, rgba(255, 210, 120, 0.45), transparent 70%);
   filter: blur(2px);
 }
@@ -3711,6 +3821,10 @@ html[data-theme="light"] .scream-canister-liquid {
 .scream-canister.ip-controlled .scream-canister-liquid {
   background: linear-gradient(180deg, rgba(255, 90, 40, 0.55), rgba(180, 20, 10, 0.75));
   opacity: 0.85;
+}
+.scream-canister.ip-controlled .scream-canister-gauge {
+  border-color: rgba(255, 70, 40, 0.95);
+  box-shadow: 0 0 12px rgba(255, 48, 32, 0.55), inset 0 0 6px rgba(255, 80, 40, 0.35);
 }
 .scream-canister.ip-controlled .scream-canister-meta,
 .scream-canister.ip-controlled .scream-canister-pct.eip {
