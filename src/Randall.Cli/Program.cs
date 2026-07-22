@@ -37,6 +37,7 @@ return args[0].ToLowerInvariant() switch
     "scream" => await RunScream(args.Skip(1).ToArray()),
     "case" => RunCase(args.Skip(1).ToArray()),
     "oracles" or "oracle" => RunOracles(args.Skip(1).ToArray()),
+    "ai" => RunAi(args.Skip(1).ToArray()),
     "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
     "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
     "recorders" or "recorder" => RunRecorders(args.Skip(1).ToArray()),
@@ -88,6 +89,8 @@ static void PrintHelp()
           randall fuzz -c <project> --debugger wait|attach|both [--open-on-crash]
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
           randall oracles [-p name] [--json]   List semantic oracle findings
+          randall ai attribution -d <src>  AI vs human code blocks + mistake focus
+          randall ai mistakes              Common AI-codegen mistake catalog
           randall labs                     List lab servers (running / stopped)
           randall labs start|stop <id>     Start/stop one lab (127.0.0.1)
           randall labs stop-all            Stop every randall-vuln* lab
@@ -121,9 +124,205 @@ static void PrintHelp()
           shuffle      Swap short spans in the seed
           cyclic       Metasploit-style pattern (exploit-dev offset practice)
 
-        Docs: docs/CUSTOM_TARGETS.md · docs/CASE_BUILDER.md · docs/TARGETS.md · docs/ORACLES.md
+        Docs: docs/CUSTOM_TARGETS.md · docs/CASE_BUILDER.md · docs/TARGETS.md · docs/ORACLES.md · docs/AI_CODE_FUZZ.md
         Exploit-dev practice: projects/vulnlab-offset.yaml (cyclic → CONTROL offset)
         """);
+}
+
+static int RunAi(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Randfuzz AI helpers (docs/AI_CODE_FUZZ.md)
+
+            Usage:
+              randall ai attribution -d <sourceDir> [-o outDir] [--json] [--ext .cs,.c,.py]
+              randall ai mistakes [--emit-yaml]
+              randall ai code -d <sourceDir>          (alias of attribution)
+
+            Attribution is heuristic. Prefer /* BEGIN AI */ … /* END AI */ annotations.
+            Pair with semantic oracles for AI-mistake classes; seeds for memory bugs.
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    var rest = args.Skip(1).ToArray();
+    return sub switch
+    {
+        "attribution" or "code" or "scan" => RunAiAttribution(rest),
+        "mistakes" or "catalog" => RunAiMistakes(rest),
+        _ => Unknown($"ai {args[0]}"),
+    };
+}
+
+static int RunAiAttribution(string[] args)
+{
+    string? dir = null;
+    string? outDir = null;
+    string? extList = null;
+    var json = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "-d" or "--dir" or "--root" when i + 1 < args.Length:
+                dir = args[++i];
+                break;
+            case "-o" or "--out" when i + 1 < args.Length:
+                outDir = args[++i];
+                break;
+            case "--ext" when i + 1 < args.Length:
+                extList = args[++i];
+                break;
+            case "--json":
+                json = true;
+                break;
+            case "-h" or "--help":
+                return RunAi(["help"]);
+        }
+    }
+
+    if (string.IsNullOrWhiteSpace(dir))
+    {
+        Console.Error.WriteLine("Usage: randall ai attribution -d <sourceDir> [-o outDir]");
+        return 1;
+    }
+
+    IEnumerable<string>? exts = null;
+    if (!string.IsNullOrWhiteSpace(extList))
+        exts = extList.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    AiCodeScanDto scan;
+    try { scan = AiCodeAttribution.Scan(dir, exts); }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    var dest = outDir ?? Path.Combine(
+        CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory(), "data", "ai_code");
+    string? reportPath = null;
+    try { reportPath = AiCodeAttribution.PersistReport(scan, dest); }
+    catch (Exception ex) { Console.Error.WriteLine($"Warning: could not write report: {ex.Message}"); }
+
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(scan,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+        return 0;
+    }
+
+    Console.WriteLine($"AI code attribution — {scan.Root}");
+    Console.WriteLine(
+        $"Files {scan.FilesScanned} · AI blocks {scan.AiBlocks} · Human {scan.HumanBlocks} · Unknown {scan.UnknownBlocks}");
+    Console.WriteLine("Oracle focus: " + string.Join(", ", scan.SuggestedOracleFocus));
+    Console.WriteLine("Mistake classes: " + string.Join(", ", scan.SuggestedMistakeClasses));
+    Console.WriteLine();
+    Console.WriteLine("Top AI-attributed blocks:");
+    foreach (var b in scan.Blocks
+                 .Where(b => b.Provenance is AiCodeProvenance.LikelyAi or AiCodeProvenance.AnnotatedAi)
+                 .OrderByDescending(b => b.Confidence)
+                 .Take(15))
+    {
+        Console.WriteLine(
+            $"  [{b.Provenance} {b.Confidence:0.00}] {b.Path}:{b.StartLine}-{b.EndLine}  ({string.Join(", ", b.Signals.Take(3))})");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Top human-attributed blocks:");
+    foreach (var b in scan.Blocks
+                 .Where(b => b.Provenance is AiCodeProvenance.LikelyHuman or AiCodeProvenance.AnnotatedHuman)
+                 .Take(10))
+    {
+        Console.WriteLine($"  [{b.Provenance}] {b.Path}:{b.StartLine}-{b.EndLine}");
+    }
+
+    if (reportPath is not null)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"Report: {reportPath}");
+        Console.WriteLine($"Markdown: {Path.ChangeExtension(reportPath, ".md")}");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Next: enable oracles for suggested focus (docs/ORACLES.md) + dictionary ai_codegen_mistakes.txt");
+    return 0;
+}
+
+static int RunAiMistakes(string[] args)
+{
+    var emitYaml = args.Any(a => a is "--emit-yaml" or "--yaml");
+    if (emitYaml)
+    {
+        Console.WriteLine("""
+            # Starter snippet — merge into a project YAML (docs/AI_CODE_FUZZ.md)
+            aiCode:
+              enabled: true
+              sourceRoots:
+                - ../targets/local/myservice
+            oracles:
+              enabled: true
+              retainOnViolation: true
+              promoteExpectResponse: true
+              auth:
+                - id: no-ok-before-auth
+                  type: forbidUntil
+                  forbidResponse: "OK"
+                  untilResponse: "AUTH_OK"
+              state:
+                - id: order
+                  type: commandRequiresPrior
+                  forCommand: REQUEST
+                  priorCommand: AUTH
+                  priorResponse: AUTH_OK
+              integer:
+                - id: length
+                  type: lengthPrefix
+                  offset: 0
+                  width: 4
+                  endian: le
+                  covers: rest
+                  maxPlausible: 1048576
+              structure:
+                - id: min-hdr
+                  type: minSize
+                  bytes: 8
+                  onlyWhenAccepted: true
+              resource:
+                - id: resp-cap
+                  type: maxResponseBytes
+                  maxBytes: 1048576
+            dictionaryFile: dictionaries/ai_codegen_mistakes.txt
+            mutators:
+              - dictionary
+              - interesting
+              - boundary
+              - havoc
+              - expand
+            """);
+        return 0;
+    }
+
+    Console.WriteLine("Common AI-codegen mistake classes (docs/AI_CODE_FUZZ.md)");
+    Console.WriteLine();
+    foreach (var m in AiCodeMistakes.All)
+    {
+        Console.WriteLine($"[{m.Id}] {m.Title}");
+        Console.WriteLine($"  {m.Description}");
+        Console.WriteLine($"  Hunt with: {m.HuntWith}");
+        if (m.OracleHints.Count > 0)
+            Console.WriteLine($"  Oracle: {string.Join(", ", m.OracleHints)}");
+        if (m.SeedHints.Count > 0)
+            Console.WriteLine($"  Seeds:  {string.Join("; ", m.SeedHints)}");
+        Console.WriteLine();
+    }
+
+    Console.WriteLine("Dictionary tokens: projects/dictionaries/ai_codegen_mistakes.txt");
+    Console.WriteLine("Emit YAML starter: randall ai mistakes --emit-yaml");
+    return 0;
 }
 
 static int RunOracles(string[] args)

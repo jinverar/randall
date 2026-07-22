@@ -3,7 +3,9 @@
 Coverage answers: *did this input reach new code or crash?*  
 Oracles additionally answer: *did the target behave incorrectly while staying alive?*
 
-**Thesis:** as more targets become memory-safe, the high-value fuzzer surface shifts to **logic errors, authz/authn bugs, state-machine violations, semantic integer mistakes, structure assumptions, and resource abuse**. Classic memory-corruption hunting still matters — push those with **seed recipes / dictionaries / mutators**. Oracles carry the semantic half.
+**Thesis:** as more targets become memory-safe (and more code is **LLM-authored**), the high-value fuzzer surface shifts to **logic errors, authz/authn bugs, state-machine violations, semantic integer mistakes, structure assumptions, and resource abuse** — including **common AI-codegen mistakes**. Classic memory-corruption hunting still matters — push those with **seed recipes / dictionaries / mutators**. Oracles carry the semantic half.
+
+For AI vs human block attribution + mistake catalog: [AI_CODE_FUZZ.md](AI_CODE_FUZZ.md).
 
 Randfuzz’s oracle stack **supplements** coverage — it does not replace it. Findings feed corpus energy and `oracle_findings.jsonl`.
 

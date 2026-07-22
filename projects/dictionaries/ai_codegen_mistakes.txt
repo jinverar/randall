@@ -1,0 +1,45 @@
+# Common AI-codegen mistake tokens — use with dictionary mutator
+# Paired with semantic oracles (docs/AI_CODE_FUZZ.md · docs/ORACLES.md)
+
+# Auth / privilege
+admin
+root
+Authorization: Bearer 
+role=admin
+isAdmin=true
+
+# Structure / traversal
+../
+..\
+%2e%2e%2f
+%2e%2e\
+..%2f
+
+# Semantic integers
+hex:FFFFFFFF
+hex:00000000
+hex:7FFFFFFF
+hex:80000000
+hex:01000000
+hex:FFFFFF7F
+
+# Empty / null-ish
+null
+undefined
+None
+nil
+
+# Injection-ish fragments AI often concatenates
+;
+|
+&&
+`id`
+$(whoami)
+
+# Format / printf leftovers
+%s%s%s%s
+%n
+%x%x%x
+
+# Expansion
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA

@@ -20,6 +20,7 @@ public static class DocsCatalog
         ("TARGETS.md", "Lab targets", "Getting started"),
         ("FUZZING.md", "Fuzzing techniques & mutators", "Fuzzing"),
         ("ORACLES.md", "Hybrid semantic oracles", "Fuzzing"),
+        ("AI_CODE_FUZZ.md", "Fuzzing AI-generated programs", "Fuzzing"),
         ("STALK_LOOP.md", "Stalk loop (baseline → fuzz → learn)", "Stalk & scream"),
         ("STALKING.md", "Stalking bugs reference", "Stalk & scream"),
         ("RECORDING.md", "Recording — observation stack & bookends", "Stalk & scream"),

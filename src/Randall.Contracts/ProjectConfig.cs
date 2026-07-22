@@ -31,6 +31,11 @@ public sealed class ProjectConfig
     /// differential / metamorphic). See docs/ORACLES.md.
     /// </summary>
     public OracleConfig? Oracles { get; set; }
+    /// <summary>
+    /// Optional AI-vs-human source attribution + AI-mistake fuzz focus.
+    /// See docs/AI_CODE_FUZZ.md.
+    /// </summary>
+    public AiCodeConfig? AiCode { get; set; }
 }
 
 public sealed class SessionGraphConfig
