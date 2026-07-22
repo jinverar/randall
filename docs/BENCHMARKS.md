@@ -45,6 +45,8 @@ The script writes under `data/bench/<stamp>/`:
 
 ## Results table (fill after a run)
 
+Sample (not a ranking — short budget on a cloud box): [bench-samples/SAMPLE_SUMMARY.md](bench-samples/SAMPLE_SUMMARY.md).
+
 | Engine | Host | Budget | Exec/s (approx) | Unique crashes | Notes |
 |--------|------|--------|-----------------|----------------|-------|
 | Randfuzz (`fuzz.engine: randall`) | | | | | Structure + mutators |

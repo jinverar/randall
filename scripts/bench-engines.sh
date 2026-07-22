@@ -60,7 +60,9 @@ timeout "$BUDGET" dotnet run -c Release --project src/Randall.Cli --no-build -- 
   fuzz -c "$RAND_PROJ" >"$OUT/randall/fuzz.log" 2>&1
 RC_RAND=$?
 set -e
-RAND_CRASHES=$(find "$OUT/randall/crashes" -type f ! -name '*.jsonl' 2>/dev/null | wc -l | tr -d ' ')
+RAND_CRASHES=$(find "$OUT/randall/crashes" -type f -name '*.bin' 2>/dev/null | wc -l | tr -d ' ')
+# timeout(1) returns 124 when the wall budget expires — treat as ok for bake-off.
+if [ "$RC_RAND" = "124" ]; then RC_RAND="timeout"; fi
 
 # --- AFL++ (optional) ---
 RC_AFL="skipped"
@@ -73,6 +75,7 @@ if command -v afl-fuzz >/dev/null 2>&1; then
     >"$OUT/aflpp/fuzz.log" 2>&1
   RC_AFL=$?
   set -e
+  if [ "$RC_AFL" = "124" ]; then RC_AFL="timeout"; fi
   AFL_CRASHES=$(find "$OUT/aflpp" -path '*/crashes/*' -type f ! -name 'README*' 2>/dev/null | wc -l | tr -d ' ')
 else
   echo "==> AFL++ skipped (afl-fuzz not on PATH)"

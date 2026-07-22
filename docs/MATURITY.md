@@ -57,7 +57,7 @@ Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_A
 - Optional: import from git blame / CODEOWNERS / CI “AI authored” labels
 - Optional: eval fixture under `examples/` with scored expected attributions
 
-**Polish shipped here:** attribution markdown includes tiers + limitations; style confidence is capped so it cannot look like annotations.
+**Polish shipped here:** attribution markdown includes tiers + limitations; style confidence is capped so it cannot look like annotations. Eval fixture: `examples/ai-code-sample/` + `expected_attribution.json` (locked by xunit).
 
 ---
 
@@ -121,7 +121,8 @@ Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_A
 
 **Done when**
 - `docs/BENCHMARKS.md` + `scripts/bench-engines.sh` on Linux CI (nightly OK) — **scaffold shipped**
-- Results checked in or linked; no claim of “next-gen” without numbers
+- Sample SUMMARY checked in under `docs/bench-samples/` — **yes** (short budget; not a ranking)
+- Quiet-box results with exec/s + edges linked; no claim of “next-gen” without numbers
 
 **Positioning until then:** Randfuzz owns **structure + sessions + oracles + triage UX**; AFL++ owns **raw coverage throughput**. Use adapters when you need both.
 ---
@@ -130,9 +131,9 @@ Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_A
 
 | Gap | Why it matters | Next polish |
 |-----|----------------|-------------|
-| Automated unit/integration tests | Regressions only caught by smoke | **Expanded:** Nbss, kinds, loader, dict, matcher, oracle, cookies, doctor hints + Linux CI |
-| Linux coverage without DynamoRIO | Many labs won’t install DR | SanitizerCoverage / perf backend (roadmap note in STALKING) |
-| Web fuzz depth | Not ZAP/Burp | **Cookie jar stub shipped**; OpenAPI import deferred; richer status/body oracles next |
+| Automated unit/integration tests | Regressions only caught by smoke | **Expanded:** PatternTools, CrashStore, CorpusTracker, MagicianSpellStore, session tracker, response-class oracles |
+| Linux coverage without DynamoRIO | Many labs won’t install DR | PathCoverageSet today; SanCov / perf later (STALKING) |
+| Web fuzz depth | Not ZAP/Burp | Cookie jar + `expectResponseClass` / `forbidResponseClass`; OpenAPI deferred |
 | Oracle authoring UX | Rules are YAML-expert today | Scare Floor / UI rule builder for common auth/state patterns |
 | Attribution → seed synthesis | Plan suggests; doesn’t always mint seeds | Auto-seed from mistake channel=seed classes |
 | Phase 24 L2–L4 forge | Scapy-class surface | Keep deferred until app-PDU path is the default habit |

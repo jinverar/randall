@@ -489,11 +489,8 @@ Users should **not** need Scapy for normal Randfuzz work. Scapy remains an optio
 | ReelDeck builders on Win + Linux | ✅ | `build-reeldeck.ps1` / `.sh` · [REELDECK.md](REELDECK.md) |
 | In-repo file-text / file-framed parsers | ✅ | `targets/file-*` + builders |
 | Bake-off scaffold (BENCHMARKS + script) | ✅ | [BENCHMARKS.md](BENCHMARKS.md) — fill numbers |
-| RID-aware portable pack + RELEASE.md | ✅ | `pack --rid` · [RELEASE.md](RELEASE.md) |
-| Automated unit/integration tests | 🔄 | `tests/Randall.Tests` + Linux CI job |
-| HTTP cookie jar stub | ✅ | `fuzz.syncCookies` · [WEB_FUZZ.md](WEB_FUZZ.md) |
-| Doctor project-aware build hints | ✅ | file-text / framed / reeldeck / vulnserver |
-| Published bake-off numbers | 🔲 | Paste from `data/bench/*/SUMMARY.md` |
+| Bake-off sample SUMMARY | ✅ | [bench-samples/SAMPLE_SUMMARY.md](bench-samples/SAMPLE_SUMMARY.md) (short budget) |
+| Published quiet-box bake-off numbers | 🔲 | Longer BUDGET + edges/exec/s |
 | Signed / versioned release packaging | 🔲 | Beyond portable folder |
 | Multi-tenant / SaaS | 🔲 | Out of scope for single-box lab shape |
 | Linux coverage without DynamoRIO | 🔲 | SanCov / perf (see STALKING) |

@@ -77,10 +77,9 @@ Not a browser: no Path/Domain/Secure/SameSite expiry, no redirect following. Goo
 
 - Raw HTTP/1.x over TCP (optional TLS) — not a full browser
 - Minimal cookie jar (`fuzz.syncCookies` / http kind) — no redirect following
-- Status matching via substrings (`HTTP/1.1 200`) and oracle `response_class` (`2xx` / `4xx` / `5xx`)
+- Status matching via substrings (`HTTP/1.1 200`) and oracle invariants `expectResponseClass` / `forbidResponseClass` (`2xx` / `4xx` / `5xx` — see [ORACLES.md](ORACLES.md))
 - Point at **your** app: set `target.executable` empty if the server is already running, or use Target Runtime to start it
-- OpenAPI import not shipped yet (deferred — not a polish stub)
-## Related
+- OpenAPI import not shipped yet (deferred — not a polish stub)## Related
 
 - [BUG_HUNTER.md](BUG_HUNTER.md) — mistake catalog + channels  
 - [ORACLES.md](ORACLES.md) — judgment engine  
