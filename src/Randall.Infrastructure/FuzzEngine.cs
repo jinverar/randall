@@ -27,6 +27,9 @@ public sealed class FuzzEngine
         var coverageGuided = options.CoverageGuided || project.Fuzz.CoverageGuided;
         var maxIterations = options.MaxIterations ?? project.Fuzz.MaxIterations;
 
+        // AI bad-code hunt: arm oracles/dictionary and surface AI-attributed blocks first.
+        _ = AiCodeHuntArming.ArmForFuzz(project, yamlPath, options.Progress);
+
         var seeds = LoadAllSeeds(project, yamlPath);
         if (seeds.Count == 0)
             seeds.Add(Array.Empty<byte>());

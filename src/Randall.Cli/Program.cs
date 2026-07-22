@@ -90,6 +90,7 @@ static void PrintHelp()
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
           randall oracles [-p name] [--json]   List semantic oracle findings
           randall ai attribution -d <src>  AI vs human code blocks + mistake focus
+          randall ai hunt -d <src> [-c yaml --arm]  Hunt bugs from AI bad code
           randall ai mistakes              Common AI-codegen mistake catalog
           randall labs                     List lab servers (running / stopped)
           randall labs start|stop <id>     Start/stop one lab (127.0.0.1)
@@ -138,11 +139,13 @@ static int RunAi(string[] args)
 
             Usage:
               randall ai attribution -d <sourceDir> [-o outDir] [--json] [--ext .cs,.c,.py]
+              randall ai hunt -d <sourceDir> [-c project.yaml] [-o outDir] [--arm]
+                    Scan → prioritize AI blocks → arm oracles/dict for AI bad-code bugs
               randall ai mistakes [--emit-yaml]
               randall ai code -d <sourceDir>          (alias of attribution)
 
             Attribution is heuristic. Prefer /* BEGIN AI */ … /* END AI */ annotations.
-            Pair with semantic oracles for AI-mistake classes; seeds for memory bugs.
+            Hunt arms semantic oracles for common AI mistakes; seeds still cover memory bugs.
             """);
         return 0;
     }
@@ -152,9 +155,195 @@ static int RunAi(string[] args)
     return sub switch
     {
         "attribution" or "code" or "scan" => RunAiAttribution(rest),
+        "hunt" or "badcode" or "bugs" => RunAiHunt(rest),
         "mistakes" or "catalog" => RunAiMistakes(rest),
         _ => Unknown($"ai {args[0]}"),
     };
+}
+
+static int RunAiHunt(string[] args)
+{
+    string? dir = null;
+    string? config = null;
+    string? outDir = null;
+    var arm = false;
+    var json = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "-d" or "--dir" or "--root" when i + 1 < args.Length:
+                dir = args[++i];
+                break;
+            case "-c" or "--config" when i + 1 < args.Length:
+                config = args[++i];
+                break;
+            case "-o" or "--out" when i + 1 < args.Length:
+                outDir = args[++i];
+                break;
+            case "--arm":
+                arm = true;
+                break;
+            case "--json":
+                json = true;
+                break;
+            case "-h" or "--help":
+                return RunAi(["help"]);
+        }
+    }
+
+    if (string.IsNullOrWhiteSpace(dir))
+    {
+        Console.Error.WriteLine("Usage: randall ai hunt -d <sourceDir> [-c project.yaml] [--arm]");
+        return 1;
+    }
+
+    AiCodeScanDto scan;
+    try { scan = AiCodeAttribution.Scan(dir); }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    var plan = AiCodeHunt.BuildPlan(scan);
+    var dest = outDir ?? Path.Combine(
+        CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory(), "data", "ai_code");
+    Directory.CreateDirectory(dest);
+    try
+    {
+        AiCodeAttribution.PersistReport(scan, dest);
+        File.WriteAllText(Path.Combine(dest, "hunt_plan.md"), AiCodeHunt.RenderPlanMarkdown(plan));
+        File.WriteAllText(Path.Combine(dest, "hunt_arm_snippet.yaml"), AiCodeHunt.RenderArmedYamlSnippet());
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Warning: could not write hunt artifacts: {ex.Message}");
+    }
+
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(plan,
+            new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    }
+    else
+    {
+        Console.WriteLine("AI bad-code hunt");
+        Console.WriteLine(plan.Summary);
+        Console.WriteLine($"Mistake classes: {string.Join(", ", plan.MistakeClasses)}");
+        Console.WriteLine($"Oracle focus: {string.Join(", ", plan.OracleFocus)}");
+        Console.WriteLine($"Dictionary: {plan.DictionaryHint}");
+        Console.WriteLine();
+        Console.WriteLine("Priority AI-generated code blocks to fuzz against:");
+        foreach (var b in plan.PriorityAiBlocks.Take(20))
+        {
+            Console.WriteLine($"  [{b.Confidence:0.00}] {b.Path}:{b.StartLine}-{b.EndLine}");
+            var preview = b.Preview.Replace('\r', ' ').Replace('\n', ' ');
+            if (preview.Length > 100)
+                preview = preview[..100] + "…";
+            Console.WriteLine($"           {preview}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Plan: {Path.Combine(dest, "hunt_plan.md")}");
+        Console.WriteLine($"Snippet: {Path.Combine(dest, "hunt_arm_snippet.yaml")}");
+    }
+
+    if (arm)
+    {
+        if (string.IsNullOrWhiteSpace(config))
+        {
+            Console.Error.WriteLine("--arm requires -c <project.yaml>");
+            return 1;
+        }
+
+        var yamlPath = Path.GetFullPath(config);
+        ProjectConfig project;
+        try { project = ProjectLoader.Load(yamlPath); }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+
+        // Ensure source root is recorded for fuzz-start scans.
+        project.AiCode ??= new AiCodeConfig();
+        var relRoot = Path.GetRelativePath(ProjectLoader.ResolveProjectRoot(yamlPath), Path.GetFullPath(dir))
+            .Replace('\\', '/');
+        if (!project.AiCode.SourceRoots.Any(r => r.Equals(relRoot, StringComparison.OrdinalIgnoreCase) ||
+                                                 r.Equals(dir, StringComparison.OrdinalIgnoreCase)))
+            project.AiCode.SourceRoots.Add(relRoot.StartsWith("..") || relRoot.Contains(':') ? Path.GetFullPath(dir) : relRoot);
+
+        var note = AiCodeHunt.ArmProject(project, yamlPath, plan);
+        try
+        {
+            AppendHuntArmToYaml(yamlPath, project.AiCode.SourceRoots.Last(), project.DictionaryFile);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Warning: could not patch YAML ({ex.Message}). In-memory arm still applied for this process only.");
+            Console.Error.WriteLine("Merge data/ai_code/hunt_arm_snippet.yaml manually, then fuzz.");
+            return 1;
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Armed project {yamlPath}");
+        Console.WriteLine($"  {note}");
+        Console.WriteLine($"Next: randall fuzz -c {config}");
+    }
+    else
+    {
+        Console.WriteLine();
+        Console.WriteLine("Arm a project: randall ai hunt -d <src> -c projects/foo.yaml --arm");
+        Console.WriteLine("Then:            randall fuzz -c projects/foo.yaml");
+    }
+
+    return 0;
+}
+
+static void AppendHuntArmToYaml(string yamlPath, string sourceRoot, string? dictionaryFile)
+{
+    var text = File.ReadAllText(yamlPath);
+    if (!text.Contains("aiCode:", StringComparison.Ordinal))
+    {
+        text = text.TrimEnd() + Environment.NewLine + """
+            aiCode:
+              enabled: true
+              scanOnFuzzStart: true
+              autoArmOracles: true
+              autoArmDictionary: true
+              sourceRoots:
+            """ + Environment.NewLine +
+            $"    - {sourceRoot}" + Environment.NewLine;
+    }
+    else if (!text.Contains(sourceRoot, StringComparison.OrdinalIgnoreCase))
+    {
+        // Best-effort: append root under aiCode.sourceRoots if block exists.
+        var idx = text.IndexOf("sourceRoots:", StringComparison.Ordinal);
+        if (idx >= 0)
+        {
+            var lineEnd = text.IndexOf('\n', idx);
+            if (lineEnd < 0) lineEnd = text.Length;
+            text = text.Insert(lineEnd + 1, $"    - {sourceRoot}{Environment.NewLine}");
+        }
+    }
+
+    if (!text.Contains("ai_codegen_mistakes", StringComparison.OrdinalIgnoreCase))
+    {
+        var dict = dictionaryFile ?? "dictionaries/ai_codegen_mistakes.txt";
+        if (!text.Contains("dictionaryFile:", StringComparison.Ordinal))
+            text = text.TrimEnd() + Environment.NewLine + $"dictionaryFile: {dict}" + Environment.NewLine;
+    }
+
+    if (!text.Contains("oracles:", StringComparison.Ordinal))
+    {
+        text = text.TrimEnd() + Environment.NewLine + """
+            oracles:
+              enabled: true
+            """ + Environment.NewLine;
+    }
+
+    File.WriteAllText(yamlPath, text);
 }
 
 static int RunAiAttribution(string[] args)

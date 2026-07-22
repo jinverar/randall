@@ -1,30 +1,45 @@
 # Fuzzing AI-generated programs
 
-As more code is LLM-authored, fuzzing should **attribute** likely AI vs human regions, then hunt **common AI mistakes** with semantic oracles — while seed recipes still cover classic memory bugs.
+As more code is LLM-authored, Randfuzz **hunts bugs from AI bad code**: attribute AI vs human regions, map common LLM mistake classes to **semantic oracles**, and fuzz with an AI-mistake dictionary — while seeds/mutators still chase classic memory bugs.
 
 > Attribution is **heuristic**, not courtroom evidence. Prefer explicit annotations in your tree.
+
+## One-command hunt
+
+```bash
+# 1) Scan → prioritize AI blocks → mistake classes → oracle focus
+randall ai hunt -d examples/ai-code-sample
+
+# 2) Arm a project (writes aiCode + oracles/dict hooks into the YAML)
+randall ai hunt -d examples/ai-code-sample -c projects/ai-badcode-hunt.yaml --arm
+
+# 3) Fuzz — on start, aiCode auto-arms the mistake oracle pack + dictionary
+randall fuzz -c projects/ai-badcode-hunt.yaml
+
+# 4) Read semantic findings (not only crashes)
+randall oracles -p ai-badcode-hunt
+```
+
+Demo profile: `projects/ai-badcode-hunt.yaml` (vulnrpc-shaped TCP lab + AI sample sources).
+
+Aliases: `randall ai badcode`, `randall ai bugs`.
 
 ## Workflow
 
 ```text
 1) Annotate or scan source
-      randall ai attribution -d path/to/src
+      randall ai hunt -d path/to/src
         ↓
-2) Review AI vs human blocks (markdown + JSON report)
+2) Review priority AI blocks (hunt_plan.md)
         ↓
-3) Enable semantic oracles aimed at AI-mistake classes
-      auth · state · integer · structure · resource
+3) Arm project (--arm) or enable aiCode in YAML
         ↓
-4) Add dictionary: dictionaries/ai_codegen_mistakes.txt
+4) Fuzz — oracles catch logic bugs; seeds still hunt memory
         ↓
-5) Fuzz with Randfuzz engine (Linux/Windows)
-        ↓
-6) Triage oracle findings + crashes
+5) Triage oracle findings + crashes
 ```
 
 ## Annotate for high confidence
-
-In source:
 
 ```c
 /* BEGIN AI */
@@ -41,39 +56,40 @@ Also recognized: `AI-GENERATED`, `HUMAN-WRITTEN`, Copilot/ChatGPT/Claude/Cursor 
 ## CLI
 
 ```bash
-# Scan a tree — prints summary + writes report
+# Full hunt plan (attribution + mistake classes + arm snippet)
+randall ai hunt -d ./src -o data/ai_code
+randall ai hunt -d ./src -c projects/foo.yaml --arm
+randall ai hunt -d ./src --json
+
+# Attribution only
 randall ai attribution -d ./src -o data/ai_code
 
-# JSON only
-randall ai attribution -d ./src --json
-
-# Catalog of AI mistake classes ↔ oracle/seed hints
+# Mistake catalog ↔ oracle/seed hints
 randall ai mistakes
-
-# Emit a starter oracle+dictionary snippet for a project
 randall ai mistakes --emit-yaml
 ```
 
-Reports land under `-o` (default `data/ai_code/`):
-- `ai_code_*.json` — full block list with previews
-- `ai_code_*.md` — human-readable AI vs human tables + code previews
+Artifacts under `-o` (default `data/ai_code/`):
 
-## Project hook (optional)
+- `ai_code_*.json` / `ai_code_*.md` — attribution
+- `hunt_plan.md` — priority AI blocks + mistake/oracle focus
+- `hunt_arm_snippet.yaml` — paste into a project profile
+
+## Project hook (`aiCode`)
 
 ```yaml
 aiCode:
   enabled: true
   sourceRoots:
-    - ../targets/local/myservice
+    - ../examples/ai-code-sample
   persistReport: true
+  scanOnFuzzStart: true      # re-scan + print AI blocks on fuzz start
+  autoArmOracles: true       # merge AI mistake oracle pack if sections empty
+  autoArmDictionary: true    # ensure dictionary mutator + AI tokens
 
 oracles:
   enabled: true
-  auth: [ … ]
-  state: [ … ]
-  integer: [ … ]
-  structure: [ … ]
-  resource: [ … ]
+  # auth/state/integer/structure/resource filled by autoArmOracles when empty
 
 dictionaryFile: dictionaries/ai_codegen_mistakes.txt
 mutators:
@@ -83,6 +99,12 @@ mutators:
   - havoc
 ```
 
+When `aiCode.enabled` is true, `randall fuzz` calls the hunt arming path before mutators load:
+
+1. Merge the **AI oracle pack** (auth skip, state order, length lies, structure trust, resource caps)
+2. Ensure **AI mistake dictionary** + recommended mutators
+3. Scan `sourceRoots`, print priority AI blocks, persist `corpus/_ai_code/hunt_plan.md`
+
 `randall doctor` notes when `aiCode` is enabled.
 
 ## Division of labour
@@ -90,8 +112,8 @@ mutators:
 | Bug class | Prefer |
 |-----------|--------|
 | Auth skip, state order, length lies, structure trust, resource abuse, swallowed errors | **Oracles** ([ORACLES.md](ORACLES.md)) |
-| Buffer overflows, UAF, classic mem corruption | **Seeds / mutators / ASan** ([AI_SEED.md](AI_SEED.md) if present) |
-| Which files to stress first | **Attribution report** (AI-attributed blocks) |
+| Buffer overflows, UAF, classic mem corruption | **Seeds / mutators / ASan** |
+| Which files to stress first | **Hunt plan** (AI-attributed blocks) |
 
 ## Common AI mistakes we target
 
@@ -108,3 +130,10 @@ mutators:
 | `mem-classic` | Off-by-one in C helpers | seeds + ASan |
 
 See `randall ai mistakes` for the full catalog.
+
+## Related
+
+- [ORACLES.md](ORACLES.md) — semantic oracle engine
+- `projects/dictionaries/ai_codegen_mistakes.txt`
+- `examples/ai-code-sample/handler.c`
+- `projects/ai-badcode-hunt.yaml` — end-to-end demo profile

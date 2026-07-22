@@ -69,7 +69,7 @@ public static class RandallRoadmap
             new("p8-flows", "Stateful TCP session flows", true, null),
             new("p8-clusters", "Crash clustering for triage", true, "/api/crashes/clusters"),
             new("p8-oracles", "Hybrid semantic oracles (runtime/invariant/diff/metamorphic)", true, "docs/ORACLES.md"),
-            new("p8-ai-code", "AI vs human attribution + AI-codegen mistake catalog", true, "docs/AI_CODE_FUZZ.md"),
+            new("p8-ai-code", "AI bad-code hunt (attribution → oracles/dict → fuzz)", true, "docs/AI_CODE_FUZZ.md"),
         ]),
         new(9, "Lab readiness", "complete",
         [

@@ -1,0 +1,64 @@
+# Hunt bugs from AI-authored bad code.
+# Workflow: randall ai hunt -d examples/ai-code-sample -c projects/ai-badcode-hunt.yaml --arm
+#           randall fuzz -c projects/ai-badcode-hunt.yaml
+#           randall oracles -p ai-badcode-hunt
+# Docs: docs/AI_CODE_FUZZ.md
+name: ai-badcode-hunt
+description: Hunt common AI-codegen bugs — attribution → mistake oracles → fuzz (docs/AI_CODE_FUZZ.md)
+kind: tcp
+target:
+  # Demo uses VulnRpc (AI-shaped bind→request). Point at your AI-written service binary.
+  executable: ../targets/vulnrpc/randall-vulnrpc.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 1355
+  receiveTimeoutMs: 1500
+sessionCommands:
+  - name: BIND
+    model: protocols/dce_bind.yaml
+    readBanner: false
+    expectResponse: BIND_ACK
+  - name: REQUEST
+    model: protocols/dce_request.yaml
+    readBanner: false
+    expectResponse: RPC_OK
+sessionFlows:
+  - name: bind_request
+    steps: [BIND, REQUEST]
+    mutateStep: last
+sessionGraph:
+  start: BIND
+  mutate: REQUEST
+  edges:
+    - { from: BIND, when: "BIND_ACK", to: REQUEST }
+aiCode:
+  enabled: true
+  scanOnFuzzStart: true
+  autoArmOracles: true
+  autoArmDictionary: true
+  persistReport: true
+  sourceRoots:
+    - ../examples/ai-code-sample
+oracles:
+  enabled: true
+  # Empty sections are filled by the AI mistake pack on fuzz start (aiCode.autoArmOracles).
+fuzz:
+  maxIterations: 800
+  sessionFlowBias: 0.7
+  sessionGraphBias: 0.3
+  corpusDir: ../data/corpus/ai-badcode-hunt
+  crashesDir: ../data/crashes/ai-badcode-hunt
+dictionaryFile: dictionaries/ai_codegen_mistakes.txt
+seeds:
+  - seeds/dce_request_overflow.bin
+mutators:
+  - dictionary
+  - interesting
+  - boundary
+  - havoc
+  - expand
+  - insert
+  - arith
