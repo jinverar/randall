@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Randfuzz promo trailer</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #0b0d10;
+      color: #e8eaed;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      padding: 1rem;
+      box-sizing: border-box;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      opacity: 0.9;
+    }
+    video {
+      width: min(1280px, 100%);
+      max-height: calc(100vh - 4rem);
+      background: #000;
+      border-radius: 8px;
+    }
+    p {
+      margin: 0;
+      font-size: 0.85rem;
+      opacity: 0.65;
+    }
+  </style>
+</head>
+<body>
+  <h1>Randfuzz — promo trailer</h1>
+  <video
+    id="promo"
+    controls
+    autoplay
+    playsinline
+    preload="auto"
+    poster="randfuzz-commercial-poster.png"
+    src="randfuzz-commercial-web.mp4"
+  >
+    Your browser cannot play this video.
+    <a href="randfuzz-commercial-web.mp4">Download the trailer</a>
+  </video>
+  <p>Bug Stalker CFG · scream canisters · stalk map</p>
+  <script>
+    // Click-through from README counts as a user gesture in most browsers.
+    // If autoplay with audio is blocked, start muted then unmute on first tap.
+    const v = document.getElementById('promo');
+    v.play().catch(() => {
+      v.muted = true;
+      v.play().then(() => {
+        const unmute = () => { v.muted = false; };
+        v.addEventListener('click', unmute, { once: true });
+        document.addEventListener('keydown', unmute, { once: true });
+      }).catch(() => {});
+    });
+  </script>
+</body>
+</html>

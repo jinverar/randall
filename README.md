@@ -13,15 +13,15 @@
 I don't just throw bytes at parsers and hope. I **camouflage** valid-looking traffic, **sneak** into code paths nobody's mapped yet, and **scream** when something breaks — dump and all. Randfuzz pulls the good stuff from the giants before us ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei pStalker](https://github.com/OpenRCE/paimei), [DynamoRIO](https://dynamorio.org/)) and runs it as **one stack** — CLI, web UI, portable deploy. Respect to the legends; I'm just the chameleon who wired it together.
 
 <div align="center">
-  <a href="docs/assets/promo/randfuzz-commercial.mp4">
+  <a href="https://cdn.jsdelivr.net/gh/jinverar/randall@main/docs/assets/promo/watch.html">
     <img
-      alt="Randfuzz promo trailer — Bug Stalker CFG, scream canisters, stalk map"
-      src="docs/assets/promo/randfuzz-commercial-poster.png"
+      alt="Randfuzz promo trailer — autoplaying preview (click for full trailer with audio)"
+      src="docs/assets/promo/randfuzz-commercial-preview.webp"
       width="720"
     />
   </a>
   <br />
-  <em>▶ Promo trailer (~80s) — click the image to play · Bug Stalker CFG · scream canisters · stalk map</em>
+  <em>Preview autoplays above · <a href="https://cdn.jsdelivr.net/gh/jinverar/randall@main/docs/assets/promo/watch.html"><strong>▶ Play full trailer with audio (~80s)</strong></a></em>
 </div>
 
 **Randfuzz** is the product. **Randall** is the mascot — named after **Randall Boggs** (*Monsters, Inc.*): master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. Yeah, that's the vibe:
