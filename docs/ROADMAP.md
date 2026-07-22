@@ -490,6 +490,12 @@ Users should **not** need Scapy for normal Randfuzz work. Scapy remains an optio
 | In-repo file-text / file-framed parsers | ✅ | `targets/file-*` + builders |
 | Bake-off scaffold (BENCHMARKS + script) | ✅ | [BENCHMARKS.md](BENCHMARKS.md) — fill numbers |
 | Bake-off sample SUMMARY | ✅ | [bench-samples/SAMPLE_SUMMARY.md](bench-samples/SAMPLE_SUMMARY.md) (short budget) |
+| RID-aware portable pack + RELEASE.md | ✅ | `pack --rid` · [RELEASE.md](RELEASE.md) |
+| Attribution eval fixture | ✅ | `examples/ai-code-sample` |
+| Oracle expect/forbid response class | ✅ | [ORACLES.md](ORACLES.md) |
+| HTTP cookie jar stub | ✅ | `fuzz.syncCookies` · [WEB_FUZZ.md](WEB_FUZZ.md) |
+| Doctor project-aware build hints | ✅ | file-text / framed / reeldeck / vulnserver |
+| Automated unit/integration tests | 🔄 | `tests/Randall.Tests` + Linux CI |
 | Published quiet-box bake-off numbers | 🔲 | Longer BUDGET + edges/exec/s |
 | Signed / versioned release packaging | 🔲 | Beyond portable folder |
 | Multi-tenant / SaaS | 🔲 | Out of scope for single-box lab shape |
@@ -500,10 +506,12 @@ Users should **not** need Scapy for normal Randfuzz work. Scapy remains an optio
 1. Honesty in-product (this phase’s ✅ rows)
 2. LAN token required ✅
 3. Out-of-box file demos ✅
-4. Bake-off scaffold ✅ → publish numbers
-5. Grow automated tests
+4. Bake-off scaffold ✅ → publish quiet-box numbers
+5. Grow automated tests 🔄
 6. Release packaging cadence (tags + zips)
-7. **Do not** port AFL++/forksrv to Windows — adapters stay Linux---
+7. **Do not** port AFL++/forksrv to Windows — adapters stay Linux
+
+---
 
 ### Earlier phases — priority context
 
