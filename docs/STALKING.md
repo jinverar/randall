@@ -56,3 +56,28 @@ On Windows (or Linux with DynamoRIO), stalking uses drcov edge coverage. Install
 DynamoRIO the backend resolves to **corpus‑novelty** feedback (frontier growth), so `corpus+` is the
 signal and `edges` is 0. Roadmap: a native Linux coverage backend (SanitizerCoverage / perf) to
 populate `edges` without DynamoRIO.
+
+## Missed blocks (Dynapstalker loop)
+
+You cannot find bugs in code you do not execute. After baseline + fuzz layers, ask what is still
+dark — and *why* — then revise seeds, dictionaries, and mutators.
+
+```bash
+# Relative gaps (baseline-only, sparse modules, frontier holes, session forks)
+randall stalk missed -p vulnserver
+
+# Optional: import a full basic-block inventory for true never-hit (IDA/Ghidra export or drcov)
+randall stalk inventory -p vulnserver --import path/to/blocks.txt
+randall stalk missed -p vulnserver
+```
+
+| Mode | Meaning |
+|------|---------|
+| **relative** | No inventory — gaps from layer compare + session graph |
+| **inventory** | `inventory.blocks.txt` present — never-hit = inventory − hit union |
+
+Categories include **never-hit**, **baseline-only**, **module-sparse**, **frontier-gap**, and
+**session-unexplored**. Each row carries a short *why missed* note plus ranked fuzz ideas
+(CLI/UI hints). UI: **Stalking bugs → Missed blocks**. API: `GET /api/stalking/{project}/missed`.
+
+Inventory line format matches corpus edges: `moduleId:0xstart:size`.

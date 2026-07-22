@@ -1846,6 +1846,63 @@ async function refreshStalkingWorkspace() {
 
   // Drag-to-pan the Stalking bugs block chip map (scrollable for large unions)
   enableDragScroll(graphEl);
+
+  await refreshStalkingMissed(project);
+}
+
+async function refreshStalkingMissed(project) {
+  const meta = document.getElementById('stalking-missed-meta');
+  const hint = document.getElementById('stalking-missed-hint');
+  const catsEl = document.getElementById('stalking-missed-categories');
+  const ideasEl = document.getElementById('stalking-missed-ideas');
+  const blocksEl = document.getElementById('stalking-missed-blocks');
+  if (!meta || !blocksEl) return;
+  try {
+    const report = await api.get(`/api/stalking/${encodeURIComponent(project)}/missed?limit=60`);
+    meta.textContent = `— ${report.mode} · missed ${report.missedCount} · hit ${report.hitCount}` +
+      (report.inventoryCount ? ` · inventory ${report.inventoryCount}` : '');
+    hint.textContent = report.workflowHint || report.summary || '';
+    catsEl.innerHTML = (report.categories || []).length
+      ? (report.categories || []).map((c) => `
+          <span class="stalk-missed-cat" title="${escapeAttr(c.description || '')}">
+            <strong>${c.count}</strong> ${escapeAttr(c.label || c.id)}
+          </span>`).join('')
+      : '<span class="hex">No gap categories yet.</span>';
+
+    const ideas = report.topIdeas || [];
+    ideasEl.innerHTML = ideas.length
+      ? `<table><thead><tr><th>Pri</th><th>Idea</th><th>Detail</th><th>Where</th></tr></thead><tbody>
+          ${ideas.map((idea) => `<tr>
+            <td><span class="badge pri-${idea.priority || 'low'}">${idea.priority || ''}</span></td>
+            <td><strong>${escapeAttr(idea.title || '')}</strong></td>
+            <td>${escapeAttr(idea.detail || '')}</td>
+            <td class="hex">${escapeAttr(idea.uiHint || idea.cliHint || '—')}</td>
+          </tr>`).join('')}
+        </tbody></table>`
+      : '<p class="empty">No fuzz ideas yet — record baseline + fuzzed layers.</p>';
+
+    const blocks = report.blocks || [];
+    blocksEl.innerHTML = blocks.length
+      ? `<table><thead><tr><th>Category</th><th>Module</th><th>Address</th><th>Why missed</th><th>Best tip</th></tr></thead><tbody>
+          ${blocks.map((b) => {
+            const tip = (b.ideas && b.ideas[0]) ? b.ideas[0].title : '—';
+            return `<tr>
+              <td><span class="badge miss-${b.category || ''}">${escapeAttr(b.category || '')}</span></td>
+              <td>${escapeAttr(b.module || '')}</td>
+              <td><code>${escapeAttr(b.address || '')}</code></td>
+              <td>${escapeAttr(b.whyMissed || '')}</td>
+              <td>${escapeAttr(tip)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody></table>`
+      : `<p class="empty">${escapeAttr(report.summary || 'No missed blocks to show.')}</p>`;
+  } catch (err) {
+    meta.textContent = '';
+    hint.textContent = err.message || 'Failed to load missed blocks';
+    catsEl.innerHTML = '';
+    ideasEl.innerHTML = '';
+    blocksEl.innerHTML = `<p class="empty">${escapeAttr(err.message || 'error')}</p>`;
+  }
 }
 
 function enableDragScroll(el) {
@@ -1933,6 +1990,23 @@ async function exportStalking(format) {
 document.getElementById('stalking-export-idc')?.addEventListener('click', () => exportStalking('idc'));
 document.getElementById('stalking-export-ghidra')?.addEventListener('click', () => exportStalking('ghidra'));
 document.getElementById('stalking-export-edges')?.addEventListener('click', () => exportStalking('edges'));
+
+document.getElementById('stalking-inventory-import')?.addEventListener('click', async () => {
+  const project = document.getElementById('stalking-project').value;
+  const path = document.getElementById('stalking-inventory-path')?.value?.trim();
+  const out = document.getElementById('stalking-export-result');
+  if (!project || !path) {
+    if (out) out.textContent = 'Set a lab path to a blocks.txt or drcov log first.';
+    return;
+  }
+  try {
+    const result = await api.post(`/api/stalking/${encodeURIComponent(project)}/inventory`, { path });
+    if (out) out.textContent = `Inventory: ${result.blockCount} blocks → ${result.inventoryPath}`;
+    await refreshStalkingMissed(project);
+  } catch (err) {
+    if (out) out.textContent = err.message;
+  }
+});
 
 document.querySelectorAll('[data-stalk-action]').forEach((btn) => {
   btn.addEventListener('click', async () => {

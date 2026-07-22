@@ -86,6 +86,8 @@ static void PrintHelp()
           randall memory --pid N            Live VirtualQueryEx sample
           randall stalk layers -p <project>              List stalk layers
           randall stalk compare -p <project> [layerIds…] Diff layered coverage
+          randall stalk missed -p <project> [--limit N]  Missed blocks + fuzz ideas
+          randall stalk inventory -p <project> --import <file>  BB inventory for never-hit
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall stalk from-crash -i <crash-guid> [--tag crash]
           randall scream watch -p <pid> [-o dumpsDir]   Built-in exception dump watcher
@@ -2135,6 +2137,8 @@ static int RunStalk(string[] args)
             Usage:
               randall stalk layers -p <project>
               randall stalk compare -p <project> [layerId…]
+              randall stalk missed -p <project> [--limit 40]
+              randall stalk inventory -p <project> --import <blocks.txt|drcov.log>
               randall stalk export -p <project> --format idc|ghidra|edges [-o dir] [layerId…]
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
               randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
@@ -2148,11 +2152,109 @@ static int RunStalk(string[] args)
     {
         "layers" => StalkLayers(rest),
         "compare" => StalkCompare(rest),
+        "missed" => StalkMissed(rest),
+        "inventory" => StalkInventory(rest),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
         "bench" => StalkBench(rest),
         _ => Unknown($"stalk {args[0]}"),
     };
+}
+
+static int StalkMissed(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    var limit = 40;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--limit" or "-n" && i + 1 < args.Length && int.TryParse(args[++i], out var n))
+            limit = n;
+    }
+
+    var report = MissedBlockAnalyzer.Analyze(project, limit: limit);
+    Console.WriteLine($"{report.Project}: missed blocks [{report.Mode}]");
+    Console.WriteLine($"  {report.Summary}");
+    Console.WriteLine($"  hit={report.HitCount} inventory={report.InventoryCount} missed={report.MissedCount}");
+    Console.WriteLine($"  {report.WorkflowHint}");
+    Console.WriteLine();
+
+    if (report.Categories.Count > 0)
+    {
+        Console.WriteLine("Categories:");
+        foreach (var c in report.Categories)
+            Console.WriteLine($"  {c.Count,4}  {c.Label,-22}  {c.Description}");
+        Console.WriteLine();
+    }
+
+    if (report.TopIdeas.Count > 0)
+    {
+        Console.WriteLine("Top fuzz ideas:");
+        foreach (var idea in report.TopIdeas.Take(8))
+        {
+            Console.WriteLine($"  [{idea.Priority}] {idea.Title}");
+            Console.WriteLine($"         {idea.Detail}");
+            if (!string.IsNullOrWhiteSpace(idea.CliHint))
+                Console.WriteLine($"         CLI: {idea.CliHint}");
+            if (!string.IsNullOrWhiteSpace(idea.UiHint))
+                Console.WriteLine($"         UI:  {idea.UiHint}");
+        }
+        Console.WriteLine();
+    }
+
+    if (report.Blocks.Count == 0)
+    {
+        Console.WriteLine("No missed-block findings yet.");
+        return 0;
+    }
+
+    Console.WriteLine("Missed / gap samples:");
+    foreach (var b in report.Blocks.Take(limit))
+    {
+        Console.WriteLine($"  [{b.Category}] {b.Module}:{b.Address}  (score {b.PriorityScore})");
+        Console.WriteLine($"         why: {b.WhyMissed}");
+        var tip = b.Ideas.FirstOrDefault();
+        if (tip is not null)
+            Console.WriteLine($"         tip: {tip.Title}");
+    }
+
+    return 0;
+}
+
+static int StalkInventory(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    string? importPath = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--import" or "-i" && i + 1 < args.Length)
+            importPath = args[++i];
+    }
+
+    if (importPath is null)
+    {
+        Console.Error.WriteLine("Usage: randall stalk inventory -p <project> --import <blocks.txt|drcov.log>");
+        Console.Error.WriteLine("  blocks.txt lines: moduleId:0xstart:size   (same as edges.txt / drcov keys)");
+        return 1;
+    }
+
+    try
+    {
+        var result = MissedBlockAnalyzer.ImportInventory(project, Path.GetFullPath(importPath));
+        Console.WriteLine($"Inventory imported: {result.BlockCount} blocks → {result.InventoryPath}");
+        Console.WriteLine("Next: randall stalk missed -p " + project);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
 }
 
 static int StalkBench(string[] args)
