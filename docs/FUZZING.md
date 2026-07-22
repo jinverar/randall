@@ -98,6 +98,19 @@ oracles:
 Seed recipes + mutators still own most memory-corruption hunting. See [ORACLES.md](ORACLES.md) · [AI_SEED.md](AI_SEED.md).  
 Findings: `randall oracles -p <project>`.
 
+## External engines (AFL++ / honggfuzz)
+
+For market-grade coverage throughput on an authorized file/harness target:
+
+```yaml
+fuzz:
+  engine: aflpp          # or honggfuzz | randall (default)
+  engineTimeoutSec: 3600
+  engineExtraArgs: ""    # e.g. -Q for QEMU mode
+```
+
+See [ENGINE_ADAPTERS.md](ENGINE_ADAPTERS.md). Crashes sync into the usual scream-canister paths.
+
 ## Research references
 
 - **AFL++** — havoc stages, splice, power schedules, dictionaries ([github.com/AFLplusplus/AFLplusplus](https://github.com/AFLplusplus/AFLplusplus))

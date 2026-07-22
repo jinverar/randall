@@ -91,6 +91,42 @@ public static class LabDoctor
                 "oracles disabled — set oracles.enabled: true for semantic detection (docs/ORACLES.md)");
         }
 
+        // Optional external engines (AFL++ / honggfuzz) — fail preflight when selected but missing.
+        var engineId = ExternalEngineCampaign.Normalize(project.Fuzz.Engine);
+        if (ExternalEngineCampaign.IsExternal(engineId))
+        {
+            if (!OperatingSystem.IsLinux())
+            {
+                Add("fuzz.engine", "fail",
+                    $"fuzz.engine: {engineId} requires Linux (use randall on Windows, or run the campaign on a Linux VM)");
+            }
+            else if (!project.Kind.Equals("file", StringComparison.OrdinalIgnoreCase))
+            {
+                Add("fuzz.engine", "fail",
+                    $"fuzz.engine: {engineId} requires kind: file (harness with @@) — see docs/ENGINE_ADAPTERS.md");
+            }
+            else
+            {
+                var tool = engineId == ExternalEngineCampaign.EngineAflpp
+                    ? LinuxToolPaths.OptionalEngines.First(t => t.Id == "linux:afl")
+                    : LinuxToolPaths.OptionalEngines.First(t => t.Id == "linux:honggfuzz");
+                var found = LinuxToolPaths.Find(tool);
+                Add("fuzz.engine", found is not null ? "ok" : "fail",
+                    found is not null
+                        ? $"{engineId} → {found}"
+                        : $"{tool.Command} not found — {tool.InstallHint} (required for fuzz.engine: {engineId})");
+            }
+        }
+        else if (!engineId.Equals(ExternalEngineCampaign.EngineRandall, StringComparison.Ordinal))
+        {
+            Add("fuzz.engine", "fail",
+                $"Unknown fuzz.engine '{project.Fuzz.Engine}' — use randall | aflpp | honggfuzz");
+        }
+        else
+        {
+            Add("fuzz.engine", "ok", "randall (own generation + stalk engine)");
+        }
+
         foreach (var seed in project.Seeds)
         {
             try

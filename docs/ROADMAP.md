@@ -310,6 +310,7 @@ dotnet run --project src/Randall.Server
 | **In-process + out-of-process execution modes** | ✅ `fuzz.executionMode` · managed `IInProcessHarness` · native worker (`LLVMFuzzerTestOneInput`) — [IN_PROCESS.md](IN_PROCESS.md) |
 | **Persistent mode + fork server (warm worker)** | ✅ `fuzz.persistent` / `fuzz.forkServer` / `harnessStrict` — warm, cold, recycle matrix; harness perf signals — [PERSISTENT.md](PERSISTENT.md) · [HARNESS_DESIGN.md](HARNESS_DESIGN.md) |
 | AFL `FORKSRV_FD` native shim (Linux) | ✅ classic 198/199 via `AflForkServer` + `projects/forksrv-demo.yaml` (AFL++ feature negotiation still optional) |
+| **AFL++ / honggfuzz campaign adapters** | ✅ `fuzz.engine: aflpp\|honggfuzz` → real `afl-fuzz`/`honggfuzz` run + crash/corpus sync — [ENGINE_ADAPTERS.md](ENGINE_ADAPTERS.md) |
 
 ## Phase 17 — Pentest stalker + case builder 🔄
 
