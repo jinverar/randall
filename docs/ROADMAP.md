@@ -160,8 +160,9 @@ randall notify test -c projects/local/myservice.yaml
 | **Bug Hunter** — AI/robot code analysis + arming | ✅ [BUG_HUNTER.md](BUG_HUNTER.md) |
 | **Magician** — spells + summons (knight/army/bots/hunter/joker) | ✅ [MAGICIAN.md](MAGICIAN.md) |
 | **Joker** — chaotic random tricks; Magician capitalizes on crashes | ✅ [MAGICIAN.md#joker](MAGICIAN.md#joker) |
+| **ReelDeck** — media file target + path-stalk maturity lab | ✅ [REELDECK.md](REELDECK.md) |
 
-**Techniques guide:** [docs/FUZZING.md](FUZZING.md) · trinity+: Oracle · Magician · Bug Hunter · Joker
+**Techniques guide:** [docs/FUZZING.md](FUZZING.md) · Oracle · Magician · Bug Hunter · Joker · ReelDeck file stalk
 
 ---
 

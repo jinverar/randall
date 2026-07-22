@@ -57,6 +57,11 @@ public sealed class FuzzEngine
         var coverage = new CoverageSet(coveragePath);
         coverage.Load();
 
+        var pathCoverage = new PathCoverageSet(Path.Combine(corpusDir, "paths.txt"));
+        pathCoverage.Load();
+        if (pathCoverage.Total > 0)
+            FuzzAnalystLog.Info(options.Progress, $"Path stalk loaded — {pathCoverage.Total} known stages");
+
         var crashStore = new CrashStore(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir));
         crashStore.Ensure();
         var crashesDir = ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir);
@@ -878,6 +883,30 @@ public sealed class FuzzEngine
                 {
                     corpus.SaveInteresting(payload, "corpus");
                     corpusAdded++;
+                }
+
+                // Cooperative path stalking (ReelDeck and friends via REELDECK_PATHLOG).
+                if (result.PathHits is { Count: > 0 } hits)
+                {
+                    var novelPaths = pathCoverage.Add(hits);
+                    if (novelPaths > 0)
+                    {
+                        newCoverage = true;
+                        newEdges += novelPaths;
+                        if (!result.Crashed)
+                        {
+                            if (corpus.IsNew(payload))
+                            {
+                                corpus.SaveInteresting(payload, "paths");
+                                corpusAdded++;
+                            }
+                            corpus.BoostEnergy(payload, Math.Min(10, 2 + novelPaths));
+                            FuzzAnalystLog.Info(progress,
+                                $"+{novelPaths} path(s) → total {pathCoverage.Total} " +
+                                $"[{string.Join(',', hits.Take(10))}{(hits.Count > 10 ? ",…" : "")}]",
+                                iterations);
+                        }
+                    }
                 }
 
                 // Hybrid semantic oracle stack — supplements coverage (docs/ORACLES.md).

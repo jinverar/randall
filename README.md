@@ -23,6 +23,7 @@ I don't just throw bytes at parsers and hope. I **camouflage** valid-looking tra
 | 🕵️ **Another trick up my sleeve** | Havoc, dictionaries, session flows, plugins, in-process harnesses |
 | 🧠 **Oracle + Magician + Bug Hunter** | Semantic judgment ([ORACLES.md](docs/ORACLES.md)) · spells/summons incl. **Joker** chaos ([MAGICIAN.md](docs/MAGICIAN.md)) · AI/robot analysis ([BUG_HUNTER.md](docs/BUG_HUNTER.md)) |
 | 🌐 **Web apps too** | `kind: http|https` — see [WEB_FUZZ.md](docs/WEB_FUZZ.md) |
+| 🎬 **ReelDeck file lab** | Media player/studio `.rndl` — fuzz → path-stalk → deepen ([REELDECK.md](docs/REELDECK.md)) |
 
 Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
