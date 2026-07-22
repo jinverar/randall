@@ -1,5 +1,5 @@
 name: http-post
-description: HTTP POST with body
+description: HTTP POST with body — Content-Length synced when fuzz.syncContentLength is true
 blocks:
   - type: static
     value: "POST "
@@ -9,15 +9,15 @@ blocks:
     value: "/upload"
     maxSize: 4096
   - type: static
-    value: " HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: "
+    value: " HTTP/1.1\r\nHost: 127.0.0.1\r\nUser-Agent: Randfuzz/1.0\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: "
   - type: string
     name: content_length
     mutable: true
-    value: "4"
+    value: "11"
   - type: static
-    value: "\r\n\r\n"
+    value: "\r\nConnection: close\r\n\r\n"
   - type: string
     name: body
     mutable: true
-    value: "AAAA"
+    value: "q=test&x=1"
     maxSize: 8192

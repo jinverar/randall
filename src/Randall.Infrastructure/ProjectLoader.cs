@@ -22,6 +22,7 @@ public static class ProjectLoader
         project.Name = string.IsNullOrWhiteSpace(project.Name)
             ? Path.GetFileNameWithoutExtension(full)
             : project.Name;
+        ProjectKinds.NormalizeTransport(project);
         return project;
     }
 

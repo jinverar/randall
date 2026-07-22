@@ -23,9 +23,14 @@ public static class TargetRunner
         CancellationToken cancellationToken = default,
         TcpSendOptions? tcpOptions = null)
     {
-        if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase))
+        if (ProjectKinds.IsTcpLike(project))
+        {
+            if (project.Fuzz.SyncContentLength || ProjectKinds.IsHttp(project))
+                payload = HttpFraming.TrySyncContentLength(payload);
             return await RunTcpAsync(project, yamlPath, longLivedServer, payload, tcpOptions, cancellationToken);
-        if (project.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase))
+        }
+
+        if (ProjectKinds.IsUdp(project))
             return await RunUdpAsync(project, longLivedServer, payload, cancellationToken);
         return await RunFileAsync(project, yamlPath, payload, cancellationToken);
     }
@@ -180,22 +185,40 @@ public static class TargetRunner
         if (server is null)
             return new TargetRunResult(false, null, null, "ok", lastResponse);
 
-        for (var attempt = 0; attempt < 5; attempt++)
+        // Processes attached by PID ("Already running") cannot always query HasExited/ExitCode.
+        bool exited;
+        try { exited = server.HasExited; }
+        catch (InvalidOperationException)
         {
-            if (server.HasExited)
-                break;
-            await Task.Delay(50, cancellationToken);
+            return new TargetRunResult(false, null, null, "ok", lastResponse);
         }
 
-        if (!server.HasExited)
+        for (var attempt = 0; attempt < 5 && !exited; attempt++)
+        {
+            await Task.Delay(50, cancellationToken);
+            try { exited = server.HasExited; }
+            catch (InvalidOperationException)
+            {
+                return new TargetRunResult(false, null, null, "ok", lastResponse);
+            }
+        }
+
+        if (!exited)
             return new TargetRunResult(false, null, null, "ok", lastResponse);
 
+        int exitCode;
+        try { exitCode = server.ExitCode; }
+        catch (InvalidOperationException)
+        {
+            return new TargetRunResult(true, null, null, "server exited (exit code unavailable)", lastResponse);
+        }
+
         // Bind/start failures (e.g. WSAEADDRINUSE 10048) are infrastructure — not fuzz findings.
-        if (IsInfrastructureExitCode(server.ExitCode))
+        if (IsInfrastructureExitCode(exitCode))
         {
             return new TargetRunResult(
-                false, server.ExitCode, null,
-                $"server exited (bind/start failure code {server.ExitCode})", lastResponse);
+                false, exitCode, null,
+                $"server exited (bind/start failure code {exitCode})", lastResponse);
         }
 
         string? dumpPath = null;
@@ -210,8 +233,8 @@ public static class TargetRunner
                 allowExited: true);
         }
 
-        var detail = DescribeServerExit(server.ExitCode);
-        return new TargetRunResult(true, server.ExitCode, dumpPath, detail, lastResponse);
+        var detail = DescribeServerExit(exitCode);
+        return new TargetRunResult(true, exitCode, dumpPath, detail, lastResponse);
     }
 
     private static string DescribeServerExit(int exitCode)

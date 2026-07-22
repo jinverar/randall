@@ -22,12 +22,12 @@ public static class TargetTube
         ProjectConfig project,
         CancellationToken cancellationToken = default)
     {
-        if (project.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase))
+        if (ProjectKinds.IsUdp(project))
             return await UdpTube.ConnectAsync(project.Transport, cancellationToken);
-        if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase))
+        if (ProjectKinds.IsTcpLike(project))
             return await TcpTube.ConnectAsync(project.Transport, cancellationToken);
         throw new InvalidOperationException(
-            $"No tube for kind '{project.Kind}' — use file harness or TargetTube.OpenStdio.");
+            $"No tube for kind '{project.Kind}' — use file/http/tcp harness or TargetTube.OpenStdio.");
     }
 
     public static StdioTube OpenStdio(Process process) => new(process);

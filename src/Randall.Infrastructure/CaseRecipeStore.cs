@@ -277,8 +277,8 @@ public static class CaseRecipeStore
             throw new ArgumentException("Project name required (letters, digits, dash, underscore)");
 
         var kind = (request.Kind ?? "tcp").Trim().ToLowerInvariant();
-        if (kind is not ("tcp" or "udp" or "file"))
-            throw new ArgumentException("kind must be tcp, udp, or file");
+        if (kind is not ("tcp" or "udp" or "file" or "http" or "https"))
+            throw new ArgumentException("kind must be tcp, udp, file, http, or https");
 
         var folder = request.LocalFolder
             ? Path.Combine(repoRoot, "projects", "local")
@@ -295,7 +295,15 @@ public static class CaseRecipeStore
             ? $"Custom {kind} target — edit seeds and mutators"
             : request.Description!.Trim();
         var host = string.IsNullOrWhiteSpace(request.Host) ? "127.0.0.1" : request.Host!.Trim();
-        var port = request.Port is > 0 and < 65536 ? request.Port.Value : kind == "udp" ? 69 : 80;
+        var port = request.Port is > 0 and < 65536
+            ? request.Port.Value
+            : kind switch
+            {
+                "udp" => 69,
+                "https" => 443,
+                "http" => 80,
+                _ => 9999,
+            };
 
         var ext = NormalizeExtension(request.Extension, kind);
         var fileFormat = (request.FileFormat ?? "file-blank").Trim().ToLowerInvariant();
@@ -303,6 +311,7 @@ public static class CaseRecipeStore
         {
             "file" => BuildFileYaml(name, desc, request.Executable, ext),
             "udp" => BuildUdpYaml(name, desc, host, port),
+            "http" or "https" => BuildHttpYaml(name, desc, host, port == 80 && kind == "https" ? 443 : port, request.Executable, kind == "https"),
             _ => BuildTcpYaml(name, desc, host, port, request.Executable),
         };
 
@@ -319,9 +328,13 @@ public static class CaseRecipeStore
 
         var seedName = $"{name}_seed{ext}";
         var seedPath = Path.Combine(folder, "seeds", seedName);
-        File.WriteAllBytes(seedPath, kind == "file"
-            ? BuildFileStarterSeed(fileFormat)
-            : Encoding.ASCII.GetBytes("PING\r\n"));
+        File.WriteAllBytes(seedPath, kind switch
+        {
+            "file" => BuildFileStarterSeed(fileFormat),
+            "http" or "https" => Encoding.ASCII.GetBytes(
+                $"GET / HTTP/1.1\r\nHost: {host}\r\nUser-Agent: Randfuzz\r\nConnection: close\r\n\r\n"),
+            _ => Encoding.ASCII.GetBytes("PING\r\n"),
+        });
 
         // Point YAML seed entry at the actual extension
         if (kind == "file")
@@ -473,6 +486,57 @@ public static class CaseRecipeStore
         dictionary:
           - "%s%s%s%s"
           - "../"
+        
+        """;
+
+    private static string BuildHttpYaml(string name, string desc, string host, int port, string? exe, bool tls) =>
+        $$"""
+        # Web-app fuzz profile — docs/WEB_FUZZ.md
+        name: {{name}}
+        description: {{YamlQuote(desc)}}
+        kind: {{(tls ? "https" : "http")}}
+        target:
+          executable: {{YamlQuote(exe ?? "")}}
+          longLived: {{(string.IsNullOrWhiteSpace(exe) ? "false" : "true")}}
+          timeoutMs: 5000
+        transport:
+          type: {{(tls ? "https" : "http")}}
+          host: {{YamlQuote(host)}}
+          port: {{port}}
+          receiveTimeoutMs: 2000
+          tls: {{(tls ? "true" : "false")}}
+          tlsInsecure: true
+          tlsHost: {{YamlQuote(host)}}
+        sessionCommands:
+          - name: GET
+            model: protocols/http_get.yaml
+            readBanner: false
+            expectResponse: "HTTP/"
+          - name: POST
+            model: protocols/http_post.yaml
+            readBanner: false
+            expectResponse: "HTTP/"
+        fuzz:
+          maxIterations: 800
+          powerSchedule: true
+          havocDepth: 8
+          syncContentLength: true
+          corpusDir: ../data/corpus/{{name}}
+          crashesDir: ../data/crashes/{{name}}
+        mutators:
+          - dictionary
+          - interesting
+          - boundary
+          - havoc
+          - expand
+          - insert
+        seeds:
+          - seeds/{{name}}_seed.bin
+        dictionaryFile: dictionaries/ai_codegen_mistakes.txt
+        oracles:
+          enabled: true
+          retainOnViolation: true
+          promoteExpectResponse: true
         
         """;
 
@@ -732,11 +796,11 @@ public static class CaseRecipeStore
         repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
         var profile = GetProfile(request.Project, repoRoot)
                       ?? throw new ArgumentException($"Unknown project: {request.Project}");
-        var isTcp = profile.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase);
+        var isTcp = ProjectKinds.IsTcpLike(profile.Kind);
         var isUdp = profile.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase);
         if (!isTcp && !isUdp)
             return new CaseSaveResultDto(false,
-                "Apply session recipe requires a TCP or UDP Target profile.",
+                "Apply session recipe requires a TCP, HTTP, HTTPS, or UDP Target profile.",
                 null, 0);
 
         var steps = NormalizeSessionSteps(request.SessionSteps);

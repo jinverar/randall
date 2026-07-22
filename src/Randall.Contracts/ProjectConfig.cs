@@ -5,7 +5,7 @@ public sealed class ProjectConfig
 {
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
-    /// <summary>file | tcp | udp | harness</summary>
+    /// <summary>file | tcp | udp | http | https | harness — http/https use the TCP tube (+ TLS for https).</summary>
     public string Kind { get; set; } = "file";
     public TargetConfig Target { get; set; } = new();
     public TransportConfig Transport { get; set; } = new();
@@ -209,6 +209,11 @@ public sealed class FuzzConfig
     /// Skipped when the mutated field is the NBSS length itself.
     /// </summary>
     public bool SyncNbssLength { get; set; }
+    /// <summary>
+    /// After model patch, rewrite HTTP Content-Length to match the body
+    /// (web-app fuzzing). Prefer true for <c>kind: http|https</c> POST bodies.
+    /// </summary>
+    public bool SyncContentLength { get; set; }
     /// <summary>Write iterations.jsonl + run.json under runsDir (Phase 15).</summary>
     public bool ExecutionLog { get; set; } = true;
     /// <summary>Execution journal root (relative to project YAML).</summary>

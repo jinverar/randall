@@ -410,7 +410,7 @@ public static class LabDoctor
             Add("target", "warn", "No local executable — assumes service already listening");
         }
 
-        if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase))
+        if (ProjectKinds.IsTcpLike(project))
         {
             var tlsNote = project.Transport.Tls ? "TLS enabled" : "plain TCP";
             Add("transport", "ok", $"{project.Transport.Host}:{project.Transport.Port} ({tlsNote})");
@@ -432,7 +432,7 @@ public static class LabDoctor
             }
         }
 
-        if (project.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase))
+        if (ProjectKinds.IsUdp(project))
         {
             try
             {

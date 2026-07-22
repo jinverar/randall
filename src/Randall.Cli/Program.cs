@@ -127,8 +127,8 @@ static void PrintHelp()
           shuffle      Swap short spans in the seed
           cyclic       Metasploit-style pattern (exploit-dev offset practice)
 
-        Docs: docs/ORACLES.md · docs/BUG_HUNTER.md · docs/CUSTOM_TARGETS.md · docs/TARGETS.md
-        Exploit-dev practice: projects/vulnlab-offset.yaml (cyclic → CONTROL offset)
+        Docs: docs/ORACLES.md · docs/BUG_HUNTER.md · docs/WEB_FUZZ.md · docs/TARGETS.md
+        Web apps: projects/webapp.yaml (kind: http) · Exploit-dev: projects/vulnlab-offset.yaml
         """);
 }
 
@@ -508,22 +508,28 @@ static int RunAiMistakes(string[] args)
         return 0;
     }
 
-    Console.WriteLine("Common AI-codegen mistake classes (docs/AI_CODE_FUZZ.md)");
+    Console.WriteLine("Bug Hunter mistake catalog (docs/BUG_HUNTER.md)");
+    Console.WriteLine("Channels: Oracle = judgment · Seed = inputs · Static = scan · Hybrid = both");
+    Console.WriteLine("Sources: OWASP-in-codegen patterns + AISW-style AI-induced weaknesses");
     Console.WriteLine();
     foreach (var m in BugHunterMistakes.All)
     {
-        Console.WriteLine($"[{m.Id}] {m.Title}");
+        Console.WriteLine($"[{m.Id}] {m.Title}  {{{m.Channel}}}");
         Console.WriteLine($"  {m.Description}");
         Console.WriteLine($"  Hunt with: {m.HuntWith}");
         if (m.OracleHints.Count > 0)
             Console.WriteLine($"  Oracle: {string.Join(", ", m.OracleHints)}");
         if (m.SeedHints.Count > 0)
             Console.WriteLine($"  Seeds:  {string.Join("; ", m.SeedHints)}");
+        if (m.Refs.Count > 0)
+            Console.WriteLine($"  Refs:   {string.Join(", ", m.Refs)}");
         Console.WriteLine();
     }
 
-    Console.WriteLine("Dictionary tokens: projects/dictionaries/ai_codegen_mistakes.txt");
-    Console.WriteLine("Emit YAML starter: randall ai mistakes --emit-yaml");
+    Console.WriteLine($"Oracle/Hybrid classes: {BugHunterMistakes.OracleArmed.Count()}");
+    Console.WriteLine($"Seed/Hybrid classes:   {BugHunterMistakes.SeedArmed.Count()}");
+    Console.WriteLine("Dictionary: projects/dictionaries/ai_codegen_mistakes.txt");
+    Console.WriteLine("Emit YAML starter: randall hunt mistakes --emit-yaml");
     return 0;
 }
 

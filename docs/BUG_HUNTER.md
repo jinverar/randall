@@ -78,18 +78,33 @@ The Oracle engine then judges each iteration independently.
 
 Also: `AI-GENERATED`, Copilot/ChatGPT/Claude/Cursor markers. Attribution is **heuristic**.
 
-## Mistake classes
+## Mistake catalog + channels
 
-| Id | Hunt signal |
-|----|-------------|
-| `auth-skip` | suggest `oracles.auth` |
-| `state-order` | suggest `oracles.state` |
-| `length-lie` | suggest `oracles.integer` + boundary mutators |
-| `trust-input` | suggest `oracles.structure` |
-| `resource` | suggest `oracles.resource` |
-| `mem-classic` | seeds / ASan (not primary oracle) |
+There is no official “Top 20 AI coding mistakes.” Bug Hunter ships a working catalog informed by **OWASP-in-codegen** patterns and **AISW-style** AI-induced weaknesses. Each class has a **channel** so seed problems are not stuffed into the Oracle engine:
 
-`randall hunt mistakes` prints the full catalog.
+| Channel | Meaning |
+|---------|---------|
+| **Oracle** | Wrong-but-alive behavior → Oracle engine rules |
+| **Seed** | Needs concrete inputs → dictionary / seeds / mutators |
+| **Static** | Scan / attribution only (secrets, hallucinated deps) |
+| **Hybrid** | Both seeds and oracles |
+
+```bash
+randall hunt mistakes
+```
+
+Highlights:
+
+| Id | Channel | Refs |
+|----|---------|------|
+| `auth-skip` | Oracle | OWASP A01, AISW-001 |
+| `inject-sqli` / `inject-cmd` / `ssrf` | Seed | OWASP A03 / A10 |
+| `inject-xss` / `path-inject` | Hybrid | OWASP A03 / A01 |
+| `secrets-hardcoded` / `dep-hallucination` | Static | AISW-005 / AISW-003 |
+| `length-lie` / `resource` / `error-swallow` | Oracle/Hybrid | protocol + web |
+| `mem-classic` | Seed | ASan / mutators |
+
+Web apps: [WEB_FUZZ.md](WEB_FUZZ.md) (`kind: http`).
 
 ## Demo
 

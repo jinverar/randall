@@ -1,9 +1,9 @@
 name: http-get
-description: HTTP GET request — boofuzz http_simple parity
+description: HTTP GET/HEAD/… request for web-app fuzzing (docs/WEB_FUZZ.md)
 blocks:
   - type: choices
     name: method
-    values: ["GET", "HEAD", "POST", "PUT", "DELETE"]
+    values: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "DELETE"]
   - type: delim
     name: space1
     value: " "
@@ -11,7 +11,7 @@ blocks:
   - type: string
     name: uri
     mutable: true
-    value: "/index.html"
+    value: "/index.html?q=test"
     maxSize: 8192
   - type: delim
     name: space2
@@ -37,4 +37,34 @@ blocks:
     value: "127.0.0.1"
     maxSize: 512
   - type: static
-    value: "\r\n\r\n"
+    value: "\r\n"
+  - type: string
+    name: ua_key
+    value: "User-Agent:"
+    mutable: false
+  - type: delim
+    name: space4
+    value: " "
+    mutable: false
+  - type: string
+    name: user_agent
+    mutable: true
+    value: "Randfuzz/1.0"
+    maxSize: 1024
+  - type: static
+    value: "\r\n"
+  - type: string
+    name: cookie_key
+    value: "Cookie:"
+    mutable: false
+  - type: delim
+    name: space5
+    value: " "
+    mutable: false
+  - type: string
+    name: cookie
+    mutable: true
+    value: "session=guest"
+    maxSize: 2048
+  - type: static
+    value: "\r\nConnection: close\r\n\r\n"

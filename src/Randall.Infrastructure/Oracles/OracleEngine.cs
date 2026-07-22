@@ -749,8 +749,13 @@ public static class OracleEngine
     {
         if (response is null || response.Length == 0)
             return "empty";
+
+        // Prefer HTTP status class for web-app fuzzing (HTTP/1.1 200 → 2xx).
+        var httpClass = HttpFraming.StatusClass(response);
+        if (httpClass is not ("empty" or "non-http"))
+            return httpClass;
+
         var text = Encoding.ASCII.GetString(response);
-        // First token / status-ish prefix
         var trimmed = text.Trim();
         if (trimmed.Length == 0)
             return "empty";

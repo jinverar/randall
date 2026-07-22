@@ -47,10 +47,19 @@ public static class BugHunterPlanner
         sb.AppendLine($"Scanned: `{plan.Scan.Root}` · files={plan.Scan.FilesScanned} · AI blocks={plan.Scan.AiBlocks}");
         sb.AppendLine();
         sb.AppendLine("## Mistake classes");
+        sb.AppendLine();
+        sb.AppendLine("| Id | Channel | Title | Hunt |");
+        sb.AppendLine("|----|---------|-------|------|");
         foreach (var id in plan.MistakeClasses)
         {
             var m = BugHunterMistakes.All.FirstOrDefault(x => x.Id == id);
-            sb.AppendLine(m is null ? $"- `{id}`" : $"- **{m.Id}** — {m.Title} ({m.HuntWith})");
+            if (m is null)
+            {
+                sb.AppendLine($"| `{id}` | ? | | |");
+                continue;
+            }
+
+            sb.AppendLine($"| `{m.Id}` | **{m.Channel}** | {m.Title} | {m.HuntWith} |");
         }
 
         sb.AppendLine();

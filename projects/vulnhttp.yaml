@@ -1,12 +1,12 @@
 name: vulnhttp
-description: Randall VulnHttp — HTTP lab (browser/server fuzzing). Build with scripts/build-vulnhttp.ps1
-kind: tcp
+description: Randall VulnHttp — HTTP lab. Prefer projects/webapp.yaml (kind: http). Build with scripts/build-vulnhttp.ps1
+kind: http
 target:
-  executable: ../targets/vulnhttp/randall-vulnhttp.exe
+  executable: ../targets/vulnhttp/randall-vulnhttp
   longLived: true
   timeoutMs: 5000
 transport:
-  type: tcp
+  type: http
   host: 127.0.0.1
   port: 8080
   receiveTimeoutMs: 2000
@@ -14,15 +14,19 @@ sessionCommands:
   - name: GET
     model: protocols/http_get.yaml
     readBanner: false
+    expectResponse: "HTTP/"
   - name: POST
     model: protocols/http_post.yaml
     readBanner: false
+    expectResponse: "HTTP/"
 fuzz:
   maxIterations: 1000
   powerSchedule: true
   havocDepth: 8
+  syncContentLength: true
   corpusDir: ../data/corpus/vulnhttp
   crashesDir: ../data/crashes/vulnhttp
+dictionaryFile: dictionaries/ai_codegen_mistakes.txt
 mutators:
   - bitflip
   - havoc
@@ -31,3 +35,4 @@ mutators:
   - expand
   - boundary
   - splice
+

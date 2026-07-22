@@ -182,7 +182,7 @@ public sealed class ReplayEngine
         CancellationToken cancellationToken = default)
     {
         Process? server = null;
-        if (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) && project.Target.LongLived)
+        if (ProjectKinds.IsTcpLike(project) && project.Target.LongLived)
             server = TargetRunner.StartTarget(project, yamlPath, null);
 
         try

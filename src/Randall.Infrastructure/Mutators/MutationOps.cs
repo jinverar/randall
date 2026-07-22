@@ -37,11 +37,13 @@ internal static class MutationOps
         if (buf.Length == 0)
             buf = new byte[8];
 
+        if (buf.Length == 0)
+            return [(byte)rng.Next(256)];
+
         var widths = new List<int>();
         if (buf.Length >= 1) widths.Add(1);
         if (buf.Length >= 2) widths.Add(2);
         if (buf.Length >= 4) widths.Add(4);
-        if (buf.Length >= 8) widths.Add(8);
         var width = widths[rng.Next(widths.Count)];
         var maxOffset = buf.Length - width;
         var offset = maxOffset > 0 ? rng.Next(maxOffset + 1) : 0;
@@ -217,16 +219,23 @@ internal static class MutationOps
                 }
                 break;
             default:
+            {
+                // uint is 4 bytes; never slice past either buffer.
+                var space = Math.Max(0, buf.Length - offset);
+                var n = Math.Min(4, space);
+                if (n <= 0)
+                    return;
                 if (littleEndian)
-                    BitConverter.TryWriteBytes(buf.AsSpan(offset, Math.Min(8, buf.Length - offset)), value);
+                    BitConverter.TryWriteBytes(buf.AsSpan(offset, n), value);
                 else
                 {
                     var bytes = BitConverter.GetBytes(value);
                     if (BitConverter.IsLittleEndian)
                         Array.Reverse(bytes);
-                    bytes.AsSpan(0, Math.Min(8, buf.Length - offset)).CopyTo(buf.AsSpan(offset));
+                    bytes.AsSpan(0, n).CopyTo(buf.AsSpan(offset, n));
                 }
                 break;
+            }
         }
     }
 }

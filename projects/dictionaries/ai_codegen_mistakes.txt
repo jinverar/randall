@@ -1,21 +1,24 @@
-# Common AI-codegen mistake tokens — use with dictionary mutator
-# Paired with semantic oracles (docs/AI_CODE_FUZZ.md · docs/ORACLES.md)
+# AI-codegen / web mistake tokens — dictionary mutator
+# Paired with Bug Hunter channels (docs/BUG_HUNTER.md): Seed + Hybrid classes
 
-# Auth / privilege
+# Auth / privilege (auth-skip)
 admin
 root
 Authorization: Bearer 
 role=admin
 isAdmin=true
+Cookie: session=admin
 
-# Structure / traversal
+# Path traversal (path-inject)
 ../
 ..\
 %2e%2e%2f
 %2e%2e\
 ..%2f
+/etc/passwd
+file:///etc/passwd
 
-# Semantic integers
+# Semantic integers (length-lie)
 hex:FFFFFFFF
 hex:00000000
 hex:7FFFFFFF
@@ -28,18 +31,37 @@ null
 undefined
 None
 nil
+{}
+[]
 
-# Injection-ish fragments AI often concatenates
-;
-|
-&&
+# SQL injection (inject-sqli) — seeds, not oracles
+' OR 1=1--
+' OR '1'='1
+1; DROP TABLE--
+" OR ""="
+
+# XSS (inject-xss)
+<script>alert(1)</script>
+"><img src=x onerror=alert(1)>
+javascript:alert(1)
+
+# Command injection (inject-cmd)
+;id
+| whoami
+$(id)
 `id`
-$(whoami)
+&& id
+
+# SSRF (ssrf)
+http://127.0.0.1/
+http://169.254.169.254/latest/meta-data/
+http://[::1]/
 
 # Format / printf leftovers
 %s%s%s%s
 %n
-%x%x%x
 
-# Expansion
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+# HTTP smuggling / header inject fragments
+Transfer-Encoding: chunked
+Content-Length: 0
+\r\n\r\nGET / HTTP/1.1\r\nHost: x\r\n\r\n

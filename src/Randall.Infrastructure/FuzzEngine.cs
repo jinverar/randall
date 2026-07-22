@@ -76,7 +76,7 @@ public sealed class FuzzEngine
         var useCoverageFile = useCoverage &&
                               project.Kind.Equals("file", StringComparison.OrdinalIgnoreCase);
         var useCoverageTcp = useCoverage && project.Fuzz.CoverageTcpSpawn &&
-                             project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) &&
+                             ProjectKinds.IsTcpLike(project) &&
                              !string.IsNullOrWhiteSpace(project.Target.Executable);
 
         var progress = options.Progress;
@@ -166,7 +166,7 @@ public sealed class FuzzEngine
         {
             string? filterHost = null;
             var filterPort = 0;
-            if (project.Kind is "tcp" or "udp" ||
+            if (ProjectKinds.IsTcpLike(project) || ProjectKinds.IsUdp(project) ||
                 project.Transport.Type is "tcp" or "udp" or "http" or "https")
             {
                 filterHost = project.Transport.Host;
@@ -253,8 +253,7 @@ public sealed class FuzzEngine
                     "forkServer on Linux = AFL classic FORKSRV_FD (198/199)");
         }
         else if (!useCoverageTcp && project.Target.LongLived &&
-            (project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) ||
-             project.Kind.Equals("udp", StringComparison.OrdinalIgnoreCase)))
+            (ProjectKinds.IsTcpLike(project) || ProjectKinds.IsUdp(project)))
         {
             FuzzAnalystLog.Step(progress, "Starting target (Target Runtime)");
             runtime = new TargetRuntimeBridge(project, yamlPath);
@@ -536,7 +535,7 @@ public sealed class FuzzEngine
                 }
                 else if (project.SessionGraph is not null &&
                          commandsByName.Count > 0 &&
-                         project.Kind.Equals("tcp", StringComparison.OrdinalIgnoreCase) &&
+                         ProjectKinds.IsTcpLike(project) &&
                          rng.NextDouble() < project.Fuzz.SessionGraphBias)
                 {
                     useResponseGraph = true;
@@ -687,7 +686,7 @@ public sealed class FuzzEngine
 
                 var caseLabel = $"{commandName}/{mutator.Name}";
                 FuzzAnalystLog.Case(progress, iterations, caseLabel);
-                if (project.Kind is "tcp" or "udp")
+                if (ProjectKinds.IsTcpLike(project) || ProjectKinds.IsUdp(project))
                 {
                     FuzzAnalystLog.Info(progress,
                         $"Opening target connection to {project.Transport.Host}:{project.Transport.Port}…",

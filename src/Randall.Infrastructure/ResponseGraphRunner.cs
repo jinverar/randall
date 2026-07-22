@@ -121,15 +121,28 @@ public static class FuzzEngineHelpers
             var model = ProtocolLoader.Load(yamlPath, cmd.ModelPath);
             var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, cmd.ModelPath);
             if (mutate)
-                return ModelFuzzer.BuildPayload(
+            {
+                var built = ModelFuzzer.BuildPayload(
                     model, protoSeeds, mutator, rng,
                     project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth,
                     targetField: null, project.Fuzz.SyncNbssLength);
+                return MaybeSyncHttp(built, project);
+            }
+
             var msg = model.FinalizeMessage(model.Render(protoSeeds), project.Fuzz.SyncLengthFields);
-            return project.Fuzz.SyncNbssLength ? NbssFraming.TrySyncLength(msg) : msg;
+            if (project.Fuzz.SyncNbssLength)
+                msg = NbssFraming.TrySyncLength(msg);
+            return MaybeSyncHttp(msg, project);
         }
 
         var body = mutate ? mutator.Mutate(cmd.Seed).ToArray() : cmd.Seed;
-        return SessionGraph.BuildPayload(cmd, body);
+        return MaybeSyncHttp(SessionGraph.BuildPayload(cmd, body), project);
+    }
+
+    private static byte[] MaybeSyncHttp(byte[] message, ProjectConfig project)
+    {
+        if (project.Fuzz.SyncContentLength || ProjectKinds.IsHttp(project))
+            return HttpFraming.TrySyncContentLength(message);
+        return message;
     }
 }

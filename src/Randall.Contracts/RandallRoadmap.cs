@@ -70,6 +70,8 @@ public static class RandallRoadmap
             new("p8-clusters", "Crash clustering for triage", true, "/api/crashes/clusters"),
             new("p8-oracles", "Oracle engine — judgment/reporting (runtime/auth/state/…)", true, "docs/ORACLES.md"),
             new("p8-bug-hunter", "Bug Hunter engine — AI/human analysis + campaign arming", true, "docs/BUG_HUNTER.md"),
+            new("p8-mistake-catalog", "OWASP/AISW-informed mistake catalog with oracle|seed|static channels", true, "docs/BUG_HUNTER.md"),
+            new("p8-web-fuzz", "Web-app fuzzing (kind: http|https + Content-Length sync)", true, "docs/WEB_FUZZ.md"),
         ]),
         new(9, "Lab readiness", "complete",
         [

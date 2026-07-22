@@ -73,15 +73,15 @@ public static class RecipeCatalog
         if (e is null) return new CaseSaveResultDto(false, $"Recipe '{id}' not found", null, 0);
 
         var projName = string.IsNullOrWhiteSpace(name) ? e.Id : name!;
-        var projKind = e.Kind is "http" ? "tcp" : e.Kind;   // http maps to a tcp target profile
-        var port = e.Port ?? (e.Kind is "http" ? 80 : 9999);
+        var projKind = e.Kind;
+        var port = e.Port ?? (e.Kind is "https" ? 443 : e.Kind is "http" ? 80 : 9999);
 
         var created = CaseRecipeStore.CreateProject(new CaseNewProjectRequest(
             Name: projName,
             Kind: projKind,
             Description: $"{e.Name} — {e.Desc}",
-            Host: projKind is "tcp" or "udp" ? "127.0.0.1" : null,
-            Port: projKind is "tcp" or "udp" ? port : null,
+            Host: projKind is "tcp" or "udp" or "http" or "https" ? "127.0.0.1" : null,
+            Port: projKind is "tcp" or "udp" or "http" or "https" ? port : null,
             Executable: null,
             LocalFolder: localFolder,
             Extension: e.Ext,
@@ -210,7 +210,7 @@ public static class RecipeCatalog
         Net("nntp", "NNTP", "Mail/Transfer", "tcp", 119, "GROUP alt.test\r\n", ["buffer-overflow"]);
         Net("tftp", "TFTP", "Mail/Transfer", "udp", 69, "\x00\x01filename\x00netascii\x00", ["buffer-overflow"]);
 
-        Net("http", "HTTP", "Web server", "tcp", 80, "GET / HTTP/1.1\r\nHost: x\r\n\r\n", ["buffer-overflow", "traversal"], TraversalDict);
+        Net("http", "HTTP", "Web server", "http", 80, "GET / HTTP/1.1\r\nHost: x\r\n\r\n", ["buffer-overflow", "traversal"], TraversalDict);
         Net("http2", "HTTP/2", "Web server", "tcp", 8080, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", ["buffer-overflow"]);
         Net("rtsp", "RTSP", "Media/Streaming", "tcp", 554, "OPTIONS rtsp://x RTSP/1.0\r\nCSeq: 1\r\n\r\n", ["buffer-overflow"]);
         Net("sip", "SIP", "Media/Streaming", "udp", 5060, "REGISTER sip:x SIP/2.0\r\nVia: SIP/2.0/UDP x\r\n\r\n", ["buffer-overflow", "format-string"]);

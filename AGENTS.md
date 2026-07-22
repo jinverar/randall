@@ -10,7 +10,7 @@
 ## Cursor Cloud specific instructions
 
 ### What this is
-Randfuzz ("Randall") is a Windows-oriented fuzzer written entirely in C#/.NET 8 (`net8.0`). One solution, `Randall.sln`, with 5 core projects under `src/` (`Randall.Core`, `Randall.Contracts`, `Randall.Infrastructure`, `Randall.Server`, `Randall.Cli`) plus optional lab-target apps under `targets/`. Only external NuGet dependency is YamlDotNet; storage is flat JSON/JSONL files under `data/` (no database, no Node, no Docker).
+Randfuzz ("Randall") is a cross-platform fuzzer written entirely in C#/.NET 8 (`net8.0`) (Windows + Linux). One solution, `Randall.sln`, with 5 core projects under `src/` (`Randall.Core`, `Randall.Contracts`, `Randall.Infrastructure`, `Randall.Server`, `Randall.Cli`) plus optional lab-target apps under `targets/`. Only external NuGet dependency is YamlDotNet; storage is flat JSON/JSONL files under `data/` (no database, no Node, no Docker).
 
 ### Environment: this VM is Linux, the product is Windows-focused
 - The build and the two entrypoints (CLI + ASP.NET Core server) are cross-platform and run fine on this Linux VM.
