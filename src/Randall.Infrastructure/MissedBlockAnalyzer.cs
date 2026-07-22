@@ -529,12 +529,11 @@ public static class MissedBlockAnalyzer
 
     private static IEnumerable<MissedFuzzIdeaDto> PdfInterestingSurfaceIdeas() =>
     [
-        Idea("pdf-white", "Treat IDA white as ground truth",
-            "After loading baseline (yellow) then fuzzed (green) IDC scripts, remaining white blocks are code neither pass executed — that is the PDF definition of missed.",
+        Idea("pdf-white", "Treat IDA white / Ghidra plain as ground truth",
+            "After loading baseline (yellow) then fuzzed (green) scripts, remaining uncolored blocks are code neither pass executed — that is the PDF definition of missed.",
             "high",
-            "randall stalk dynapstalker <baseline.log> <exe> base.idc --color 0x00ffff && " +
-            "randall stalk dynapstalker <fuzz.log> <exe> fuzz.idc --color 0x00ff00",
-            "Stalking bugs → IDA IDC export (oldest first)"),
+            "randall stalk dynapstalker <baseline.log> <exe> base.idc --color 0x00ffff   # or out.py --format ghidra",
+            "Stalking bugs → IDA IDC / Ghidra export (oldest first)"),
         Idea("pdf-revise", "Revise fuzzer, then remeasure with a new color",
             "Change seeds/dicts/mutators to reach interesting white blocks (string copies, error handlers, auth gates), run again under drcov, export a third color for the improved round.",
             "high",

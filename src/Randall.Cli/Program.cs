@@ -88,7 +88,7 @@ static void PrintHelp()
           randall stalk compare -p <project> [layerIds…] Diff layered coverage
           randall stalk missed -p <project> [--limit N]  Missed blocks + fuzz ideas
           randall stalk inventory -p <project> --import <file>  BB inventory for never-hit
-          randall stalk dynapstalker <drcov.log> <exe> <out.idc> [--color 0x00ffff]
+          randall stalk dynapstalker <drcov.log> <exe> <out.idc|.py> [--format idc|ghidra] [--color …]
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall stalk from-crash -i <crash-guid> [--tag crash]
           randall scream watch -p <pid> [-o dumpsDir]   Built-in exception dump watcher
@@ -2140,7 +2140,7 @@ static int RunStalk(string[] args)
               randall stalk compare -p <project> [layerId…]
               randall stalk missed -p <project> [--limit 40]
               randall stalk inventory -p <project> --import <blocks.txt|drcov.log>
-              randall stalk dynapstalker <drcov.log> <process.exe> <out.idc> [--color 0x00ffff]
+              randall stalk dynapstalker <drcov.log> <process.exe> <out.idc|.py> [--format idc|ghidra] [--color 0x00ffff]
               randall stalk export -p <project> --format idc|ghidra|edges [-o dir] [layerId…]
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
               randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
@@ -2166,13 +2166,15 @@ static int RunStalk(string[] args)
 
 static int StalkDynapstalker(string[] args)
 {
-    // PDF / Dynapstalker: <drcov.log> <process.exe> <out.idc> [--color 0x00ffff]
-    string? log = null, process = null, output = null, color = null;
+    // PDF / Dynapstalker: <drcov.log> <process.exe> <out.idc|out.py> [--format idc|ghidra] [--color 0x00ffff]
+    string? log = null, process = null, output = null, color = null, format = null;
     var positionals = new List<string>();
     for (var i = 0; i < args.Length; i++)
     {
         if (args[i] is "--color" or "-c" && i + 1 < args.Length)
             color = args[++i];
+        else if (args[i] is "--format" or "-f" && i + 1 < args.Length)
+            format = args[++i];
         else if (!args[i].StartsWith('-'))
             positionals.Add(args[i]);
     }
@@ -2183,17 +2185,20 @@ static int StalkDynapstalker(string[] args)
 
     if (log is null || process is null || output is null)
     {
-        Console.Error.WriteLine("Usage: randall stalk dynapstalker <drcov.log> <process.exe> <out.idc> [--color 0x00ffff]");
-        Console.Error.WriteLine("  PDF exercise: yellow baseline then green fuzzed (load oldest IDC first in IDA).");
-        Console.Error.WriteLine("  Requires drcov -dump_text logs.");
+        Console.Error.WriteLine("Usage: randall stalk dynapstalker <drcov.log> <process.exe> <out.idc|out.py> [--format idc|ghidra] [--color 0x00ffff]");
+        Console.Error.WriteLine("  IDA:    … out.idc --color 0x00ffff");
+        Console.Error.WriteLine("  Ghidra: … out.py --format ghidra --color 0x00ffff");
+        Console.Error.WriteLine("  Load oldest script first; uncolored blocks = missed. Requires drcov -dump_text.");
         return 1;
     }
 
     try
     {
-        var result = DynapstalkerExport.ExportIdc(Path.GetFullPath(log), process, Path.GetFullPath(output), color);
-        Console.WriteLine($"Dynapstalker IDC: {result.BlockCount} blocks → {result.OutputPath}");
-        Console.WriteLine("IDA: File → Script file — load oldest IDC first; white blocks remain missed.");
+        var result = DynapstalkerExport.Export(Path.GetFullPath(log), process, Path.GetFullPath(output), format ?? "", color);
+        Console.WriteLine($"Dynapstalker {result.Format}: {result.BlockCount} blocks → {result.OutputPath}");
+        Console.WriteLine(result.Format == "ghidra"
+            ? "Ghidra: Script Manager → run oldest script first; plain blocks remain missed (imageBase+RVA)."
+            : "IDA: File → Script file — load oldest IDC first; white blocks remain missed.");
         return 0;
     }
     catch (Exception ex)

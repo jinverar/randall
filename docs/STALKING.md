@@ -69,16 +69,22 @@ dark — and *why* — then revise seeds, dictionaries, and mutators.
 | `drrun -t drcov -dump_text -- target` | Same (`fuzz.coverageGuided` / DynamoRIO), or manual drrun |
 | Baseline: normal browse / use | **Stalking bugs** → tag `baseline` (or corpus edges after happy-path) |
 | Fuzzer pass under drcov | Campaign / Scare Floor → tag `fuzzed` |
-| Dynapstalker → IDC (yellow, then green) | `randall stalk dynapstalker <log> <exe> <out.idc> [--color …]` **or** Export → IDA IDC |
-| Load **oldest IDC first** in IDA | Documented; scripts only paint still-white items |
-| White blocks = missed | IDA white = ground truth; `randall stalk missed` approximates + suggests how to fuzz |
+| Dynapstalker → IDC (yellow, then green) | `randall stalk dynapstalker <log> <exe> out.idc --color …` **or** Export → IDA IDC |
+| Same colors in **Ghidra** | `randall stalk dynapstalker <log> <exe> out.py --format ghidra` **or** Export → Ghidra |
+| Load **oldest script first** | Documented; scripts only paint still-uncolored items |
+| White / plain blocks = missed | IDA white or Ghidra uncolored = ground truth; `randall stalk missed` approximates |
 | Review string / `rep movs*` / interesting white | Missed-block fuzz ideas call this out explicitly |
 | Revise fuzzer → remeasure → new color | Record `fuzzier` layer / new IDC color |
 
 ```bash
-# One-shot Dynapstalker (matches the class script args)
+# One-shot Dynapstalker → IDA
 randall stalk dynapstalker savant-base.log savant.exe savant-base.idc --color 0x00ffff
 randall stalk dynapstalker savant-fuzz.log savant.exe savant-fuzz.idc --color 0x00ff00
+
+# Same for Ghidra (imageBase + drcov RVA; Script Manager)
+randall stalk dynapstalker savant-base.log savant.exe savant-base.py --format ghidra --color 0x00ffff
+randall stalk dynapstalker savant-fuzz.log savant.exe savant-fuzz.py --format ghidra --color 0x00ff00
+# or from stalk layers: randall stalk export -p <project> --format ghidra
 
 # In-product gap report + ideas
 randall stalk missed -p vulnserver

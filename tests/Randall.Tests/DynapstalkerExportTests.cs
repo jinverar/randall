@@ -51,6 +51,50 @@ public class DynapstalkerExportTests
         }
     }
 
+    [Fact]
+    public void ExportGhidra_UsesImageBaseAndSkipsColored()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "randall-ghidra-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var log = WriteSampleDrcov(dir);
+        var outPy = Path.Combine(dir, "savant-base.py");
+        try
+        {
+            var result = DynapstalkerExport.ExportGhidra(log, "savant.exe", outPy, "0x00ffff");
+            Assert.Equal("ghidra", result.Format);
+            Assert.Equal(2, result.BlockCount);
+            var text = File.ReadAllText(outPy);
+            Assert.Contains("getImageBase()", text);
+            Assert.Contains("getBackgroundColor", text);
+            Assert.Contains("base.add(rva)", text);
+            Assert.Contains("4096", text); // 0x1000
+            Assert.DoesNotContain("48879", text); // 0xbeef from ntdll filtered
+        }
+        finally
+        {
+            TryDelete(dir);
+        }
+    }
+
+    [Fact]
+    public void Export_AutoDetectsGhidraFromPyExtension()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "randall-auto-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var log = WriteSampleDrcov(dir);
+        var outPy = Path.Combine(dir, "auto.py");
+        try
+        {
+            var result = DynapstalkerExport.Export(log, "savant.exe", outPy, format: "", colorHex: "0x00ff00");
+            Assert.Equal("ghidra", result.Format);
+            Assert.Contains("ColorizingService", File.ReadAllText(outPy));
+        }
+        finally
+        {
+            TryDelete(dir);
+        }
+    }
+
     private static string WriteSampleDrcov(string? dir = null)
     {
         dir ??= Path.Combine(Path.GetTempPath(), "randall-drcov-" + Guid.NewGuid().ToString("N"));

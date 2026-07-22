@@ -116,8 +116,9 @@ Crashes during this run also show under **Crashes** (dump + analysis + memory le
 1. Inspect novel / missed blocks (PDF: white in IDA after yellow baseline + green fuzzed):
    - **Stalking bugs → Missed blocks** (why + ranked fuzz ideas), or  
    - `randall stalk missed -p <project>`  
-   - Export IDC/Ghidra (**oldest first** — only paints still-white), or one-shot:  
-     `randall stalk dynapstalker <drcov.log> <exe> <out.idc> --color 0x00ffff`  
+   - Export IDC/Ghidra (**oldest first** — only paints still-uncolored), or one-shot:  
+     `randall stalk dynapstalker <drcov.log> <exe> out.idc --color 0x00ffff`  
+     `randall stalk dynapstalker <drcov.log> <exe> out.py --format ghidra --color 0x00ffff`  
    - Optional: import a BB inventory for never-hit without IDA  
      (`randall stalk inventory -p <project> --import blocks.txt`)  
    - Prefer white/missed near string copies / `rep movs*` / error handlers.

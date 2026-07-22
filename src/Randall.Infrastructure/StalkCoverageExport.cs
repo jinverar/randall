@@ -118,6 +118,9 @@ public static class StalkCoverageExport
         sb.AppendLine("    raise Exception('ColorizingService not available')");
         sb.AppendLine();
 
+        sb.AppendLine("base = currentProgram.getImageBase()");
+        sb.AppendLine();
+
         var idx = 0;
         foreach (var layer in layers)
         {
@@ -126,16 +129,24 @@ public static class StalkCoverageExport
             var (r, g, b) = HexToRgb(layer.ColorHex);
             sb.AppendLine($"# Layer {idx}: {layer.Tag} — {layer.Label} ({edges.Count} blocks)");
             sb.AppendLine($"color_{idx} = Color({r}, {g}, {b})");
-            sb.AppendLine($"aset_{idx} = AddressSet()");
+            sb.AppendLine($"painted_{idx} = 0");
+            sb.AppendLine($"skipped_{idx} = 0");
+            sb.AppendLine($"for rva in [");
             foreach (var edge in edges.OrderBy(e => e))
             {
-                var addr = EdgeAddress(edge);
-                if (addr is null) continue;
-                sb.AppendLine($"aset_{idx}.add(toAddr({addr}))");
+                var rva = EdgeRvaLong(edge);
+                if (rva is null) continue;
+                sb.AppendLine($"    {rva},");
             }
 
-            sb.AppendLine($"service.setBackgroundColor(aset_{idx}, color_{idx})");
-            sb.AppendLine($"print('Applied layer {layer.Tag}: {edges.Count} blocks')");
+            sb.AppendLine($"]:");
+            sb.AppendLine($"    addr = base.add(rva)");
+            sb.AppendLine($"    if service.getBackgroundColor(addr) is not None:");
+            sb.AppendLine($"        skipped_{idx} += 1");
+            sb.AppendLine($"        continue");
+            sb.AppendLine($"    service.setBackgroundColor(AddressSet(addr), color_{idx})");
+            sb.AppendLine($"    painted_{idx} += 1");
+            sb.AppendLine($"print('Layer {layer.Tag}: painted %d, skipped %d' % (painted_{idx}, skipped_{idx}))");
             sb.AppendLine();
             idx++;
         }
@@ -145,13 +156,17 @@ public static class StalkCoverageExport
 
         var readme = Path.Combine(outDir, "README_GHIDRA.txt");
         File.WriteAllText(readme, """
-            Randfuzz → Ghidra color import
-            ==============================
+            Randfuzz → Ghidra color import (Dynapstalker-style)
+            ==================================================
             1. Import/open the target binary; finish analysis.
             2. Window → Script Manager → Run the generated *_stalk_layers.py
-            3. Layers apply in baseline → fuzzed → … order.
-            4. Use Listing / Graph view to hunt novel (later) colors vs baseline.
-            5. Pair with Dragon Dance / coverage_edges.txt from crash triage bundles.
+            3. Layers apply oldest-first; only paints still-uncolored addresses
+               (baseline yellow keeps winning — later greens fill new hits).
+            4. Plain / uncolored blocks ≈ missed — review string/memcpy / error paths.
+            5. Addresses are imageBase + drcov RVA (open the matching module).
+            6. One-shot from a raw drcov log:
+                 randall stalk dynapstalker log savant.exe out.py --format ghidra --color 0x00ffff
+            7. Pair with Dragon Dance / coverage_edges.txt from crash triage bundles.
             """);
         files.Add(readme);
         return new StalkExportResultDto("ghidra", outDir, total, files);
@@ -185,6 +200,17 @@ public static class StalkCoverageExport
         if (!addr.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
             addr = "0x" + addr;
         return addr;
+    }
+
+    private static long? EdgeRvaLong(string edge)
+    {
+        var addr = EdgeAddress(edge);
+        if (addr is null) return null;
+        var s = addr.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? addr[2..] : addr;
+        return long.TryParse(s, System.Globalization.NumberStyles.HexNumber,
+            System.Globalization.CultureInfo.InvariantCulture, out var v)
+            ? v
+            : null;
     }
 
     private static string ParseIdaColor(string colorHex)
