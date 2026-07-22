@@ -39,10 +39,11 @@ Deploy the same Randfuzz build to the lab VM. Run the agent so it listens on the
 
 ```powershell
 # On the remote fuzz box (after build + lab targets)
-dotnet run --project src/Randall.Cli -- agent --port 5000
+dotnet run --project src/Randall.Cli -- agent --port 5000 --token lab-secret
+# or: $env:RANDALL_AGENT_TOKEN = "lab-secret"; randall agent --port 5000
 ```
 
-`randall agent` is the same web host as `serve`, bound to **0.0.0.0** by default. Opening `http://<lab-ip>:5000` in a browser is the **remote Target Runtime lab UI** (badge: Remote lab) — fuzz there when you need dumps + memory lens on the box.
+`randall agent` is the same web host as `serve`, bound to **0.0.0.0** by default. **A token is required** for that LAN bind (refuses to start without `--token` / `RANDALL_AGENT_TOKEN`). Lab escape hatch only: `--allow-open` (unauthenticated — prints WARN). Opening `http://<lab-ip>:5000` in a browser is the **remote Target Runtime lab UI** (badge: Remote lab) — fuzz there when you need dumps + memory lens on the box.
 
 On your laptop UI:
 
@@ -74,14 +75,15 @@ For practice labs and user-mode targets, a small agent is enough: spawn/kill pro
 - Agent URL hosts are restricted to loopback / RFC1918 private addresses (MVP SSRF guard).
 - Labs still default to loopback on the *target* machine; expose the agent port only on a trusted lab network.
 - Do not put the agent on the public internet.
-- **Optional shared secret:** set `RANDALL_AGENT_TOKEN` or pass `--token SECRET` to `randall agent` / `serve`. When set, `/api/*` and SignalR hubs require `Authorization: Bearer …` or `X-Randall-Token` (static UI + `/api/health` stay open). Laptop UI: **Lab servers → Agent token**. CLI pull: `randall crashes pull … --token SECRET`.
-- Without a token on `0.0.0.0`, the CLI prints a WARN — this is still lab-grade, not multi-user IAM. See [MATURITY.md](MATURITY.md).
+- **Shared secret required on LAN:** set `RANDALL_AGENT_TOKEN` or pass `--token SECRET` to `randall agent` (default bind `0.0.0.0`). Without it the CLI **exits** unless you pass `--allow-open`. When a token is set, `/api/*` and SignalR hubs require `Authorization: Bearer …` or `X-Randall-Token` (static UI + `/api/health` stay open). Laptop UI: **Lab servers → Agent token**. CLI pull: `randall crashes pull … --token SECRET`.
+- Localhost `randall serve` (127.0.0.1) stays optional-token. This is still lab-grade, not multi-user IAM. See [MATURITY.md](MATURITY.md).
 
 ```powershell
 # On the fuzz box
 $env:RANDALL_AGENT_TOKEN = "lab-secret"
 randall agent --port 5000
 # or: randall agent --port 5000 --token lab-secret
+# lab-only escape: randall agent --allow-open
 
 # On the laptop
 randall crashes pull -a http://192.168.2.10:5000 -p vulnserver --token lab-secret --import

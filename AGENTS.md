@@ -19,10 +19,10 @@ Randfuzz ("Randall") is a cross-platform fuzzer written entirely in C#/.NET 8 (`
 
 ### Build / run / test
 - Build everything: `dotnet build Randall.sln` (run from repo root; restores YamlDotNet automatically).
+- Tests: `dotnet test Randall.sln -c Release` — xunit project at `tests/Randall.Tests` (LabAccess, HTTP framing/cookies, Magician, Oracle, doctor hints, …). CI runs this on Windows + Linux.
 - Web console (primary product surface): `dotnet run --project src/Randall.Server --urls http://127.0.0.1:5000` then open `http://127.0.0.1:5000`. REST API is under `/api/*` (e.g. `/api/health`, `/api/targets`, `/api/fuzz/start`).
-- CLI: `dotnet run --project src/Randall.Cli -- <command>` (e.g. `targets`, `doctor -c projects/vulnserver.yaml`, `fuzz -c projects/<profile>.yaml`).
-- There is no automated test suite (no xunit/nunit/MSTest projects). "Testing" here means building + running the CLI/server and exercising a fuzz run.
-
+- CLI: `dotnet run --project src/Randall.Cli -- <command>` (e.g. `targets`, `doctor -c projects/file-text.yaml`, `fuzz -c projects/<profile>.yaml`).
+- Fast first crash (no network lab): `scripts/build-file-text.sh` then `fuzz -c projects/file-text.yaml`.
 ### Linux AFL FORKSRV_FD
 - With `fuzz.forkServer: true` on Linux, Randfuzz tries classic AFL `FORKSRV_FD` (198/199) via the native helper `targets/forksrv-demo/randall_forksrv_helper` (build with `gcc`). Demo: `projects/forksrv-demo.yaml` (crashes when input contains `!`). Targets that do not handshake fall back to warm stdio.
 

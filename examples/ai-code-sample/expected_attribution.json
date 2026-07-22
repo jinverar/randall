@@ -1,0 +1,8 @@
+{
+  "description": "Eval fixture for Bug Hunter annotation path — docs/MATURITY.md",
+  "minAiBlocks": 1,
+  "minHumanBlocks": 1,
+  "mustContainSignals": ["annotation:region-AI", "annotation:region-HUMAN"],
+  "paths": ["handler.c"],
+  "command": "randall hunt attribution -d examples/ai-code-sample"
+}

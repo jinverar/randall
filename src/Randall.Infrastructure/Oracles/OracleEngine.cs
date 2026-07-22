@@ -186,6 +186,34 @@ public static class OracleEngine
                             NormalizeObservation(obs.Result), null));
                     }
                     break;
+                case "expectresponseclass" or "expectclass" or "response_class":
+                {
+                    var got = HttpFraming.StatusClass(obs.Result.ResponseBytes);
+                    var want = (rule.Pattern ?? "").Trim();
+                    if (want.Length > 0 &&
+                        !got.Equals(want, StringComparison.OrdinalIgnoreCase))
+                    {
+                        findings.Add(MakeFinding(obs, id, "InvariantRule", sev, 0.85,
+                            $"response class == '{want}'",
+                            $"got {got}",
+                            NormalizeObservation(obs.Result), null));
+                    }
+                    break;
+                }
+                case "forbidresponseclass" or "forbidclass":
+                {
+                    var got = HttpFraming.StatusClass(obs.Result.ResponseBytes);
+                    var bad = (rule.Pattern ?? "").Trim();
+                    if (bad.Length > 0 &&
+                        got.Equals(bad, StringComparison.OrdinalIgnoreCase))
+                    {
+                        findings.Add(MakeFinding(obs, id, "InvariantRule", sev, 0.9,
+                            $"response class != '{bad}'",
+                            $"got {got}",
+                            NormalizeObservation(obs.Result), null));
+                    }
+                    break;
+                }
                 case "maxresponsebytes" or "maxbytes":
                     var max = rule.MaxBytes ?? 0;
                     var len = obs.Result.ResponseBytes?.Length ?? 0;

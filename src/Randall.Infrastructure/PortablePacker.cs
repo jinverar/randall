@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using Randall.Contracts;
 
@@ -7,7 +8,15 @@ namespace Randall.Infrastructure;
 /// <summary>Leg 8 — Pack: build a portable standalone folder for air-gapped lab VMs.</summary>
 public static class PortablePacker
 {
-    public static async Task<PackResultDto> PackAsync(string repoRoot, string outputDir, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Publish self-contained CLI + server into <paramref name="outputDir"/>.
+    /// Default RID follows the host OS (win-x64 / linux-x64 / osx-*). Override with <paramref name="rid"/>.
+    /// </summary>
+    public static async Task<PackResultDto> PackAsync(
+        string repoRoot,
+        string outputDir,
+        string? rid = null,
+        CancellationToken cancellationToken = default)
     {
         outputDir = Path.GetFullPath(outputDir);
         Directory.CreateDirectory(outputDir);
@@ -17,13 +26,14 @@ public static class PortablePacker
         if (!File.Exists(cliProject))
             throw new FileNotFoundException("Randall.Cli.csproj not found", cliProject);
 
+        rid ??= DefaultRid();
         var cliOut = Path.Combine(outputDir, "cli");
         var serverOut = Path.Combine(outputDir, "server");
         Directory.CreateDirectory(cliOut);
         Directory.CreateDirectory(serverOut);
 
-        await RunPublishAsync(cliProject, cliOut, cancellationToken);
-        await RunPublishAsync(serverProject, serverOut, cancellationToken);
+        await RunPublishAsync(cliProject, cliOut, rid, cancellationToken);
+        await RunPublishAsync(serverProject, serverOut, rid, cancellationToken);
 
         var included = new List<string>();
         CopyTree(Path.Combine(repoRoot, "projects"), Path.Combine(outputDir, "projects"), included);
@@ -32,19 +42,52 @@ public static class PortablePacker
         CopyTree(Path.Combine(repoRoot, "docs"), Path.Combine(outputDir, "docs"), included, optional: true);
         CopyFile(Path.Combine(repoRoot, "README.md"), Path.Combine(outputDir, "README.md"), included);
         CopyFile(Path.Combine(repoRoot, "docs", "assets", "randall.png"), Path.Combine(outputDir, "randall.png"), included, optional: true);
+        CopyFile(Path.Combine(repoRoot, "docs", "RELEASE.md"), Path.Combine(outputDir, "RELEASE.md"), included, optional: true);
 
         Directory.CreateDirectory(Path.Combine(outputDir, "data", "corpus"));
         Directory.CreateDirectory(Path.Combine(outputDir, "data", "crashes"));
         Directory.CreateDirectory(Path.Combine(outputDir, "targets"));
 
-        var startCmd = """
-            @echo off
-            echo Randfuzz portable lab
-            echo   fuzz:   cli\Randall.Cli.exe fuzz -c projects\vulnserver.yaml
-            echo   serve:  server\Randall.Server.exe --urls http://localhost:5000
-            echo   proxy:  cli\Randall.Cli.exe proxy --listen 9998 --target 127.0.0.1:9999
-            """;
-        await File.WriteAllTextAsync(Path.Combine(outputDir, "start.cmd"), startCmd, cancellationToken);
+        var isWindows = rid.StartsWith("win", StringComparison.OrdinalIgnoreCase);
+        if (isWindows)
+        {
+            var startCmd = """
+                @echo off
+                echo Randfuzz portable lab
+                echo   fuzz:   cli\Randall.Cli.exe fuzz -c projects\file-text.yaml
+                echo   fuzz:   cli\Randall.Cli.exe fuzz -c projects\reeldeck.yaml
+                echo   serve:  server\Randall.Server.exe --urls http://localhost:5000
+                echo   proxy:  cli\Randall.Cli.exe proxy --listen 9998 --target 127.0.0.1:9999
+                echo Build lab targets on this box first (scripts\build-all-lab-targets.ps1).
+                """;
+            await File.WriteAllTextAsync(Path.Combine(outputDir, "start.cmd"), startCmd, cancellationToken);
+        }
+        else
+        {
+            var startSh =
+                "#!/usr/bin/env bash\n" +
+                "set -euo pipefail\n" +
+                $"echo \"Randfuzz portable lab ({rid})\"\n" +
+                "echo \"  fuzz:  ./cli/Randall.Cli fuzz -c projects/file-text.yaml\"\n" +
+                "echo \"  fuzz:  ./cli/Randall.Cli fuzz -c projects/reeldeck.yaml\"\n" +
+                "echo \"  serve: ./server/Randall.Server --urls http://127.0.0.1:5000\"\n" +
+                "echo \"Build lab targets: scripts/build-lab-targets.sh && scripts/build-file-text.sh\"\n";
+            var shPath = Path.Combine(outputDir, "start.sh");
+            await File.WriteAllTextAsync(shPath, startSh, cancellationToken);
+            try
+            {
+#pragma warning disable CA1416 // Unix-only mode bits; guarded by non-Windows pack path
+                File.SetUnixFileMode(shPath,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+#pragma warning restore CA1416
+            }
+            catch
+            {
+                /* Windows FS */
+            }
+        }
 
         var size = Directory.EnumerateFiles(outputDir, "*", SearchOption.AllDirectories)
             .Sum(f => new FileInfo(f).Length);
@@ -52,12 +95,21 @@ public static class PortablePacker
         return new PackResultDto(outputDir, size, included.ToArray());
     }
 
-    private static async Task RunPublishAsync(string csproj, string outDir, CancellationToken cancellationToken)
+    public static string DefaultRid()
+    {
+        if (OperatingSystem.IsWindows())
+            return "win-x64";
+        if (OperatingSystem.IsMacOS())
+            return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+        return RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
+    }
+
+    private static async Task RunPublishAsync(string csproj, string outDir, string rid, CancellationToken cancellationToken)
     {
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
-            Arguments = $"publish \"{csproj}\" -c Release -r win-x64 --self-contained true " +
+            Arguments = $"publish \"{csproj}\" -c Release -r {rid} --self-contained true " +
                         $"-p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o \"{outDir}\"",
             UseShellExecute = false,
             RedirectStandardOutput = true,

@@ -1,0 +1,12 @@
+# Length-lie / framing tokens for file-framed mutator (docs/MATURITY.md)
+FRM0
+BOOM
+DEAD
+AAAA
+DEEP
+\x00\x00\x00\xff
+\xff\xff\xff\xff
+\x41\x41\x41\x41
+len=
+record
+crc

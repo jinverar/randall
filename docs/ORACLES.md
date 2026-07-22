@@ -23,7 +23,7 @@ The oracle stack **supplements** coverage — it does not replace it. Findings f
 Input → Fuzz execution
           ↓
 RuntimeRule         crash / timeout / sanitizer hint
-InvariantRule       expect / forbid / exit code / post_receive
+InvariantRule       expect / forbid / response class / exit code / post_receive
 AuthRule            forbidUntil · requireAuth
 StateRule           commandRequiresPrior · forbidResponseInState
 IntegerRule         lengthPrefix (claimed vs body / plausible / wrap)
@@ -34,6 +34,32 @@ MetamorphicRule     whitespaceInsensitive · duplicateIdempotent
           ↓
 Triage + corpus retention (interestingness score)
 ```
+
+## Invariants (single-execution)
+
+```yaml
+oracles:
+  enabled: true
+  invariants:
+    - id: need-http
+      type: expectSubstring
+      pattern: "HTTP/"
+      severity: nearMiss
+    - id: no-stack
+      type: forbidSubstring
+      pattern: "Stack overflow"
+      severity: violation
+    - id: want-2xx
+      type: expectResponseClass   # 1xx|2xx|3xx|4xx|5xx|empty|non-http
+      pattern: "2xx"
+      severity: nearMiss
+    - id: no-5xx
+      type: forbidResponseClass
+      pattern: "5xx"
+      severity: violation
+```
+
+Aliases: `expect` / `forbid` / `expectClass` / `forbidClass` / `response_class`.
 
 ## Division of labour
 

@@ -1,0 +1,9 @@
+# Tokens for structured-text / XML mini-parser
+<BOOM>
+</BOOM>
+len="99999"
+len="0"
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+<script>
+</Config>
+<Section

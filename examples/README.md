@@ -6,6 +6,7 @@ Self-contained YAML projects ported from [boofuzz/examples](https://github.com/j
 |---------|----------------|-----------------|
 | [http-simple](http-simple/) | `http_simple.py` | `randall fuzz -c examples/http-simple/project.yaml --dry-run` |
 | [ftp-simple](ftp-simple/) | `ftp_simple.py` | `randall fuzz -c examples/ftp-simple/project.yaml --dry-run` |
+| [ai-code-sample](ai-code-sample/) | (attribution fixture) | `randall hunt attribution -d examples/ai-code-sample` |
 
 Pair with lab targets:
 

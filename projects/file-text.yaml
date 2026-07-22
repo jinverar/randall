@@ -1,25 +1,31 @@
 name: file-text
-description: Generic structured text / XML file target (replace exe + seeds with your lab copy)
+description: In-repo structured text/XML mini-parser (build with scripts/build-file-text.*)
 kind: file
 model: protocols/file_text.yaml
 target:
+  # Cross-platform: ExecutableResolver maps app.exe ↔ app / file-text
   executable: ../targets/file-text/app.exe
   args:
     - "{file}"
-  timeoutMs: 15000
+  timeoutMs: 5000
 transport:
   type: file
   extension: .xml
 fuzz:
-  maxIterations: 500
+  maxIterations: 300
+  coverageGuided: true
   corpusDir: ../data/corpus/file-text
   crashesDir: ../data/crashes/file-text
 seeds:
   - seeds/file_text_sample.xml
   - seeds/file_text_weird.txt
+  - seeds/file_text_boom.xml
 mutators:
   - bitflip
   - expand
   - truncate
   - boundary
   - insert
+  - dictionary
+  - havoc
+dictionaryFile: dictionaries/file-text.txt

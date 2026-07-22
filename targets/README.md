@@ -43,11 +43,24 @@ Randall starts the server, connects to `127.0.0.1:9999`, and detects when the pr
 
 Source: [Randall.Vulnserver/README.md](Randall.Vulnserver/README.md)
 
-## Generic file templates
+## File labs (in-repo mini-parsers)
 
-`projects/file-text.yaml` and `projects/file-framed.yaml` are **placeholders**. Edit `target.executable`, seeds, and block models for your format.
+Out-of-box `doctor`/`fuzz` — no external exe required after build:
 
-### ReelDeck (media player / studio — recommended file lab)
+| Target | Profile | Build |
+|--------|---------|-------|
+| **file-text** | `projects/file-text.yaml` | `scripts/build-file-text.sh` / `.ps1` |
+| **file-framed** | `projects/file-framed.yaml` | `scripts/build-file-framed.sh` / `.ps1` |
+| **ReelDeck** | `projects/reeldeck.yaml` | `scripts/build-reeldeck.sh` / `.ps1` |
+
+```bash
+scripts/build-file-text.sh
+dotnet run --project src/Randall.Cli -- fuzz -c projects/file-text.yaml
+```
+
+Point `target.executable` at your own parser when you outgrow the teaching floor.
+
+### ReelDeck (media player / studio — deeper file lab)
 
 Larger multi-path `.rndl` container (PCM / MAD / VID / studio). Built for the **fuzz → path-stalk → deepen** maturity loop:
 
@@ -58,7 +71,6 @@ cat data/corpus/reeldeck/paths.txt
 ```
 
 Docs: [REELDECK.md](../docs/REELDECK.md)
-
 ## Private targets (not committed)
 
 Keep real lab binaries and configs out of the public repo:

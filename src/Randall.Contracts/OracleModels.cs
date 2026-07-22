@@ -58,7 +58,7 @@ public sealed class OracleConfig
 public sealed class OracleInvariantRuleConfig
 {
     public string Id { get; set; } = "";
-    /// <summary>expectSubstring | forbidSubstring | maxResponseBytes | exitCodeZero | exitCodeNonZero</summary>
+    /// <summary>expectSubstring | forbidSubstring | expectResponseClass | forbidResponseClass | maxResponseBytes | exitCodeZero | exitCodeNonZero</summary>
     public string Type { get; set; } = "expectSubstring";
     public string? Pattern { get; set; }
     public int? MaxBytes { get; set; }

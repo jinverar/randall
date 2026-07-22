@@ -23,15 +23,15 @@ This doc expands the unfinished surface into concrete gaps, done criteria, and p
 | Oracle engine | Capable | Auth/state/structure/resource rules; still rule-authored |
 | Bug Hunter attribution | Lab | Marker-strong; style heuristic weak — not ground truth |
 | Mistake catalog + arming | Capable | OWASP/AISW-informed channels; needs more field feedback |
-| Web (`http`/`https`) fuzz | Capable | Framing + status oracles; not a full web scanner |
+| Web (`http`/`https`) fuzz | Capable | Framing + status oracles + cookie jar stub; not a full web scanner |
 | Lab targets (vuln*) | Lab | Teaching crashes, not market parsers |
-| File templates (`file-text` / `file-framed`) | Lab | Placeholders — user must bring real exe + seeds |
-| AFL++ / honggfuzz adapters | Capable | Real campaigns + corpus sync; not a bake-off harness suite |
-| Packaging (`pack` / standalone) | Capable | Folder publish exists; no signed installer / versioned releases story |
-| Serve / agent security | Lab → Capable | Optional token gate now; no users/roles/TLS termination |
+| File templates (`file-text` / `file-framed`) | Capable | In-repo mini-parsers + seeds; still teaching-floor depth |
+| AFL++ / honggfuzz adapters | Capable | Real campaigns + corpus sync; bake-off scaffold in BENCHMARKS |
+| Packaging (`pack` / standalone) | Capable | Host RID pack + win/linux scripts; no signed installer yet |
+| Serve / agent security | Capable | Token required on LAN bind; no users/roles/TLS termination |
 | Multi-tenant / SaaS | Missing | Single-box lab tool by design today |
-| Head-to-head benchmarks | Missing | No published corpus/crash/edge bake-off vs AFL++/libFuzzer |
-| Automated test suite | Missing | Build + smoke = CI; no xunit matrix |
+| Head-to-head benchmarks | Lab | Scaffold + script; results table empty until you run it |
+| Automated test suite | Capable | `tests/Randall.Tests` covers LabAccess, HTTP, Magician, paths |
 | L2–L4 packet forge | Missing | Phase 24 — deferred on purpose |
 
 Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_ADAPTERS.md](ENGINE_ADAPTERS.md) · [LAB_AGENT.md](LAB_AGENT.md)
@@ -57,7 +57,7 @@ Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_A
 - Optional: import from git blame / CODEOWNERS / CI “AI authored” labels
 - Optional: eval fixture under `examples/` with scored expected attributions
 
-**Polish shipped here:** attribution markdown includes tiers + limitations; style confidence is capped so it cannot look like annotations.
+**Polish shipped here:** attribution markdown includes tiers + limitations; style confidence is capped so it cannot look like annotations. Eval fixture: `examples/ai-code-sample/` + `expected_attribution.json` (locked by xunit).
 
 ---
 
@@ -69,15 +69,15 @@ Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_A
 - Cross-platform lab build scripts
 
 **Still lab**
-- Stock targets are intentionally crashable toys — great for onboarding, weak as “we fuzz real products” proof
-- `file-text` / `file-framed` are templates pointing at missing/generic exes
-- Few public **real-format** profiles (PNG, JSON, protobuf, …) with golden seeds + known bugs
+- Stock network targets (vuln*) remain intentionally crashable toys — great for onboarding
+- file-text / file-framed are **mini-parsers** (in-repo), not market formats — pair with ReelDeck for deeper file stalking
 
 **Done when**
-- At least 2–3 **non-toy** example projects (oss parser or in-repo mini-parser with documented bugs)
-- Templates ship with a tiny in-repo parser so `doctor`/`fuzz` work out of the box
-- README “first crash in 5 minutes” path does not depend on Windows-only vulnserver lore
+- At least 2–3 **non-toy** example projects (oss parser or in-repo mini-parser with documented bugs) — **ReelDeck + file-text + file-framed shipped**
+- Templates ship with a tiny in-repo parser so `doctor`/`fuzz` work out of the box — **yes**
+- README “first crash in 5 minutes” path does not depend on Windows-only vulnserver lore — **file-text / ReelDeck**
 
+**Polish shipped here:** `targets/file-text`, `targets/file-framed`, Win/Linux builders, dictionaries, crash seeds.
 ---
 
 ## 3. Enterprise polish (auth, multi-tenant, packaging)
@@ -85,13 +85,12 @@ Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_A
 ### Auth / agent exposure
 **Was:** `randall agent` on `0.0.0.0` with open `/api/*` on the LAN.
 
-**Now (first polish):** optional shared secret `RANDALL_AGENT_TOKEN` (or `--token`) — Bearer / `X-Randall-Token`. Health stays open; mutating APIs require the token when set. UI can store a token for remote agent proxying.
+**Now:** shared secret `RANDALL_AGENT_TOKEN` (or `--token`) — Bearer / `X-Randall-Token`. Health stays open; mutating APIs require the token when set. UI can store a token for remote agent proxying. **LAN harden:** `randall agent` (default bind `0.0.0.0`) **refuses to start** without a token. Escape hatch: `--allow-open` (prints WARN). Localhost `serve` stays open by default.
 
 **Still missing**
 - Per-user accounts, roles, audit log
 - TLS termination / reverse-proxy recipes as first-class
 - mTLS or short-lived tokens
-- Hard fail when binding `0.0.0.0` without a token (today: warn)
 
 ### Multi-tenant
 **Missing by design for now.** One process, one `data/` tree, flat JSON/JSONL. SaaS would need workspaces, isolation, quotas — a different product shape.
@@ -100,13 +99,13 @@ Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_A
 **Capable:** `randall pack` / `publish-standalone` folder.
 
 **Still thin**
-- No versioned GitHub Releases cadence called out in-product
-- No signed Windows installer / Linux package
+- No Authenticode / Linux package signing
 - DynamoRIO / AFL++ still manual sidecar installs
 - No “single zip that includes lab targets + tools” SKU
 
 **Done when:** tagged release artifacts + one-page install that matches README for Win and Linux.
 
+**Polish shipped here:** `randall pack --rid` (host default), `scripts/publish-standalone.sh`, [RELEASE.md](RELEASE.md).
 ---
 
 ## 4. Benchmarks vs AFL++ / libFuzzer
@@ -116,40 +115,68 @@ Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_A
 - `randall stalk bench` compares **Randfuzz profiles** (basic/fuzz/fuzzier), not external engines
 
 **Still missing**
-- Shared harness suite (same entrypoint, same seeds, same time budget)
-- Published table: exec/s, unique crashes, edges, wall time — Randfuzz vs AFL++ vs libFuzzer/honggfuzz
-- Honest positioning copy in README (“we win on X; they win on Y”)
+- Shared harness suite numbers filled into the results table
+- Published table with exec/s, unique crashes, edges, wall time on a quiet box
+- Honest positioning copy in README (“we win on X; they win on Y”) — scaffold copy lives in BENCHMARKS
 
 **Done when**
-- `docs/BENCHMARKS.md` + `scripts/bench-engines.sh` on Linux CI (nightly OK)
-- Results checked in or linked; no claim of “next-gen” without numbers
+- `docs/BENCHMARKS.md` + `scripts/bench-engines.sh` on Linux CI (nightly OK) — **scaffold shipped**
+- Sample SUMMARY checked in under `docs/bench-samples/` — **yes** (short budget; not a ranking)
+- Quiet-box results with exec/s + edges linked; no claim of “next-gen” without numbers
 
 **Positioning until then:** Randfuzz owns **structure + sessions + oracles + triage UX**; AFL++ owns **raw coverage throughput**. Use adapters when you need both.
-
 ---
 
 ## 5. Other unfinished product muscle
 
 | Gap | Why it matters | Next polish |
 |-----|----------------|-------------|
-| No automated unit/integration tests | Regressions only caught by smoke | Start with attribution + oracle + HTTP framing tests |
-| Linux coverage without DynamoRIO | Many labs won’t install DR | SanitizerCoverage / perf backend (roadmap note in STALKING) |
-| Web fuzz depth | Not ZAP/Burp | Auth cookie jars, OpenAPI import, richer status/body oracles |
+| Automated unit/integration tests | Regressions only caught by smoke | **Expanded:** PatternTools, CrashStore, CorpusTracker, MagicianSpellStore, session tracker, response-class oracles |
+| Linux coverage without DynamoRIO | Many labs won’t install DR | PathCoverageSet today; SanCov / perf later (STALKING) |
+| Web fuzz depth | Not ZAP/Burp | Cookie jar + `expectResponseClass` / `forbidResponseClass`; OpenAPI deferred |
 | Oracle authoring UX | Rules are YAML-expert today | Scare Floor / UI rule builder for common auth/state patterns |
 | Attribution → seed synthesis | Plan suggests; doesn’t always mint seeds | Auto-seed from mistake channel=seed classes |
 | Phase 24 L2–L4 forge | Scapy-class surface | Keep deferred until app-PDU path is the default habit |
 
 ---
 
+## 6. Windows vs Linux — do we port everything?
+
+**Short answer: no.** Maturity means **parity where the product promise is cross-platform**, and **honest OS-native counterparts** where the underlying tool is OS-bound. Blindly rewriting Linux-only engines for Windows wastes effort and usually ships a worse adapter.
+
+| This-week feature | Runs on | Windows action |
+|-------------------|---------|----------------|
+| Oracle / Bug Hunter / mistake catalog | Win + Linux (.NET) | None — already shared |
+| Magician / Joker | Win + Linux (.NET) | None — already shared |
+| Web HTTP fuzz + notifications + AI seed | Win + Linux | None — already shared |
+| Lab agent token / serve gate | Win + Linux | None — already shared |
+| DynamoRIO stalking | Win + Linux (when installed) | Already had Windows; Linux install was the gap |
+| ReelDeck + path stalking | Win + Linux (native C) | **Build script parity** (`build-reeldeck.ps1`) — not a rewrite |
+| AFL++ / honggfuzz adapters | **Linux only** | **Do not port.** Keep as optional Linux grinders; Windows stays on Randfuzz engine (+ future WinAFL only if product asks) |
+| AFL `FORKSRV_FD` shim | **Linux only** | **Do not port.** Windows already uses warm stdio workers |
+| Linux core / gdb / ASan triage | Linux | Already have WinDbg / minidump / Page Heap counterparts |
+| Sysinternals / ETW / pktmon | Windows | Keep Windows-only; Linux uses strace/tcpdump/perf |
+
+**Polish rule**
+1. Shared C# engine features → one codebase (already).
+2. Native lab targets → ship **both** `.sh` and `.ps1` builders when the target is part of the demo story (ReelDeck, file-text, file-framed).
+3. External Linux engines → document as Linux adapters; never claim Windows AFL++ inside Randfuzz.
+4. Triage tooling → pair by *role* (dump/trace/heap), not by cloning every binary.
+
+Related install notes: [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md) · [INSTALL_LINUX.md](INSTALL_LINUX.md) · [ENGINE_ADAPTERS.md](ENGINE_ADAPTERS.md).
+
+---
+
 ## Priority order (product maturity)
 
 1. **Honesty in-product** — confidence tiers, doctor warnings, maturity links (this doc)
-2. **Agent token by default on LAN** — warn → eventually require token when bind ≠ loopback
-3. **One real-format demo project** — out-of-box crash with golden seed
-4. **Engine bake-off script** — numbers or silence on “beats AFL++”
-5. **Minimal test project** — lock Oracle + Bug Hunter + HTTP framing
-6. **Release packaging** — tagged standalone + install docs parity
+2. **Agent token required on LAN** — refuse `0.0.0.0` without `--token` (**shipped**; `--allow-open` escape)
+3. **Out-of-box file demos** — ReelDeck + file-text + file-framed builders on Win/Linux (**shipped**)
+4. **Engine bake-off scaffold** — `docs/BENCHMARKS.md` + `scripts/bench-engines.sh` (**shipped**; fill numbers)
+5. **Automated tests** — LabAccess, HTTP, Magician, path coverage (**expanding**)
+6. **Release packaging** — RID-aware pack + [RELEASE.md](RELEASE.md) (**scaffold**)
 7. **Attribution upgrades** — blame/CI labels before heavier ML
+8. **No fake Windows ports** of AFL++/forksrv — document adapters instead
 
 ---
 

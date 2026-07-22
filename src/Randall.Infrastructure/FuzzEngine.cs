@@ -39,6 +39,11 @@ public sealed class FuzzEngine
         _ = BugHunterEngine.PrepareForFuzz(project, yamlPath, options.Progress);
         _ = MagicianEngine.PrepareForFuzz(project, yamlPath, options.Progress);
 
+        if (project.Fuzz.SyncCookies || ProjectKinds.IsHttp(project))
+            HttpCookieSession.Begin();
+
+        try
+        {
         var seeds = LoadAllSeeds(project, yamlPath);
         if (seeds.Count == 0)
             seeds.Add(Array.Empty<byte>());
@@ -1380,6 +1385,11 @@ public sealed class FuzzEngine
         var runResult = new FuzzRunResult(iterations, corpusAdded, crashCount, crashes);
         options.Progress?.OnCompleted(runResult);
         return runResult;
+        }
+        finally
+        {
+            HttpCookieSession.End();
+        }
     }
 
     private static List<IMutator> LoadMutators(

@@ -478,9 +478,7 @@ public static class LabDoctor
                 Add("target", "ok", existing);
             else
                 Add("target", requireTarget ? "fail" : "warn",
-                    OperatingSystem.IsWindows()
-                        ? $"Missing: {exe} — run scripts/build-vulnserver.ps1"
-                        : $"Missing: {exe} — build the Linux lab target: scripts/build-lab-targets.sh");
+                    $"Missing: {exe} — {SuggestBuildHint(project, yamlPath)}");
         }
         else if (project.Kind is "tcp" or "udp")
         {
@@ -590,9 +588,49 @@ public static class LabDoctor
         else
         {
             Add("labAccess", "warn",
-                $"{LabAccess.EnvToken} unset — OK for localhost serve; set --token when running agent on LAN (docs/MATURITY.md)");
+                $"{LabAccess.EnvToken} unset — OK for localhost serve; `randall agent` refuses 0.0.0.0 without --token (or --allow-open)");
         }
 
         return Finish(project.Name, checks);
+    }
+
+    /// <summary>Project-aware build hint when the target executable is missing.</summary>
+    public static string SuggestBuildHint(ProjectConfig project, string yamlPath)
+    {
+        var name = (project.Name ?? "").Trim().ToLowerInvariant();
+        var exe = (project.Target.Executable ?? "").Replace('\\', '/').ToLowerInvariant();
+        var win = OperatingSystem.IsWindows();
+
+        if (name.Contains("file-text") || exe.Contains("file-text"))
+            return win ? "run scripts/build-file-text.ps1" : "run scripts/build-file-text.sh";
+        if (name.Contains("file-framed") || exe.Contains("file-framed"))
+            return win ? "run scripts/build-file-framed.ps1" : "run scripts/build-file-framed.sh";
+        if (name.Contains("reeldeck") || exe.Contains("reeldeck"))
+            return win ? "run scripts/build-reeldeck.ps1" : "run scripts/build-reeldeck.sh";
+        if (name.Contains("vulnserver") || exe.Contains("vulnserver"))
+            return win ? "run scripts/build-vulnserver.ps1" : "run scripts/build-lab-targets.sh vulnserver";
+        if (project.Kind.Equals("file", StringComparison.OrdinalIgnoreCase))
+            return win
+                ? "build the file target (scripts/build-file-text.ps1 | build-file-framed.ps1 | build-reeldeck.ps1)"
+                : "build the file target (scripts/build-file-text.sh | build-file-framed.sh | build-reeldeck.sh)";
+        return win
+            ? "run scripts/build-all-lab-targets.ps1 (or the matching build-*.ps1)"
+            : "run scripts/build-lab-targets.sh";
+    }
+
+    /// <summary>Short post-doctor "Next" lines for first-crash UX.</summary>
+    public static IReadOnlyList<string> NextSteps(DoctorReportDto report, string configPath)
+    {
+        var lines = new List<string>();
+        if (!report.Ready)
+        {
+            lines.Add($"Fix failures above, then: randall fuzz -c {configPath} --dry-run");
+            return lines;
+        }
+
+        lines.Add($"randall fuzz -c {configPath}");
+        lines.Add($"Crashes land in data/crashes/{report.Project}/");
+        lines.Add("First-crash file labs: docs/MATURITY.md · targets/README.md");
+        return lines;
     }
 }

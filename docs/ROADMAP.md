@@ -138,7 +138,7 @@ Drop binaries into `targets/` per [TARGETS.md](TARGETS.md), then fuzz. Private p
 | **Discord + email notifications** | ✅ unique crash + campaign complete — [NOTIFICATIONS.md](NOTIFICATIONS.md) |
 
 ```powershell
-randall agent --port 5000          # LAN: http://<ip>:5000
+randall agent --port 5000 --token lab-secret   # LAN: http://<ip>:5000 (token required)
 randall serve --bind 127.0.0.1     # localhost only
 randall notify test -c projects/local/myservice.yaml
 ```
@@ -484,22 +484,32 @@ Users should **not** need Scapy for normal Randfuzz work. Scapy remains an optio
 | Maturity doc (honest unfinished map) | ✅ | [MATURITY.md](MATURITY.md) |
 | Attribution confidence tiers + capped style scores | ✅ | Bug Hunter reports |
 | Optional agent/serve shared-secret token | ✅ | `RANDALL_AGENT_TOKEN` / `--token` · [LAB_AGENT.md](LAB_AGENT.md) |
-| Require token when bind ≠ loopback | 🔲 | Today: WARN only |
-| Non-toy format demo project (golden seeds) | 🔲 | Beyond vuln* teaching floor |
-| Engine bake-off vs AFL++/libFuzzer | 🔲 | `docs/BENCHMARKS.md` + script |
-| Automated unit/integration tests | 🔲 | Oracle + Bug Hunter + HTTP framing first |
-| Signed / versioned release packaging | 🔲 | Beyond `randall pack` folder |
+| Require token when bind ≠ loopback | ✅ | Refuse LAN bind; `--allow-open` escape |
+| Win/Linux platform policy (no fake AFL++ port) | ✅ | [MATURITY.md](MATURITY.md)#6 |
+| ReelDeck builders on Win + Linux | ✅ | `build-reeldeck.ps1` / `.sh` · [REELDECK.md](REELDECK.md) |
+| In-repo file-text / file-framed parsers | ✅ | `targets/file-*` + builders |
+| Bake-off scaffold (BENCHMARKS + script) | ✅ | [BENCHMARKS.md](BENCHMARKS.md) — fill numbers |
+| Bake-off sample SUMMARY | ✅ | [bench-samples/SAMPLE_SUMMARY.md](bench-samples/SAMPLE_SUMMARY.md) (short budget) |
+| RID-aware portable pack + RELEASE.md | ✅ | `pack --rid` · [RELEASE.md](RELEASE.md) |
+| Attribution eval fixture | ✅ | `examples/ai-code-sample` |
+| Oracle expect/forbid response class | ✅ | [ORACLES.md](ORACLES.md) |
+| HTTP cookie jar stub | ✅ | `fuzz.syncCookies` · [WEB_FUZZ.md](WEB_FUZZ.md) |
+| Doctor project-aware build hints | ✅ | file-text / framed / reeldeck / vulnserver |
+| Automated unit/integration tests | 🔄 | `tests/Randall.Tests` + Linux CI |
+| Published quiet-box bake-off numbers | 🔲 | Longer BUDGET + edges/exec/s |
+| Signed / versioned release packaging | 🔲 | Beyond portable folder |
 | Multi-tenant / SaaS | 🔲 | Out of scope for single-box lab shape |
 | Linux coverage without DynamoRIO | 🔲 | SanCov / perf (see STALKING) |
 
 ### Priority order (recommended)
 
 1. Honesty in-product (this phase’s ✅ rows)
-2. LAN token required (not just warned)
-3. One real-format out-of-box demo
-4. Published engine bake-off numbers
-5. Minimal automated tests
-6. Release packaging cadence
+2. LAN token required ✅
+3. Out-of-box file demos ✅
+4. Bake-off scaffold ✅ → publish quiet-box numbers
+5. Grow automated tests 🔄
+6. Release packaging cadence (tags + zips)
+7. **Do not** port AFL++/forksrv to Windows — adapters stay Linux
 
 ---
 

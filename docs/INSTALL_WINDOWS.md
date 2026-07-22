@@ -78,7 +78,7 @@ What it does:
 |------|--------|
 | `git pull` | Latest source (fails clearly if this folder is not a clone) |
 | `dotnet build` | Randall.Cli, Randall.Server, libraries |
-| `build-all-lab-targets.ps1` | vulnserver, vulnhttp, vulnftp, vulnssh, vulntftp, vulnrpc, vulnsmb, ScreamCrash |
+| `build-all-lab-targets.ps1` | vulnserver, vulnhttp, vulnftp, vulnssh, vulntftp, vulnrpc, vulnsmb, ScreamCrash, ReelDeck (optional native) |
 | `tools\` | **Not** touched unless you pass `-InstallTools` |
 
 Useful flags:

@@ -198,15 +198,16 @@ Details: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Factory floor (lab targets)
 
-Built-in vulnerable targets for practice — **your** factory, **your** permission slip. Default profiles: **vulnserver** (TCP), plus **file-text** / **file-framed** templates. Got something private? `projects/local/` is gitignored.
+Built-in vulnerable targets for practice — **your** factory, **your** permission slip. Default profiles: **vulnserver** (TCP), plus **in-repo file labs** (`file-text`, `file-framed`, **ReelDeck**). Got something private? `projects/local/` is gitignored.
 
 ```powershell
+# Fastest first crash (no network lab needed) — Linux example:
+#   scripts/build-file-text.sh && dotnet run --project src/Randall.Cli -- fuzz -c projects/file-text.yaml
 dotnet run --project src/Randall.Cli -- targets
 dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml --dry-run
 ```
 
-See [docs/TARGETS.md](docs/TARGETS.md) and [targets/README.md](targets/README.md).
-
+See [docs/TARGETS.md](docs/TARGETS.md), [targets/README.md](targets/README.md), maturity notes in [docs/MATURITY.md](docs/MATURITY.md).
 **Fuzz your own program:** write a YAML under `projects/` or `projects/local/` — the `name:` field becomes the **Target profile** in the UI. Build seeds in **Fuzz → Case builder** or `randall case …`. Guides: [docs/CUSTOM_TARGETS.md](docs/CUSTOM_TARGETS.md), [docs/CASE_BUILDER.md](docs/CASE_BUILDER.md), templates in [docs/templates/](docs/templates/).
 
 **Hands-on lab walkthrough:** [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md)
@@ -325,17 +326,23 @@ dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml --cover
 
 ## Quick start — sneak in
 
-Same as **[Install](#install-windows-10--11-vm)** above — clone, build, doctor, then the UI. Full VM checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md).
+Same as **[Install](#install-windows-10--11-vm)** above — clone, build, doctor, then the UI. Full VM checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) · Linux: [docs/INSTALL_LINUX.md](docs/INSTALL_LINUX.md).
+
+**First crash without vulnserver** (file lab):
+
+```bash
+scripts/build-file-text.sh   # or: powershell -File .\scripts\build-file-text.ps1
+dotnet run --project src/Randall.Cli -- fuzz -c projects/file-text.yaml
+```
 
 ## How I deploy
 
 | Mode | Command | When |
 |------|---------|------|
-| **Lab agent** | `randall agent [--port 5000]` | Remote fuzz box — start/stop/watch labs from your laptop ([docs/LAB_AGENT.md](docs/LAB_AGENT.md)) |
+| **Lab agent** | `randall agent --token SECRET [--port 5000]` | Remote fuzz box — token required on LAN ([docs/LAB_AGENT.md](docs/LAB_AGENT.md)) |
 | **Web + local** | `randall serve` | Browser console on localhost |
 | **Headless** | `randall fuzz -c project.yaml` | Scripts, CI, no UI needed |
-| **Standalone** | Self-contained publish → zip folder | Air-gapped VM — I travel light |
-
+| **Standalone** | `randall pack -o publish/standalone [--rid …]` | Air-gapped VM — [docs/RELEASE.md](docs/RELEASE.md) |
 ## Status
 
 **Shipped recently** — Target Runtime (local/remote), crash artifact packs, stalk-loop guides, UI skins (default Light), **in-process harnesses** with persistent / cold / forkServer isolation and harness design contract.

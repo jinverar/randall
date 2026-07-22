@@ -2629,9 +2629,13 @@ function selectNextUnique() {
 }
 
 function canisterFillPct(count, capacity) {
-  // Mild presence only — mood / EIP seal are the real signals (not fill grading).
-  if (!count) return 0;
-  return 22;
+  // Progressive fill for the porthole liquid — mood art still carries the story.
+  const n = Math.max(0, Number(count) || 0);
+  if (n <= 0) return 0;
+  const cap = Math.max(1, Number(capacity) || 24);
+  // Ease toward capacity: 1 scream ≈ 18%, mid around half, asymptote ~92%.
+  const t = Math.min(1, n / cap);
+  return Math.round(18 + t * 74);
 }
 
 /**
@@ -2660,10 +2664,18 @@ function canisterArtForSlot(slot) {
     critical: slot.critical || 0,
     ipCount: slot.ipCount || 0,
   });
-  if (mood === 'eip' || mood === 'virulent') return '/canisters/canister-full.jpg';
+  if (mood === 'eip') return '/canisters/canister-eip.jpg';
+  if (mood === 'virulent') return '/canisters/canister-full.jpg';
   if (mood === 'toxic') return '/canisters/canister-mid.jpg';
   if (mood === 'watching') return '/canisters/canister-low.jpg';
   return '/canisters/canister-empty.jpg';
+}
+
+function gaugeAngleForFill(pct, mood) {
+  // Analog dial sweep: -110deg (idle) → +110deg (pegged red).
+  if (mood === 'eip') return 110;
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  return Math.round(-110 + (p / 100) * 220);
 }
 
 function screamCaptionForMood(mood) {
@@ -3128,11 +3140,13 @@ function renderScreamCanisters(opts = {}) {
 
   rack.innerHTML = slots.map((s) => {
     const mood = s.mood || 'watching';
-    const pct = mood === 'eip' ? 100
+    const moodFloor = mood === 'eip' ? 100
       : mood === 'virulent' ? 72
       : mood === 'toxic' ? 48
       : mood === 'watching' ? 28
       : 0;
+    const progressive = canisterFillPct(s.count, s.capacity);
+    const pct = mood === 'eip' ? 100 : Math.max(moodFloor, progressive);
     const art = canisterArtForSlot(s);
     const active = mode === 'severity'
       ? (!compact && s.sevFilter && activeSev === s.sevFilter ? 'active' : '')
@@ -3141,24 +3155,38 @@ function renderScreamCanisters(opts = {}) {
     const pulse = ((rose || ipRose) && (s.ipControlled || s.live || mood === 'virulent')) ? 'pulse' : '';
     const live = s.live ? 'is-live' : '';
     const hue = moodHue(mood, s.hue);
+    const gauge = gaugeAngleForFill(pct, mood);
     const style = [
       `--fill: 0%`,
+      `--gauge: ${gauge}deg`,
       `--canister-glow: hsl(${hue} 90% 48%)`,
       `--mood-accent: hsl(${hue} 85% 55%)`,
     ].join(';');
     const metaCount = s.ipControlled
       ? (compact ? `EIP×${s.ipCount || 1}` : `EIP ${s.ipCount || 1}`)
       : (mood === 'laughter' ? 'ha' : String(s.count));
+    const critChip = (!compact && s.critical > 0 && !s.ipControlled)
+      ? `<span class="scream-canister-crit" title="${s.critical} critical">${s.critical} crit</span>`
+      : '';
     const footer = compact
       ? ''
-      : `<span class="scream-canister-pct mood-${mood}">${escapeAttr(s.scream || screamCaptionForMood(mood))}</span>`;
+      : `<div class="scream-canister-foot">
+          <span class="scream-canister-pct mood-${mood}">${escapeAttr(s.scream || screamCaptionForMood(mood))}</span>
+          ${critChip}
+          <span class="scream-canister-fill-readout" title="Porthole fill">${pct}%</span>
+        </div>`;
     const floaties = compact ? '' : canisterFloatiesHtml(mood);
     return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling} ${pulse} ${live}" role="listitem"
       data-slot="${s.id}" data-target-fill="${pct}" data-sev="${s.sevFilter || ''}" data-project="${s.project || ''}"
       data-fill="${pct}" data-ip="${s.ipControlled ? '1' : '0'}" data-mood="${mood}" title="${escapeAttr(s.title)}" style="${style}">
       <div class="scream-canister-vessel">
         <img class="scream-canister-art" src="${art}" alt="" width="186" height="280" loading="lazy" decoding="async" />
-        <div class="scream-canister-liquid" aria-hidden="true"></div>
+        <div class="scream-canister-porthole" aria-hidden="true">
+          <div class="scream-canister-liquid"></div>
+        </div>
+        <div class="scream-canister-gauge" aria-hidden="true" title="Harvest pressure">
+          <span class="scream-canister-gauge-needle"></span>
+        </div>
         <div class="scream-canister-vapor" aria-hidden="true"></div>
         ${floaties}
         ${s.ipControlled ? '<span class="scream-canister-eip-badge" title="Instruction pointer looks controlled">EIP</span>' : ''}

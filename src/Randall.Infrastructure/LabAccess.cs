@@ -25,6 +25,25 @@ public static class LabAccess
 
     public static bool IsConfigured => ConfiguredToken is not null;
 
+    /// <summary>
+    /// True when <paramref name="bind"/> listens beyond loopback (LAN / all interfaces).
+    /// Used to require a token for <c>randall agent</c> / non-local <c>serve</c>.
+    /// </summary>
+    public static bool IsNonLoopbackBind(string? bind)
+    {
+        if (string.IsNullOrWhiteSpace(bind))
+            return false;
+        var b = bind.Trim().ToLowerInvariant();
+        return b is "0.0.0.0" or "*" or "::" or "[::]"
+               || b.StartsWith("+", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Non-loopback binds require a configured token unless the operator passes
+    /// <c>--allow-open</c> (lab escape hatch).
+    /// </summary>
+    public static bool RequiresTokenForBind(string? bind) => IsNonLoopbackBind(bind);
+
     /// <summary>Attach token headers for outbound calls to a remote agent.</summary>
     public static void Apply(HttpRequestMessage request, string? token = null)
     {

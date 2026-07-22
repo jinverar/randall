@@ -7,7 +7,7 @@ on:
     branches: [main, master]
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,6 +16,26 @@ jobs:
           dotnet-version: '8.0.x'
       - run: dotnet restore
       - run: dotnet build --no-restore -c Release
-      - run: dotnet test --no-build -c Release --if-present
+      - run: dotnet test -c Release --no-build --verbosity minimal
       - run: dotnet run --no-build -c Release --project src/Randall.Cli -- campaign -c campaigns/lab-smoke.yaml
       - run: dotnet run --no-build -c Release --project src/Randall.Cli -- graph -c projects/vulnftp.yaml
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore
+      - run: dotnet build --no-restore -c Release
+      - run: dotnet test -c Release --no-build --verbosity minimal
+      - name: Build file-text lab + doctor
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc
+          bash scripts/build-file-text.sh
+          dotnet run --no-build -c Release --project src/Randall.Cli -- doctor -c projects/file-text.yaml
+      - name: Short file-text fuzz smoke
+        run: |
+          timeout 45s dotnet run --no-build -c Release --project src/Randall.Cli -- \
+            fuzz -c projects/file-text.yaml --max-iterations 30 || true
