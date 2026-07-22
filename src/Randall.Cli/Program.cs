@@ -89,6 +89,7 @@ static void PrintHelp()
           randall stalk missed -p <project> [--limit N]  Missed blocks + fuzz ideas
           randall stalk inventory -p <project> --import <file>  BB inventory for never-hit
           randall stalk dynapstalker <drcov.log> <exe> <out.idc|.py> [--format idc|ghidra] [--color …]
+          randall stalk ghidra-pack -p <project> [-o dir]     First-class Ghidra stalk pack
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall stalk from-crash -i <crash-guid> [--tag crash]
           randall scream watch -p <pid> [-o dumpsDir]   Built-in exception dump watcher
@@ -2142,6 +2143,7 @@ static int RunStalk(string[] args)
               randall stalk inventory -p <project> --import <blocks.txt|drcov.log>
               randall stalk dynapstalker <drcov.log> <process.exe> <out.idc|.py> [--format idc|ghidra] [--color 0x00ffff]
               randall stalk export -p <project> --format idc|ghidra|edges [-o dir] [layerId…]
+              randall stalk ghidra-pack -p <project> [-o dir]   Bundle Ghidra scripts + layer export
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
               randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
             """);
@@ -2157,11 +2159,47 @@ static int RunStalk(string[] args)
         "missed" => StalkMissed(rest),
         "inventory" => StalkInventory(rest),
         "dynapstalker" or "drcov2idc" => StalkDynapstalker(rest),
+        "ghidra-pack" or "ghidra" => StalkGhidraPack(rest),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
         "bench" => StalkBench(rest),
         _ => Unknown($"stalk {args[0]}"),
     };
+}
+
+static int StalkGhidraPack(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    string? output = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-o" or "--output" && i + 1 < args.Length)
+            output = args[++i];
+    }
+
+    try
+    {
+        var result = StalkCoverageExport.Export(new StalkExportRequest(
+            project,
+            [],
+            "ghidra",
+            output));
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var tools = Path.Combine(root, "tools", "ghidra");
+        Console.WriteLine($"Ghidra pack: {result.BlockCount} blocks → {result.OutputPath}");
+        Console.WriteLine($"Installable scripts: {tools}");
+        Console.WriteLine("Docs: docs/GHIDRA_INTEGRATION.md");
+        Console.WriteLine("Ghidra → Script Manager → run *_stalk_layers.py (open matching module first).");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
 }
 
 static int StalkDynapstalker(string[] args)

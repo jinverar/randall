@@ -127,6 +127,13 @@ Then revise the fuzzer (Scare Floor seeds, dictionary, mutators, session steps) 
 
 ## Part D — Ghidra
 
+**Product path (why this fuzzer):** [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md) — first-class Randfuzz scripts; Dragon Dance optional.
+
+### D0. Install Randfuzz scripts (once)
+
+1. Script Manager → **Script Directories** → add repo `tools/ghidra/`
+2. You get **Analysis → Randfuzz → Import coverage edges** / **Run export script**
+
 ### D1. Open the binary
 
 1. Ghidra → import the **same** module binary.

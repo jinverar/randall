@@ -111,49 +111,33 @@ public static class DynapstalkerExport
         string? colorHex)
     {
         var (r, g, b) = HexToRgb(colorHex);
-        var sb = new StringBuilder();
-        sb.AppendLine("# Randfuzz Dynapstalker export — Ghidra Python (Jython)");
-        sb.AppendLine($"# Source: {drcovPath}");
-        sb.AppendLine($"# Process filter: {processName}");
-        sb.AppendLine($"# Color RGB: ({r}, {g}, {b})");
-        sb.AppendLine($"# Blocks: {edges.Count}");
-        sb.AppendLine("# Window → Script Manager → Run. Only paints addresses with no background yet.");
-        sb.AppendLine("# drcov BB starts are module RVAs → added to the program image base.");
-        sb.AppendLine("from ghidra.app.plugin.core.colorizer import ColorizingService");
-        sb.AppendLine("from ghidra.program.model.address import AddressSet");
-        sb.AppendLine("from java.awt import Color");
-        sb.AppendLine();
-        sb.AppendLine("service = state.getTool().getService(ColorizingService)");
-        sb.AppendLine("if service is None:");
-        sb.AppendLine("    raise Exception('ColorizingService not available — open CodeBrowser tool')");
-        sb.AppendLine();
-        sb.AppendLine($"color = Color({r}, {g}, {b})");
-        sb.AppendLine("base = currentProgram.getImageBase()");
-        sb.AppendLine("painted = 0");
-        sb.AppendLine("skipped = 0");
-        sb.AppendLine("rvas = [");
-        foreach (var edge in edges.OrderBy(e => e, StringComparer.OrdinalIgnoreCase))
+        // Filter edges to modules matching process name when module table is present
+        var modules = DrcovParser.ParseModules(drcovPath);
+        HashSet<string>? allowIds = null;
+        if (modules.Count > 0)
         {
-            var rva = EdgeRvaLong(edge);
-            if (rva is null) continue;
-            sb.AppendLine($"    {rva},");
+            allowIds = modules
+                .Where(m =>
+                    m.Path.Contains(processName, StringComparison.OrdinalIgnoreCase) ||
+                    Path.GetFileName(m.Path).Equals(processName, StringComparison.OrdinalIgnoreCase))
+                .Select(m => m.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (allowIds.Count == 0)
+                allowIds = null;
         }
 
-        sb.AppendLine("]");
-        sb.AppendLine("for rva in rvas:");
-        sb.AppendLine("    addr = base.add(rva)");
-        sb.AppendLine("    existing = service.getBackgroundColor(addr)");
-        sb.AppendLine("    if existing is not None:");
-        sb.AppendLine("        skipped += 1");
-        sb.AppendLine("        continue");
-        sb.AppendLine("    aset = AddressSet(addr)");
-        sb.AppendLine("    service.setBackgroundColor(aset, color)");
-        sb.AppendLine("    painted += 1");
-        sb.AppendLine($"print('Dynapstalker Ghidra: painted %d, skipped(already colored) %d ({processName})' % (painted, skipped))");
-
-        File.WriteAllText(outPath, sb.ToString());
+        var filtered = allowIds is null
+            ? edges
+            : edges.Where(e => allowIds.Contains(e.Split(':')[0])).ToList();
+        var blocks = GhidraScriptBuilder.BlocksFromEdges(filtered);
+        var script = GhidraScriptBuilder.BuildColorScript(
+            $"Dynapstalker Ghidra — {processName}",
+            [new GhidraScriptBuilder.LayerSpec(processName, blocks, r, g, b)],
+            notes: $"Source: {drcovPath}\nProcess filter: {processName}");
+        File.WriteAllText(outPath, script);
         WriteReadme(Path.GetDirectoryName(outPath)!);
-        return new StalkExportResultDto("ghidra", outPath, edges.Count, [outPath]);
+        GhidraScriptBuilder.WriteModulesSidecar(Path.GetDirectoryName(outPath)!, drcovPath);
+        return new StalkExportResultDto("ghidra", outPath, filtered.Count, [outPath]);
     }
 
     private static void WriteReadme(string dir)

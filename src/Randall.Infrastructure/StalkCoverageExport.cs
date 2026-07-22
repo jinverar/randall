@@ -105,70 +105,52 @@ public static class StalkCoverageExport
     {
         var files = new List<string>();
         var total = 0;
-        var script = Path.Combine(outDir, $"{Sanitize(project)}_stalk_layers.py");
-        var sb = new StringBuilder();
-        sb.AppendLine("# Randfuzz stalk export — Ghidra Python (Jython) color layers");
-        sb.AppendLine("# Window → Script Manager → Run this file after opening the binary.");
-        sb.AppendLine("from ghidra.app.plugin.core.colorizer import ColorizingService");
-        sb.AppendLine("from ghidra.program.model.address import AddressSet");
-        sb.AppendLine("from java.awt import Color");
-        sb.AppendLine();
-        sb.AppendLine("service = state.getTool().getService(ColorizingService)");
-        sb.AppendLine("if service is None:");
-        sb.AppendLine("    raise Exception('ColorizingService not available')");
-        sb.AppendLine();
-
-        sb.AppendLine("base = currentProgram.getImageBase()");
-        sb.AppendLine();
-
-        var idx = 0;
+        var scriptPath = Path.Combine(outDir, $"{Sanitize(project)}_stalk_layers.py");
+        var layerSpecs = new List<GhidraScriptBuilder.LayerSpec>();
         foreach (var layer in layers)
         {
             var edges = StalkCampaignStore.LoadEdges(project, layer.Id, repoRoot);
             total += edges.Count;
             var (r, g, b) = HexToRgb(layer.ColorHex);
-            sb.AppendLine($"# Layer {idx}: {layer.Tag} — {layer.Label} ({edges.Count} blocks)");
-            sb.AppendLine($"color_{idx} = Color({r}, {g}, {b})");
-            sb.AppendLine($"painted_{idx} = 0");
-            sb.AppendLine($"skipped_{idx} = 0");
-            sb.AppendLine($"for rva in [");
-            foreach (var edge in edges.OrderBy(e => e))
-            {
-                var rva = EdgeRvaLong(edge);
-                if (rva is null) continue;
-                sb.AppendLine($"    {rva},");
-            }
-
-            sb.AppendLine($"]:");
-            sb.AppendLine($"    addr = base.add(rva)");
-            sb.AppendLine($"    if service.getBackgroundColor(addr) is not None:");
-            sb.AppendLine($"        skipped_{idx} += 1");
-            sb.AppendLine($"        continue");
-            sb.AppendLine($"    service.setBackgroundColor(AddressSet(addr), color_{idx})");
-            sb.AppendLine($"    painted_{idx} += 1");
-            sb.AppendLine($"print('Layer {layer.Tag}: painted %d, skipped %d' % (painted_{idx}, skipped_{idx}))");
-            sb.AppendLine();
-            idx++;
+            layerSpecs.Add(new(
+                $"{layer.Tag}:{layer.Label}",
+                GhidraScriptBuilder.BlocksFromEdges(edges),
+                r, g, b));
         }
 
-        File.WriteAllText(script, sb.ToString());
-        files.Add(script);
+        var script = GhidraScriptBuilder.BuildColorScript(
+            $"Randfuzz stalk layers — {project}",
+            layerSpecs,
+            notes: "Oldest layer first. Plain blocks ≈ missed. See docs/GHIDRA_INTEGRATION.md");
+        File.WriteAllText(scriptPath, script);
+        files.Add(scriptPath);
 
         var readme = Path.Combine(outDir, "README_GHIDRA.txt");
         File.WriteAllText(readme, """
-            Randfuzz → Ghidra color import (Dynapstalker-style)
-            ==================================================
+            Randfuzz → Ghidra (first-class integration)
+            ===========================================
             1. Import/open the target binary; finish analysis.
-            2. Window → Script Manager → Run the generated *_stalk_layers.py
-            3. Layers apply oldest-first; only paints still-uncolored addresses
-               (baseline yellow keeps winning — later greens fill new hits).
-            4. Plain / uncolored blocks ≈ missed — review string/memcpy / error paths.
-            5. Addresses are imageBase + drcov RVA (open the matching module).
-            6. One-shot from a raw drcov log:
-                 randall stalk dynapstalker log savant.exe out.py --format ghidra --color 0x00ffff
-            7. Pair with Dragon Dance / coverage_edges.txt from crash triage bundles.
+            2. Window → Script Manager → Run *_stalk_layers.py
+            3. Oldest layer paints first; later layers only fill still-uncolored BBs.
+            4. Plain / uncolored ≈ missed (Dynapstalker lesson).
+            5. Crash packs: randall export -i <guid> → ghidra_import.py (novel vs baseline).
+            6. Installable scripts: tools/ghidra/ (Script Manager → assign keybinding).
+            7. Dragon Dance is OPTIONAL and wants BINARY drcov (no -dump_text).
+               See docs/GHIDRA_INTEGRATION.md
             """);
         files.Add(readme);
+
+        // Bundle generic importers alongside the export for offline labs
+        var tools = Path.Combine(repoRoot, "tools", "ghidra");
+        foreach (var name in new[] { "RandfuzzImportEdges.py", "RandfuzzImportLayers.py" })
+        {
+            var src = Path.Combine(tools, name);
+            if (!File.Exists(src)) continue;
+            var dest = Path.Combine(outDir, name);
+            File.Copy(src, dest, overwrite: true);
+            files.Add(dest);
+        }
+
         return new StalkExportResultDto("ghidra", outDir, total, files);
     }
 
