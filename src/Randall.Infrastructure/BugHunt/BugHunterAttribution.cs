@@ -86,17 +86,54 @@ public static partial class BugHunterAttribution
         return path;
     }
 
+    public static string ConfidenceTier(BugHunterBlockDto block) => block.Provenance switch
+    {
+        BugHunterProvenance.AnnotatedAi or BugHunterProvenance.AnnotatedHuman => "high",
+        BugHunterProvenance.LikelyAi or BugHunterProvenance.LikelyHuman
+            when block.Signals.Any(s =>
+                s.StartsWith("annotation:", StringComparison.Ordinal) ||
+                s.StartsWith("tool:", StringComparison.Ordinal)) => "medium",
+        BugHunterProvenance.LikelyAi or BugHunterProvenance.LikelyHuman => "low",
+        _ => "unknown",
+    };
+
     public static string ToMarkdown(BugHunterScanDto scan)
     {
         var sb = new StringBuilder();
         sb.AppendLine("# AI code attribution report");
         sb.AppendLine();
         sb.AppendLine($"> Heuristic — not ground truth. Generated {scan.At:u}");
+        sb.AppendLine(">");
+        sb.AppendLine("> Prefer `/* BEGIN AI */` … `/* END AI */` annotations. Style-only scores are **low** tier.");
+        sb.AppendLine(">");
+        sb.AppendLine("> Maturity notes: docs/MATURITY.md · Bug Hunter: docs/BUG_HUNTER.md");
         sb.AppendLine();
         sb.AppendLine($"Root: `{scan.Root}`");
         sb.AppendLine($"Files scanned: **{scan.FilesScanned}**");
         sb.AppendLine($"Blocks: AI **{scan.AiBlocks}** · Human **{scan.HumanBlocks}** · Unknown **{scan.UnknownBlocks}**");
         sb.AppendLine();
+
+        var tiers = scan.Blocks
+            .GroupBy(ConfidenceTier)
+            .ToDictionary(g => g.Key, g => g.Count());
+        sb.AppendLine("## Confidence tiers");
+        sb.AppendLine();
+        sb.AppendLine("| Tier | Meaning | Count |");
+        sb.AppendLine("|------|---------|-------|");
+        sb.AppendLine($"| high | Explicit BEGIN/END or annotation regions | {tiers.GetValueOrDefault("high")} |");
+        sb.AppendLine($"| medium | Tool markers (Copilot/Cursor/…) or annotation hits | {tiers.GetValueOrDefault("medium")} |");
+        sb.AppendLine($"| low | Whole-file style heuristic only | {tiers.GetValueOrDefault("low")} |");
+        sb.AppendLine($"| unknown | No clear signal | {tiers.GetValueOrDefault("unknown")} |");
+        sb.AppendLine();
+
+        sb.AppendLine("## Limitations");
+        sb.AppendLine();
+        sb.AppendLine("- Not ground truth — do not gate CI solely on LikelyAi/LikelyHuman.");
+        sb.AppendLine("- Style signals (comment density, TODOs) are weak priors and capped in confidence.");
+        sb.AppendLine("- Unmarked trees will show many **unknown** blocks; annotate hot paths before hunting.");
+        sb.AppendLine("- No AST/blame/embedding model yet — see maturity roadmap.");
+        sb.AppendLine();
+
         sb.AppendLine("## Suggested oracle focus");
         foreach (var s in scan.SuggestedOracleFocus)
             sb.AppendLine($"- `{s}`");
@@ -107,16 +144,17 @@ public static partial class BugHunterAttribution
         sb.AppendLine();
         sb.AppendLine("## Blocks");
         sb.AppendLine();
-        sb.AppendLine("| Provenance | File | Lines | Confidence | Signals |");
-        sb.AppendLine("|------------|------|-------|------------|---------|");
+        sb.AppendLine("| Tier | Provenance | File | Lines | Confidence | Signals |");
+        sb.AppendLine("|------|------------|------|-------|------------|---------|");
         foreach (var b in scan.Blocks
                      .OrderByDescending(b => b.Provenance is BugHunterProvenance.AnnotatedAi or BugHunterProvenance.LikelyAi)
+                     .ThenByDescending(b => b.Confidence)
                      .ThenBy(b => b.Path)
                      .ThenBy(b => b.StartLine)
                      .Take(200))
         {
             sb.AppendLine(
-                $"| {b.Provenance} | `{b.Path}` | {b.StartLine}–{b.EndLine} | {b.Confidence:0.00} | {string.Join(", ", b.Signals.Take(4))} |");
+                $"| {ConfidenceTier(b)} | {b.Provenance} | `{b.Path}` | {b.StartLine}–{b.EndLine} | {b.Confidence:0.00} | {string.Join(", ", b.Signals.Take(4))} |");
         }
 
         if (scan.Blocks.Count > 200)
@@ -226,7 +264,8 @@ public static partial class BugHunterAttribution
                     : (signals.Any(s => s.StartsWith("annotation:", StringComparison.Ordinal))
                         ? BugHunterProvenance.AnnotatedHuman
                         : BugHunterProvenance.LikelyHuman);
-                var conf = Math.Clamp(0.55 + 0.1 * cluster.Hits.Count, 0.55, 0.95);
+                // Tool/annotation clusters: medium tier — never inflate to annotation-level.
+                var conf = Math.Clamp(0.55 + 0.08 * cluster.Hits.Count, 0.55, 0.82);
                 yield return new BugHunterBlockDto(
                     rel, cluster.Start, cluster.End, lang, provenance, conf, signals,
                     Preview(lines, cluster.Start, cluster.End));
@@ -234,24 +273,26 @@ public static partial class BugHunterAttribution
             yield break;
         }
 
-        // 3) Whole-file style heuristic (weak)
+        // 3) Whole-file style heuristic (weak) — confidence hard-capped so reports stay honest.
         var style = ScoreStyle(lines);
         if (style.Score >= 0.65)
         {
+            var conf = Math.Clamp(style.Score * 0.55, 0.35, 0.55);
             yield return new BugHunterBlockDto(
-                rel, 1, lines.Length, lang, BugHunterProvenance.LikelyAi, style.Score, style.Signals,
+                rel, 1, lines.Length, lang, BugHunterProvenance.LikelyAi, conf, style.Signals,
                 Preview(lines, 1, Math.Min(lines.Length, 40)));
         }
         else if (style.Score <= 0.35)
         {
+            var conf = Math.Clamp((1.0 - style.Score) * 0.55, 0.35, 0.55);
             yield return new BugHunterBlockDto(
-                rel, 1, lines.Length, lang, BugHunterProvenance.LikelyHuman, 1.0 - style.Score, style.Signals,
+                rel, 1, lines.Length, lang, BugHunterProvenance.LikelyHuman, conf, style.Signals,
                 Preview(lines, 1, Math.Min(lines.Length, 40)));
         }
         else
         {
             yield return new BugHunterBlockDto(
-                rel, 1, lines.Length, lang, BugHunterProvenance.Unknown, 0.5, style.Signals,
+                rel, 1, lines.Length, lang, BugHunterProvenance.Unknown, 0.4, style.Signals,
                 Preview(lines, 1, Math.Min(lines.Length, 40)));
         }
     }

@@ -199,6 +199,7 @@ public static class CrashArtifactPack
         string project,
         string? outputPath = null,
         bool includeRuns = true,
+        string? token = null,
         CancellationToken ct = default)
     {
         if (!LabAgentClient.TryNormalizeAgentUrl(agentUrl, out var baseUrl, out var err))
@@ -215,12 +216,16 @@ public static class CrashArtifactPack
 
         var q = $"project={Uri.EscapeDataString(project)}&includeRuns={(includeRuns ? "true" : "false")}";
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        using var resp = await http.GetAsync($"{baseUrl}/api/crashes/pack/download?{q}", ct);
+        using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/crashes/pack/download?{q}");
+        LabAccess.Apply(req, token);
+        using var resp = await http.SendAsync(req, ct);
         if (!resp.IsSuccessStatusCode)
         {
             var body = await resp.Content.ReadAsStringAsync(ct);
             throw new InvalidOperationException(
-                $"Agent pack download failed ({(int)resp.StatusCode}): {body}");
+                resp.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                    ? "Agent requires RANDALL_AGENT_TOKEN (set env, --token, or --agent-token)."
+                    : $"Agent pack download failed ({(int)resp.StatusCode}): {body}");
         }
 
         await using (var fs = File.Create(outputPath))

@@ -46,55 +46,88 @@ public static class LabAgentClient
         return true;
     }
 
-    public static async Task<IReadOnlyList<LabServerInfoDto>> ListAsync(string agentUrl, CancellationToken ct = default)
+    public static async Task<IReadOnlyList<LabServerInfoDto>> ListAsync(
+        string agentUrl, string? token = null, CancellationToken ct = default)
     {
         if (!TryNormalizeAgentUrl(agentUrl, out var baseUrl, out var err))
             throw new ArgumentException(err);
-        var list = await Http.GetFromJsonAsync<List<LabServerInfoDto>>($"{baseUrl}/api/labs", JsonOpts, ct)
-                   ?? [];
+        using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/labs");
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
+        await EnsureSuccess(resp, ct);
+        var list = await resp.Content.ReadFromJsonAsync<List<LabServerInfoDto>>(JsonOpts, ct) ?? [];
         return list;
     }
 
-    public static async Task<LabServerActionResultDto> StartAsync(string agentUrl, string id, CancellationToken ct = default)
+    public static async Task<LabServerActionResultDto> StartAsync(
+        string agentUrl, string id, string? token = null, CancellationToken ct = default)
     {
         if (!TryNormalizeAgentUrl(agentUrl, out var baseUrl, out var err))
             throw new ArgumentException(err);
-        using var resp = await Http.PostAsync($"{baseUrl}/api/labs/{Uri.EscapeDataString(id)}/start", null, ct);
+        using var req = new HttpRequestMessage(
+            HttpMethod.Post, $"{baseUrl}/api/labs/{Uri.EscapeDataString(id)}/start");
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
         var body = await resp.Content.ReadFromJsonAsync<LabServerActionResultDto>(JsonOpts, ct);
         if (body is null)
             throw new InvalidOperationException($"Agent returned {resp.StatusCode}");
         return body;
     }
 
-    public static async Task<LabServerActionResultDto> StopAsync(string agentUrl, string id, CancellationToken ct = default)
+    public static async Task<LabServerActionResultDto> StopAsync(
+        string agentUrl, string id, string? token = null, CancellationToken ct = default)
     {
         if (!TryNormalizeAgentUrl(agentUrl, out var baseUrl, out var err))
             throw new ArgumentException(err);
-        using var resp = await Http.PostAsync($"{baseUrl}/api/labs/{Uri.EscapeDataString(id)}/stop", null, ct);
+        using var req = new HttpRequestMessage(
+            HttpMethod.Post, $"{baseUrl}/api/labs/{Uri.EscapeDataString(id)}/stop");
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
         var body = await resp.Content.ReadFromJsonAsync<LabServerActionResultDto>(JsonOpts, ct);
         if (body is null)
             throw new InvalidOperationException($"Agent returned {resp.StatusCode}");
         return body;
     }
 
-    public static async Task<LabServerActionResultDto> StopAllAsync(string agentUrl, CancellationToken ct = default)
+    public static async Task<LabServerActionResultDto> StopAllAsync(
+        string agentUrl, string? token = null, CancellationToken ct = default)
     {
         if (!TryNormalizeAgentUrl(agentUrl, out var baseUrl, out var err))
             throw new ArgumentException(err);
-        using var resp = await Http.PostAsync($"{baseUrl}/api/labs/stop-all", null, ct);
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/labs/stop-all");
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
         var body = await resp.Content.ReadFromJsonAsync<LabServerActionResultDto>(JsonOpts, ct);
         if (body is null)
             throw new InvalidOperationException($"Agent returned {resp.StatusCode}");
         return body;
     }
 
-    public static async Task<LabAgentPingDto> PingAsync(string agentUrl, CancellationToken ct = default)
+    public static async Task<LabAgentPingDto> PingAsync(
+        string agentUrl, string? token = null, CancellationToken ct = default)
     {
         if (!TryNormalizeAgentUrl(agentUrl, out var baseUrl, out var err))
             throw new ArgumentException(err);
-        var health = await Http.GetFromJsonAsync<HealthDto>($"{baseUrl}/api/health", JsonOpts, ct)
+        using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/health");
+        // Health is open even when a token is configured — still send token for future use.
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
+        await EnsureSuccess(resp, ct);
+        var health = await resp.Content.ReadFromJsonAsync<HealthDto>(JsonOpts, ct)
                      ?? throw new InvalidOperationException("No health response");
-        return new LabAgentPingDto(true, baseUrl, health.Name, health.Version, new Uri(baseUrl).Host);
+        return new LabAgentPingDto(true, baseUrl, health.Name, health.Version, new Uri(baseUrl).Host,
+            health.AuthRequired);
+    }
+
+    private static async Task EnsureSuccess(HttpResponseMessage resp, CancellationToken ct)
+    {
+        if (resp.IsSuccessStatusCode)
+            return;
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        throw new InvalidOperationException(
+            resp.StatusCode == HttpStatusCode.Unauthorized
+                ? "Agent requires RANDALL_AGENT_TOKEN (set env, --token, or UI agent token)."
+                : $"Agent returned {(int)resp.StatusCode}: {body}");
     }
 
     private static bool IsAllowedAgentHost(string host)
@@ -128,4 +161,5 @@ public sealed record LabAgentPingDto(
     string AgentUrl,
     string? AppName,
     string? Version,
-    string? LocalMachine);
+    string? LocalMachine,
+    bool AuthRequired = false);

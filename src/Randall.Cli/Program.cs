@@ -109,8 +109,8 @@ static void PrintHelp()
           randall recorders stop         Stop orphaned Procmon/DebugView/ProcDump/WPR/pktmon/tshark
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
-          randall serve [--port N] [--bind host]   Web UI + API (localhost)
-          randall agent [--port N] [--bind host]   Lab agent (all interfaces)
+          randall serve [--port N] [--bind host] [--token SECRET]   Web UI + API (localhost)
+          randall agent [--port N] [--bind host] [--token SECRET]   Lab agent (all interfaces)
           randall legs                 Eight legs feature map
           randall version
 
@@ -1021,6 +1021,7 @@ static async Task<int> RunCrashesPullAsync(string[] args)
     string? agent = null;
     string? project = null;
     string? output = null;
+    string? token = null;
     var includeRuns = true;
     var doImport = false;
     for (var i = 0; i < args.Length; i++)
@@ -1031,6 +1032,8 @@ static async Task<int> RunCrashesPullAsync(string[] args)
             project = args[++i];
         else if (args[i] is "-o" or "--output" && i + 1 < args.Length)
             output = args[++i];
+        else if (args[i] is "--token" or "--agent-token" && i + 1 < args.Length)
+            token = args[++i];
         else if (args[i] is "--no-runs")
             includeRuns = false;
         else if (args[i] is "--import")
@@ -1040,13 +1043,14 @@ static async Task<int> RunCrashesPullAsync(string[] args)
     if (string.IsNullOrWhiteSpace(agent) || string.IsNullOrWhiteSpace(project))
     {
         Console.Error.WriteLine(
-            "Usage: randall crashes pull -a http://192.168.x.x:5000 -p <project> [-o zip] [--import] [--no-runs]");
+            "Usage: randall crashes pull -a http://192.168.x.x:5000 -p <project> [-o zip] [--token SECRET] [--import] [--no-runs]");
         return 1;
     }
 
     try
     {
-        var result = await CrashArtifactPack.PullFromAgentAsync(agent, project, output, includeRuns);
+        var result = await CrashArtifactPack.PullFromAgentAsync(
+            agent, project, output, includeRuns, token: token);
         Console.WriteLine(
             $"Pulled from agent: {result.Path} ({result.SizeBytes / 1024} KB) " +
             $"crashes={result.CrashCount} runs={result.RunCount}");
@@ -2429,6 +2433,7 @@ static int RunWebHost(string[] args, string defaultBind, string label)
 {
     var port = 5000;
     var bind = defaultBind;
+    string? token = null;
     for (var i = 0; i < args.Length; i++)
     {
         if (args[i] is "--port" or "-p" && i + 1 < args.Length && int.TryParse(args[i + 1], out var p))
@@ -2441,7 +2446,14 @@ static int RunWebHost(string[] args, string defaultBind, string label)
             bind = args[i + 1];
             i++;
         }
+        else if (args[i] is "--token" && i + 1 < args.Length)
+        {
+            token = args[++i];
+        }
     }
+
+    if (!string.IsNullOrWhiteSpace(token))
+        Environment.SetEnvironmentVariable(LabAccess.EnvToken, token.Trim());
 
     var serverProject = FindServerProjectPath();
     if (serverProject is null)
@@ -2453,7 +2465,18 @@ static int RunWebHost(string[] args, string defaultBind, string label)
     var urls = $"http://{bind}:{port}";
     Console.WriteLine($"Starting Randfuzz {label} at {urls}");
     if (bind is "0.0.0.0" or "*")
+    {
         Console.WriteLine($"LAN clients: http://<this-machine-ip>:{port}");
+        if (!LabAccess.IsConfigured)
+            Console.WriteLine(
+                $"WARN: agent/serve on {bind} without {LabAccess.EnvToken} — set --token or export the env var (docs/LAB_AGENT.md).");
+        else
+            Console.WriteLine($"Lab access token: required ({LabAccess.EnvToken} set)");
+    }
+    else if (LabAccess.IsConfigured)
+    {
+        Console.WriteLine($"Lab access token: required ({LabAccess.EnvToken} set)");
+    }
 
     var psi = new ProcessStartInfo
     {
@@ -2461,6 +2484,10 @@ static int RunWebHost(string[] args, string defaultBind, string label)
         Arguments = $"run --project \"{serverProject}\" --urls {urls}",
         UseShellExecute = false,
     };
+    // Child process must see the token.
+    if (LabAccess.IsConfigured)
+        psi.Environment[LabAccess.EnvToken] = LabAccess.ConfiguredToken!;
+
     using var process = Process.Start(psi);
     if (process is null)
         return 1;

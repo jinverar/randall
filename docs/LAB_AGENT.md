@@ -74,3 +74,15 @@ For practice labs and user-mode targets, a small agent is enough: spawn/kill pro
 - Agent URL hosts are restricted to loopback / RFC1918 private addresses (MVP SSRF guard).
 - Labs still default to loopback on the *target* machine; expose the agent port only on a trusted lab network.
 - Do not put the agent on the public internet.
+- **Optional shared secret:** set `RANDALL_AGENT_TOKEN` or pass `--token SECRET` to `randall agent` / `serve`. When set, `/api/*` and SignalR hubs require `Authorization: Bearer …` or `X-Randall-Token` (static UI + `/api/health` stay open). Laptop UI: **Lab servers → Agent token**. CLI pull: `randall crashes pull … --token SECRET`.
+- Without a token on `0.0.0.0`, the CLI prints a WARN — this is still lab-grade, not multi-user IAM. See [MATURITY.md](MATURITY.md).
+
+```powershell
+# On the fuzz box
+$env:RANDALL_AGENT_TOKEN = "lab-secret"
+randall agent --port 5000
+# or: randall agent --port 5000 --token lab-secret
+
+# On the laptop
+randall crashes pull -a http://192.168.2.10:5000 -p vulnserver --token lab-secret --import
+```

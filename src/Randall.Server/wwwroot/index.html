@@ -513,10 +513,13 @@
             <label class="case-grow">Remote agent URL
               <input type="text" id="labs-agent-url" placeholder="leave empty = this machine · e.g. http://192.168.2.10:5000" />
             </label>
+            <label class="case-grow">Agent token
+              <input type="password" id="labs-agent-token" placeholder="if agent set RANDALL_AGENT_TOKEN" autocomplete="off" />
+            </label>
             <button type="button" class="btn" id="labs-agent-ping">Test agent</button>
             <button type="button" class="btn" id="labs-agent-clear">Use local</button>
           </div>
-          <p id="labs-agent-hint" class="hint">On the VM: <code>randall agent --port 5000</code> then paste that host URL here.</p>
+          <p id="labs-agent-hint" class="hint">On the VM: <code>randall agent --port 5000 --token SECRET</code> then paste host URL + token here. See docs/LAB_AGENT.md · docs/MATURITY.md.</p>
           <div class="btn-row wrap">
             <button type="button" class="btn primary" id="labs-refresh">Refresh</button>
             <button type="button" class="btn" id="labs-stop-all" title="Kill every randall-vuln* lab process on the selected host">Stop all labs</button>

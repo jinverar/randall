@@ -29,6 +29,26 @@ app.UseStaticFiles(new StaticFileOptions
     },
 });
 
+// Optional lab LAN shared secret (RANDALL_AGENT_TOKEN). Health + static UI stay open.
+app.Use(async (ctx, next) =>
+{
+    var p = ctx.Request.Path.Value ?? "";
+    var open = p.Equals("/api/health", StringComparison.OrdinalIgnoreCase)
+               || !p.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
+                  && !p.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase);
+    if (!open && !LabAccessHttp.IsAuthorized(ctx.Request))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        await ctx.Response.WriteAsJsonAsync(new
+        {
+            error = "Unauthorized — set Authorization: Bearer <token> or X-Randall-Token",
+            hint = "Export RANDALL_AGENT_TOKEN on the agent, or pass --token to randall agent/serve",
+        });
+        return;
+    }
+    await next();
+});
+
 app.MapGet("/randall.png", () => ServeRepoAsset("docs/assets/randall.png", "randall.png"));
 app.MapGet("/stalker.png", () => ServeRepoAsset("docs/assets/randal_stalking_bugs.png"));
 app.MapGet("/canisters/canister-empty.jpg", () => ServeRepoAsset("docs/assets/canisters/canister-empty.jpg", "src/Randall.Server/wwwroot/img/canisters/canister-empty.jpg"));
@@ -46,7 +66,7 @@ app.MapGet("/img/canisters/{file}", (string file) =>
         Path.Combine("src/Randall.Server/wwwroot/img/canisters", safe));
 });
 
-app.MapGet("/api/health", () => new HealthDto("Randfuzz by Randall", "0.16.0-alpha", "phase16-analyze"));
+app.MapGet("/api/health", () => new HealthDto("Randfuzz by Randall", "0.16.0-alpha", "phase16-analyze", LabAccess.IsConfigured));
 
 app.MapGet("/api/ui/prefs", () => Results.Ok(UiPrefsStore.Get()));
 app.MapPut("/api/ui/prefs", (UiPrefsUpdateRequest request) =>
@@ -161,26 +181,28 @@ app.MapGet("/api/roadmap", () => RandallRoadmap.Phases);
 app.MapGet("/api/targets", () => CrashCatalog.ListTargets().Where(WebTargetFilter.IsVisible));
 
 // —— Target Runtime (arbitrary exe start/stop/restart; labs are presets on top) ——
-app.MapGet("/api/runtime", async (string? agent, CancellationToken ct) =>
+app.MapGet("/api/runtime", async (HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
         if (string.IsNullOrWhiteSpace(agent))
             return Results.Ok(TargetRuntimeService.List());
-        return Results.Ok(await TargetRuntimeClient.ListAsync(agent, ct));
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
+        return Results.Ok(await TargetRuntimeClient.ListAsync(agent, token, ct));
     }
     catch (Exception ex)
     {
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-app.MapGet("/api/runtime/{id}", async (string id, string? agent, CancellationToken ct) =>
+app.MapGet("/api/runtime/{id}", async (string id, HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
         var st = string.IsNullOrWhiteSpace(agent)
             ? TargetRuntimeService.Status(id)
-            : await TargetRuntimeClient.StatusAsync(agent, id, ct);
+            : await TargetRuntimeClient.StatusAsync(agent, id, token, ct);
         return Results.Ok(st);
     }
     catch (Exception ex)
@@ -188,13 +210,14 @@ app.MapGet("/api/runtime/{id}", async (string id, string? agent, CancellationTok
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-app.MapPost("/api/runtime/start", async (TargetRuntimeStartRequest request, string? agent, CancellationToken ct) =>
+app.MapPost("/api/runtime/start", async (TargetRuntimeStartRequest request, HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
         var st = string.IsNullOrWhiteSpace(agent)
             ? TargetRuntimeService.Start(request)
-            : await TargetRuntimeClient.StartAsync(agent, request, ct);
+            : await TargetRuntimeClient.StartAsync(agent, request, token, ct);
         return st.Ok ? Results.Ok(st) : Results.BadRequest(st);
     }
     catch (Exception ex)
@@ -202,15 +225,16 @@ app.MapPost("/api/runtime/start", async (TargetRuntimeStartRequest request, stri
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-app.MapPost("/api/runtime/start-project", async (string yamlPath, string? id, string? agent, CancellationToken ct) =>
+app.MapPost("/api/runtime/start-project", async (string yamlPath, string? id, HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
         if (string.IsNullOrWhiteSpace(yamlPath))
             return Results.BadRequest(new { error = "yamlPath required" });
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
         var st = string.IsNullOrWhiteSpace(agent)
             ? TargetRuntimeService.StartFromProject(yamlPath, id)
-            : await TargetRuntimeClient.StartFromProjectAsync(agent, yamlPath, id, ct);
+            : await TargetRuntimeClient.StartFromProjectAsync(agent, yamlPath, id, token, ct);
         return st.Ok ? Results.Ok(st) : Results.BadRequest(st);
     }
     catch (Exception ex)
@@ -218,13 +242,14 @@ app.MapPost("/api/runtime/start-project", async (string yamlPath, string? id, st
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-app.MapPost("/api/runtime/{id}/stop", async (string id, string? agent, CancellationToken ct) =>
+app.MapPost("/api/runtime/{id}/stop", async (string id, HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
         var st = string.IsNullOrWhiteSpace(agent)
             ? TargetRuntimeService.Stop(id)
-            : await TargetRuntimeClient.StopAsync(agent, id, ct);
+            : await TargetRuntimeClient.StopAsync(agent, id, token, ct);
         return st.Ok ? Results.Ok(st) : Results.BadRequest(st);
     }
     catch (Exception ex)
@@ -232,13 +257,14 @@ app.MapPost("/api/runtime/{id}/stop", async (string id, string? agent, Cancellat
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-app.MapPost("/api/runtime/{id}/restart", async (string id, string? agent, CancellationToken ct) =>
+app.MapPost("/api/runtime/{id}/restart", async (string id, HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
         var st = string.IsNullOrWhiteSpace(agent)
             ? TargetRuntimeService.Restart(id)
-            : await TargetRuntimeClient.RestartAsync(agent, id, ct);
+            : await TargetRuntimeClient.RestartAsync(agent, id, token, ct);
         return st.Ok ? Results.Ok(st) : Results.BadRequest(st);
     }
     catch (Exception ex)
@@ -246,13 +272,14 @@ app.MapPost("/api/runtime/{id}/restart", async (string id, string? agent, Cancel
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-app.MapPost("/api/runtime/stop-all", async (string? agent, CancellationToken ct) =>
+app.MapPost("/api/runtime/stop-all", async (HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
         var st = string.IsNullOrWhiteSpace(agent)
             ? TargetRuntimeService.StopAll()
-            : await TargetRuntimeClient.StopAllAsync(agent, ct);
+            : await TargetRuntimeClient.StopAllAsync(agent, token, ct);
         return Results.Ok(st);
     }
     catch (Exception ex)
@@ -261,43 +288,46 @@ app.MapPost("/api/runtime/stop-all", async (string? agent, CancellationToken ct)
     }
 });
 
-app.MapGet("/api/labs", async (string? agent, CancellationToken ct) =>
+app.MapGet("/api/labs", async (HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
         if (string.IsNullOrWhiteSpace(agent))
             return Results.Ok(LabServerManager.List());
-        return Results.Ok(await LabAgentClient.ListAsync(agent, ct));
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
+        return Results.Ok(await LabAgentClient.ListAsync(agent, token, ct));
     }
     catch (Exception ex)
     {
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-app.MapGet("/api/labs/ping", async (string? agent, CancellationToken ct) =>
+app.MapGet("/api/labs/ping", async (HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
         if (string.IsNullOrWhiteSpace(agent))
         {
             return Results.Ok(new LabAgentPingDto(true, "local", "Randfuzz by Randall", "local",
-                Environment.MachineName));
+                Environment.MachineName, LabAccess.IsConfigured));
         }
 
-        return Results.Ok(await LabAgentClient.PingAsync(agent, ct));
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
+        return Results.Ok(await LabAgentClient.PingAsync(agent, token, ct));
     }
     catch (Exception ex)
     {
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-app.MapPost("/api/labs/{id}/start", async (string id, string? agent, CancellationToken ct) =>
+app.MapPost("/api/labs/{id}/start", async (string id, HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
         var r = string.IsNullOrWhiteSpace(agent)
             ? LabServerManager.Start(id)
-            : await LabAgentClient.StartAsync(agent, id, ct);
+            : await LabAgentClient.StartAsync(agent, id, token, ct);
         return r.Ok ? Results.Ok(r) : Results.BadRequest(r);
     }
     catch (Exception ex)
@@ -305,13 +335,14 @@ app.MapPost("/api/labs/{id}/start", async (string id, string? agent, Cancellatio
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-app.MapPost("/api/labs/{id}/stop", async (string id, string? agent, CancellationToken ct) =>
+app.MapPost("/api/labs/{id}/stop", async (string id, HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
         var r = string.IsNullOrWhiteSpace(agent)
             ? LabServerManager.Stop(id)
-            : await LabAgentClient.StopAsync(agent, id, ct);
+            : await LabAgentClient.StopAsync(agent, id, token, ct);
         return r.Ok ? Results.Ok(r) : Results.BadRequest(r);
     }
     catch (Exception ex)
@@ -319,13 +350,14 @@ app.MapPost("/api/labs/{id}/stop", async (string id, string? agent, Cancellation
         return Results.BadRequest(new { error = ex.Message });
     }
 });
-app.MapPost("/api/labs/stop-all", async (string? agent, CancellationToken ct) =>
+app.MapPost("/api/labs/stop-all", async (HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     try
     {
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
         var r = string.IsNullOrWhiteSpace(agent)
             ? LabServerManager.StopAll()
-            : await LabAgentClient.StopAllAsync(agent, ct);
+            : await LabAgentClient.StopAllAsync(agent, token, ct);
         return Results.Ok(r);
     }
     catch (Exception ex)
@@ -436,7 +468,8 @@ app.MapPost("/api/crashes/pack/pull", async (CrashArtifactPackPullRequest reques
     try
     {
         var result = await CrashArtifactPack.PullFromAgentAsync(
-            request.AgentUrl, request.Project, request.OutputPath, request.IncludeRuns, ct);
+            request.AgentUrl, request.Project, request.OutputPath, request.IncludeRuns,
+            token: request.AgentToken, ct: ct);
         return Results.Ok(result);
     }
     catch (Exception ex)
@@ -445,7 +478,7 @@ app.MapPost("/api/crashes/pack/pull", async (CrashArtifactPackPullRequest reques
     }
 });
 
-app.MapGet("/api/runtime/inspect", async (int? pid, string? agent, CancellationToken ct) =>
+app.MapGet("/api/runtime/inspect", async (int? pid, HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
 {
     if (pid is null or <= 0)
         return Results.BadRequest(new { error = "pid query required" });
@@ -453,7 +486,8 @@ app.MapGet("/api/runtime/inspect", async (int? pid, string? agent, CancellationT
     {
         if (string.IsNullOrWhiteSpace(agent))
             return Results.Ok(MemoryLensAnalyzer.AnalyzeLivePid(pid.Value));
-        return Results.Ok(await TargetRuntimeClient.InspectAsync(agent, pid.Value, ct));
+        var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
+        return Results.Ok(await TargetRuntimeClient.InspectAsync(agent, pid.Value, token, ct));
     }
     catch (Exception ex)
     {

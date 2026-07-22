@@ -37,7 +37,7 @@ public sealed class TargetRuntimeBridge : IDisposable
             st = TargetRuntimeService.StartFromProject(_yamlPath, _slotId);
         else
             st = await TargetRuntimeClient.StartFromProjectAsync(
-                _agentUrl, YamlPathForAgent(), _slotId, cancellationToken);
+                _agentUrl, YamlPathForAgent(), _slotId, token: null, ct: cancellationToken);
 
         _started = st.Ok || st.Running;
         var proc = _agentUrl is null ? TargetRuntimeService.TryGetProcess(_slotId) : null;
@@ -65,7 +65,7 @@ public sealed class TargetRuntimeBridge : IDisposable
         if (_agentUrl is null)
             st = TargetRuntimeService.Restart(_slotId);
         else
-            st = await TargetRuntimeClient.RestartAsync(_agentUrl, _slotId, cancellationToken);
+            st = await TargetRuntimeClient.RestartAsync(_agentUrl, _slotId, token: null, ct: cancellationToken);
 
         var proc = _agentUrl is null ? TargetRuntimeService.TryGetProcess(_slotId) : null;
         return (proc, st);
@@ -75,7 +75,7 @@ public sealed class TargetRuntimeBridge : IDisposable
     {
         if (_agentUrl is null)
             return TargetRuntimeService.Status(_slotId);
-        return await TargetRuntimeClient.StatusAsync(_agentUrl, _slotId, cancellationToken);
+        return await TargetRuntimeClient.StatusAsync(_agentUrl, _slotId, token: null, ct: cancellationToken);
     }
 
     /// <summary>True when the managed target has died (local process or remote slot).</summary>
@@ -102,7 +102,7 @@ public sealed class TargetRuntimeBridge : IDisposable
         if (_agentUrl is null)
             TargetRuntimeService.Stop(_slotId);
         else
-            await TargetRuntimeClient.StopAsync(_agentUrl, _slotId, cancellationToken);
+            await TargetRuntimeClient.StopAsync(_agentUrl, _slotId, token: null, ct: cancellationToken);
 
         _started = false;
     }

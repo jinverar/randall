@@ -22,7 +22,8 @@ public sealed record CrashArtifactPackPullRequest(
     string AgentUrl,
     string Project,
     string? OutputPath = null,
-    bool IncludeRuns = true);
+    bool IncludeRuns = true,
+    string? AgentToken = null);
 
 public sealed record CrashArtifactPackImportRequest(
     string ZipPath,

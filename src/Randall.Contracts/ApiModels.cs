@@ -26,7 +26,12 @@ public static class RandallLegs
 
 public sealed record LegInfoDto(string Id, string Title, string Summary);
 
-public sealed record HealthDto(string Name, string Version, string Status);
+public sealed record HealthDto(
+    string Name,
+    string Version,
+    string Status,
+    /// <summary>True when <c>RANDALL_AGENT_TOKEN</c> is set on this host — APIs require the token.</summary>
+    bool AuthRequired = false);
 
 /// <summary>
 /// OS platform vocabulary shared by the doctor, UI preferences, and tool discovery.

@@ -550,6 +550,17 @@ public static class LabDoctor
             }
         }
 
+        if (LabAccess.IsConfigured)
+        {
+            Add("labAccess", "ok",
+                $"{LabAccess.EnvToken} set — /api requires Bearer or X-Randall-Token (docs/LAB_AGENT.md)");
+        }
+        else
+        {
+            Add("labAccess", "warn",
+                $"{LabAccess.EnvToken} unset — OK for localhost serve; set --token when running agent on LAN (docs/MATURITY.md)");
+        }
+
         return Finish(project.Name, checks);
     }
 }

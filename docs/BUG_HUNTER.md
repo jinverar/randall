@@ -78,6 +78,8 @@ The Oracle engine then judges each iteration independently.
 
 Also: `AI-GENERATED`, Copilot/ChatGPT/Claude/Cursor markers. Attribution is **heuristic**.
 
+Reports include **confidence tiers** (high / medium / low / unknown) and a limitations section. Style-only scores are capped low so they cannot look like annotations. See [MATURITY.md](MATURITY.md) for what is still unfinished.
+
 ## Mistake catalog + channels
 
 There is no official “Top 20 AI coding mistakes.” Bug Hunter ships a working catalog informed by **OWASP-in-codegen** patterns and **AISW-style** AI-induced weaknesses. Each class has a **channel** so seed problems are not stuffed into the Oracle engine:

@@ -24,7 +24,7 @@ I don't just throw bytes at parsers and hope. I **camouflage** valid-looking tra
 | 🧠 **Oracle + Bug Hunter** | Semantic judgment ([ORACLES.md](docs/ORACLES.md)) + AI/human code analysis ([BUG_HUNTER.md](docs/BUG_HUNTER.md)) |
 | 🌐 **Web apps too** | `kind: http|https` — see [WEB_FUZZ.md](docs/WEB_FUZZ.md) |
 
-Full parody mapping: [docs/LORE.md](docs/LORE.md)
+Full parody mapping: [docs/LORE.md](docs/LORE.md) · Honest unfinished map: [docs/MATURITY.md](docs/MATURITY.md)
 
 > *Stalk code paths. Scream on crash.*
 
