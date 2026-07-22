@@ -47,6 +47,18 @@ Source: [Randall.Vulnserver/README.md](Randall.Vulnserver/README.md)
 
 `projects/file-text.yaml` and `projects/file-framed.yaml` are **placeholders**. Edit `target.executable`, seeds, and block models for your format.
 
+### ReelDeck (media player / studio — recommended file lab)
+
+Larger multi-path `.rndl` container (PCM / MAD / VID / studio). Built for the **fuzz → path-stalk → deepen** maturity loop:
+
+```bash
+scripts/build-reeldeck.sh && python3 scripts/gen-reeldeck-seeds.py
+dotnet run --project src/Randall.Cli -- fuzz -c projects/reeldeck.yaml --profile fuzzier
+cat data/corpus/reeldeck/paths.txt
+```
+
+Docs: [REELDECK.md](../docs/REELDECK.md)
+
 ## Private targets (not committed)
 
 Keep real lab binaries and configs out of the public repo:

@@ -60,3 +60,6 @@ projects/local/*
 .env
 appsettings.Development.json
 *.pfx
+
+targets/reeldeck/reeldeck
+targets/reeldeck/reeldeck.exe

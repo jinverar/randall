@@ -9,7 +9,9 @@ public sealed record TargetRunResult(
     int? ExitCode,
     string? MiniDumpPath,
     string Detail,
-    byte[]? ResponseBytes = null);
+    byte[]? ResponseBytes = null,
+    /// <summary>Optional function/stage hits from a cooperative file target (e.g. ReelDeck).</summary>
+    IReadOnlyList<string>? PathHits = null);
 
 public static class TargetRunner
 {
@@ -35,7 +37,11 @@ public static class TargetRunner
         return await RunFileAsync(project, yamlPath, payload, cancellationToken);
     }
 
-    public static Process? StartTarget(ProjectConfig project, string yamlPath, string? filePath)
+    public static Process? StartTarget(
+        ProjectConfig project,
+        string yamlPath,
+        string? filePath,
+        string? pathLogEnv = null)
     {
         var exe = project.Target.Executable;
         if (string.IsNullOrWhiteSpace(exe))
@@ -66,6 +72,10 @@ public static class TargetRunner
             WorkingDirectory = workDir,
         };
 
+        // Cooperative file targets (ReelDeck) write function/stage hits here for path stalking.
+        if (!string.IsNullOrWhiteSpace(pathLogEnv))
+            psi.Environment["REELDECK_PATHLOG"] = pathLogEnv;
+
         return Process.Start(psi);
     }
 
@@ -83,7 +93,8 @@ public static class TargetRunner
         var tempFile = Path.Combine(tempDir, $"fuzz_{Guid.NewGuid():N}{ext}");
         await File.WriteAllBytesAsync(tempFile, payload, cancellationToken);
 
-        using var process = StartTarget(project, yamlPath, tempFile);
+        var pathLog = tempFile + ".paths";
+        using var process = StartTarget(project, yamlPath, tempFile, pathLogEnv: pathLog);
         if (process is null)
         {
             try { File.Delete(tempFile); } catch { /* ignore */ }
@@ -99,7 +110,23 @@ public static class TargetRunner
             dumpPath = CrashDumpWriter.TryWrite(process, dumpsDir, $"hang_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
             process.Kill(entireProcessTree: true);
             try { File.Delete(tempFile); } catch { /* ignore */ }
+            try { File.Delete(pathLog); } catch { /* ignore */ }
             return new TargetRunResult(true, null, dumpPath, "hang/timeout");
+        }
+
+        IReadOnlyList<string>? pathHits = null;
+        if (File.Exists(pathLog))
+        {
+            try
+            {
+                pathHits = File.ReadAllLines(pathLog)
+                    .Select(l => l.Trim())
+                    .Where(l => l.Length > 0)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+            }
+            catch { /* ignore */ }
+            try { File.Delete(pathLog); } catch { /* ignore */ }
         }
 
         try { File.Delete(tempFile); } catch { /* ignore */ }
@@ -112,7 +139,13 @@ public static class TargetRunner
                 process, dumpsDir, $"file_{DateTime.UtcNow:yyyyMMdd_HHmmss}", allowExited: true);
         }
 
-        return new TargetRunResult(crashed, code, dumpPath, crashed ? "abnormal exit" : "ok");
+        var detail = crashed ? "abnormal exit" : "ok";
+        if (pathHits is { Count: > 0 })
+            detail =
+                $"{detail}; paths={pathHits.Count}:{string.Join(',', pathHits.Take(16))}" +
+                (pathHits.Count > 16 ? ",…" : "");
+
+        return new TargetRunResult(crashed, code, dumpPath, detail, PathHits: pathHits);
     }
 
     private static async Task<TargetRunResult> RunTcpAsync(

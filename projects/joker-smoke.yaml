@@ -1,0 +1,43 @@
+# Joker chaos smoke — Magician watches / capitalizes (docs/MAGICIAN.md#joker)
+# randall fuzz -c projects/joker-smoke.yaml --max-iterations 40
+name: joker-smoke
+description: Joker chaotic tricks on harness — Magician capitalizes on crashes
+kind: harness
+target:
+  harness: ../targets/Randall.HarnessDemo/bin/Release/net8.0/Randall.HarnessDemo.dll
+  harnessType: managed
+  timeoutMs: 2000
+fuzz:
+  executionMode: in-process
+  persistent: true
+  forkServer: true
+  harnessStrict: true
+  maxIterations: 80
+  corpusDir: ../data/corpus/joker-smoke
+  crashesDir: ../data/crashes/joker-smoke
+mutators:
+  - bitflip
+  - havoc
+  - expand
+  - interesting
+  - dictionary
+seeds:
+  - seeds/harness_ok.bin
+dictionary:
+  - CRASH
+  - "A\0"
+  - "B\0"
+magician:
+  enabled: true
+  blessOnStart: true
+  autoCastOnOracle: false
+  watchJoker: true
+  capitalizeJokerCrashes: true
+  allowSummonJoker: true
+  allowSummonArmy: true
+joker:
+  enabled: true
+  chance: 0.55
+  maxStack: 4
+  wildBytes: true
+  flipSessionBias: true

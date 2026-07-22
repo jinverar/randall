@@ -39,6 +39,18 @@ public sealed class ProjectConfig
     /// </summary>
     public BugHunterConfig? BugHunter { get; set; }
 
+    /// <summary>
+    /// Magician engine — casts spells / summons helpers when the Oracle needs intervention.
+    /// See docs/MAGICIAN.md. Does not judge runs or attribute AI vs human code.
+    /// </summary>
+    public MagicianConfig? Magician { get; set; }
+
+    /// <summary>
+    /// Joker engine — very random / funny fuzz decisions. Magician can summon, watch,
+    /// and capitalize on Joker's crashes. See docs/MAGICIAN.md#joker.
+    /// </summary>
+    public JokerConfig? Joker { get; set; }
+
     /// <summary>Legacy YAML alias for <see cref="BugHunter"/> (<c>aiCode:</c>).</summary>
     public BugHunterConfig? AiCode
     {

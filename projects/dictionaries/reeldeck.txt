@@ -1,0 +1,24 @@
+# ReelDeck / .rndl dictionary — open deeper player & studio paths
+RNDL
+PCM 
+MAD 
+VID 
+META
+EDIT
+RENDER
+ART 
+ALB 
+LYC 
+CUE 
+QQ
+BR
+# MAD sync-ish
+\xff\xe2
+\xff\xe3
+\xff\xf0
+# Studio / exotic
+DEAD
+blur
+filter
+# Title smash bait
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA

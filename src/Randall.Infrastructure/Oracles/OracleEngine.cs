@@ -21,13 +21,14 @@ public sealed record OracleEvalResult(
     IReadOnlyList<OracleFindingDto> Findings,
     bool RetainInCorpus,
     int EnergyBoost,
-    string Summary);
+    string Summary,
+    IReadOnlyList<OracleNeedDto> Needs);
 
 /// <summary>
-/// Oracle engine — judgment and reporting only.
-/// Evaluates observations against configured rules, emits findings, and optionally
-/// signals corpus retain/boost. Does not attribute AI/human code or plan hunts;
-/// that is <c>BugHunt.BugHunterEngine</c>.
+/// Oracle engine — judgment, reporting, and foresight needs.
+/// Evaluates observations against configured rules, emits findings, optionally
+/// signals corpus retain/boost, and asks the Magician for help via <see cref="OracleNeedDto"/>.
+/// Does not attribute AI/human code (Bug Hunter) or cast spells (Magician).
 /// </summary>
 public static class OracleEngine
 {
@@ -40,7 +41,7 @@ public static class OracleEngine
     {
         var cfg = obs.Project.Oracles ?? new OracleConfig { Enabled = false };
         if (!cfg.Enabled)
-            return new OracleEvalResult(OracleSeverity.None, 0, [], false, 0, "");
+            return new OracleEvalResult(OracleSeverity.None, 0, [], false, 0, "", []);
 
         var findings = new List<OracleFindingDto>();
         EvaluateRuntime(obs, findings);
@@ -77,7 +78,10 @@ public static class OracleEngine
             ? ""
             : string.Join("; ", findings.Select(f => $"{f.RuleClass}/{f.RuleId}:{f.Severity}"));
 
-        return new OracleEvalResult(max, score, findings, retain, boost, summary);
+        // Foresight: ask Magician for help when findings need intervention beyond judgment.
+        var needs = OracleNeeds.FromFindings(findings);
+
+        return new OracleEvalResult(max, score, findings, retain, boost, summary, needs);
     }
 
     public static void PersistFindings(

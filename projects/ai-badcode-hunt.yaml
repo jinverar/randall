@@ -1,9 +1,10 @@
-# Bug Hunter + Oracle demo (docs/BUG_HUNTER.md · docs/ORACLES.md)
+# Bug Hunter + Oracle + Magician demo (docs/BUG_HUNTER.md · docs/ORACLES.md · docs/MAGICIAN.md)
 # Workflow: randall hunt -d examples/ai-code-sample -c projects/ai-badcode-hunt.yaml --arm
 #           randall fuzz -c projects/ai-badcode-hunt.yaml
 #           randall oracles -p ai-badcode-hunt
+#           randall magician -p ai-badcode-hunt
 name: ai-badcode-hunt
-description: Bug Hunter + Oracle demo — AI/human analysis then semantic judgment (docs/BUG_HUNTER.md)
+description: Bug Hunter + Oracle + Magician demo — AI/robot analysis, judgment, spells (docs/MAGICIAN.md)
 kind: tcp
 target:
   # Demo uses VulnRpc (AI-shaped bind→request). Point at your AI-written service binary.
@@ -46,6 +47,25 @@ bugHunter:
 oracles:
   enabled: true
   # Empty sections filled by Bug Hunter suggestions on fuzz start.
+# Magician — spells / summons when Oracle needs help (docs/MAGICIAN.md)
+magician:
+  enabled: true
+  autoCastOnOracle: true
+  blessOnStart: true
+  allowSummonHunter: true
+  allowSummonKnight: true
+  allowSummonArmy: true
+  allowSummonBots: true
+  allowSummonJoker: true
+  watchJoker: true
+  capitalizeJokerCrashes: true
+# Joker — chaotic random tricks; Magician watches and capitalizes on crashes
+joker:
+  enabled: true
+  chance: 0.18
+  maxStack: 4
+  wildBytes: true
+  flipSessionBias: true
 fuzz:
   maxIterations: 800
   sessionFlowBias: 0.7

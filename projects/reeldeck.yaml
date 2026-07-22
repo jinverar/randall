@@ -1,0 +1,61 @@
+# ReelDeck — media player / video-studio file-format fuzz (docs/REELDECK.md)
+# Maturity loop: shallow crashes → path stalk → deeper MAD/VID/studio bugs
+name: reeldeck
+description: ReelDeck .rndl media container — player + studio paths for file fuzz + stalking
+kind: file
+target:
+  executable: ../targets/reeldeck/reeldeck
+  args:
+    - "{file}"
+  timeoutMs: 3000
+transport:
+  type: file
+  extension: .rndl
+fuzz:
+  maxIterations: 400
+  coverageGuided: true
+  havocDepth: 12
+  powerSchedule: true
+  corpusDir: ../data/corpus/reeldeck
+  crashesDir: ../data/crashes/reeldeck
+seeds:
+  - seeds/reeldeck_pcm.rndl
+  - seeds/reeldeck_mad.rndl
+  - seeds/reeldeck_mad_bug.rndl
+  - seeds/reeldeck_vid.rndl
+  - seeds/reeldeck_studio.rndl
+  - seeds/reeldeck_album.rndl
+  - seeds/reeldeck_title_boom.rndl
+mutators:
+  - dictionary
+  - havoc
+  - interesting
+  - bitflip
+  - expand
+  - truncate
+  - boundary
+  - insert
+  - splice
+dictionaryFile: dictionaries/reeldeck.txt
+oracles:
+  enabled: true
+  structure:
+    - id: rndl-magic
+      type: requireMagicHex
+      hex: "524E444C"   # RNDL
+      onlyWhenAccepted: false
+      severity: nearMiss
+magician:
+  enabled: true
+  autoCastOnOracle: true
+  blessOnStart: true
+  watchJoker: true
+  capitalizeJokerCrashes: true
+  allowSummonJoker: true
+  allowSummonArmy: true
+  allowSummonKnight: true
+joker:
+  enabled: true
+  chance: 0.12
+  maxStack: 3
+  wildBytes: true
