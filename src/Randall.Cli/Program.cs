@@ -112,8 +112,9 @@ static void PrintHelp()
           randall recorders stop         Stop orphaned Procmon/DebugView/ProcDump/WPR/pktmon/tshark
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
-          randall serve [--port N] [--bind host] [--token SECRET]   Web UI + API (localhost)
-          randall agent [--port N] [--bind host] [--token SECRET]   Lab agent (all interfaces)
+          randall serve [--port N] [--bind host] [--token SECRET] [--allow-open]
+          randall agent [--port N] [--bind host] [--token SECRET] [--allow-open]
+                                                        Lab agent defaults to 0.0.0.0 (token required)
           randall legs                 Eight legs feature map
           randall version
 
@@ -2606,6 +2607,7 @@ static int RunWebHost(string[] args, string defaultBind, string label)
     var port = 5000;
     var bind = defaultBind;
     string? token = null;
+    var allowOpen = false;
     for (var i = 0; i < args.Length; i++)
     {
         if (args[i] is "--port" or "-p" && i + 1 < args.Length && int.TryParse(args[i + 1], out var p))
@@ -2622,10 +2624,21 @@ static int RunWebHost(string[] args, string defaultBind, string label)
         {
             token = args[++i];
         }
+        else if (args[i] is "--allow-open")
+        {
+            allowOpen = true;
+        }
     }
 
     if (!string.IsNullOrWhiteSpace(token))
         Environment.SetEnvironmentVariable(LabAccess.EnvToken, token.Trim());
+
+    if (LabAccess.RequiresTokenForBind(bind) && !LabAccess.IsConfigured && !allowOpen)
+    {
+        Console.Error.WriteLine(
+            $"Refusing LAN bind ({bind}) without a lab token. Set --token SECRET, export {LabAccess.EnvToken}, or pass --allow-open (lab only). See docs/LAB_AGENT.md.");
+        return 2;
+    }
 
     var serverProject = FindServerProjectPath();
     if (serverProject is null)
@@ -2636,12 +2649,12 @@ static int RunWebHost(string[] args, string defaultBind, string label)
 
     var urls = $"http://{bind}:{port}";
     Console.WriteLine($"Starting Randfuzz {label} at {urls}");
-    if (bind is "0.0.0.0" or "*")
+    if (LabAccess.IsNonLoopbackBind(bind))
     {
         Console.WriteLine($"LAN clients: http://<this-machine-ip>:{port}");
         if (!LabAccess.IsConfigured)
             Console.WriteLine(
-                $"WARN: agent/serve on {bind} without {LabAccess.EnvToken} — set --token or export the env var (docs/LAB_AGENT.md).");
+                $"WARN: --allow-open on {bind} — APIs are unauthenticated. Prefer --token (docs/LAB_AGENT.md).");
         else
             Console.WriteLine($"Lab access token: required ({LabAccess.EnvToken} set)");
     }

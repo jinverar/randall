@@ -16,6 +16,6 @@ jobs:
           dotnet-version: '8.0.x'
       - run: dotnet restore
       - run: dotnet build --no-restore -c Release
-      - run: dotnet test --no-build -c Release --if-present
+      - run: dotnet test -c Release --no-build --verbosity minimal
       - run: dotnet run --no-build -c Release --project src/Randall.Cli -- campaign -c campaigns/lab-smoke.yaml
       - run: dotnet run --no-build -c Release --project src/Randall.Cli -- graph -c projects/vulnftp.yaml

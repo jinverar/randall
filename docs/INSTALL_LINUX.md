@@ -159,3 +159,15 @@ via the Scream watcher, Page Heap/gflags, pktmon, ETW/WPR, Procmon, WinDbg/cdb, 
 snapshots. On Linux the counterparts above (gdb/GEF, core capture, strace, tcpdump, perf, valgrind,
 ASan) fill the same roles. **DynamoRIO coverage** is available on both OSes when installed
 (`install-dynamorio.sh` on Linux, `install-dynamorio.ps1` on Windows).
+
+## What stays Linux-only (by design)
+
+Do **not** expect these on Windows — they wrap Linux-native tools / protocols:
+
+| Feature | Why Linux-only |
+|---------|----------------|
+| `fuzz.engine: aflpp` / `honggfuzz` | Real `afl-fuzz` / `honggfuzz` campaigns |
+| AFL `FORKSRV_FD` shim | Classic fork-server FDs 198/199 |
+| `randall heaptriage` glibc/ASan depth | Linux crash taxonomy |
+
+Windows fuzzing uses the **Randfuzz engine** (generation + DynamoRIO when installed). See [MATURITY.md](MATURITY.md)#6-windows-vs-linux--do-we-port-everything.

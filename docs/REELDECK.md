@@ -32,12 +32,23 @@ RNDL magic
 
 ## Build
 
+**Linux / macOS**
+
 ```bash
 chmod +x scripts/build-reeldeck.sh scripts/gen-reeldeck-seeds.py
 scripts/build-reeldeck.sh
 python3 scripts/gen-reeldeck-seeds.py
 ```
 
+**Windows** (MinGW `gcc` — same as Scream helpers)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-reeldeck.ps1
+# or via umbrella: .\scripts\build-all-lab-targets.ps1
+python scripts\gen-reeldeck-seeds.py
+```
+
+`ExecutableResolver` accepts either `targets/reeldeck/reeldeck` or `reeldeck.exe`, so `projects/reeldeck.yaml` works on both OSes after build.
 ## Maturity playbook (fuzz → stalk → deepen)
 
 ### Round 1 — crash the lobby

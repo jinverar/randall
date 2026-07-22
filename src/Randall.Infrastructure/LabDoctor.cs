@@ -590,7 +590,7 @@ public static class LabDoctor
         else
         {
             Add("labAccess", "warn",
-                $"{LabAccess.EnvToken} unset — OK for localhost serve; set --token when running agent on LAN (docs/MATURITY.md)");
+                $"{LabAccess.EnvToken} unset — OK for localhost serve; `randall agent` refuses 0.0.0.0 without --token (or --allow-open)");
         }
 
         return Finish(project.Name, checks);

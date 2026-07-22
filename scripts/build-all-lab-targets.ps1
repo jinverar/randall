@@ -38,7 +38,8 @@ $Required = @(
 
 # Optional labs - warn and continue on skip/failure.
 $Optional = @(
-    "build-screamcrash.ps1"
+    "build-screamcrash.ps1",
+    "build-reeldeck.ps1"
 )
 
 $skippedOptional = @()

@@ -53,11 +53,20 @@ for entry in "${TARGETS[@]}"; do
 done
 
 if [ "$built" -eq 0 ]; then
-  echo "No targets matched '$want'. Known: vulnserver vulnhttp vulnftp vulntftp vulnssh vulnrpc vulnsmb screamcrash" >&2
+  echo "No targets matched '$want'. Known: vulnserver vulnhttp vulnftp vulntftp vulnssh vulnrpc vulnsmb screamcrash (+ reeldeck via build-reeldeck.sh)" >&2
   exit 1
+fi
+
+# Native ReelDeck media lab (optional; needs gcc) — same maturity target as Windows build-reeldeck.ps1
+if [ "$want" = "all" ] || [ "$want" = "reeldeck" ]; then
+  if [ -x "$ROOT/scripts/build-reeldeck.sh" ] || [ -f "$ROOT/scripts/build-reeldeck.sh" ]; then
+    echo "==> building reeldeck (native)"
+    bash "$ROOT/scripts/build-reeldeck.sh" || echo "[!] reeldeck build skipped/failed (need gcc)"
+  fi
 fi
 
 echo
 echo "Done ($built target(s)). Preflight + fuzz, e.g.:"
 echo "  dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml"
 echo "  dotnet run --project src/Randall.Cli -- fuzz   -c projects/vulnserver.yaml"
+echo "  scripts/build-reeldeck.sh && dotnet run --project src/Randall.Cli -- fuzz -c projects/reeldeck.yaml"
