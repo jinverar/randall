@@ -14,4 +14,5 @@ public sealed record OracleObservation(
     int NewEdges,
     int CoverageEdgeTotal,
     string? PluginAbortDetail,
-    string? ExpectResponsePattern);
+    string? ExpectResponsePattern,
+    OracleSessionTracker? Session = null);

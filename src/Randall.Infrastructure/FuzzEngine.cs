@@ -429,6 +429,15 @@ public sealed class FuzzEngine
         var crashCount = 0;
         var corpusAdded = 0;
         var rng = Random.Shared;
+        OracleSessionTracker? oracleSession = null;
+        if (OracleEngine.IsEnabled(project) && project.Oracles is { } ocfg)
+        {
+            oracleSession = new OracleSessionTracker();
+            oracleSession.ConfigureAuthMarkers(ocfg);
+            FuzzAnalystLog.Info(progress,
+                $"Oracles on — auth={ocfg.Auth.Count} state={ocfg.State.Count} " +
+                $"integer={ocfg.Integer.Count} structure={ocfg.Structure.Count} resource={ocfg.Resource.Count}");
+        }
 
         try
         {
@@ -443,6 +452,8 @@ public sealed class FuzzEngine
                 string seedSource = "unknown";
                 var seedFiles = new List<string>();
                 IReadOnlyList<TargetRunner.TcpStep>? tcpSequence = null;
+                List<string>? oracleFlowPriorCommands = null;
+                List<string?>? oracleFlowPriorExpects = null;
                 var useResponseGraph = false;
 
                 if (exhaustive && plannedCases is { Count: > 0 })
@@ -475,6 +486,18 @@ public sealed class FuzzEngine
                         }
                         tcpSequence = steps;
                         payload = steps[planned.FlowStepIndex].Payload;
+                        if (planned.FlowStepIndex > 0)
+                        {
+                            oracleFlowPriorCommands = planned.Flow.Steps
+                                .Take(planned.FlowStepIndex)
+                                .Select(c => c.Name)
+                                .ToList();
+                            oracleFlowPriorExpects = planned.Flow.Steps
+                                .Take(planned.FlowStepIndex)
+                                .Select(c => c.ExpectResponse)
+                                .ToList()!;
+                        }
+                        commandName = planned.Command.Name;
                     }
                     else if (planned.Command is not null)
                     {
@@ -541,8 +564,14 @@ public sealed class FuzzEngine
                     }
                     tcpSequence = steps;
                     payload = steps[^1].Payload;
-                    commandName = $"flow/{flow.Name}";
+                    commandName = $"flow/{flow.Name}/{flow.Steps[^1].Name}";
                     seedSource = "sessionFlow";
+                    if (flow.Steps.Count > 1)
+                    {
+                        var priors = flow.Steps.Take(flow.Steps.Count - 1).ToList();
+                        oracleFlowPriorCommands = priors.Select(c => c.Name).ToList();
+                        oracleFlowPriorExpects = priors.Select(c => c.ExpectResponse).ToList();
+                    }
                 }
                 else if (sessionCommands.Count > 0)
                 {
@@ -817,10 +846,24 @@ public sealed class FuzzEngine
                 {
                     var expectPattern = tcpOptions?.ExpectResponse
                         ?? tcpSequence?.LastOrDefault()?.Options.ExpectResponse;
+                    // Credit prior PDUs on this connection before evaluating the mutated step.
+                    if (oracleSession is not null && oracleFlowPriorCommands is not null)
+                    {
+                        for (var pi = 0; pi < oracleFlowPriorCommands.Count; pi++)
+                        {
+                            var exp = oracleFlowPriorExpects is { Count: > 0 } && pi < oracleFlowPriorExpects.Count
+                                ? oracleFlowPriorExpects[pi]
+                                : null;
+                            oracleSession.NotePriorStep(oracleFlowPriorCommands[pi], exp);
+                        }
+                    }
                     var oracleObs = new OracleObservation(
                         project, yamlPath, payload, result, commandName, mutator.Name,
-                        iterations, newEdges, coverage.TotalEdges, pluginAbortDetail, expectPattern);
+                        iterations, newEdges, coverage.TotalEdges, pluginAbortDetail, expectPattern,
+                        oracleSession);
                     oracleEval = await OracleEngine.EvaluateAsync(oracleObs, cancellationToken);
+                    // Advance session facts after evaluation (so pre-auth checks see prior iters only).
+                    oracleSession?.Observe(commandName, result);
                     OracleEngine.PersistFindings(project, yamlPath, oracleEval);
                     if (oracleEval.RetainInCorpus && !result.Crashed && oracleEval.Findings.Count > 0)
                     {
@@ -876,6 +919,7 @@ public sealed class FuzzEngine
                 {
                     FuzzAnalystLog.Crash(progress, iterations, $"{caseLabel} — {result.Detail}");
                     crashCount++;
+                    oracleSession?.Reset(); // long-lived target will recycle — drop auth/state
                     if (sysinternalsSnap is { AnyToolFound: true } || tcpvcon is { Available: true })
                     {
                         int? crashPid = null;

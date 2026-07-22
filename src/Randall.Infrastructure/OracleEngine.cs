@@ -24,8 +24,8 @@ public sealed record OracleEvalResult(
     string Summary);
 
 /// <summary>
-/// Hybrid semantic oracle stack: runtime → invariant → differential → metamorphic.
-/// Coverage still guides exploration; oracle findings feed corpus energy + persistence.
+/// Hybrid semantic oracle stack focused on logic / auth / state / structure bugs
+/// (especially for memory-safe targets). Coverage still guides exploration.
 /// </summary>
 public static class OracleEngine
 {
@@ -43,6 +43,11 @@ public static class OracleEngine
         var findings = new List<OracleFindingDto>();
         EvaluateRuntime(obs, findings);
         EvaluateInvariants(obs, cfg, findings);
+        EvaluateAuth(obs, cfg, findings);
+        EvaluateState(obs, cfg, findings);
+        EvaluateInteger(obs, cfg, findings);
+        EvaluateStructure(obs, cfg, findings);
+        EvaluateResource(obs, cfg, findings);
         await EvaluateDifferentialAsync(obs, cfg, findings, ct);
         await EvaluateMetamorphicAsync(obs, cfg, findings, ct);
 
@@ -198,6 +203,283 @@ public static class OracleEngine
                     {
                         findings.Add(MakeFinding(obs, id, "InvariantRule", sev, 0.75,
                             "exit code != 0", "exit=0", NormalizeObservation(obs.Result), null));
+                    }
+                    break;
+            }
+        }
+    }
+
+    private static void EvaluateAuth(
+        OracleObservation obs,
+        OracleConfig cfg,
+        List<OracleFindingDto> findings)
+    {
+        var session = obs.Session;
+        foreach (var rule in cfg.Auth)
+        {
+            var id = string.IsNullOrWhiteSpace(rule.Id) ? (rule.Type ?? "auth") : rule.Id;
+            var sev = string.IsNullOrWhiteSpace(rule.Severity) ? "violation" : rule.Severity;
+            var type = (rule.Type ?? "").Trim().ToLowerInvariant();
+
+            switch (type)
+            {
+                case "forbiduntil":
+                {
+                    if (string.IsNullOrWhiteSpace(rule.ForbidResponse))
+                        break;
+                    var authed = session?.HasResponseMarker(rule.UntilResponse) == true
+                                 || session?.Authenticated == true;
+                    if (!authed &&
+                        ResponseMatcher.Matches(obs.Result.ResponseBytes, rule.ForbidResponse))
+                    {
+                        findings.Add(MakeFinding(obs, id, "AuthRule", sev, 0.9,
+                            $"must not see '{rule.ForbidResponse}' before '{rule.UntilResponse}'",
+                            $"got privileged/success response pre-auth; session={session?.Snapshot()}",
+                            NormalizeObservation(obs.Result),
+                            "auth.forbidUntil"));
+                    }
+                    break;
+                }
+                case "requireauth":
+                {
+                    if (!CommandMatches(obs.CommandName, rule.WhenCommand))
+                        break;
+                    var authed = session?.HasResponseMarker(rule.UntilResponse) == true
+                                 || session?.Authenticated == true;
+                    if (!authed)
+                    {
+                        // Near-miss if rejected; violation if accepted (success-class response)
+                        var accepted = LooksAccepted(obs.Result);
+                        var useSev = accepted ? sev : "nearMiss";
+                        findings.Add(MakeFinding(obs, id, "AuthRule", useSev, accepted ? 0.9 : 0.6,
+                            $"command '{rule.WhenCommand}' requires prior '{rule.UntilResponse}'",
+                            $"session={session?.Snapshot()}; accepted={accepted}",
+                            NormalizeObservation(obs.Result),
+                            "auth.requireAuth"));
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    private static void EvaluateState(
+        OracleObservation obs,
+        OracleConfig cfg,
+        List<OracleFindingDto> findings)
+    {
+        var session = obs.Session;
+        foreach (var rule in cfg.State)
+        {
+            var id = string.IsNullOrWhiteSpace(rule.Id) ? (rule.Type ?? "state") : rule.Id;
+            var sev = string.IsNullOrWhiteSpace(rule.Severity) ? "violation" : rule.Severity;
+            var type = (rule.Type ?? "").Trim().ToLowerInvariant();
+
+            switch (type)
+            {
+                case "commandrequiresprior":
+                {
+                    if (!CommandMatches(obs.CommandName, rule.ForCommand))
+                        break;
+                    var priorOk = session?.HasCommand(rule.PriorCommand) == true;
+                    if (!string.IsNullOrWhiteSpace(rule.PriorResponse))
+                        priorOk = priorOk && session?.HasResponseMarker(rule.PriorResponse) == true;
+
+                    if (!priorOk)
+                    {
+                        var accepted = LooksAccepted(obs.Result);
+                        findings.Add(MakeFinding(obs, id, "StateRule", accepted ? sev : "nearMiss",
+                            accepted ? 0.9 : 0.55,
+                            $"'{rule.ForCommand}' requires prior '{rule.PriorCommand}'" +
+                            (string.IsNullOrWhiteSpace(rule.PriorResponse) ? "" : $"/{rule.PriorResponse}"),
+                            $"session={session?.Snapshot()}; accepted={accepted}",
+                            NormalizeObservation(obs.Result),
+                            "state.commandRequiresPrior"));
+                    }
+                    break;
+                }
+                case "forbidresponseinstate":
+                {
+                    if (string.IsNullOrWhiteSpace(rule.ForbidResponse))
+                        break;
+                    var unlocked = session?.HasResponseMarker(rule.UntilResponse) == true;
+                    if (!unlocked &&
+                        ResponseMatcher.Matches(obs.Result.ResponseBytes, rule.ForbidResponse))
+                    {
+                        findings.Add(MakeFinding(obs, id, "StateRule", sev, 0.85,
+                            $"response '{rule.ForbidResponse}' forbidden until '{rule.UntilResponse}'",
+                            $"session={session?.Snapshot()}",
+                            NormalizeObservation(obs.Result),
+                            "state.forbidResponseInState"));
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    private static void EvaluateInteger(
+        OracleObservation obs,
+        OracleConfig cfg,
+        List<OracleFindingDto> findings)
+    {
+        foreach (var rule in cfg.Integer)
+        {
+            if (!CommandMatches(obs.CommandName, rule.WhenCommand))
+                continue;
+            var id = string.IsNullOrWhiteSpace(rule.Id) ? (rule.Type ?? "integer") : rule.Id;
+            var sev = string.IsNullOrWhiteSpace(rule.Severity) ? "violation" : rule.Severity;
+            var type = (rule.Type ?? "").Trim().ToLowerInvariant();
+            var width = rule.Width is 1 or 2 or 4 ? rule.Width : 4;
+            if (obs.Payload.Length < rule.Offset + width)
+                continue;
+
+            ulong claimed = ReadInt(obs.Payload, rule.Offset, width, rule.Endian);
+            var bodyStart = rule.Offset + width;
+            var remaining = obs.Payload.Length - bodyStart;
+            if (remaining < 0)
+                remaining = 0;
+
+            if (type is "lengthprefix" or "claimedexceedspayload")
+            {
+                var coversSelf = rule.Covers.Equals("self", StringComparison.OrdinalIgnoreCase);
+                var expectedBody = coversSelf
+                    ? (claimed > (ulong)(rule.Offset + width) ? claimed - (ulong)(rule.Offset + width) : 0UL)
+                    : claimed;
+
+                // Semantic overflow: claimed length wraps / exceeds payload / exceeds plausible ceiling.
+                var exceeds = expectedBody > (ulong)remaining;
+                var absurd = rule.MaxPlausible is int max && claimed > (ulong)max;
+                // Classic wrap: offset + claimed overflows 32-bit space
+                var wrap = width == 4 && claimed > int.MaxValue;
+
+                if ((exceeds || absurd || wrap) && LooksAccepted(obs.Result))
+                {
+                    findings.Add(MakeFinding(obs, id, "IntegerRule", sev, 0.85,
+                        "length field consistent with payload / plausible bounds",
+                        $"claimed={claimed} remaining={remaining} exceeds={exceeds} absurd={absurd} wrap={wrap}",
+                        $"{{\"claimed\":{claimed},\"remaining\":{remaining},\"payload_len\":{obs.Payload.Length}}}",
+                        "integer.lengthPrefix"));
+                }
+                else if ((exceeds || absurd || wrap) && !obs.Result.Crashed)
+                {
+                    findings.Add(MakeFinding(obs, id, "IntegerRule", "nearMiss", 0.5,
+                        "length field consistent (rejected or ignored is OK)",
+                        $"claimed={claimed} remaining={remaining}",
+                        $"{{\"claimed\":{claimed},\"remaining\":{remaining}}}",
+                        "integer.lengthPrefix"));
+                }
+            }
+        }
+    }
+
+    private static void EvaluateStructure(
+        OracleObservation obs,
+        OracleConfig cfg,
+        List<OracleFindingDto> findings)
+    {
+        foreach (var rule in cfg.Structure)
+        {
+            if (!CommandMatches(obs.CommandName, rule.WhenCommand))
+                continue;
+            var id = string.IsNullOrWhiteSpace(rule.Id) ? (rule.Type ?? "structure") : rule.Id;
+            var sev = string.IsNullOrWhiteSpace(rule.Severity) ? "nearMiss" : rule.Severity;
+            var type = (rule.Type ?? "").Trim().ToLowerInvariant();
+            var accepted = LooksAccepted(obs.Result);
+            if (rule.OnlyWhenAccepted && !accepted)
+                continue;
+
+            var bad = false;
+            var expected = "";
+            var actual = "";
+            switch (type)
+            {
+                case "minsize":
+                    expected = $"payload ≥ {rule.Bytes} bytes";
+                    actual = $"len={obs.Payload.Length}";
+                    bad = rule.Bytes is int min && obs.Payload.Length < min;
+                    break;
+                case "maxsize":
+                    expected = $"payload ≤ {rule.Bytes} bytes";
+                    actual = $"len={obs.Payload.Length}";
+                    bad = rule.Bytes is int max && obs.Payload.Length > max;
+                    break;
+                case "requireprefix":
+                    expected = $"prefix '{rule.Prefix}'";
+                    actual = Truncate(Encoding.ASCII.GetString(obs.Payload.AsSpan(0, Math.Min(32, obs.Payload.Length))), 40);
+                    bad = !string.IsNullOrEmpty(rule.Prefix) &&
+                          !Encoding.ASCII.GetString(obs.Payload).StartsWith(rule.Prefix, StringComparison.Ordinal);
+                    break;
+                case "requiremagichex" or "requireprefixhex":
+                {
+                    expected = $"magic hex {rule.Hex}";
+                    try
+                    {
+                        var magic = Convert.FromHexString((rule.Hex ?? "").Replace(" ", "").Replace("-", ""));
+                        actual = Convert.ToHexString(obs.Payload.AsSpan(0, Math.Min(magic.Length, obs.Payload.Length)));
+                        bad = obs.Payload.Length < magic.Length ||
+                              !obs.Payload.AsSpan(0, magic.Length).SequenceEqual(magic);
+                    }
+                    catch
+                    {
+                        bad = false;
+                    }
+                    break;
+                }
+            }
+
+            if (bad)
+            {
+                findings.Add(MakeFinding(obs, id, "StructureRule",
+                    accepted ? (sev == "nearMiss" ? "violation" : sev) : sev,
+                    accepted ? 0.8 : 0.5,
+                    expected, actual,
+                    $"{{\"payload_len\":{obs.Payload.Length},\"accepted\":{accepted.ToString().ToLowerInvariant()}}}",
+                    "structure"));
+            }
+        }
+    }
+
+    private static void EvaluateResource(
+        OracleObservation obs,
+        OracleConfig cfg,
+        List<OracleFindingDto> findings)
+    {
+        foreach (var rule in cfg.Resource)
+        {
+            if (!CommandMatches(obs.CommandName, rule.WhenCommand))
+                continue;
+            var id = string.IsNullOrWhiteSpace(rule.Id) ? (rule.Type ?? "resource") : rule.Id;
+            var sev = string.IsNullOrWhiteSpace(rule.Severity) ? "violation" : rule.Severity;
+            var type = (rule.Type ?? "").Trim().ToLowerInvariant();
+            var respLen = obs.Result.ResponseBytes?.Length ?? 0;
+
+            switch (type)
+            {
+                case "maxresponsebytes":
+                    if (rule.MaxBytes is int mr && respLen > mr)
+                    {
+                        findings.Add(MakeFinding(obs, id, "ResourceRule", sev, 0.8,
+                            $"response ≤ {mr} bytes", $"response_len={respLen}",
+                            NormalizeObservation(obs.Result), "resource.maxResponse"));
+                    }
+                    break;
+                case "maxpayloadbytes":
+                    if (rule.MaxBytes is int mp && obs.Payload.Length > mp && LooksAccepted(obs.Result))
+                    {
+                        findings.Add(MakeFinding(obs, id, "ResourceRule", sev, 0.75,
+                            $"accepted payload ≤ {mp} bytes", $"payload_len={obs.Payload.Length}",
+                            NormalizeObservation(obs.Result), "resource.maxPayload"));
+                    }
+                    break;
+                case "responsetopayloadratio":
+                    if (rule.MaxRatio is double ratio && ratio > 0 && obs.Payload.Length > 0 &&
+                        respLen > ratio * obs.Payload.Length)
+                    {
+                        findings.Add(MakeFinding(obs, id, "ResourceRule", sev, 0.7,
+                            $"response/payload ≤ {ratio}",
+                            $"response={respLen} payload={obs.Payload.Length}",
+                            NormalizeObservation(obs.Result), "resource.ratio"));
                     }
                     break;
             }
@@ -508,6 +790,38 @@ public static class OracleEngine
         string.IsNullOrWhiteSpace(when) ||
         (!string.IsNullOrWhiteSpace(command) &&
          command.Contains(when, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Heuristic: non-crash + non-empty success-ish response (not mismatch Detail).</summary>
+    private static bool LooksAccepted(TargetRunResult r)
+    {
+        if (r.Crashed)
+            return false;
+        var detail = r.Detail ?? "";
+        if (detail.Contains("mismatch", StringComparison.OrdinalIgnoreCase) ||
+            detail.Contains("post_receive", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (r.ResponseBytes is { Length: > 0 })
+            return true;
+        return r.ExitCode is null or 0;
+    }
+
+    private static ulong ReadInt(byte[] buf, int offset, int width, string endian)
+    {
+        var be = endian.Equals("be", StringComparison.OrdinalIgnoreCase) ||
+                 endian.Equals("big", StringComparison.OrdinalIgnoreCase);
+        ulong v = 0;
+        if (be)
+        {
+            for (var i = 0; i < width; i++)
+                v = (v << 8) | buf[offset + i];
+        }
+        else
+        {
+            for (var i = width - 1; i >= 0; i--)
+                v = (v << 8) | buf[offset + i];
+        }
+        return v;
+    }
 
     private static bool LooksLikeSanitizer(string detail) =>
         detail.Contains("AddressSanitizer", StringComparison.OrdinalIgnoreCase) ||

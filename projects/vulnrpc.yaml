@@ -34,6 +34,41 @@ fuzz:
   sessionGraphBias: 0.3
   corpusDir: ../data/corpus/vulnrpc
   crashesDir: ../data/crashes/vulnrpc
+# Semantic oracles — auth/state/logic (docs/ORACLES.md). Seeds still hunt memory bugs.
+oracles:
+  enabled: true
+  retainOnViolation: true
+  retainOnNearMiss: true
+  promoteExpectResponse: true
+  auth:
+    - id: no-rpc-ok-before-bind
+      type: forbidUntil
+      forbidResponse: "RPC_OK"
+      untilResponse: "BIND_ACK"
+      severity: violation
+    - id: request-requires-bind-ack
+      type: requireAuth
+      whenCommand: REQUEST
+      untilResponse: "BIND_ACK"
+      severity: violation
+  state:
+    - id: request-after-bind
+      type: commandRequiresPrior
+      forCommand: REQUEST
+      priorCommand: BIND
+      priorResponse: BIND_ACK
+      severity: violation
+  structure:
+    - id: min-dce-header
+      type: minSize
+      bytes: 16
+      onlyWhenAccepted: true
+      severity: nearMiss
+  resource:
+    - id: rpc-response-cap
+      type: maxResponseBytes
+      maxBytes: 65536
+      severity: nearMiss
 seeds:
   - seeds/dce_request_overflow.bin
 mutators:

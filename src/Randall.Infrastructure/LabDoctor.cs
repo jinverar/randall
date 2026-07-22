@@ -47,6 +47,11 @@ public static class LabDoctor
         {
             var bits = new List<string> { "enabled" };
             if (o.PromoteExpectResponse) bits.Add("expectResponse");
+            if (o.Auth.Count > 0) bits.Add($"{o.Auth.Count} auth");
+            if (o.State.Count > 0) bits.Add($"{o.State.Count} state");
+            if (o.Integer.Count > 0) bits.Add($"{o.Integer.Count} integer");
+            if (o.Structure.Count > 0) bits.Add($"{o.Structure.Count} structure");
+            if (o.Resource.Count > 0) bits.Add($"{o.Resource.Count} resource");
             if (o.Invariants.Count > 0) bits.Add($"{o.Invariants.Count} invariant(s)");
             if (o.Differential.Count > 0) bits.Add($"{o.Differential.Count} differential");
             if (o.Metamorphic.Count > 0) bits.Add($"{o.Metamorphic.Count} metamorphic");

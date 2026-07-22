@@ -84,15 +84,19 @@ Set `coverageGuided: true` + `DYNAMORIO_HOME`. Randall parses drcov traces, regi
 
 ## Hybrid semantic oracles
 
-Coverage finds new code; oracles catch **incorrect behaviour without a crash** (expect mismatches, differential divergence, metamorphic breaks). Opt in per project:
+Coverage finds new code; oracles catch **logic / auth / state / semantic-integer / structure / resource** bugs without needing a crash — the high-value surface on memory-safe targets. Opt in per project:
 
 ```yaml
 oracles:
   enabled: true
-  promoteExpectResponse: true
+  auth:
+    - { id: no-ok-pre-auth, type: forbidUntil, forbidResponse: "RPC_OK", untilResponse: "BIND_ACK" }
+  state:
+    - { id: order, type: commandRequiresPrior, forCommand: REQUEST, priorCommand: BIND, priorResponse: BIND_ACK }
 ```
 
-See [ORACLES.md](ORACLES.md). Findings: `randall oracles -p <project>`.
+Seed recipes + mutators still own most memory-corruption hunting. See [ORACLES.md](ORACLES.md) · [AI_SEED.md](AI_SEED.md).  
+Findings: `randall oracles -p <project>`.
 
 ## Research references
 
