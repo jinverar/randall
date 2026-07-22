@@ -1,13 +1,26 @@
 const api = {
+  headers: (extra = {}) => {
+    const h = { ...extra };
+    try {
+      const local = (localStorage.getItem('randallLocalToken') || '').trim();
+      if (local) {
+        h['X-Randall-Token'] = local;
+        h['Authorization'] = `Bearer ${local}`;
+      }
+      const agentTok = (localStorage.getItem('randallLabsAgentToken') || '').trim();
+      if (agentTok) h['X-Randall-Agent-Token'] = agentTok;
+    } catch { /* ignore */ }
+    return h;
+  },
   get: async (path) => {
-    const r = await fetch(path);
+    const r = await fetch(path, { headers: api.headers() });
     const data = await r.json().catch(() => null);
     if (!r.ok) throw new Error(data?.error || data?.message || `${r.status} ${path}`);
     return data;
   },
   post: (path, body) => fetch(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: api.headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   }).then(async (r) => {
     const data = r.status === 204 ? null : await r.json().catch(() => null);
@@ -16,7 +29,7 @@ const api = {
   }),
   put: (path, body) => fetch(path, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: api.headers({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   }).then(async (r) => {
     const data = r.status === 204 ? null : await r.json().catch(() => null);
@@ -24,7 +37,7 @@ const api = {
     return data;
   }),
   del: async (path) => {
-    const r = await fetch(path, { method: 'DELETE' });
+    const r = await fetch(path, { method: 'DELETE', headers: api.headers() });
     const data = r.status === 204 ? null : await r.json().catch(() => null);
     if (!r.ok) throw new Error(data?.error || data?.message || `${r.status} ${path}`);
     return data;
@@ -563,7 +576,18 @@ async function initPlatformPicker() {
 
 async function loadHealth() {
   const h = await api.get('/api/health');
-  document.getElementById('health-label').textContent = `${h.name} ${h.version} · ${h.status}`;
+  const auth = h.authRequired ? ' · token required' : '';
+  document.getElementById('health-label').textContent = `${h.name} ${h.version} · ${h.status}${auth}`;
+  if (h.authRequired) {
+    try {
+      let local = (localStorage.getItem('randallLocalToken') || '').trim();
+      if (!local) {
+        local = (window.prompt('This Randfuzz host requires RANDALL_AGENT_TOKEN. Paste the token:', '') || '').trim();
+        if (local) localStorage.setItem('randallLocalToken', local);
+      }
+    } catch { /* ignore */ }
+  }
+}
 }
 
 // —— Recipe catalog (Scare Floor): browse target-class recipes and instantiate projects ——
@@ -4087,6 +4111,8 @@ document.getElementById('crashpack-pull-form')?.addEventListener('submit', async
     const agentUrl = document.getElementById('crashpack-pull-agent').value.trim();
     const project = document.getElementById('crashpack-pull-project').value;
     const body = { agentUrl, project, includeRuns: true };
+    const agentToken = getLabsAgentToken();
+    if (agentToken) body.agentToken = agentToken;
     const customOut = document.getElementById('crashpack-pull-path').value.trim();
     if (customOut) body.outputPath = customOut;
     const pulled = await api.post('/api/crashes/pack/pull', body);
@@ -4376,15 +4402,31 @@ function getLabsAgentUrl() {
 
 function labsAgentQuery() {
   const agent = getLabsAgentUrl();
-  return agent ? `?agent=${encodeURIComponent(agent)}` : '';
+  if (!agent) return '';
+  const token = getLabsAgentToken();
+  let q = `?agent=${encodeURIComponent(agent)}`;
+  if (token) q += `&agentToken=${encodeURIComponent(token)}`;
+  return q;
+}
+
+function getLabsAgentToken() {
+  try {
+    return (localStorage.getItem('randallLabsAgentToken') || '').trim();
+  } catch {
+    return '';
+  }
 }
 
 function persistLabsAgentUrl() {
   const input = document.getElementById('labs-agent-url');
+  const tokInput = document.getElementById('labs-agent-token');
   const v = (input?.value || '').trim();
+  const tok = (tokInput?.value || '').trim();
   try {
     if (v) localStorage.setItem(LABS_AGENT_KEY, v);
     else localStorage.removeItem(LABS_AGENT_KEY);
+    if (tok) localStorage.setItem('randallLabsAgentToken', tok);
+    else localStorage.removeItem('randallLabsAgentToken');
   } catch { /* ignore */ }
   const scope = document.getElementById('labs-scope-label');
   if (scope) scope.textContent = v ? `— remote ${v}` : '— this machine';
@@ -4625,13 +4667,18 @@ document.getElementById('labs-agent-ping')?.addEventListener('click', async () =
 });
 document.getElementById('labs-agent-clear')?.addEventListener('click', () => {
   const input = document.getElementById('labs-agent-url');
+  const tok = document.getElementById('labs-agent-token');
   if (input) input.value = '';
+  if (tok) tok.value = '';
   persistLabsAgentUrl();
   refreshLabs().catch(() => {});
 });
 document.getElementById('labs-agent-url')?.addEventListener('change', () => {
   persistLabsAgentUrl();
   refreshLabs().catch(() => {});
+});
+document.getElementById('labs-agent-token')?.addEventListener('change', () => {
+  persistLabsAgentUrl();
 });
 
 let caseOpsBound = false;
@@ -6759,8 +6806,11 @@ async function init() {
   await syncFuzzSession().catch(() => {});
   try {
     const savedAgent = localStorage.getItem(LABS_AGENT_KEY) || '';
+    const savedTok = localStorage.getItem('randallLabsAgentToken') || '';
     const agentInput = document.getElementById('labs-agent-url');
+    const tokInput = document.getElementById('labs-agent-token');
     if (agentInput && savedAgent) agentInput.value = savedAgent;
+    if (tokInput && savedTok) tokInput.value = savedTok;
   } catch { /* ignore */ }
   persistLabsAgentUrl();
   refreshLabs().catch(() => {});

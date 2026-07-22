@@ -470,7 +470,35 @@ Users should **not** need Scapy for normal Randfuzz work. Scapy remains an optio
 
 ---
 
+## Phase 25 — Product maturity (serious indie → market-ready) 🔄
+
+**Goal:** Close the “still lab” gaps without abandoning the Randall niche. Full write-up: [MATURITY.md](MATURITY.md).
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Maturity doc (honest unfinished map) | ✅ | [MATURITY.md](MATURITY.md) |
+| Attribution confidence tiers + capped style scores | ✅ | Bug Hunter reports |
+| Optional agent/serve shared-secret token | ✅ | `RANDALL_AGENT_TOKEN` / `--token` · [LAB_AGENT.md](LAB_AGENT.md) |
+| Require token when bind ≠ loopback | 🔲 | Today: WARN only |
+| Non-toy format demo project (golden seeds) | 🔲 | Beyond vuln* teaching floor |
+| Engine bake-off vs AFL++/libFuzzer | 🔲 | `docs/BENCHMARKS.md` + script |
+| Automated unit/integration tests | 🔲 | Oracle + Bug Hunter + HTTP framing first |
+| Signed / versioned release packaging | 🔲 | Beyond `randall pack` folder |
+| Multi-tenant / SaaS | 🔲 | Out of scope for single-box lab shape |
+| Linux coverage without DynamoRIO | 🔲 | SanCov / perf (see STALKING) |
+
 ### Priority order (recommended)
+
+1. Honesty in-product (this phase’s ✅ rows)
+2. LAN token required (not just warned)
+3. One real-format out-of-box demo
+4. Published engine bake-off numbers
+5. Minimal automated tests
+6. Release packaging cadence
+
+---
+
+### Earlier phases — priority context
 
 1. **Phase 18** — highest leverage (Scare Floor already exists; sessions already exist in YAML)
 2. **Phase 19** — glue so UI authors what the engine runs
@@ -479,7 +507,8 @@ Users should **not** need Scapy for normal Randfuzz work. Scapy remains an optio
 5. **Phase 22** — SMB lab path ✅
 6. **Phase 23** — layered app-PDU UX (Scapy workflow, our stack) ✅
 7. **Phase 24** — in-house L2–L4 packet forge
-8. **Target Runtime** ✅ — local/remote lifecycle, tubes, postStart, Page Heap, memory/heap lens; see [TARGET_RUNTIME.md](TARGET_RUNTIME.md)
+8. **Phase 25** — product maturity ([MATURITY.md](MATURITY.md)) 🔄
+9. **Target Runtime** ✅ — local/remote lifecycle, tubes, postStart, Page Heap, memory/heap lens; see [TARGET_RUNTIME.md](TARGET_RUNTIME.md)
 
 ### Near-term caution (not “never”)
 

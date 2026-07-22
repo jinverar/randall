@@ -11,27 +11,41 @@ public static class TargetRuntimeClient
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
-    public static async Task<TargetRuntimeListDto> ListAsync(string agentUrl, CancellationToken ct = default)
+    public static async Task<TargetRuntimeListDto> ListAsync(
+        string agentUrl, string? token = null, CancellationToken ct = default)
     {
         var baseUrl = RequireBase(agentUrl);
-        var list = await Http.GetFromJsonAsync<TargetRuntimeListDto>($"{baseUrl}/api/runtime", JsonOpts, ct)
+        using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/runtime");
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
+        var list = await resp.Content.ReadFromJsonAsync<TargetRuntimeListDto>(JsonOpts, ct)
                    ?? new TargetRuntimeListDto("?", []);
         return list;
     }
 
-    public static async Task<TargetRuntimeStatusDto> StatusAsync(string agentUrl, string id, CancellationToken ct = default)
+    public static async Task<TargetRuntimeStatusDto> StatusAsync(
+        string agentUrl, string id, string? token = null, CancellationToken ct = default)
     {
         var baseUrl = RequireBase(agentUrl);
-        var st = await Http.GetFromJsonAsync<TargetRuntimeStatusDto>(
-            $"{baseUrl}/api/runtime/{Uri.EscapeDataString(id)}", JsonOpts, ct);
+        using var req = new HttpRequestMessage(
+            HttpMethod.Get, $"{baseUrl}/api/runtime/{Uri.EscapeDataString(id)}");
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
+        var st = await resp.Content.ReadFromJsonAsync<TargetRuntimeStatusDto>(JsonOpts, ct);
         return st ?? Fail(id, "Empty status response");
     }
 
     public static async Task<TargetRuntimeStatusDto> StartAsync(
-        string agentUrl, TargetRuntimeStartRequest request, CancellationToken ct = default)
+        string agentUrl, TargetRuntimeStartRequest request, string? token = null,
+        CancellationToken ct = default)
     {
         var baseUrl = RequireBase(agentUrl);
-        using var resp = await Http.PostAsJsonAsync($"{baseUrl}/api/runtime/start", request, JsonOpts, ct);
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/runtime/start")
+        {
+            Content = JsonContent.Create(request, options: JsonOpts),
+        };
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
         var body = await resp.Content.ReadFromJsonAsync<TargetRuntimeStatusDto>(JsonOpts, ct);
         if (body is null)
             return Fail(request.Id, $"Agent returned {resp.StatusCode}");
@@ -39,49 +53,66 @@ public static class TargetRuntimeClient
     }
 
     public static async Task<TargetRuntimeStatusDto> StartFromProjectAsync(
-        string agentUrl, string yamlPath, string? id = null, CancellationToken ct = default)
+        string agentUrl, string yamlPath, string? id = null, string? token = null,
+        CancellationToken ct = default)
     {
         var baseUrl = RequireBase(agentUrl);
         var q = new StringBuilder($"{baseUrl}/api/runtime/start-project?yamlPath={Uri.EscapeDataString(yamlPath)}");
         if (!string.IsNullOrWhiteSpace(id))
             q.Append("&id=").Append(Uri.EscapeDataString(id));
-        using var resp = await Http.PostAsync(q.ToString(), null, ct);
+        using var req = new HttpRequestMessage(HttpMethod.Post, q.ToString());
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
         var body = await resp.Content.ReadFromJsonAsync<TargetRuntimeStatusDto>(JsonOpts, ct);
         if (body is null)
             return Fail(id ?? yamlPath, $"Agent returned {resp.StatusCode}");
         return body;
     }
 
-    public static async Task<TargetRuntimeStatusDto> StopAsync(string agentUrl, string id, CancellationToken ct = default)
+    public static async Task<TargetRuntimeStatusDto> StopAsync(
+        string agentUrl, string id, string? token = null, CancellationToken ct = default)
     {
         var baseUrl = RequireBase(agentUrl);
-        using var resp = await Http.PostAsync($"{baseUrl}/api/runtime/{Uri.EscapeDataString(id)}/stop", null, ct);
+        using var req = new HttpRequestMessage(
+            HttpMethod.Post, $"{baseUrl}/api/runtime/{Uri.EscapeDataString(id)}/stop");
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
         var body = await resp.Content.ReadFromJsonAsync<TargetRuntimeStatusDto>(JsonOpts, ct);
         return body ?? Fail(id, $"Agent returned {resp.StatusCode}");
     }
 
-    public static async Task<TargetRuntimeStatusDto> RestartAsync(string agentUrl, string id, CancellationToken ct = default)
+    public static async Task<TargetRuntimeStatusDto> RestartAsync(
+        string agentUrl, string id, string? token = null, CancellationToken ct = default)
     {
         var baseUrl = RequireBase(agentUrl);
-        using var resp = await Http.PostAsync($"{baseUrl}/api/runtime/{Uri.EscapeDataString(id)}/restart", null, ct);
+        using var req = new HttpRequestMessage(
+            HttpMethod.Post, $"{baseUrl}/api/runtime/{Uri.EscapeDataString(id)}/restart");
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
         var body = await resp.Content.ReadFromJsonAsync<TargetRuntimeStatusDto>(JsonOpts, ct);
         return body ?? Fail(id, $"Agent returned {resp.StatusCode}");
     }
 
-    public static async Task<TargetRuntimeStatusDto> StopAllAsync(string agentUrl, CancellationToken ct = default)
+    public static async Task<TargetRuntimeStatusDto> StopAllAsync(
+        string agentUrl, string? token = null, CancellationToken ct = default)
     {
         var baseUrl = RequireBase(agentUrl);
-        using var resp = await Http.PostAsync($"{baseUrl}/api/runtime/stop-all", null, ct);
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/runtime/stop-all");
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
         var body = await resp.Content.ReadFromJsonAsync<TargetRuntimeStatusDto>(JsonOpts, ct);
         return body ?? Fail("all", $"Agent returned {resp.StatusCode}");
     }
 
     public static async Task<MemoryLensReportDto> InspectAsync(
-        string agentUrl, int pid, CancellationToken ct = default)
+        string agentUrl, int pid, string? token = null, CancellationToken ct = default)
     {
         var baseUrl = RequireBase(agentUrl);
-        var report = await Http.GetFromJsonAsync<MemoryLensReportDto>(
-            $"{baseUrl}/api/runtime/inspect?pid={pid}", JsonOpts, ct);
+        using var req = new HttpRequestMessage(
+            HttpMethod.Get, $"{baseUrl}/api/runtime/inspect?pid={pid}");
+        LabAccess.Apply(req, token);
+        using var resp = await Http.SendAsync(req, ct);
+        var report = await resp.Content.ReadFromJsonAsync<MemoryLensReportDto>(JsonOpts, ct);
         return report ?? new MemoryLensReportDto(
             false, null, pid, "unavailable", ["Empty inspect response"], null, [], [], [], null,
             "Empty inspect response");

@@ -236,5 +236,16 @@ public static class RandallRoadmap
             new("p24-safety", "Lab-only defaults; no internet-scan presets", false, null),
             new("p24-interop", "Optional Scapy/hex/pcap import — never required", false, null),
         ]),
+        new(25, "Product maturity (serious indie → market-ready)", "in progress",
+        [
+            new("p25-maturity-doc", "Honest unfinished map + done criteria", true, "docs/MATURITY.md"),
+            new("p25-attr-tiers", "Attribution confidence tiers + capped style scores", true, "docs/BUG_HUNTER.md"),
+            new("p25-agent-token", "Optional shared-secret gate for agent/serve", true, "docs/LAB_AGENT.md"),
+            new("p25-token-required", "Require token when bind ≠ loopback", false, "warn today"),
+            new("p25-real-demo", "Non-toy format demo with golden seeds", false, null),
+            new("p25-bench", "Bake-off vs AFL++/libFuzzer", false, "docs/BENCHMARKS.md"),
+            new("p25-tests", "Automated unit/integration tests", false, null),
+            new("p25-release", "Versioned/signed release packaging", false, null),
+        ]),
     ];
 }
