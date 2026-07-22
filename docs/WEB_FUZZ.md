@@ -37,6 +37,7 @@ sessionCommands:
     expectResponse: "HTTP/"
 fuzz:
   syncContentLength: true  # rewrite Content-Length after body mutate
+  syncCookies: true        # absorb Set-Cookie → inject Cookie on later requests (minimal jar)
 dictionaryFile: dictionaries/ai_codegen_mistakes.txt
 oracles:
   enabled: true
@@ -44,6 +45,14 @@ oracles:
 
 Create a profile: `randall case new --kind http --name myweb --host 127.0.0.1 --port 8080`
 
+## Cookie jar (v1 stub)
+
+When `fuzz.syncCookies: true` **or** `kind: http|https`, Randfuzz keeps a per-run jar:
+
+1. Parse `Set-Cookie` from responses (`name=value`, attributes stripped)
+2. Inject / replace a `Cookie:` header on outbound HTTP requests
+
+Not a browser: no Path/Domain/Secure/SameSite expiry, no redirect following. Good enough for lab session cookies on VulnHttp-style targets.
 ## What gets fuzzed
 
 | Surface | How |
@@ -67,10 +76,10 @@ Create a profile: `randall case new --kind http --name myweb --host 127.0.0.1 --
 ## Limits (v1)
 
 - Raw HTTP/1.x over TCP (optional TLS) — not a full browser
-- No cookie jar / redirect following yet
+- Minimal cookie jar (`fuzz.syncCookies` / http kind) — no redirect following
 - Status matching via substrings (`HTTP/1.1 200`) and oracle `response_class` (`2xx` / `4xx` / `5xx`)
 - Point at **your** app: set `target.executable` empty if the server is already running, or use Target Runtime to start it
-
+- OpenAPI import not shipped yet (deferred — not a polish stub)
 ## Related
 
 - [BUG_HUNTER.md](BUG_HUNTER.md) — mistake catalog + channels  

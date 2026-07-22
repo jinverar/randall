@@ -1811,9 +1811,16 @@ static int RunDoctor(string[] args)
     }
 
     Console.WriteLine();
-    Console.WriteLine(report.Ready
-        ? $"Ready to fuzz {report.Project}."
-        : $"Not ready — fix failures above, then: randall fuzz -c {config} --dry-run");
+    if (report.Ready)
+    {
+        Console.WriteLine($"Ready to fuzz {report.Project}.");
+        foreach (var line in LabDoctor.NextSteps(report, config))
+            Console.WriteLine($"  Next: {line}");
+    }
+    else
+    {
+        Console.WriteLine($"Not ready — fix failures above, then: randall fuzz -c {config} --dry-run");
+    }
 
     return report.Ready ? 0 : 1;
 }

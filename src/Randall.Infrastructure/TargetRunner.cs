@@ -30,7 +30,20 @@ public static class TargetRunner
             if (project.Fuzz.SyncContentLength || ProjectKinds.IsHttp(project) ||
                 HttpFraming.LooksLikeHttpRequest(payload))
                 payload = HttpFraming.TrySyncContentLength(payload);
-            return await RunTcpAsync(project, yamlPath, longLivedServer, payload, tcpOptions, cancellationToken);
+
+            if ((project.Fuzz.SyncCookies || ProjectKinds.IsHttp(project)) &&
+                HttpFraming.LooksLikeHttpRequest(payload) &&
+                HttpCookieSession.TryGet(out var jar) && jar.Count > 0)
+                payload = HttpCookieJar.ApplyCookieHeader(payload, jar);
+
+            var result = await RunTcpAsync(project, yamlPath, longLivedServer, payload, tcpOptions, cancellationToken);
+
+            if ((project.Fuzz.SyncCookies || ProjectKinds.IsHttp(project)) &&
+                result.ResponseBytes is { Length: > 0 } &&
+                HttpCookieSession.TryGet(out var absorbJar))
+                HttpCookieJar.AbsorbSetCookie(absorbJar, result.ResponseBytes);
+
+            return result;
         }
 
         if (ProjectKinds.IsUdp(project))

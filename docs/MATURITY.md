@@ -130,9 +130,8 @@ Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_A
 
 | Gap | Why it matters | Next polish |
 |-----|----------------|-------------|
-| Automated unit/integration tests | Regressions only caught by smoke | **Expanded:** HTTP framing, OracleNeeds, Magician/Joker, StalkProfiles |
-| Linux coverage without DynamoRIO | Many labs won’t install DR | SanitizerCoverage / perf backend (roadmap note in STALKING) |
-| Web fuzz depth | Not ZAP/Burp | Auth cookie jars, OpenAPI import, richer status/body oracles |
+| Web fuzz depth | Not ZAP/Burp | **Cookie jar stub shipped**; OpenAPI import deferred; richer status/body oracles next |
+| Automated unit/integration tests | Regressions only caught by smoke | **Expanded:** Nbss, kinds, loader, dict, matcher, oracle, cookies, doctor hints + Linux CI |
 | Oracle authoring UX | Rules are YAML-expert today | Scare Floor / UI rule builder for common auth/state patterns |
 | Attribution → seed synthesis | Plan suggests; doesn’t always mint seeds | Auto-seed from mistake channel=seed classes |
 | Phase 24 L2–L4 forge | Scapy-class surface | Keep deferred until app-PDU path is the default habit |

@@ -245,6 +245,11 @@ public sealed class FuzzConfig
     /// (web-app fuzzing). Prefer true for <c>kind: http|https</c> POST bodies.
     /// </summary>
     public bool SyncContentLength { get; set; }
+    /// <summary>
+    /// Absorb Set-Cookie from responses and inject Cookie on subsequent HTTP requests
+    /// (minimal jar — see docs/WEB_FUZZ.md). Auto-on for kind http/https when unset? No — opt-in.
+    /// </summary>
+    public bool SyncCookies { get; set; }
     /// <summary>Write iterations.jsonl + run.json under runsDir (Phase 15).</summary>
     public bool ExecutionLog { get; set; } = true;
     /// <summary>Execution journal root (relative to project YAML).</summary>
