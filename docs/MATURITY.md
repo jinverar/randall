@@ -23,7 +23,7 @@ This doc expands the unfinished surface into concrete gaps, done criteria, and p
 | Oracle engine | Capable | Auth/state/structure/resource rules; still rule-authored |
 | Bug Hunter attribution | Lab | Marker-strong; style heuristic weak — not ground truth |
 | Mistake catalog + arming | Capable | OWASP/AISW-informed channels; needs more field feedback |
-| Web (`http`/`https`) fuzz | Capable | Framing + status oracles; not a full web scanner |
+| Web (`http`/`https`) fuzz | Capable | Framing + status oracles + cookie jar stub; not a full web scanner |
 | Lab targets (vuln*) | Lab | Teaching crashes, not market parsers |
 | File templates (`file-text` / `file-framed`) | Capable | In-repo mini-parsers + seeds; still teaching-floor depth |
 | AFL++ / honggfuzz adapters | Capable | Real campaigns + corpus sync; bake-off scaffold in BENCHMARKS |
@@ -130,8 +130,9 @@ Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_A
 
 | Gap | Why it matters | Next polish |
 |-----|----------------|-------------|
-| Web fuzz depth | Not ZAP/Burp | **Cookie jar stub shipped**; OpenAPI import deferred; richer status/body oracles next |
 | Automated unit/integration tests | Regressions only caught by smoke | **Expanded:** Nbss, kinds, loader, dict, matcher, oracle, cookies, doctor hints + Linux CI |
+| Linux coverage without DynamoRIO | Many labs won’t install DR | SanitizerCoverage / perf backend (roadmap note in STALKING) |
+| Web fuzz depth | Not ZAP/Burp | **Cookie jar stub shipped**; OpenAPI import deferred; richer status/body oracles next |
 | Oracle authoring UX | Rules are YAML-expert today | Scare Floor / UI rule builder for common auth/state patterns |
 | Attribution → seed synthesis | Plan suggests; doesn’t always mint seeds | Auto-seed from mistake channel=seed classes |
 | Phase 24 L2–L4 forge | Scapy-class surface | Keep deferred until app-PDU path is the default habit |
