@@ -34,6 +34,11 @@ When the **Oracle** watches a campaign and sees a logic/auth/state miss (especia
 | **Knight** | Stalk the unexplored | Enable coverage-guided stalking |
 | **Army** | Overwhelm the target | Muster a broad mutator set |
 | **Bots** | Analyst helpers | Hint file for `randall ai seed` / `hunt` (off hot path) |
+| **Joker** | Chaos agent | Very random stacked tricks; Magician watches and capitalizes on crashes |
+
+### Joker (chaos, not craft)
+
+The Magician plans; the **Joker** clown-cars into the scare floor with rubber-chicken mutations — stacked mutators, wild bytes, flipped session bias. Magician **watches** the act. When the Joker somehow crashes the target, Magician **capitalizes**: bottle the scream, bless corpus energy, muster the army on that punchline. See [MAGICIAN.md#joker](MAGICIAN.md#joker).
 
 Spells (dictionary boost, havoc surge, energy bless, re-arm) act directly on the live fuzz campaign. Full map: [MAGICIAN.md](MAGICIAN.md).
 

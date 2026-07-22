@@ -45,6 +45,12 @@ public sealed class ProjectConfig
     /// </summary>
     public MagicianConfig? Magician { get; set; }
 
+    /// <summary>
+    /// Joker engine — very random / funny fuzz decisions. Magician can summon, watch,
+    /// and capitalize on Joker's crashes. See docs/MAGICIAN.md#joker.
+    /// </summary>
+    public JokerConfig? Joker { get; set; }
+
     /// <summary>Legacy YAML alias for <see cref="BugHunter"/> (<c>aiCode:</c>).</summary>
     public BugHunterConfig? AiCode
     {

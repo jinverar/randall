@@ -455,7 +455,23 @@ public sealed class FuzzEngine
             for (var i = 0; i < maxIterations && !cancellationToken.IsCancellationRequested; i++)
             {
                 iterations++;
-                var mutator = mutators[rng.Next(mutators.Count)];
+                JokerTrick? jokerTrick = null;
+                var iterFlowBias = flowBias;
+                var iterGraphBias = project.Fuzz.SessionGraphBias;
+                IMutator mutator;
+                if (JokerEngine.ShouldPlay(project, rng) && mutators.Count > 0)
+                {
+                    jokerTrick = JokerEngine.StartTrick(project, mutators, rng);
+                    mutator = jokerTrick.PrimaryMutator;
+                    if (jokerTrick.FlowBiasOverride is double fb)
+                        iterFlowBias = fb;
+                    if (jokerTrick.GraphBiasOverride is double gb)
+                        iterGraphBias = gb;
+                }
+                else
+                {
+                    mutator = mutators[rng.Next(mutators.Count)];
+                }
                 TargetRunner.TcpSendOptions? tcpOptions = null;
                 string commandName = "default";
                 byte[] payload;
@@ -542,7 +558,7 @@ public sealed class FuzzEngine
                 else if (project.SessionGraph is not null &&
                          commandsByName.Count > 0 &&
                          ProjectKinds.IsTcpLike(project) &&
-                         rng.NextDouble() < project.Fuzz.SessionGraphBias)
+                         rng.NextDouble() < iterGraphBias)
                 {
                     useResponseGraph = true;
                     commandName = "graph";
@@ -551,7 +567,7 @@ public sealed class FuzzEngine
                 }
                 else if (sessionCommands.Count > 0 &&
                     sessionFlows.Count > 0 &&
-                    rng.NextDouble() < flowBias)
+                    rng.NextDouble() < iterFlowBias)
                 {
                     var flow = sessionFlows[rng.Next(sessionFlows.Count)];
                     var mutateSteps = MutateStepResolver.Resolve(flow.MutateStep, project.Fuzz.MutateStep, flow.Steps.Count);
@@ -631,12 +647,23 @@ public sealed class FuzzEngine
                 }
 
                 var mutatorChain = new List<string> { mutator.Name };
+                if (jokerTrick is not null && payload.Length > 0)
+                {
+                    payload = JokerEngine.FinishTrick(
+                        jokerTrick, payload, mutators, rng, JokerEngine.GetConfig(project));
+                    mutatorChain = jokerTrick.MutatorChain.ToList();
+                    seedSource = seedSource.StartsWith("joker", StringComparison.Ordinal)
+                        ? seedSource
+                        : $"joker/{seedSource}";
+                }
                 var sw = Stopwatch.StartNew();
                 string? iterTracePath = null;
 
                 if (dryRun)
                 {
-                    var dryLabel = $"{commandName}/{mutator.Name}";
+                    var dryLabel = jokerTrick is null
+                        ? $"{commandName}/{mutator.Name}"
+                        : $"{commandName}/joker:{jokerTrick.TrickName}";
                     FuzzAnalystLog.Case(progress, iterations, dryLabel);
                     FuzzAnalystLog.Step(progress, $"Fuzzing node '{commandName}'", iterations);
                     FuzzAnalystLog.Tx(progress, payload, iterations);
@@ -690,7 +717,9 @@ public sealed class FuzzEngine
                     }
                 }
 
-                var caseLabel = $"{commandName}/{mutator.Name}";
+                var caseLabel = jokerTrick is null
+                    ? $"{commandName}/{mutator.Name}"
+                    : $"{commandName}/joker:{jokerTrick.TrickName}";
                 FuzzAnalystLog.Case(progress, iterations, caseLabel);
                 if (ProjectKinds.IsTcpLike(project) || ProjectKinds.IsUdp(project))
                 {
@@ -906,15 +935,28 @@ public sealed class FuzzEngine
                     }
                 }
 
+                if (jokerTrick is not null && !result.Crashed)
+                {
+                    MagicianEngine.WatchJoker(
+                        project, yamlPath, jokerTrick, iterations,
+                        crashed: false, capitalized: false, progress);
+                }
+
                 sw.Stop();
                 var iterDetail = result.Detail;
                 if (oracleEval is { Findings.Count: > 0 } && !string.IsNullOrEmpty(oracleEval.Summary))
                     iterDetail = string.IsNullOrEmpty(iterDetail)
                         ? $"oracle: {oracleEval.Summary}"
                         : $"{iterDetail}; oracle: {oracleEval.Summary}";
+                if (jokerTrick is not null)
+                    iterDetail = string.IsNullOrEmpty(iterDetail)
+                        ? $"joker:{jokerTrick.TrickName}"
+                        : $"{iterDetail}; joker:{jokerTrick.TrickName}";
 
                 journal?.LogIteration(new IterationLogEntry(
-                    iterations, DateTimeOffset.UtcNow, commandName, mutator.Name, mutatorChain,
+                    iterations, DateTimeOffset.UtcNow, commandName,
+                    jokerTrick is null ? mutator.Name : $"joker:{jokerTrick.TrickName}",
+                    mutatorChain,
                     parentInputHash, seedSource, payload.Length, InputHash.StackHash(payload),
                     result.Crashed, newEdges, coverage.TotalEdges, sw.ElapsedMilliseconds,
                     iterDetail, result.ExitCode, stalkBackend, iterTracePath,
@@ -922,7 +964,7 @@ public sealed class FuzzEngine
 
                 options.Progress?.OnIteration(new FuzzIterationEvent(
                     iterations,
-                    $"{commandName}/{mutator.Name}",
+                    caseLabel,
                     payload.Length,
                     result.Crashed,
                     newCoverage,
@@ -980,7 +1022,9 @@ public sealed class FuzzEngine
                     var crashTag = await RppCrashHook.RunAsync(
                         project, yamlPath, payload, result, cancellationToken);
 
-                    var mutatorLabel = $"{commandName}/{mutator.Name}";
+                    var mutatorLabel = jokerTrick is null
+                        ? $"{commandName}/{mutator.Name}"
+                        : $"{commandName}/joker:{jokerTrick.TrickName}";
                     var payloadHash = InputHash.StackHash(payload);
                     var expectedInputPath = Path.Combine(crashesDir, $"{project.Name}_{iterations}_{payloadHash}.bin");
 
@@ -1059,6 +1103,12 @@ public sealed class FuzzEngine
                         {
                             FuzzAnalystLog.Warn(progress, $"notify: {notifyEx.Message}", iterations);
                         }
+                    }
+
+                    if (jokerTrick is not null)
+                    {
+                        _ = MagicianEngine.CapitalizeOnJokerCrash(
+                            project, yamlPath, jokerTrick, payload, corpus, mutators, iterations, progress);
                     }
 
                     if (wantStringsOnCrash && !string.IsNullOrWhiteSpace(saved.InputPath))

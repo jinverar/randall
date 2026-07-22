@@ -15,9 +15,9 @@ randall hunt …      randall oracles …      randall magician …
 |--------|------|
 | **Bug Hunter** | Attribute AI/human code, mistake catalog, arm oracles/dict |
 | **Oracle** | Judge observations; emit findings; request help (`OracleNeedDto`) |
-| **Magician** | Cast spells; summon hunter / knight / army / bots for analysts |
+| **Magician** | Cast spells; summon hunter / knight / army / bots / **joker** for analysts |
 
-Code: `Randall.Infrastructure.Magician` (`MagicianEngine`).
+Code: `Randall.Infrastructure.Magician` (`MagicianEngine`, `JokerEngine`).
 
 ## Spells
 
@@ -31,6 +31,35 @@ Code: `Randall.Infrastructure.Magician` (`MagicianEngine`).
 | `summonKnight` | Enable `coverageGuided` stalking |
 | `summonArmy` | Muster a broad mutator set |
 | `summonBots` | Write `bots_hint.md` for analysts (`randall ai seed` / `hunt`) — no live API on the hot path |
+| `summonJoker` | Call the **Joker** — encore of chaotic random tricks |
+| `capitalizeJoker` | (automatic) After a Joker crash — corpus + energy + army |
+
+## Joker
+
+The **Joker** is not the Magician. It throws **very random** fuzz decisions (stacked mutators, wild bytes, funny session-bias flips). The Magician can:
+
+1. **Summon** the Joker (`summonJoker` / `magician cast --need joker`)
+2. **Watch** every trick (`joker_watch.jsonl`)
+3. **Capitalize** when a trick crashes — keep the scream, bless energy, muster the army
+
+```yaml
+joker:
+  enabled: true
+  chance: 0.12          # base hijack rate
+  maxStack: 4           # stacked mutators per trick
+  wildBytes: true
+  flipSessionBias: true
+
+magician:
+  allowSummonJoker: true
+  watchJoker: true
+  capitalizeJokerCrashes: true
+```
+
+```bash
+randall magician joker
+randall magician cast -c projects/ai-badcode-hunt.yaml --need joker
+```
 
 ## Oracle needs → Magician
 
@@ -42,6 +71,7 @@ Code: `Randall.Infrastructure.Magician` (`MagicianEngine`).
 | `knight` | summonKnight |
 | `army` | summonArmy, havocSurge |
 | `bots` | summonBots |
+| `joker` | summonJoker |
 | `rearm` | rearmOracles |
 
 Auth/state findings often summon **hunter** + **bots** (AI-shaped logic). Integer/structure findings summon the **army**. Differential/metamorphic findings summon the **knight**.

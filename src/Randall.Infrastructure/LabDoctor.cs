@@ -100,12 +100,27 @@ public static class LabDoctor
             if (mag.AllowSummonKnight) bits.Add("knight");
             if (mag.AllowSummonArmy) bits.Add("army");
             if (mag.AllowSummonBots) bits.Add("bots");
+            if (mag.AllowSummonJoker) bits.Add("joker");
             Add("magician", "ok", string.Join(" · ", bits) + " — docs/MAGICIAN.md");
         }
         else
         {
             Add("magician", "warn",
                 "magician disabled — optional Oracle→spell intervention (docs/MAGICIAN.md)");
+        }
+
+        if (project.Joker is { Enabled: true } || (project.Joker?.EncoreIterations > 0))
+        {
+            var j = project.Joker!;
+            Add("joker", "ok",
+                $"enabled · chance={j.Chance:0.00} stack≤{j.MaxStack}" +
+                (j.EncoreIterations > 0 ? $" · encore={j.EncoreIterations}" : "") +
+                " — Magician watches/capitalizes (docs/MAGICIAN.md#joker)");
+        }
+        else
+        {
+            Add("joker", "warn",
+                "joker disabled — optional chaotic tricks; Magician can summonJoker (docs/MAGICIAN.md#joker)");
         }
 
         // Optional external engines (AFL++ / honggfuzz) — fail preflight when selected but missing.

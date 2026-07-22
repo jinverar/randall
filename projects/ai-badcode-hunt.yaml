@@ -56,6 +56,16 @@ magician:
   allowSummonKnight: true
   allowSummonArmy: true
   allowSummonBots: true
+  allowSummonJoker: true
+  watchJoker: true
+  capitalizeJokerCrashes: true
+# Joker — chaotic random tricks; Magician watches and capitalizes on crashes
+joker:
+  enabled: true
+  chance: 0.18
+  maxStack: 4
+  wildBytes: true
+  flipSessionBias: true
 fuzz:
   maxIterations: 800
   sessionFlowBias: 0.7

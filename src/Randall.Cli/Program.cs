@@ -719,10 +719,12 @@ static int RunMagician(string[] args)
 
             Usage:
               randall magician spells
-              randall magician cast -c <project.yaml> --need knight|army|bots|hunter|dictionary|energy|rearm
+              randall magician cast -c <project.yaml> --need knight|army|bots|hunter|dictionary|energy|rearm|joker
+              randall magician joker                 # Joker chaos help
               randall magician [-p <project>] [--json]     # recent casts from spells.jsonl
 
             Path: data/crashes/<project>/_magician/spells.jsonl
+            Joker watch: data/crashes/<project>/_magician/joker_watch.jsonl
             """);
         return 0;
     }
@@ -732,6 +734,12 @@ static int RunMagician(string[] args)
     if (sub is "spells" or "catalog")
     {
         Console.Write(MagicianEngine.DescribeCatalog());
+        return 0;
+    }
+
+    if (sub is "joker")
+    {
+        Console.Write(JokerEngine.Describe());
         return 0;
     }
 
@@ -759,8 +767,8 @@ static int RunMagician(string[] args)
 
         if (string.IsNullOrWhiteSpace(config) || string.IsNullOrWhiteSpace(need))
         {
-            Console.Error.WriteLine(
-                "Usage: randall magician cast -c projects/ai-badcode-hunt.yaml --need knight|army|bots|hunter|…");
+                Console.Error.WriteLine(
+                "Usage: randall magician cast -c projects/ai-badcode-hunt.yaml --need knight|army|bots|hunter|joker|…");
             return 1;
         }
 

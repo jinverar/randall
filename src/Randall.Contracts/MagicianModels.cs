@@ -39,6 +39,15 @@ public sealed class MagicianConfig
 
     /// <summary>When Oracle asks for hunter help, re-run Bug Hunter arming.</summary>
     public bool AllowSummonHunter { get; set; } = true;
+
+    /// <summary>Magician may call on the Joker (chaotic random fuzz tricks).</summary>
+    public bool AllowSummonJoker { get; set; } = true;
+
+    /// <summary>Log / watch Joker tricks during fuzz (even when they miss).</summary>
+    public bool WatchJoker { get; set; } = true;
+
+    /// <summary>When the Joker finds a crash, Magician capitalizes (energy, army, corpus).</summary>
+    public bool CapitalizeJokerCrashes { get; set; } = true;
 }
 
 /// <summary>
