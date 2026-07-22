@@ -632,6 +632,24 @@ app.MapGet("/api/stalking/{project}/missed", (string project, int? limit, FuzzSe
     }
 });
 
+app.MapGet("/api/stalking/{project}/map", (string project, int? limit, string? binary, FuzzSessionManager sessions) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        return Results.Ok(StalkMapBuilder.Build(
+            project,
+            binaryPath: binary,
+            limit: limit ?? 40,
+            liveStatus: sessions.Status));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapPost("/api/stalking/{project}/inventory", (string project, StalkInventoryImportBody body) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

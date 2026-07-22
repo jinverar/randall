@@ -12,6 +12,7 @@ public static class DocsCatalog
         ("HOWTO_STALK_GENERIC_APP.md", "How to: stalk a generic application", "Getting started"),
         ("HOWTO_STALK_IDA_GHIDRA.md", "How to: stalk bugs with IDA & Ghidra", "Getting started"),
         ("GHIDRA_INTEGRATION.md", "Ghidra integration (Randfuzz + Dragon Dance)", "Getting started"),
+        ("STALK_MAP.md", "In-Randall stalk map (strings / imports / missed)", "Getting started"),
         ("CUSTOM_TARGETS.md", "Custom targets (YAML → Target profile)", "Getting started"),
         ("CASE_BUILDER.md", "Scare Floor — recipes, seeds & dictionaries", "Getting started"),
         ("AI_SEED.md", "AI seed recipes (optional)", "Getting started"),

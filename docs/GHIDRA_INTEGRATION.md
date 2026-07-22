@@ -143,6 +143,9 @@ Done now:
 - Optional dual-capture binary drcov sidecar + `capture-binary` CLI
 - Docs that match text vs binary reality
 
+**In-Randall stalk map** (no Ghidra required for first pass): [STALK_MAP.md](STALK_MAP.md) —
+PE/ELF strings/imports overlaid on missed blocks.
+
 Later (not blocking):
 
 - Headless Ghidra analyze+color in CI

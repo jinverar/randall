@@ -61,7 +61,8 @@ populate `edges` without DynamoRIO.
 
 **Step-by-step tutorial (IDA + Ghidra):** [HOWTO_STALK_IDA_GHIDRA.md](HOWTO_STALK_IDA_GHIDRA.md)  
 **Ghidra product path (scripts + optional Dragon Dance):** [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md)  
-**Binary drcov for Dragon Dance:** `fuzz.captureBinaryDrcov: true` or `randall stalk capture-binary -p <project>`
+**Binary drcov for Dragon Dance:** `fuzz.captureBinaryDrcov: true` or `randall stalk capture-binary -p <project>`  
+**In-Randall stalk map (strings/imports on missed):** [STALK_MAP.md](STALK_MAP.md) · `randall stalk map -p <project>`
 
 **You cannot find bugs in code you do not execute.** After baseline + fuzz layers, ask what is still
 dark — and *why* — then revise seeds, dictionaries, and mutators.

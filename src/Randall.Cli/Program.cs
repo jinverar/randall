@@ -91,6 +91,7 @@ static void PrintHelp()
           randall stalk dynapstalker <drcov.log> <exe> <out.idc|.py> [--format idc|ghidra] [--color …]
           randall stalk ghidra-pack -p <project> [-o dir]     First-class Ghidra stalk pack
           randall stalk capture-binary -p <project> [-i seed] Dragon Dance binary drcov
+          randall stalk map -p <project> [-c yaml] [--binary path]  In-app stalk map (strings/imports)
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall stalk from-crash -i <crash-guid> [--tag crash]
           randall scream watch -p <pid> [-o dumpsDir]   Built-in exception dump watcher
@@ -2147,6 +2148,8 @@ static int RunStalk(string[] args)
               randall stalk ghidra-pack -p <project> [-o dir]   Bundle Ghidra scripts + layer export
               randall stalk capture-binary -p <project> [-i seed.bin] [-o dir]
                                             Binary drcov (no -dump_text) for Dragon Dance
+              randall stalk map -p <project> [-c yaml] [--binary path] [--limit N]
+                                            In-Randall stalk map: missed + PE/ELF strings/imports
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
               randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
             """);
@@ -2164,12 +2167,97 @@ static int RunStalk(string[] args)
         "dynapstalker" or "drcov2idc" => StalkDynapstalker(rest),
         "ghidra-pack" or "ghidra" => StalkGhidraPack(rest),
         "capture-binary" or "binary-drcov" or "dragon-dance" => StalkCaptureBinary(rest).GetAwaiter().GetResult(),
+        "map" or "stalk-map" or "surface" => StalkMap(rest),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
         "bench" => StalkBench(rest),
         _ => Unknown($"stalk {args[0]}"),
     };
 }
+
+static int StalkMap(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    string? config = null, binary = null;
+    var limit = 40;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-c" or "--config" && i + 1 < args.Length)
+            config = args[++i];
+        else if (args[i] is "--binary" or "-b" && i + 1 < args.Length)
+            binary = args[++i];
+        else if (args[i] is "--limit" or "-n" && i + 1 < args.Length && int.TryParse(args[++i], out var n))
+            limit = n;
+    }
+
+    try
+    {
+        var map = StalkMapBuilder.Build(
+            project,
+            yamlPath: config is null ? null : Path.GetFullPath(config),
+            binaryPath: binary is null ? null : Path.GetFullPath(binary),
+            limit: limit);
+
+        Console.WriteLine($"Stalk map: {map.Project}");
+        Console.WriteLine($"  Binary:  {map.BinaryPath ?? "(none)"}  [{map.Format}]");
+        Console.WriteLine($"  {map.Summary}");
+        Console.WriteLine();
+
+        if (map.InterestingImports.Count > 0)
+        {
+            Console.WriteLine("Interesting imports:");
+            foreach (var imp in map.InterestingImports.Take(12))
+                Console.WriteLine($"  {imp.Library}!{imp.Function}  {(imp.ThunkRva is null ? "" : "@ " + imp.ThunkRva)}");
+            Console.WriteLine();
+        }
+
+        if (map.HotStrings.Count > 0)
+        {
+            Console.WriteLine("Hot strings:");
+            foreach (var s in map.HotStrings.Take(12))
+                Console.WriteLine($"  {s.Rva} [{s.Section}]  \"{TrimConsole(s.Text, 60)}\"");
+            Console.WriteLine();
+        }
+
+        Console.WriteLine("Surface ideas:");
+        foreach (var idea in map.SurfaceIdeas.Take(8))
+        {
+            Console.WriteLine($"  [{idea.Priority}] {idea.Title}");
+            Console.WriteLine($"         {idea.Detail}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Hotspots (top {Math.Min(limit, map.Hotspots.Count)}):");
+        foreach (var h in map.Hotspots.Take(limit))
+        {
+            var surf = h.SurfaceKind;
+            var near = "";
+            if (h.NearbyStrings.Count > 0)
+                near += " str=" + string.Join("|", h.NearbyStrings.Take(2).Select(t => TrimConsole(t, 24)));
+            if (h.NearbyImports.Count > 0)
+                near += " imp=" + string.Join("|", h.NearbyImports.Take(2));
+            Console.WriteLine(
+                $"  [{h.BoostedScore}] {h.Block.Category} {h.Block.Module}:{h.Block.Address}  " +
+                $"sec={h.Section ?? "-"}  kind={surf}{near}");
+            Console.WriteLine($"         {h.Block.WhyMissed}");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Deep dive when needed: randall stalk ghidra-pack -p " + project);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
+static string TrimConsole(string s, int max) =>
+    s.Length <= max ? s : s[..(max - 1)] + "…";
 
 static async Task<int> StalkCaptureBinary(string[] args)
 {

@@ -233,6 +233,7 @@
           <button type="button" class="linkish" data-help="HOWTO_STALK_GENERIC_APP.md">How to: stalk a generic application</button>
           · <button type="button" class="linkish" data-help="HOWTO_STALK_IDA_GHIDRA.md">IDA &amp; Ghidra tutorial</button>
           · <button type="button" class="linkish" data-help="GHIDRA_INTEGRATION.md">Ghidra integration</button>
+          · <button type="button" class="linkish" data-help="STALK_MAP.md">Stalk map</button>
           · <button type="button" class="linkish" data-help="STALK_LOOP.md">Stalk loop</button>
           · <button type="button" class="linkish" data-help="STALKING.md">Missed blocks</button>.
         </p>
@@ -302,6 +303,20 @@
             <h2>Block map <span class="hex">(union of selected layers)</span></h2>
             <div id="stalking-block-graph" class="stalking-block-graph"></div>
             <div id="stalking-blocks" class="table-wrap" style="margin-top:0.75rem"></div>
+          </div>
+          <div class="panel stalking-map-panel">
+            <h2>Stalk map <span class="hex" id="stalking-map-meta"></span></h2>
+            <p class="hex" id="stalking-map-hint">
+              Randall’s light RE: PE/ELF sections, strings, and imports on missed blocks.
+              Ghidra stays the deep dive.
+            </p>
+            <div id="stalking-map-ideas" class="table-wrap"></div>
+            <h3 class="stalking-subh">Surface-adjacent hotspots</h3>
+            <div id="stalking-map-hotspots" class="table-wrap"></div>
+            <h3 class="stalking-subh">Interesting imports</h3>
+            <div id="stalking-map-imports" class="table-wrap"></div>
+            <h3 class="stalking-subh">Hot strings</h3>
+            <div id="stalking-map-strings" class="table-wrap"></div>
           </div>
           <div class="panel stalking-missed-panel">
             <h2>Missed blocks <span class="hex" id="stalking-missed-meta"></span></h2>
