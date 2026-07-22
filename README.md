@@ -8,9 +8,9 @@
   <em>Stalk code paths. Scream on crash.</em>
 </div>
 
-**A next-generation fuzzer for Windows** — generation, coverage-guided stalking, and crash triage in native C#/.NET.
+**A next-generation fuzzer for Windows and Linux** — generation, coverage-guided stalking, semantic oracles, and crash triage in native C#/.NET.
 
-I don't just throw bytes at parsers and hope. I **camouflage** valid-looking traffic, **sneak** into code paths nobody's mapped yet, and **scream** when something breaks — minidump and all. Randfuzz pulls the good stuff from the giants before us ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei pStalker](https://github.com/OpenRCE/paimei), [DynamoRIO](https://dynamorio.org/)) and runs it as **one stack** — CLI, web UI, portable deploy. Respect to the legends; I'm just the chameleon who wired it together.
+I don't just throw bytes at parsers and hope. I **camouflage** valid-looking traffic, **sneak** into code paths nobody's mapped yet, and **scream** when something breaks — dump and all. Randfuzz pulls the good stuff from the giants before us ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei pStalker](https://github.com/OpenRCE/paimei), [DynamoRIO](https://dynamorio.org/)) and runs it as **one stack** — CLI, web UI, portable deploy. Respect to the legends; I'm just the chameleon who wired it together.
 
 **Randfuzz** is the product. **Randall** is the mascot — named after **Randall Boggs** (*Monsters, Inc.*): master of camouflage, competitive to a fault, always sneaking into places he shouldn't be. Yeah, that's the vibe:
 
@@ -21,12 +21,23 @@ I don't just throw bytes at parsers and hope. I **camouflage** valid-looking tra
 | 🧪 **Sneak the factory** | Stalk unexplored code with DynamoRIO |
 | 💥 **Collect the screams** | Crash capture — you scare the target, it screams (crashes), and you bottle it in a **scream canister** (dump + dedup + triage, Ghidra export) |
 | 🕵️ **Another trick up my sleeve** | Havoc, dictionaries, session flows, plugins, in-process harnesses |
+| 🧠 **Oracle + Bug Hunter** | Semantic judgment ([ORACLES.md](docs/ORACLES.md)) + AI/human code analysis ([BUG_HUNTER.md](docs/BUG_HUNTER.md)) |
+| 🌐 **Web apps too** | `kind: http|https` — see [WEB_FUZZ.md](docs/WEB_FUZZ.md) |
 
 Full parody mapping: [docs/LORE.md](docs/LORE.md)
 
 > *Stalk code paths. Scream on crash.*
 
-## Install (Windows 10 / 11 VM)
+## Install
+
+Cross-platform (.NET 8). Pick your OS:
+
+| OS | Guide |
+|----|--------|
+| **Windows 10 / 11** | [INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) (section below) |
+| **Linux** | [INSTALL_LINUX.md](docs/INSTALL_LINUX.md) |
+
+### Windows 10 / 11 VM
 
 Fresh VM or bare metal. Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md).
 
@@ -334,7 +345,7 @@ Same as **[Install](#install-windows-10--11-vm)** above — clone, build, doctor
 
 ## Acknowledgments
 
-Massive respect to [Sulley](https://github.com/OpenRCE/sulley), [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei](https://github.com/OpenRCE/paimei), AFL/libFuzzer, and [DynamoRIO](https://dynamorio.org/) — the tools that taught the rest of us how to fuzz. Randfuzz combines their best ideas and pushes forward on Windows. Import your Boofuzz scripts, share your YAML, keep the community sharp.
+Massive respect to [Sulley](https://github.com/OpenRCE/sulley), [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei](https://github.com/OpenRCE/paimei), AFL/libFuzzer, and [DynamoRIO](https://dynamorio.org/) — the tools that taught the rest of us how to fuzz. Randfuzz combines their best ideas and runs cross-platform on Windows and Linux. Import your Boofuzz scripts, share your YAML, keep the community sharp.
 
 ## License
 
