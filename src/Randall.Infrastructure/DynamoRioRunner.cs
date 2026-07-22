@@ -99,11 +99,16 @@ public sealed class DynamoRioRunner
             ? "run scripts/install-dynamorio.ps1 or set DYNAMORIO_HOME"
             : "run scripts/install-dynamorio.sh or set DYNAMORIO_HOME";
 
+    /// <param name="dumpText">
+    /// When true (default), emit text BB tables for <see cref="DrcovParser"/>.
+    /// When false, emit binary drcov for Dragon Dance (<c>traces-binary/</c>).
+    /// </param>
     public async Task<DrcovRunResult> RunWithCoverageAsync(
         ProjectConfig project,
         string yamlPath,
         byte[] input,
         string traceDir,
+        bool dumpText = true,
         CancellationToken cancellationToken = default)
     {
         if (!IsAvailable)
@@ -127,11 +132,11 @@ public sealed class DynamoRioRunner
         var args = project.Target.Args.Select(a =>
             a.Replace("{file}", inputFile, StringComparison.OrdinalIgnoreCase)).ToList();
 
+        var before = SnapshotLogTimes(traceDir);
         var psi = new ProcessStartInfo
         {
             FileName = DrrunPath,
-            Arguments =
-                $"-t drcov -dump_text -logdir \"{traceDir}\" -- \"{targetExe}\" {string.Join(' ', args)}",
+            Arguments = BuildDrcovArgs(traceDir, targetExe, string.Join(' ', args), dumpText),
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -143,9 +148,10 @@ public sealed class DynamoRioRunner
             return new DrcovRunResult(false, null, null, "Failed to start drrun");
 
         await process.WaitForExitAsync(cancellationToken);
-        var logPath = Directory.EnumerateFiles(traceDir, "*.log")
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
+        var logPath = NewestLogSince(traceDir, before)
+                      ?? Directory.EnumerateFiles(traceDir, "*.log")
+                          .OrderByDescending(File.GetLastWriteTimeUtc)
+                          .FirstOrDefault();
 
         return new DrcovRunResult(
             process.ExitCode == 0,
@@ -154,10 +160,12 @@ public sealed class DynamoRioRunner
             process.ExitCode == 0 ? "ok" : $"exit {process.ExitCode}");
     }
 
+    /// <param name="dumpText">Default true for Randfuzz stalking; false for Dragon Dance binary logs.</param>
     public Process? StartInstrumentedTarget(
         ProjectConfig project,
         string yamlPath,
-        string traceDir)
+        string traceDir,
+        bool dumpText = true)
     {
         if (!IsAvailable)
             return null;
@@ -179,12 +187,44 @@ public sealed class DynamoRioRunner
         var psi = new ProcessStartInfo
         {
             FileName = DrrunPath,
-            Arguments = $"-t drcov -dump_text -logdir \"{traceDir}\" -- \"{targetExe}\" {args}".Trim(),
+            Arguments = BuildDrcovArgs(traceDir, targetExe, args, dumpText),
             UseShellExecute = false,
             WorkingDirectory = workDir,
         };
 
         return Process.Start(psi);
+    }
+
+    public static string BuildDrcovArgs(string traceDir, string targetExe, string targetArgs, bool dumpText)
+    {
+        var dump = dumpText ? "-dump_text " : "";
+        var tail = string.IsNullOrWhiteSpace(targetArgs)
+            ? $"-- \"{targetExe}\""
+            : $"-- \"{targetExe}\" {targetArgs.Trim()}";
+        return $"-t drcov {dump}-logdir \"{traceDir}\" {tail}".Trim();
+    }
+
+    private static Dictionary<string, DateTime> SnapshotLogTimes(string traceDir)
+    {
+        var map = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        if (!Directory.Exists(traceDir))
+            return map;
+        foreach (var f in Directory.EnumerateFiles(traceDir, "*.log"))
+            map[f] = File.GetLastWriteTimeUtc(f);
+        return map;
+    }
+
+    private static string? NewestLogSince(string traceDir, Dictionary<string, DateTime> before)
+    {
+        if (!Directory.Exists(traceDir))
+            return null;
+        return Directory.EnumerateFiles(traceDir, "*.log")
+            .Select(p => new FileInfo(p))
+            .Where(f => f.Exists && f.Length > 0)
+            .Where(f => !before.TryGetValue(f.FullName, out var t) || f.LastWriteTimeUtc > t)
+            .OrderByDescending(f => f.LastWriteTimeUtc)
+            .Select(f => f.FullName)
+            .FirstOrDefault();
     }
 
     public string? CollectLatestTrace(string traceDir)

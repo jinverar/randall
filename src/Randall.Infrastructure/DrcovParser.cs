@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using Randall.Contracts;
 
@@ -6,7 +7,7 @@ namespace Randall.Infrastructure;
 /// <summary>Parse DynamoRIO drcov text traces into basic-block edge keys.</summary>
 public static partial class DrcovParser
 {
-    /// <summary>Module rows from a <c>-dump_text</c> drcov log (id → path).</summary>
+    /// <summary>Module rows from a <c>-dump_text</c> drcov log (id → path, optional start/end).</summary>
     public static IReadOnlyList<DrcovModuleRow> ParseModules(string tracePath)
     {
         if (string.IsNullOrWhiteSpace(tracePath) || !File.Exists(tracePath))
@@ -37,11 +38,15 @@ public static partial class DrcovParser
                 var bracket = ModuleLineBracket().Match(line);
                 if (bracket.Success)
                 {
-                    modules.Add(new DrcovModuleRow(bracket.Groups[1].Value.Trim(), bracket.Groups[2].Value.Trim().Trim('"')));
+                    modules.Add(new DrcovModuleRow(
+                        bracket.Groups[1].Value.Trim(),
+                        bracket.Groups[2].Value.Trim().Trim('"'),
+                        null,
+                        null));
                     continue;
                 }
 
-                // Classic CSV: first field = id, last field = path
+                // Classic CSV: id, containing_id, start, end, entry, …, path
                 var trimmed = line.Trim();
                 if (trimmed.Length == 0 || !char.IsDigit(trimmed[0]))
                     continue;
@@ -61,7 +66,19 @@ public static partial class DrcovParser
                     !path.Contains(".dll", StringComparison.OrdinalIgnoreCase) &&
                     !path.Contains(".so", StringComparison.OrdinalIgnoreCase))
                     continue;
-                modules.Add(new DrcovModuleRow(id, path));
+
+                long? start = null, end = null;
+                var fields = trimmed.Split(',');
+                // version 2 columns: id, containing_id, start, end, entry, …
+                if (fields.Length >= 4 &&
+                    TryParseHexOrDec(fields[2].Trim(), out var s) &&
+                    TryParseHexOrDec(fields[3].Trim(), out var e))
+                {
+                    start = s;
+                    end = e;
+                }
+
+                modules.Add(new DrcovModuleRow(id, path, start, end));
             }
         }
         catch (IOException)
@@ -146,6 +163,15 @@ public static partial class DrcovParser
 
     public static int CountEdges(string tracePath) => ParseEdges(tracePath).Count;
 
+    private static bool TryParseHexOrDec(string raw, out long value)
+    {
+        value = 0;
+        var s = raw.Trim();
+        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            return long.TryParse(s[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+        return long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
+
     [GeneratedRegex(@"^\s*(\d+)\s*,\s*(0x[0-9a-fA-F]+)\s*,\s*(\d+)")]
     private static partial Regex BbLineCsv();
 
@@ -156,7 +182,7 @@ public static partial class DrcovParser
     private static partial Regex ModuleLineBracket();
 }
 
-public sealed record DrcovModuleRow(string Id, string Path);
+public sealed record DrcovModuleRow(string Id, string Path, long? Start = null, long? End = null);
 
 public sealed class CoverageSet(string? persistPath = null)
 {

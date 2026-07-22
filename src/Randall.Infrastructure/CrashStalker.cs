@@ -89,6 +89,10 @@ public static class CrashStalker
         if (drcovPath is not null && File.Exists(drcovPath))
             File.Copy(drcovPath, Path.Combine(exportDir, "sample.drcov.log"), overwrite: true);
 
+        // Bundle newest Dragon Dance binary sidecar when captureBinaryDrcov was used
+        var corpusForBinary = Path.Combine(repoRoot, "data", "corpus", detail.Summary.Project);
+        BinaryDrcovCapture.CopySidecarsInto(corpusForBinary, exportDir, maxFiles: 2);
+
         string? dumpCopy = null;
         if (detail.Summary.MiniDumpPath is not null && File.Exists(detail.Summary.MiniDumpPath))
         {

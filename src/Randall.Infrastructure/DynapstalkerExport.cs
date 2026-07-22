@@ -113,6 +113,7 @@ public static class DynapstalkerExport
         var (r, g, b) = HexToRgb(colorHex);
         // Filter edges to modules matching process name when module table is present
         var modules = DrcovParser.ParseModules(drcovPath);
+        // modules used below for Ghidra script + sidecar
         HashSet<string>? allowIds = null;
         if (modules.Count > 0)
         {
@@ -133,10 +134,11 @@ public static class DynapstalkerExport
         var script = GhidraScriptBuilder.BuildColorScript(
             $"Dynapstalker Ghidra — {processName}",
             [new GhidraScriptBuilder.LayerSpec(processName, blocks, r, g, b)],
-            notes: $"Source: {drcovPath}\nProcess filter: {processName}");
+            notes: $"Source: {drcovPath}\nProcess filter: {processName}",
+            modules: modules);
         File.WriteAllText(outPath, script);
         WriteReadme(Path.GetDirectoryName(outPath)!);
-        GhidraScriptBuilder.WriteModulesSidecar(Path.GetDirectoryName(outPath)!, drcovPath);
+        GhidraScriptBuilder.WriteModulesSidecar(Path.GetDirectoryName(outPath)!, modules);
         return new StalkExportResultDto("ghidra", outPath, filtered.Count, [outPath]);
     }
 

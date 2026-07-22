@@ -12,17 +12,26 @@ public class GhidraIntegrationTests
         var script = GhidraScriptBuilder.BuildColorScript(
             "test",
             [
-                new("baseline", [new(0x1000, 16), new(0x1100, 8)], 255, 255, 0),
-                new("novel", [new(0x2000, 32)], 255, 0, 0),
+                new("baseline", [new(0x1000, 16, "0"), new(0x1100, 8, "0")], 255, 255, 0),
+                new("novel", [new(0x2000, 32, "0")], 255, 0, 0),
             ],
             goToRva: 0x2000,
-            notes: "unit");
+            notes: "unit",
+            modules:
+            [
+                new("0", @"C:\DEV\savant.exe", 0x400000, 0x450000),
+                new("1", @"C:\Windows\System32\ntdll.dll", 0x77000000, 0x77100000),
+            ],
+            bookmarkRvas: [0x2000, 0x1000]);
 
         Assert.Contains("base.add(rva)", script);
         Assert.Contains("start.add(size - 1)", script);
         Assert.Contains("getBackgroundColor", script);
         Assert.Contains("goTo(focus)", script);
         Assert.Contains("8192", script); // 0x2000 as decimal in base.add(...)
+        Assert.Contains("allow_ids", script);
+        Assert.Contains("setBookmark", script);
+        Assert.Contains("4194304", script); // 0x400000 preferred base
     }
 
     [Fact]
@@ -59,11 +68,48 @@ public class GhidraIntegrationTests
             Assert.DoesNotContain("script stub", py, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("crash-novel", py);
             Assert.Contains("goTo", py);
+            Assert.Contains("setBookmark", py);
             Assert.True(File.Exists(Path.Combine(dir, "coverage_edges.txt")));
             Assert.True(File.Exists(Path.Combine(dir, "GHIDRA_README.txt")));
             var readme = File.ReadAllText(Path.Combine(dir, "DRAGON_DANCE.txt"));
             Assert.Contains("WITHOUT -dump_text", readme);
             Assert.Contains("PRIMARY", readme, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("captureBinaryDrcov", readme);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public void BuildDrcovArgs_TextVsBinary()
+    {
+        var text = DynamoRioRunner.BuildDrcovArgs("/tmp/t", "/bin/app", "{file}", dumpText: true);
+        Assert.Contains("-dump_text", text);
+        Assert.Contains("-logdir", text);
+
+        var binary = DynamoRioRunner.BuildDrcovArgs("/tmp/b", "/bin/app", "", dumpText: false);
+        Assert.DoesNotContain("-dump_text", binary);
+        Assert.Contains("-t drcov", binary);
+        Assert.Contains("-logdir", binary);
+    }
+
+    [Fact]
+    public void WriteModulesSidecar_IncludesStartEnd()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "randall-mod-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            GhidraScriptBuilder.WriteModulesSidecar(dir,
+            [
+                new("0", @"C:\DEV\app.exe", 0x400000, 0x450000),
+            ]);
+            var text = File.ReadAllText(Path.Combine(dir, "modules.txt"));
+            Assert.Contains("0x400000", text);
+            Assert.Contains("0x450000", text);
+            Assert.Contains("app.exe", text);
         }
         finally
         {

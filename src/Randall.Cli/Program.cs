@@ -90,6 +90,7 @@ static void PrintHelp()
           randall stalk inventory -p <project> --import <file>  BB inventory for never-hit
           randall stalk dynapstalker <drcov.log> <exe> <out.idc|.py> [--format idc|ghidra] [--color …]
           randall stalk ghidra-pack -p <project> [-o dir]     First-class Ghidra stalk pack
+          randall stalk capture-binary -p <project> [-i seed] Dragon Dance binary drcov
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall stalk from-crash -i <crash-guid> [--tag crash]
           randall scream watch -p <pid> [-o dumpsDir]   Built-in exception dump watcher
@@ -2144,6 +2145,8 @@ static int RunStalk(string[] args)
               randall stalk dynapstalker <drcov.log> <process.exe> <out.idc|.py> [--format idc|ghidra] [--color 0x00ffff]
               randall stalk export -p <project> --format idc|ghidra|edges [-o dir] [layerId…]
               randall stalk ghidra-pack -p <project> [-o dir]   Bundle Ghidra scripts + layer export
+              randall stalk capture-binary -p <project> [-i seed.bin] [-o dir]
+                                            Binary drcov (no -dump_text) for Dragon Dance
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
               randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
             """);
@@ -2160,11 +2163,110 @@ static int RunStalk(string[] args)
         "inventory" => StalkInventory(rest),
         "dynapstalker" or "drcov2idc" => StalkDynapstalker(rest),
         "ghidra-pack" or "ghidra" => StalkGhidraPack(rest),
+        "capture-binary" or "binary-drcov" or "dragon-dance" => StalkCaptureBinary(rest).GetAwaiter().GetResult(),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
         "bench" => StalkBench(rest),
         _ => Unknown($"stalk {args[0]}"),
     };
+}
+
+static async Task<int> StalkCaptureBinary(string[] args)
+{
+    string? projectName = null;
+    string? configPath = null;
+    string? inputPath = null;
+    string? outputDir = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            projectName = args[++i];
+        else if (args[i] is "-c" or "--config" && i + 1 < args.Length)
+            configPath = args[++i];
+        else if (args[i] is "-i" or "--input" && i + 1 < args.Length)
+            inputPath = args[++i];
+        else if (args[i] is "-o" or "--output" && i + 1 < args.Length)
+            outputDir = args[++i];
+    }
+
+    if (configPath is null && projectName is null)
+    {
+        Console.Error.WriteLine("Usage: randall stalk capture-binary -p <project>|-c <yaml> [-i seed.bin] [-o dir]");
+        Console.Error.WriteLine("  Writes binary drcov (no -dump_text) for Dragon Dance → corpus/traces-binary/");
+        Console.Error.WriteLine("  Enable during fuzz: fuzz.captureBinaryDrcov: true");
+        return 1;
+    }
+
+    try
+    {
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var yamlPath = configPath is not null
+            ? Path.GetFullPath(configPath)
+            : ResolveProjectYaml(root, projectName!);
+        if (yamlPath is null || !File.Exists(yamlPath))
+        {
+            Console.Error.WriteLine($"Project YAML not found for '{projectName ?? configPath}'");
+            return 1;
+        }
+
+        var project = ProjectLoader.Load(yamlPath);
+        byte[] input;
+        if (!string.IsNullOrWhiteSpace(inputPath))
+        {
+            input = await File.ReadAllBytesAsync(Path.GetFullPath(inputPath));
+        }
+        else
+        {
+            // Prefer first seed path from YAML, else a tiny placeholder
+            var seedRel = project.Seeds.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(seedRel))
+            {
+                var seedFull = ProjectLoader.ResolvePath(yamlPath, seedRel);
+                if (File.Exists(seedFull))
+                    input = await File.ReadAllBytesAsync(seedFull);
+                else
+                    input = "RANDFUZZ_BINARY_DRCOV"u8.ToArray();
+            }
+            else
+            {
+                input = "RANDFUZZ_BINARY_DRCOV"u8.ToArray();
+            }
+        }
+
+        var result = await BinaryDrcovCapture.CaptureFileAsync(project, yamlPath, input, outputDir);
+        if (!result.Success)
+        {
+            Console.Error.WriteLine(result.Detail);
+            return 1;
+        }
+
+        Console.WriteLine($"Binary drcov (Dragon Dance): {result.TracePath}");
+        Console.WriteLine("Import that *.log in Ghidra → Dragon Dance (NOT the text sample.drcov.log).");
+        Console.WriteLine("Primary Randfuzz colors: randall stalk ghidra-pack -p " + project.Name);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
+static string? ResolveProjectYaml(string repoRoot, string projectName)
+{
+    var name = projectName.Trim();
+    if (name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase) ||
+        name.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
+        return Path.GetFullPath(name);
+
+    var candidates = new[]
+    {
+        Path.Combine(repoRoot, "projects", name + ".yaml"),
+        Path.Combine(repoRoot, "projects", name + ".yml"),
+        Path.Combine(repoRoot, "projects", "local", name + ".yaml"),
+        Path.Combine(repoRoot, "projects", name, "project.yaml"),
+    };
+    return candidates.FirstOrDefault(File.Exists);
 }
 
 static int StalkGhidraPack(string[] args)

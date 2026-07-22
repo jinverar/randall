@@ -118,15 +118,42 @@ public static class StalkCoverageExport
                 r, g, b));
         }
 
+        // Prefer module table from newest text trace when present
+        IReadOnlyList<DrcovModuleRow> modules = [];
+        var corpusDir = Path.Combine(repoRoot, "data", "corpus", project);
+        var textTraces = Path.Combine(corpusDir, "traces");
+        if (Directory.Exists(textTraces))
+        {
+            var latest = Directory.EnumerateFiles(textTraces, "*.log")
+                .Select(p => new FileInfo(p))
+                .Where(f => f.Exists && f.Length > 0)
+                .OrderByDescending(f => f.LastWriteTimeUtc)
+                .Select(f => f.FullName)
+                .FirstOrDefault();
+            if (latest is not null)
+                modules = DrcovParser.ParseModules(latest);
+        }
+
+        if (modules.Count > 0)
+        {
+            GhidraScriptBuilder.WriteModulesSidecar(outDir, modules);
+            files.Add(Path.Combine(outDir, "modules.txt"));
+        }
+
         var script = GhidraScriptBuilder.BuildColorScript(
             $"Randfuzz stalk layers — {project}",
             layerSpecs,
-            notes: "Oldest layer first. Plain blocks ≈ missed. See docs/GHIDRA_INTEGRATION.md");
+            notes: "Oldest layer first. Plain blocks ≈ missed. See docs/GHIDRA_INTEGRATION.md",
+            modules: modules);
         File.WriteAllText(scriptPath, script);
         files.Add(scriptPath);
 
+        var binaryCopied = BinaryDrcovCapture.CopySidecarsInto(corpusDir, outDir);
+        foreach (var b in binaryCopied)
+            files.Add(b);
+
         var readme = Path.Combine(outDir, "README_GHIDRA.txt");
-        File.WriteAllText(readme, """
+        File.WriteAllText(readme, $$"""
             Randfuzz → Ghidra (first-class integration)
             ===========================================
             1. Import/open the target binary; finish analysis.
@@ -135,10 +162,27 @@ public static class StalkCoverageExport
             4. Plain / uncolored ≈ missed (Dynapstalker lesson).
             5. Crash packs: randall export -i <guid> → ghidra_import.py (novel vs baseline).
             6. Installable scripts: tools/ghidra/ (Script Manager → assign keybinding).
-            7. Dragon Dance is OPTIONAL and wants BINARY drcov (no -dump_text).
+            7. Dragon Dance (optional): BINARY drcov only (no -dump_text).
+               Enable fuzz.captureBinaryDrcov or: randall stalk capture-binary -p {{project}}
+               Sidecars in this pack: {{(binaryCopied.Count == 0 ? "(none — run capture-binary)" : string.Join(", ", binaryCopied.Select(Path.GetFileName)))}}
                See docs/GHIDRA_INTEGRATION.md
             """);
         files.Add(readme);
+
+        var ddNote = Path.Combine(outDir, "DRAGON_DANCE.txt");
+        File.WriteAllText(ddNote, $$"""
+            Dragon Dance (optional) — binary drcov only
+            ===========================================
+            Randfuzz primary path: *_stalk_layers.py (text edges / Script Manager).
+            Dragon Dance wants: drrun -t drcov WITHOUT -dump_text → *.proc.log
+
+            Auto-capture: fuzz.captureBinaryDrcov: true  →  data/corpus/{{project}}/traces-binary/
+            One-shot:     randall stalk capture-binary -p {{project}} [-i seed.bin]
+            Packed here:  {{(binaryCopied.Count == 0 ? "(none)" : string.Join(", ", binaryCopied.Select(Path.GetFileName)))}}
+
+            Do NOT import sample.drcov.log / text stalk logs into Dragon Dance.
+            """);
+        files.Add(ddNote);
 
         // Bundle generic importers alongside the export for offline labs
         var tools = Path.Combine(repoRoot, "tools", "ghidra");

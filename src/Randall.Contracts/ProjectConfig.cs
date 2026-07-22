@@ -222,6 +222,13 @@ public sealed class FuzzConfig
     public string MutateStep { get; set; } = "last";
     /// <summary>When true and DynamoRIO is available, prioritize inputs that hit new edges.</summary>
     public bool CoverageGuided { get; set; }
+    /// <summary>
+    /// When true (file/harness + DynamoRIO), also capture a <b>binary</b> drcov sidecar
+    /// (no <c>-dump_text</c>) on novel coverage for optional Dragon Dance import.
+    /// Text traces stay under <c>corpus/traces/</c>; binary under <c>corpus/traces-binary/</c>.
+    /// See docs/GHIDRA_INTEGRATION.md.
+    /// </summary>
+    public bool CaptureBinaryDrcov { get; set; }
     /// <summary>AFL-style energy: favor corpus entries that found new coverage.</summary>
     public bool PowerSchedule { get; set; } = true;
     /// <summary>Max stacked mutation rounds for havoc mutator.</summary>

@@ -13,6 +13,9 @@ public class DynapstalkerExportTests
         {
             var modules = DrcovParser.ParseModules(log);
             Assert.Contains(modules, m => m.Path.Contains("savant.exe", StringComparison.OrdinalIgnoreCase));
+            var savant = modules.First(m => m.Path.Contains("savant.exe", StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(0x400000, savant.Start);
+            Assert.Equal(0x450000, savant.End);
 
             var all = DrcovParser.ParseEdges(log);
             Assert.Equal(3, all.Count);

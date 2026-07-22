@@ -127,7 +127,7 @@ Then revise the fuzzer (Scare Floor seeds, dictionary, mutators, session steps) 
 
 ## Part D — Ghidra
 
-**Product path (why this fuzzer):** [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md) — first-class Randfuzz scripts; Dragon Dance optional.
+**Product path (why this fuzzer):** [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md) — first-class Randfuzz scripts; optional Dragon Dance via `captureBinaryDrcov` / `randall stalk capture-binary`.
 
 ### D0. Install Randfuzz scripts (once)
 
