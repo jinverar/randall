@@ -3233,6 +3233,59 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
 .stalk-chip .addr { color: #e8eef4; }
 .stalk-chip .tag { color: var(--muted); margin-top: 0.15rem; }
 
+.stalking-missed-panel .stalking-subh {
+  margin: 0.85rem 0 0.35rem;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.stalking-missed-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0.75rem;
+}
+.stalk-missed-cat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid var(--stalk-border);
+  border-radius: 4px;
+  background: var(--stalk-chip-bg);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.stalk-missed-cat strong {
+  color: var(--text);
+  font-family: var(--mono);
+}
+.badge.pri-high { background: color-mix(in srgb, var(--danger) 22%, var(--panel)); color: var(--danger); }
+.badge.pri-medium { background: color-mix(in srgb, var(--warn) 22%, var(--panel)); color: var(--warn); }
+.badge.pri-low { background: var(--surface-hover); color: var(--muted); }
+.badge.miss-never-hit,
+.badge.miss-baseline-only { background: #3a2a10; color: #f0c674; }
+.badge.miss-module-sparse { background: #3a1020; color: #f0a0b0; }
+.badge.miss-frontier-gap { background: #1d3f4a; color: #8fd0e8; }
+.badge.miss-session-unexplored { background: #243048; color: #9ec0ff; }
+.stalking-inv-label {
+  display: block;
+  margin-top: 0.85rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.stalking-inv-label input {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.45rem 0.55rem;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
 /* —— Scream canisters (crash harvest) —— */
 .canister-badge {
   font-size: 0.58rem;

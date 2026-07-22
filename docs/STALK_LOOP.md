@@ -1,6 +1,7 @@
 # The stalk loop — baseline → fuzz → learn → repeat
 
-**Hands-on checklist for your own app:** [HOWTO_STALK_GENERIC_APP.md](HOWTO_STALK_GENERIC_APP.md) (Help → Getting started).
+**Hands-on checklist for your own app:** [HOWTO_STALK_GENERIC_APP.md](HOWTO_STALK_GENERIC_APP.md) (Help → Getting started).  
+**Color coverage in IDA / Ghidra:** [HOWTO_STALK_IDA_GHIDRA.md](HOWTO_STALK_IDA_GHIDRA.md).
 
 This is the research process Randfuzz is built around (same idea as PaiMei Pstalker / your fuzzing cheat sheet).
 
@@ -113,15 +114,23 @@ Crashes during this run also show under **Crashes** (dump + analysis + memory le
 
 **Goal:** deliberately push into code the basic run missed (your cheat’s “modify fuzzer to cover more code”).
 
-1. Inspect novel / missed blocks (in Randfuzz compare, or export to IDA/Ghidra).
-2. Improve the attack surface:
+1. Inspect novel / missed blocks (PDF: white in IDA after yellow baseline + green fuzzed):
+   - **Stalking bugs → Missed blocks** (why + ranked fuzz ideas), or  
+   - `randall stalk missed -p <project>`  
+   - Export IDC/Ghidra (**oldest first** — only paints still-uncolored), or one-shot:  
+     `randall stalk dynapstalker <drcov.log> <exe> out.idc --color 0x00ffff`  
+     `randall stalk dynapstalker <drcov.log> <exe> out.py --format ghidra --color 0x00ffff`  
+   - Optional: import a BB inventory for never-hit without IDA  
+     (`randall stalk inventory -p <project> --import blocks.txt`)  
+   - Prefer white/missed near string copies / `rep movs*` / error handlers.
+2. Improve the attack surface using the tips:
    - **Scare Floor** — richer recipes, multi-step sessions, better dictionaries  
-   - Session graph / protocol model  
+   - Session graph / protocol model (session-unexplored forks)  
    - Mutator weights, max size, coverage-guided on  
    - `target.postStart` if the app needs priming / UI open  
 3. Run another campaign.
 4. Record a new layer: Tag = **fuzzier** (label it `round-2 smb write` etc. — you can record **as many fuzzier layers as you want**).
-5. Compare again: baseline vs fuzzed vs fuzzier — *what’s still dark?*
+5. Compare again + re-open **Missed blocks**: baseline vs fuzzed vs fuzzier — *what’s still dark?*
 
 Repeat step 3 forever. Each round is a new layer, not a wipe.
 
@@ -177,6 +186,7 @@ That brings dumps + lens + crash index. Stalk layer zips are still under `data/s
 | Run a campaign | **Fuzz → Campaign** (on the lab host) |
 | Record baseline / fuzzed / fuzzier | **Stalking bugs → Add layer** |
 | See what changed | **Stalking bugs → Compare / Block map** |
+| Why still dark + how to fuzz | **Stalking bugs → Missed blocks** (`randall stalk missed`) |
 | Study a crash | **Crashes** (+ Memory lens) |
 | Color IDA / Ghidra | **Stalking bugs → Export** |
 | Backup dumps home | **Bundles → Crash artifact pack** |

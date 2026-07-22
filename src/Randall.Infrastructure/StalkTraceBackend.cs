@@ -127,7 +127,8 @@ public sealed class ExternalDrcovStalkBackend(DynamoRioRunner dynamo) : IStalkTr
         ProjectConfig project, string yamlPath, byte[] input, string traceDir,
         CancellationToken cancellationToken = default)
     {
-        var r = await dynamo.RunWithCoverageAsync(project, yamlPath, input, traceDir, cancellationToken);
+        var r = await dynamo.RunWithCoverageAsync(
+            project, yamlPath, input, traceDir, dumpText: true, cancellationToken);
         return new StalkTraceResult(r.Success, r.TracePath, r.ExitCode, r.Detail);
     }
 

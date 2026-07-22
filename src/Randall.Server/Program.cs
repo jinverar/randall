@@ -619,6 +619,54 @@ app.MapGet("/api/stalking/{project}/compare", (string project, string? layers) =
     return Results.Ok(StalkCampaignStore.Compare(project, ids));
 });
 
+app.MapGet("/api/stalking/{project}/missed", (string project, int? limit, FuzzSessionManager sessions) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        return Results.Ok(MissedBlockAnalyzer.Analyze(project, limit: limit ?? 80, liveStatus: sessions.Status));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/stalking/{project}/map", (string project, int? limit, string? binary, FuzzSessionManager sessions) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        return Results.Ok(StalkMapBuilder.Build(
+            project,
+            binaryPath: binary,
+            limit: limit ?? 40,
+            liveStatus: sessions.Status));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/stalking/{project}/inventory", (string project, StalkInventoryImportBody body) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    if (string.IsNullOrWhiteSpace(body.Path))
+        return Results.BadRequest(new { error = "path required" });
+    try
+    {
+        return Results.Ok(MissedBlockAnalyzer.ImportInventory(project, body.Path));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapPost("/api/stalking/export", (StalkExportRequest request) =>
 {
     if (WebTargetFilter.IsHiddenProject(request.Project))
@@ -1155,6 +1203,7 @@ static IResult ServeRepoAsset(params string[] relatives)
 }
 
 sealed record RemoteProcmonStartRequest(string? BackingFile);
+sealed record StalkInventoryImportBody(string Path);
 
 static class WebTargetFilter
 {

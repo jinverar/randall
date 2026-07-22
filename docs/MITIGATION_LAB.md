@@ -93,6 +93,8 @@ epilogue. Pair it with `checksec` (mitigations) + `heaptriage` (heap primitive) 
 
 ## Reverse-engineering exports (IDA / Ghidra)
 
+Full click-through: [HOWTO_STALK_IDA_GHIDRA.md](HOWTO_STALK_IDA_GHIDRA.md).
+
 Coverage "stalk" layers export to IDA and Ghidra for colored path/bug review:
 
 ```bash

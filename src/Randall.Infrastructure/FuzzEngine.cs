@@ -883,6 +883,26 @@ public sealed class FuzzEngine
                         corpus.AddPriority(payload);
                         corpusAdded++;
                     }
+
+                    // Dragon Dance sidecar: binary drcov (no -dump_text) on novel / crash
+                    if (project.Fuzz.CaptureBinaryDrcov && (newCoverage || result.Crashed) &&
+                        stalk.BackendId == StalkBackend.External)
+                    {
+                        try
+                        {
+                            var bin = await BinaryDrcovCapture.CaptureFileAsync(
+                                project, yamlPath, payload, cancellationToken: cancellationToken);
+                            if (bin.Success)
+                                FuzzAnalystLog.Info(progress,
+                                    $"binary drcov (Dragon Dance) → {Path.GetFileName(bin.TracePath)}",
+                                    iterations);
+                        }
+                        catch (Exception ex)
+                        {
+                            FuzzAnalystLog.Info(progress,
+                                $"binary drcov sidecar skipped: {ex.Message}", iterations);
+                        }
+                    }
                 }
                 else if (!result.Crashed && corpus.IsNew(payload))
                 {

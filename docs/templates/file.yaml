@@ -13,6 +13,8 @@ transport:
 fuzz:
   maxIterations: 500
   coverageGuided: false
+  # When true + DynamoRIO: also write binary drcov (no -dump_text) on novel for Dragon Dance
+  # captureBinaryDrcov: true
   corpusDir: ../data/corpus/myparser
   crashesDir: ../data/crashes/myparser
 mutators:

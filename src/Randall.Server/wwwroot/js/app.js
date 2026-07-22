@@ -1846,6 +1846,141 @@ async function refreshStalkingWorkspace() {
 
   // Drag-to-pan the Stalking bugs block chip map (scrollable for large unions)
   enableDragScroll(graphEl);
+
+  await refreshStalkingMap(project);
+  await refreshStalkingMissed(project);
+}
+
+async function refreshStalkingMap(project) {
+  const meta = document.getElementById('stalking-map-meta');
+  const hint = document.getElementById('stalking-map-hint');
+  const ideasEl = document.getElementById('stalking-map-ideas');
+  const hotEl = document.getElementById('stalking-map-hotspots');
+  const impEl = document.getElementById('stalking-map-imports');
+  const strEl = document.getElementById('stalking-map-strings');
+  if (!meta || !hotEl) return;
+  try {
+    const map = await api.get(`/api/stalking/${encodeURIComponent(project)}/map?limit=40`);
+    meta.textContent = `— ${map.format || '?'} · ${map.binaryPath ? map.binaryPath.split(/[/\\]/).pop() : 'no binary'}` +
+      ` · hotspots ${(map.hotspots || []).length}`;
+    hint.textContent = map.summary || '';
+
+    const ideas = map.surfaceIdeas || [];
+    ideasEl.innerHTML = ideas.length
+      ? `<table><thead><tr><th>Pri</th><th>Idea</th><th>Detail</th></tr></thead><tbody>
+          ${ideas.map((idea) => `<tr>
+            <td><span class="badge pri-${idea.priority || 'low'}">${idea.priority || ''}</span></td>
+            <td><strong>${escapeAttr(idea.title || '')}</strong></td>
+            <td>${escapeAttr(idea.detail || '')}</td>
+          </tr>`).join('')}
+        </tbody></table>`
+      : '<p class="empty">No surface ideas yet.</p>';
+
+    const hotspots = map.hotspots || [];
+    hotEl.innerHTML = hotspots.length
+      ? `<table><thead><tr><th>Score</th><th>Kind</th><th>Address</th><th>Section</th><th>Nearby</th><th>Why</th></tr></thead><tbody>
+          ${hotspots.map((h) => {
+            const b = h.block || {};
+            const near = [
+              ...(h.nearbyImports || []).slice(0, 2),
+              ...(h.nearbyStrings || []).slice(0, 2).map((s) => `"${s}"`),
+            ].join(' · ') || '—';
+            return `<tr>
+              <td><strong>${h.boostedScore ?? b.priorityScore ?? ''}</strong></td>
+              <td><span class="badge miss-${h.surfaceKind || ''}">${escapeAttr(h.surfaceKind || '')}</span></td>
+              <td><code>${escapeAttr(b.module || '')}:${escapeAttr(b.address || '')}</code></td>
+              <td>${escapeAttr(h.section || '—')}</td>
+              <td class="hex">${escapeAttr(near)}</td>
+              <td>${escapeAttr(b.whyMissed || '')}</td>
+            </tr>`;
+          }).join('')}
+        </tbody></table>`
+      : '<p class="empty">No hotspots — record baseline + fuzz layers, or import a BB inventory.</p>';
+
+    const imports = map.interestingImports || [];
+    impEl.innerHTML = imports.length
+      ? `<table><thead><tr><th>Library</th><th>Function</th><th>Thunk</th></tr></thead><tbody>
+          ${imports.slice(0, 24).map((i) => `<tr>
+            <td>${escapeAttr(i.library || '')}</td>
+            <td><code>${escapeAttr(i.function || '')}</code></td>
+            <td class="hex">${escapeAttr(i.thunkRva || '—')}</td>
+          </tr>`).join('')}
+        </tbody></table>`
+      : '<p class="empty">No interesting imports (resolve target.executable or pass binary).</p>';
+
+    const strings = map.hotStrings || [];
+    strEl.innerHTML = strings.length
+      ? `<table><thead><tr><th>RVA</th><th>Section</th><th>String</th></tr></thead><tbody>
+          ${strings.slice(0, 24).map((s) => `<tr>
+            <td><code>${escapeAttr(s.rva || '')}</code></td>
+            <td>${escapeAttr(s.section || '')}</td>
+            <td>${escapeAttr(s.text || '')}</td>
+          </tr>`).join('')}
+        </tbody></table>`
+      : '<p class="empty">No hot strings extracted yet.</p>';
+  } catch (err) {
+    meta.textContent = '';
+    hint.textContent = err.message || 'Failed to load stalk map';
+    ideasEl.innerHTML = '';
+    hotEl.innerHTML = `<p class="empty">${escapeAttr(err.message || 'error')}</p>`;
+    impEl.innerHTML = '';
+    strEl.innerHTML = '';
+  }
+}
+
+async function refreshStalkingMissed(project) {
+  const meta = document.getElementById('stalking-missed-meta');
+  const hint = document.getElementById('stalking-missed-hint');
+  const catsEl = document.getElementById('stalking-missed-categories');
+  const ideasEl = document.getElementById('stalking-missed-ideas');
+  const blocksEl = document.getElementById('stalking-missed-blocks');
+  if (!meta || !blocksEl) return;
+  try {
+    const report = await api.get(`/api/stalking/${encodeURIComponent(project)}/missed?limit=60`);
+    meta.textContent = `— ${report.mode} · missed ${report.missedCount} · hit ${report.hitCount}` +
+      (report.inventoryCount ? ` · inventory ${report.inventoryCount}` : '');
+    hint.textContent = report.workflowHint || report.summary || '';
+    catsEl.innerHTML = (report.categories || []).length
+      ? (report.categories || []).map((c) => `
+          <span class="stalk-missed-cat" title="${escapeAttr(c.description || '')}">
+            <strong>${c.count}</strong> ${escapeAttr(c.label || c.id)}
+          </span>`).join('')
+      : '<span class="hex">No gap categories yet.</span>';
+
+    const ideas = report.topIdeas || [];
+    ideasEl.innerHTML = ideas.length
+      ? `<table><thead><tr><th>Pri</th><th>Idea</th><th>Detail</th><th>Where</th></tr></thead><tbody>
+          ${ideas.map((idea) => `<tr>
+            <td><span class="badge pri-${idea.priority || 'low'}">${idea.priority || ''}</span></td>
+            <td><strong>${escapeAttr(idea.title || '')}</strong></td>
+            <td>${escapeAttr(idea.detail || '')}</td>
+            <td class="hex">${escapeAttr(idea.uiHint || idea.cliHint || '—')}</td>
+          </tr>`).join('')}
+        </tbody></table>`
+      : '<p class="empty">No fuzz ideas yet — record baseline + fuzzed layers.</p>';
+
+    const blocks = report.blocks || [];
+    blocksEl.innerHTML = blocks.length
+      ? `<table><thead><tr><th>Category</th><th>Module</th><th>Address</th><th>Why missed</th><th>Best tip</th></tr></thead><tbody>
+          ${blocks.map((b) => {
+            const tip = (b.ideas && b.ideas[0]) ? b.ideas[0].title : '—';
+            return `<tr>
+              <td><span class="badge miss-${b.category || ''}">${escapeAttr(b.category || '')}</span></td>
+              <td>${escapeAttr(b.module || '')}</td>
+              <td><code>${escapeAttr(b.address || '')}</code></td>
+              <td>${escapeAttr(b.whyMissed || '')}</td>
+              <td>${escapeAttr(tip)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody></table>`
+      : `<p class="empty">${escapeAttr(report.summary || 'No missed blocks to show.')}</p>`;
+  } catch (err) {
+    meta.textContent = '';
+    hint.textContent = err.message || 'Failed to load missed blocks';
+    catsEl.innerHTML = '';
+    ideasEl.innerHTML = '';
+    blocksEl.innerHTML = `<p class="empty">${escapeAttr(err.message || 'error')}</p>`;
+  }
 }
 
 function enableDragScroll(el) {
@@ -1933,6 +2068,23 @@ async function exportStalking(format) {
 document.getElementById('stalking-export-idc')?.addEventListener('click', () => exportStalking('idc'));
 document.getElementById('stalking-export-ghidra')?.addEventListener('click', () => exportStalking('ghidra'));
 document.getElementById('stalking-export-edges')?.addEventListener('click', () => exportStalking('edges'));
+
+document.getElementById('stalking-inventory-import')?.addEventListener('click', async () => {
+  const project = document.getElementById('stalking-project').value;
+  const path = document.getElementById('stalking-inventory-path')?.value?.trim();
+  const out = document.getElementById('stalking-export-result');
+  if (!project || !path) {
+    if (out) out.textContent = 'Set a lab path to a blocks.txt or drcov log first.';
+    return;
+  }
+  try {
+    const result = await api.post(`/api/stalking/${encodeURIComponent(project)}/inventory`, { path });
+    if (out) out.textContent = `Inventory: ${result.blockCount} blocks → ${result.inventoryPath}`;
+    await refreshStalkingMissed(project);
+  } catch (err) {
+    if (out) out.textContent = err.message;
+  }
+});
 
 document.querySelectorAll('[data-stalk-action]').forEach((btn) => {
   btn.addEventListener('click', async () => {

@@ -160,44 +160,120 @@ public static class PortablePacker
 
 public static class GhidraExporter
 {
-    public static void WriteArtifacts(string exportDir, TriageBundleDto bundle, IReadOnlyList<string>? edges = null)
+    /// <summary>
+    /// First-class Ghidra triage pack: real ColorizingService script + edges + modules.
+    /// Dragon Dance notes explain binary-drcov (optional); Randfuzz primary path is our script.
+    /// </summary>
+    public static void WriteArtifacts(
+        string exportDir,
+        TriageBundleDto bundle,
+        IReadOnlyList<string>? edges = null,
+        IReadOnlyList<string>? baselineEdges = null,
+        long? goToRva = null,
+        string? divergeEdge = null)
     {
+        Directory.CreateDirectory(exportDir);
+        var edgeList = edges?.ToList() ?? [];
         var edgesPath = Path.Combine(exportDir, "coverage_edges.txt");
-        if (edges is not null)
-            File.WriteAllLines(edgesPath, edges);
+        File.WriteAllLines(edgesPath, edgeList);
 
-        var script = """
-            # Randfuzz → Ghidra triage helper
-            # Run in Ghidra Script Manager (Python)
-            #
-            # 1. Import crash_input.bin as a binary (or attach as a file artifact)
-            # 2. Load coverage_edges.txt — each line is module:pc:size from DynamoRIO drcov
-            # 3. Mark addresses in coverage_edges.txt as visited in your Dragon Dance workflow
-            #
-            # Dragon Dance: map drcov basic blocks to Ghidra addresses using the module load base.
-            
-            print("Randfuzz triage bundle loaded.")
-            print("Files: crash_input.bin, sample.drcov.log, coverage_edges.txt")
-            """;
+        IReadOnlyList<DrcovModuleRow> modules = [];
+        if (!string.IsNullOrWhiteSpace(bundle.DrcovPath) && File.Exists(bundle.DrcovPath))
+        {
+            modules = DrcovParser.ParseModules(bundle.DrcovPath);
+            GhidraScriptBuilder.WriteModulesSidecar(exportDir, modules);
+        }
+
+        var baseline = baselineEdges?.ToHashSet(StringComparer.OrdinalIgnoreCase) ?? [];
+        var shared = edgeList.Where(baseline.Contains).ToList();
+        var novel = edgeList.Where(e => !baseline.Contains(e)).ToList();
+
+        var layers = new List<GhidraScriptBuilder.LayerSpec>();
+        if (shared.Count > 0)
+        {
+            var (r, g, b) = GhidraScriptBuilder.BgrToRgb("0x00FFFF"); // baseline cyan
+            layers.Add(new("baseline-shared", GhidraScriptBuilder.BlocksFromEdges(shared), r, g, b));
+        }
+
+        if (novel.Count > 0)
+        {
+            var (r, g, b) = GhidraScriptBuilder.BgrToRgb("0x0000FF"); // crash-path / novel red-ish in BGR→RGB
+            layers.Add(new("crash-novel", GhidraScriptBuilder.BlocksFromEdges(novel), r, g, b));
+        }
+        else if (edgeList.Count > 0)
+        {
+            var (r, g, b) = GhidraScriptBuilder.BgrToRgb("0x00FF00");
+            layers.Add(new("crash-coverage", GhidraScriptBuilder.BlocksFromEdges(edgeList), r, g, b));
+        }
+
+        var notes =
+            $"Crash {bundle.CrashId} · project {bundle.Project}\n" +
+            $"Edges {edgeList.Count} · shared-with-baseline {shared.Count} · novel {novel.Count}\n" +
+            (divergeEdge is null ? "No diverge edge computed." : $"Focus edge: {divergeEdge}");
+
+        var bookmarkRvas = GhidraScriptBuilder.BlocksFromEdges(novel.Take(16))
+            .Select(b => b.Rva)
+            .Distinct()
+            .ToList();
+
+        var script = GhidraScriptBuilder.BuildColorScript(
+            "Randfuzz crash triage → Ghidra",
+            layers,
+            goToRva,
+            notes,
+            modules,
+            bookmarkRvas);
         File.WriteAllText(Path.Combine(exportDir, "ghidra_import.py"), script);
 
+        // Also drop a copy of the generic importer for offline re-runs against coverage_edges.txt
+        var toolsDir = Path.Combine(CrashCatalog.FindRepoRoot() ?? exportDir, "tools", "ghidra");
+        foreach (var name in new[] { "RandfuzzImportEdges.py", "RandfuzzImportLayers.py" })
+        {
+            var src = Path.Combine(toolsDir, name);
+            if (File.Exists(src))
+                File.Copy(src, Path.Combine(exportDir, name), overwrite: true);
+        }
+
+        var binaryLogs = Directory.Exists(exportDir)
+            ? Directory.GetFiles(exportDir, "binary_*.log").Select(Path.GetFileName).Where(n => n is not null).ToList()
+            : [];
+
         var dd = $"""
-            Dragon Dance / Ghidra workflow
-            ==============================
+            Randfuzz Ghidra stalk (primary) + Dragon Dance (optional)
+            ========================================================
             Crash ID: {bundle.CrashId}
             Project:  {bundle.Project}
-            
-            Files in this bundle:
-              crash_input.bin     — reproducer input (send via replay or file open)
-              sample.drcov.log    — DynamoRIO text coverage trace
-              coverage_edges.txt  — parsed basic block keys (module:pc:size)
-              ghidra_import.py    — Ghidra script stub
-            
-            Steps:
-              1. Replay crash_input.bin against the target to confirm
-              2. Import sample.drcov.log into Dragon Dance or parse coverage_edges.txt
-              3. In Ghidra, run ghidra_import.py and navigate to first diverge block
+            Focus RVA: {(goToRva is null ? "(none)" : $"0x{goToRva:x}")}
+            Diverge edge: {divergeEdge ?? "(none)"}
+
+            Files:
+              crash_input.bin      — reproducer
+              sample.drcov.log     — DynamoRIO TEXT coverage (-dump_text) when available
+              binary_*.log         — BINARY drcov for Dragon Dance (when captureBinaryDrcov / capture-binary)
+              coverage_edges.txt   — moduleId:0xstart:size
+              modules.txt          — id → path → start → end (preferred load addresses)
+              ghidra_import.py     — FIRST-CLASS Randfuzz Script Manager importer (paints BBs + bookmarks)
+              RandfuzzImportEdges.py — generic edges importer (if shipped from tools/ghidra)
+
+            === Primary path (Randfuzz → Ghidra) ===
+              1. Open the crashing module binary in Ghidra CodeBrowser; finish analysis
+              2. Window → Script Manager → run ghidra_import.py
+              3. Cyan ≈ shared with baseline; red/novel ≈ crash-only path; plain ≈ missed
+              4. Script bookmarks + jumps to focus RVA when known
+              5. Also: randall stalk missed -p {bundle.Project}
+
+            === Optional: Dragon Dance ===
+              Dragon Dance imports BINARY drcov (drrun -t drcov WITHOUT -dump_text).
+              Randfuzz fuzzing uses -dump_text so our parser + Ghidra scripts work.
+              Enable YAML fuzz.captureBinaryDrcov: true (file targets) or:
+                randall stalk capture-binary -p {bundle.Project} -i crash_input.bin
+              Then import binary_*.log / corpus/traces-binary/*.log in the Dragon Dance window.
+              Do NOT expect sample.drcov.log (text) to import cleanly into Dragon Dance.
+              Bundled binary logs here: {(binaryLogs.Count == 0 ? "(none yet)" : string.Join(", ", binaryLogs!))}
+
+            Docs: docs/HOWTO_STALK_IDA_GHIDRA.md · docs/GHIDRA_INTEGRATION.md
             """;
         File.WriteAllText(Path.Combine(exportDir, "DRAGON_DANCE.txt"), dd);
+        File.WriteAllText(Path.Combine(exportDir, "GHIDRA_README.txt"), dd);
     }
 }

@@ -225,10 +225,10 @@ public static class StalkCampaignStore
         var campaign = GetCampaign(project, repoRoot);
         var tools = ProbeTools(repoRoot);
         var hint = campaign.Layers.Count == 0
-            ? "Record a baseline layer (normal use under drcov), then add fuzzed layers and compare."
+            ? "Record a baseline layer (normal use under drcov), then add fuzzed layers and compare. Missed-block guidance appears after layers exist."
             : campaign.Layers.Count == 1
-                ? "Baseline recorded. Add a fuzzed layer after your next campaign, then compare."
-                : "Compare layers, export IDC/Ghidra colors, inspect novel blocks, refine the fuzzer.";
+                ? "Baseline recorded. Add a fuzzed layer after your next campaign, then open Missed blocks for why/how-to-fuzz ideas."
+                : "Compare layers, inspect Missed blocks (baseline-only / gaps), export IDC/Ghidra colors, refine seeds & mutators.";
         return new StalkWorkspaceDto(project, campaign, tools, hint);
     }
 

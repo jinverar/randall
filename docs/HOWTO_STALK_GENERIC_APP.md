@@ -151,7 +151,7 @@ If it crashes: leave it — go to Phase E, then come back.
 
 Each round:
 
-1. Look at novel / still-dark areas (Compare, or **Export → IDA IDC / Ghidra**).
+1. Look at novel / still-dark areas (Compare, **Export → IDA IDC / Ghidra**, or the full tutorial [HOWTO_STALK_IDA_GHIDRA.md](HOWTO_STALK_IDA_GHIDRA.md)).
 2. Improve cases on **Scare Floor** (richer recipes, multi-step session, dictionary tokens, bigger sizes).
 3. Run Campaign again (more iterations / coverage-guided on).
 4. **Stalking bugs** → Tag = `fuzzier` → Label = `round-2 …` → **From corpus edges**.
