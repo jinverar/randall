@@ -27,7 +27,8 @@ public static class TargetRunner
     {
         if (ProjectKinds.IsTcpLike(project))
         {
-            if (project.Fuzz.SyncContentLength || ProjectKinds.IsHttp(project))
+            if (project.Fuzz.SyncContentLength || ProjectKinds.IsHttp(project) ||
+                HttpFraming.LooksLikeHttpRequest(payload))
                 payload = HttpFraming.TrySyncContentLength(payload);
             return await RunTcpAsync(project, yamlPath, longLivedServer, payload, tcpOptions, cancellationToken);
         }

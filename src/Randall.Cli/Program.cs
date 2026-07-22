@@ -67,7 +67,7 @@ static void PrintHelp()
           randall replay -c <project> -i <crash.bin>
           randall proxy [--listen N] [--target host:port]
           randall campaign -c campaigns/lab-smoke.yaml
-          randall pack -o publish/standalone
+          randall pack -o publish/standalone [--rid win-x64|linux-x64|…]
           randall bundle export -c projects/vulnserver.yaml -o bundles/vulnserver.zip
           randall bundle import -i bundles/vulnserver.zip -o projects/imported
           randall doctor -c <project>     Preflight lab checks before fuzzing
@@ -1363,15 +1363,19 @@ static async Task<int> RunCampaignAsync(string[] args)
 static async Task<int> RunPackAsync(string[] args)
 {
     var output = "publish/standalone";
-    for (var i = 0; i < args.Length - 1; i++)
+    string? rid = null;
+    for (var i = 0; i < args.Length; i++)
     {
-        if (args[i] is "-o" or "--output")
+        if (args[i] is "-o" or "--output" && i + 1 < args.Length)
             output = args[++i];
+        else if (args[i] is "--rid" && i + 1 < args.Length)
+            rid = args[++i];
     }
 
     var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
-    Console.WriteLine($"Packing portable Randfuzz → {output}");
-    var result = await PortablePacker.PackAsync(root, output);
+    rid ??= PortablePacker.DefaultRid();
+    Console.WriteLine($"Packing portable Randfuzz → {output} (rid={rid})");
+    var result = await PortablePacker.PackAsync(root, output, rid);
     Console.WriteLine($"Done: {result.OutputPath} ({result.SizeBytes / 1024 / 1024} MB)");
     Console.WriteLine($"Included: {result.Included.Length} paths");
     return 0;

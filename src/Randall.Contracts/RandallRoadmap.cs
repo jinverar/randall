@@ -248,8 +248,11 @@ public static class RandallRoadmap
             new("p25-token-required", "Require token when bind ≠ loopback", true, "docs/LAB_AGENT.md"),
             new("p25-platform-policy", "Win/Linux parity policy (no fake AFL++ port)", true, "docs/MATURITY.md"),
             new("p25-reeldeck-builders", "ReelDeck Win+Linux builders", true, "docs/REELDECK.md"),
-            new("p25-tests", "Automated unit/integration tests", false, "tests/Randall.Tests started"),
-            new("p25-bench", "Bake-off vs AFL++/libFuzzer", false, "docs/BENCHMARKS.md"),
+            new("p25-file-demos", "In-repo file-text / file-framed parsers", true, "targets/file-text"),
+            new("p25-bench-scaffold", "Bake-off scaffold vs AFL++/honggfuzz", true, "docs/BENCHMARKS.md"),
+            new("p25-pack-rid", "RID-aware portable pack + release notes", true, "docs/RELEASE.md"),
+            new("p25-tests", "Automated unit/integration tests", false, "tests/Randall.Tests expanding"),
+            new("p25-bench-numbers", "Published bake-off numbers", false, "data/bench/*/SUMMARY.md"),
             new("p25-release", "Versioned/signed release packaging", false, null),
         ]),
     ];

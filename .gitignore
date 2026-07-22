@@ -63,3 +63,12 @@ appsettings.Development.json
 
 targets/reeldeck/reeldeck
 targets/reeldeck/reeldeck.exe
+targets/file-text/file-text
+targets/file-text/file-text.exe
+targets/file-text/app
+targets/file-text/app.exe
+targets/file-framed/file-framed
+targets/file-framed/file-framed.exe
+targets/file-framed/app
+targets/file-framed/app.exe
+data/bench/

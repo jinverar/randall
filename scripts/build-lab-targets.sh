@@ -57,16 +57,23 @@ if [ "$built" -eq 0 ]; then
   exit 1
 fi
 
-# Native ReelDeck media lab (optional; needs gcc) — same maturity target as Windows build-reeldeck.ps1
+# Native file labs (optional; need gcc)
 if [ "$want" = "all" ] || [ "$want" = "reeldeck" ]; then
-  if [ -x "$ROOT/scripts/build-reeldeck.sh" ] || [ -f "$ROOT/scripts/build-reeldeck.sh" ]; then
+  if [ -f "$ROOT/scripts/build-reeldeck.sh" ]; then
     echo "==> building reeldeck (native)"
     bash "$ROOT/scripts/build-reeldeck.sh" || echo "[!] reeldeck build skipped/failed (need gcc)"
   fi
+fi
+if [ "$want" = "all" ] || [ "$want" = "file-text" ]; then
+  bash "$ROOT/scripts/build-file-text.sh" || echo "[!] file-text build skipped/failed (need gcc)"
+fi
+if [ "$want" = "all" ] || [ "$want" = "file-framed" ]; then
+  bash "$ROOT/scripts/build-file-framed.sh" || echo "[!] file-framed build skipped/failed (need gcc)"
 fi
 
 echo
 echo "Done ($built target(s)). Preflight + fuzz, e.g.:"
 echo "  dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml"
 echo "  dotnet run --project src/Randall.Cli -- fuzz   -c projects/vulnserver.yaml"
+echo "  scripts/build-file-text.sh && dotnet run --project src/Randall.Cli -- fuzz -c projects/file-text.yaml"
 echo "  scripts/build-reeldeck.sh && dotnet run --project src/Randall.Cli -- fuzz -c projects/reeldeck.yaml"

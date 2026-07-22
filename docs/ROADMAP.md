@@ -487,9 +487,12 @@ Users should **not** need Scapy for normal Randfuzz work. Scapy remains an optio
 | Require token when bind ≠ loopback | ✅ | Refuse LAN bind; `--allow-open` escape |
 | Win/Linux platform policy (no fake AFL++ port) | ✅ | [MATURITY.md](MATURITY.md)#6 |
 | ReelDeck builders on Win + Linux | ✅ | `build-reeldeck.ps1` / `.sh` · [REELDECK.md](REELDECK.md) |
-| Minimal automated tests | 🔄 | `tests/Randall.Tests` started (LabAccess, attribution, pathcov) |
-| Engine bake-off vs AFL++/libFuzzer | 🔲 | `docs/BENCHMARKS.md` + script |
-| Signed / versioned release packaging | 🔲 | Beyond `randall pack` folder |
+| In-repo file-text / file-framed parsers | ✅ | `targets/file-*` + builders |
+| Bake-off scaffold (BENCHMARKS + script) | ✅ | [BENCHMARKS.md](BENCHMARKS.md) — fill numbers |
+| RID-aware portable pack + RELEASE.md | ✅ | `pack --rid` · [RELEASE.md](RELEASE.md) |
+| Automated unit/integration tests | 🔄 | `tests/Randall.Tests` expanding |
+| Published bake-off numbers | 🔲 | Paste from `data/bench/*/SUMMARY.md` |
+| Signed / versioned release packaging | 🔲 | Beyond portable folder |
 | Multi-tenant / SaaS | 🔲 | Out of scope for single-box lab shape |
 | Linux coverage without DynamoRIO | 🔲 | SanCov / perf (see STALKING) |
 
@@ -497,12 +500,11 @@ Users should **not** need Scapy for normal Randfuzz work. Scapy remains an optio
 
 1. Honesty in-product (this phase’s ✅ rows)
 2. LAN token required ✅
-3. ReelDeck / real-format demo builders ✅
-4. Published engine bake-off numbers
-5. Grow automated tests (HTTP framing / Magician next)
-6. Release packaging cadence
-7. **Do not** port AFL++/forksrv to Windows — adapters stay Linux
----
+3. Out-of-box file demos ✅
+4. Bake-off scaffold ✅ → publish numbers
+5. Grow automated tests
+6. Release packaging cadence (tags + zips)
+7. **Do not** port AFL++/forksrv to Windows — adapters stay Linux---
 
 ### Earlier phases — priority context
 
