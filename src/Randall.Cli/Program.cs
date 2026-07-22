@@ -36,6 +36,7 @@ return args[0].ToLowerInvariant() switch
     "debug" => RunDebug(args.Skip(1).ToArray()),
     "scream" => await RunScream(args.Skip(1).ToArray()),
     "case" => RunCase(args.Skip(1).ToArray()),
+    "ai" => await RunAiAsync(args.Skip(1).ToArray()),
     "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
     "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
     "recorders" or "recorder" => RunRecorders(args.Skip(1).ToArray()),
@@ -86,6 +87,7 @@ static void PrintHelp()
           randall debug attach -p <pid> | -t <project> [--kind …]
           randall fuzz -c <project> --debugger wait|attach|both [--open-on-crash]
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
+          randall ai seed -c <project> [--dry-run|--fixture f|--count N]  Optional AI seed recipe
           randall labs                     List lab servers (running / stopped)
           randall labs start|stop <id>     Start/stop one lab (127.0.0.1)
           randall labs stop-all            Stop every randall-vuln* lab
@@ -119,9 +121,177 @@ static void PrintHelp()
           shuffle      Swap short spans in the seed
           cyclic       Metasploit-style pattern (exploit-dev offset practice)
 
-        Docs: docs/CUSTOM_TARGETS.md · docs/CASE_BUILDER.md · docs/TARGETS.md
+        Docs: docs/CUSTOM_TARGETS.md · docs/CASE_BUILDER.md · docs/TARGETS.md · docs/AI_SEED.md
         Exploit-dev practice: projects/vulnlab-offset.yaml (cyclic → CONTROL offset)
         """);
+}
+
+static async Task<int> RunAiAsync(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Randfuzz AI helpers (optional — not on the fuzz hot path)
+
+            Usage:
+              randall ai seed -c <project.yaml> [options]
+
+            Options:
+              --dry-run              Print the prompt only (no API, no files)
+              --fixture <json>       Apply a local recipe JSON (no API)
+              --count N              Ask for ~N seeds (default 6)
+              --prompt TEXT          Extra operator hint
+              --out-dir DIR          Seed output directory (default: projects/seeds)
+              --dict PATH            Dictionary output path
+              --update-yaml          Append seed paths / dictionaryFile into the project YAML
+
+            Env:
+              RANDALL_AI_API_KEY or OPENAI_API_KEY
+              RANDALL_AI_BASE_URL   (default https://api.openai.com/v1)
+              RANDALL_AI_MODEL      (default gpt-4o-mini)
+
+            Docs: docs/AI_SEED.md
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    var rest = args.Skip(1).ToArray();
+    return sub switch
+    {
+        "seed" or "seeds" or "recipe" => await RunAiSeedAsync(rest),
+        _ => Unknown($"ai {args[0]}"),
+    };
+}
+
+static async Task<int> RunAiSeedAsync(string[] args)
+{
+    string? config = null;
+    string? fixture = null;
+    string? promptHint = null;
+    string? outDir = null;
+    string? dictPath = null;
+    var dryRun = false;
+    var updateYaml = false;
+    var count = 6;
+
+    for (var i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "-c" or "--config" when i + 1 < args.Length:
+                config = args[++i];
+                break;
+            case "--fixture" when i + 1 < args.Length:
+                fixture = args[++i];
+                break;
+            case "--prompt" or "--hint" when i + 1 < args.Length:
+                promptHint = args[++i];
+                break;
+            case "--out-dir" when i + 1 < args.Length:
+                outDir = args[++i];
+                break;
+            case "--dict" when i + 1 < args.Length:
+                dictPath = args[++i];
+                break;
+            case "--count" when i + 1 < args.Length:
+                if (!int.TryParse(args[++i], out count) || count < 1)
+                {
+                    Console.Error.WriteLine("--count must be a positive integer");
+                    return 1;
+                }
+                count = Math.Clamp(count, 1, 32);
+                break;
+            case "--dry-run":
+                dryRun = true;
+                break;
+            case "--update-yaml":
+                updateYaml = true;
+                break;
+            case "-h" or "--help":
+                return await RunAiAsync(["help"]);
+        }
+    }
+
+    if (string.IsNullOrWhiteSpace(config))
+    {
+        Console.Error.WriteLine("Usage: randall ai seed -c <project.yaml> [--dry-run|--fixture f]");
+        return 1;
+    }
+
+    var yamlPath = Path.GetFullPath(config);
+    ProjectConfig project;
+    try { project = ProjectLoader.Load(yamlPath); }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    Console.WriteLine($"AI seed recipe for '{project.Name}' ({project.Kind})");
+
+    if (dryRun)
+    {
+        var prompt = AiSeedRecipe.BuildPrompt(project, yamlPath, count, promptHint);
+        Console.WriteLine("--- prompt ---");
+        Console.WriteLine(prompt);
+        Console.WriteLine("--- end prompt ---");
+        var settings = AiSeedSettings.FromEnvironment();
+        Console.WriteLine(settings.HasApiKey
+            ? $"API key: set ({AiSeedSettings.EnvApiKey} / {AiSeedSettings.EnvApiKeyAlt}) model={settings.Model}"
+            : $"API key: not set — live generate needs {AiSeedSettings.EnvApiKey} or --fixture");
+        return 0;
+    }
+
+    AiSeedRecipe.RecipeResult recipe;
+    try
+    {
+        if (!string.IsNullOrWhiteSpace(fixture))
+        {
+            var fixturePath = Path.GetFullPath(fixture);
+            if (!File.Exists(fixturePath))
+            {
+                Console.Error.WriteLine($"Fixture not found: {fixturePath}");
+                return 1;
+            }
+            Console.WriteLine($"Using fixture: {fixturePath}");
+            recipe = AiSeedRecipe.LoadFixture(fixturePath);
+        }
+        else
+        {
+            var settings = AiSeedSettings.FromEnvironment();
+            Console.WriteLine($"Calling {settings.BaseUrl} model={settings.Model}…");
+            recipe = await AiSeedRecipe.GenerateAsync(project, yamlPath, settings, count, promptHint);
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+
+    if (recipe.Seeds.Count == 0 && recipe.Dictionary.Count == 0)
+    {
+        Console.Error.WriteLine("Recipe contained no seeds or dictionary tokens.");
+        return 1;
+    }
+
+    if (!string.IsNullOrWhiteSpace(recipe.Notes))
+        Console.WriteLine($"Notes: {recipe.Notes}");
+
+    var applied = AiSeedRecipe.Apply(
+        project, yamlPath, recipe, outDir, dictPath, updateYaml);
+
+    foreach (var p in applied.SeedPaths)
+        Console.WriteLine($"  seed → {p}");
+    if (applied.DictionaryPath is not null)
+        Console.WriteLine($"  dict → {applied.DictionaryPath}");
+    Console.WriteLine($"  recipe json → {applied.RecipeJsonPath}");
+    Console.WriteLine(
+        $"Done: {applied.SeedCount} seed(s), {applied.DictionaryCount} dict token(s)." +
+        (updateYaml ? " Project YAML updated." : " Re-run with --update-yaml to wire seeds into the project."));
+    Console.WriteLine("Next: randall fuzz -c " + config);
+    return 0;
 }
 
 static int PrintLegs()

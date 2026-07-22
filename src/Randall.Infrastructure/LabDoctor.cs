@@ -43,6 +43,15 @@ public static class LabDoctor
             return Finish(Path.GetFileNameWithoutExtension(yamlPath), checks);
         }
 
+        // Optional AI seed recipe — never required to fuzz.
+        {
+            var ai = AiSeedSettings.FromEnvironment();
+            Add("ai.seed", ai.HasApiKey ? "ok" : "warn",
+                ai.HasApiKey
+                    ? $"AI seed ready — model={ai.Model} base={ai.BaseUrl} (randall ai seed -c …)"
+                    : $"AI seed optional — set {AiSeedSettings.EnvApiKey} or use --fixture / --dry-run (docs/AI_SEED.md)");
+        }
+
         foreach (var seed in project.Seeds)
         {
             try
