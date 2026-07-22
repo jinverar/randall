@@ -77,7 +77,8 @@ dotnet publish src/Randall.Cli -c Release -r win-x64 --self-contained -p:Publish
 1. Monitor raises exception / exit code / timeout
 2. Write minidump + save input + attach drcov if available
 3. Stack hash for dedup; compare coverage prefix for first-diverge
-4. Export bundle for Ghidra + Dragon Dance
+4. Optional **notifications** (Discord webhook / SMTP) on unique crash — [NOTIFICATIONS.md](NOTIFICATIONS.md)
+5. Export bundle for Ghidra + Dragon Dance
 
 ## Project bundles
 

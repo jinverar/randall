@@ -467,6 +467,44 @@ public static class LabDoctor
                 Add("sessionGraph", "warn", w);
         }
 
+        if (project.Notifications is { } notify)
+        {
+            if (!notify.Enabled)
+            {
+                Add("notifications", "ok", "notifications.enabled: false");
+            }
+            else
+            {
+                var discordReady = notify.Discord.Enabled &&
+                    !string.IsNullOrWhiteSpace(NotificationSettings.ResolveDiscordWebhook(notify.Discord));
+                var emailReady = notify.Email.Enabled && NotificationSettings.ResolveEmail(notify.Email) is not null;
+                var anyChannel = notify.Discord.Enabled || notify.Email.Enabled;
+
+                if (!anyChannel)
+                {
+                    Add("notifications", "warn",
+                        "enabled but no discord/email channel enabled — see docs/NOTIFICATIONS.md");
+                }
+                else if (!discordReady && notify.Discord.Enabled)
+                {
+                    Add("notifications", "warn",
+                        "discord enabled but webhook missing (set webhookUrl or RANDALL_DISCORD_WEBHOOK)");
+                }
+                else if (!emailReady && notify.Email.Enabled)
+                {
+                    Add("notifications", "warn",
+                        "email enabled but SMTP host/from/to incomplete (or set RANDALL_SMTP_* env)");
+                }
+                else
+                {
+                    Add("notifications", "ok", NotificationSettings.Describe(notify));
+                }
+
+                if (notify.OnUniqueCrash)
+                    Add("notifications:crash", "ok", "onUniqueCrash: true");
+            }
+        }
+
         return Finish(project.Name, checks);
     }
 }

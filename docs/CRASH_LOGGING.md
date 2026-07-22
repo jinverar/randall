@@ -55,6 +55,10 @@ grade by fill % — the special seal is when triage reports **EIP/RIP control**.
 Canisters **on** by default; continuous animations **off** by default. See [LORE.md](LORE.md)
 and `docs/assets/canisters/`.
 
+## Outbound notifications
+
+When a project YAML enables `notifications:` and `CrashStore` saves a **new** hash, Randfuzz can post to Discord and/or email. Campaign YAML can alert on completion. See [NOTIFICATIONS.md](NOTIFICATIONS.md).
+
 ## Minidumps
 
 Captured on:

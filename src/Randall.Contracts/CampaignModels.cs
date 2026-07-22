@@ -5,6 +5,8 @@ public sealed class CampaignConfig
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
     public List<CampaignRunConfig> Runs { get; set; } = [];
+    /// <summary>Optional campaign-complete alerts — see docs/NOTIFICATIONS.md.</summary>
+    public NotificationsConfig? Notifications { get; set; }
 }
 
 public sealed class CampaignRunConfig

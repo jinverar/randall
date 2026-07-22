@@ -135,10 +135,12 @@ Drop binaries into `targets/` per [TARGETS.md](TARGETS.md), then fuzz. Private p
 | Full vulnserver block models (GTER, KSTET, HTER) | ✅ |
 | Discover `projects/local/` in targets API (gitignored) | ✅ |
 | Cursor Automations nightly template | ✅ [docs/AUTOPILOT.md](AUTOPILOT.md) |
+| **Discord + email notifications** | ✅ unique crash + campaign complete — [NOTIFICATIONS.md](NOTIFICATIONS.md) |
 
 ```powershell
 randall agent --port 5000          # LAN: http://<ip>:5000
 randall serve --bind 127.0.0.1     # localhost only
+randall notify test -c projects/local/myservice.yaml
 ```
 
 ---

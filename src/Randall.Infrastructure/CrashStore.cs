@@ -18,6 +18,8 @@ public sealed record SavedCrash(
     string? RunId,
     DateTimeOffset At);
 
+public sealed record SavedCrashResult(SavedCrash Crash, bool IsNew);
+
 public sealed class CrashStore(string crashesDir)
 {
     private readonly string _indexPath = Path.Combine(crashesDir, "index.jsonl");
@@ -42,13 +44,26 @@ public sealed class CrashStore(string crashesDir)
         string? miniDumpPath = null,
         string? triageTag = null,
         string? runId = null,
+        Func<Guid, CrashSidecarDto>? buildSidecar = null) =>
+        SaveEx(project, iteration, mutator, input, exitCode, miniDumpPath, triageTag, runId, buildSidecar).Crash;
+
+    /// <summary>Save crash; <see cref="SavedCrashResult.IsNew"/> is false when input hash already exists.</summary>
+    public SavedCrashResult SaveEx(
+        string project,
+        int iteration,
+        string mutator,
+        byte[] input,
+        int? exitCode,
+        string? miniDumpPath = null,
+        string? triageTag = null,
+        string? runId = null,
         Func<Guid, CrashSidecarDto>? buildSidecar = null)
     {
         Ensure();
         var hash = InputHash.StackHash(input);
         var existing = FindByHash(hash, project);
         if (existing is not null)
-            return existing;
+            return new SavedCrashResult(existing, false);
 
         var id = Guid.NewGuid();
         var fileName = $"{project}_{iteration}_{hash}.bin";
@@ -73,7 +88,7 @@ public sealed class CrashStore(string crashesDir)
             runId,
             DateTimeOffset.UtcNow);
         File.AppendAllText(_indexPath, JsonSerializer.Serialize(record) + Environment.NewLine);
-        return record;
+        return new SavedCrashResult(record, true);
     }
 
     public IReadOnlyList<SavedCrash> List(string? project = null)

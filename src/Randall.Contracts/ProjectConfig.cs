@@ -49,6 +49,9 @@ public sealed class ProjectConfig
                 BugHunter = value;
         }
     }
+
+    /// <summary>Email / Discord alerts on unique crashes — see docs/NOTIFICATIONS.md.</summary>
+    public NotificationsConfig? Notifications { get; set; }
 }
 
 public sealed class SessionGraphConfig

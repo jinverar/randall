@@ -88,7 +88,31 @@ public sealed class CampaignRunner
             }
         }
 
-        return new CampaignResultDto(campaign.Name, results.All(r => r.Success), results, totalCrashes);
+        var campaignResult = new CampaignResultDto(
+            campaign.Name, results.All(r => r.Success), results, totalCrashes);
+
+        if (campaign.Notifications is { Enabled: true, OnCampaignComplete: true })
+        {
+            try
+            {
+                var alert = NotificationDispatcher.BuildCampaignAlert(campaign.Notifications, campaignResult);
+                var notifyResults = await NotificationDispatcher.NotifyCampaignAsync(
+                    campaign.Notifications, alert, cancellationToken);
+                foreach (var nr in notifyResults)
+                {
+                    if (nr.Ok)
+                        FuzzAnalystLog.Info(progress, $"campaign notify/{nr.Channel}: {nr.Message}");
+                    else
+                        FuzzAnalystLog.Warn(progress, $"campaign notify/{nr.Channel} failed: {nr.Message}");
+                }
+            }
+            catch (Exception notifyEx)
+            {
+                FuzzAnalystLog.Warn(progress, $"campaign notify: {notifyEx.Message}");
+            }
+        }
+
+        return campaignResult;
     }
 }
 
