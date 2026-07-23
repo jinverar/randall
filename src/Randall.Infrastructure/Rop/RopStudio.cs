@@ -278,7 +278,7 @@ public static class RopStudio
 
     public static RopSketchReportDto FromCrash(
         Guid crashId,
-        string goal = "pivot",
+        string goal = "auto",
         string? badCharsHex = null,
         string? repoRoot = null,
         string? exeOverride = null,
@@ -370,10 +370,15 @@ public static class RopStudio
         var walkPath = Path.Combine(dir, $"{crashId:N}_windbg_walk.json");
         var badPath = Path.Combine(dir, $"{crashId:N}_badchars.json");
         var guidePath = Path.Combine(dir, $"{crashId:N}_exploit_guide.json");
+        var screamPath = Path.Combine(dir, $"{crashId:N}_scream_walk.json");
+        var gdbPath = Path.Combine(dir, $"{crashId:N}_gdb_walk.json");
+        var ladderPath = Path.Combine(dir, $"{crashId:N}_ladder.json");
 
         RopSketchReportDto? sketch = null;
         WindbgWalkReportDto? walk = null;
         RopBadCharReportDto? bad = null;
+        ScreamWalkReportDto? scream = null;
+        GdbWalkReportDto? gdb = null;
 
         try
         {
@@ -396,11 +401,28 @@ public static class RopStudio
         }
         catch { /* ignore */ }
 
+        try
+        {
+            if (File.Exists(screamPath))
+                scream = JsonSerializer.Deserialize<ScreamWalkReportDto>(File.ReadAllText(screamPath), JsonOpts);
+        }
+        catch { /* ignore */ }
+
+        try
+        {
+            if (File.Exists(gdbPath))
+                gdb = JsonSerializer.Deserialize<GdbWalkReportDto>(File.ReadAllText(gdbPath), JsonOpts);
+        }
+        catch { /* ignore */ }
+
         var parts = new List<string>();
+        if (scream is not null) parts.Add("scream-walk");
         if (sketch?.Steps.Count > 0) parts.Add($"sketch {sketch.Steps.Count} step(s)");
-        if (walk is not null) parts.Add("walk");
+        if (walk is not null) parts.Add("windbg");
+        if (gdb is not null) parts.Add("gdb");
         if (bad is not null) parts.Add("badchars");
         if (File.Exists(guidePath)) parts.Add("guide");
+        if (File.Exists(ladderPath)) parts.Add("ladder");
 
         return new RopSidecarsDto(
             crashId,
@@ -413,8 +435,13 @@ public static class RopStudio
             walk,
             bad,
             parts.Count == 0
-                ? "no ROP/WinDbg sidecars yet"
-                : "sidecars: " + string.Join(" · ", parts));
+                ? "no ROP / Scream Walk sidecars yet — try: randall scream walk -i " + crashId.ToString("N")
+                : "sidecars: " + string.Join(" · ", parts),
+            File.Exists(screamPath) ? screamPath.Replace('\\', '/') : null,
+            File.Exists(gdbPath) ? gdbPath.Replace('\\', '/') : null,
+            File.Exists(ladderPath) ? ladderPath.Replace('\\', '/') : null,
+            scream,
+            gdb);
     }
 
     public static IReadOnlyList<string> ResolveCrashModules(

@@ -142,6 +142,8 @@ public static class CrashStalker
         string? ropCopy = null;
         string? walkCopy = null;
         string? badCopy = null;
+        string? gdbCopy = null;
+        string? screamCopy = null;
 
         try
         {
@@ -158,7 +160,10 @@ public static class CrashStalker
         {
             var walk = ScreamWalk.Run(crashId, "auto", repoRoot: repoRoot);
             if (walk.PlaybookPath is not null && File.Exists(walk.PlaybookPath))
-                File.Copy(walk.PlaybookPath, Path.Combine(exportDir, "scream_walk.json"), overwrite: true);
+            {
+                screamCopy = Path.Combine(exportDir, "scream_walk.json");
+                File.Copy(walk.PlaybookPath, screamCopy, overwrite: true);
+            }
             if (walk.RopPath is not null && File.Exists(walk.RopPath))
             {
                 ropCopy = Path.Combine(exportDir, "rop_sketch.json");
@@ -170,7 +175,10 @@ public static class CrashStalker
                 File.Copy(walk.WalkPath, walkCopy, overwrite: true);
             }
             if (walk.GdbWalkPath is not null && File.Exists(walk.GdbWalkPath))
-                File.Copy(walk.GdbWalkPath, Path.Combine(exportDir, "gdb_walk.json"), overwrite: true);
+            {
+                gdbCopy = Path.Combine(exportDir, "gdb_walk.json");
+                File.Copy(walk.GdbWalkPath, gdbCopy, overwrite: true);
+            }
             if (walk.BadCharsPath is not null && File.Exists(walk.BadCharsPath))
             {
                 badCopy = Path.Combine(exportDir, "badchars.json");
@@ -207,13 +215,27 @@ public static class CrashStalker
             catch { /* optional */ }
         }
 
+        if (gdbCopy is null)
+        {
+            try
+            {
+                var g = RandfuzzGdbWalk.BuildForCrash(crashId, repoRoot);
+                if (g.WalkPath is not null && File.Exists(g.WalkPath))
+                {
+                    gdbCopy = Path.Combine(exportDir, "gdb_walk.json");
+                    File.Copy(g.WalkPath, gdbCopy, overwrite: true);
+                }
+            }
+            catch { /* optional */ }
+        }
+
         var readmeExtra = $"""
 
             Scream Walk / ROP Studio / RandfuzzDbg+Gdb
-            Playbook: scream_walk.json (randall scream walk -i {crashId:N})
+            Playbook: {(screamCopy is null ? "(none)" : "scream_walk.json")} (randall scream walk -i {crashId:N})
             ROP sketch: {(ropCopy is null ? "(none)" : "rop_sketch.json")}
             WinDbg walk: {(walkCopy is null ? "(none)" : "windbg_walk.json")}
-            GDB walk: gdb_walk.json (when present)
+            GDB walk: {(gdbCopy is null ? "(none)" : "gdb_walk.json")}
             Badchars: {(badCopy is null ? "(none)" : "badchars.json")}
             Docs: docs/WINDBG_FUZZ_PKG.md · docs/MITIGATION_LAB.md
             """;

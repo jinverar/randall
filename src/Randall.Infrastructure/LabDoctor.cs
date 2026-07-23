@@ -438,7 +438,7 @@ public static class LabDoctor
         var pwntools = LinuxToolPaths.FindPwntools();
         Add("linux:pwntools", pwntools is not null ? "ok" : "warn",
             pwntools is not null
-                ? $"{pwntools} — payload crafting + randall exploit template"
+                ? $"{pwntools} — scripting + randall scream walk / ROP Studio (no exploit template)"
                 : "pwntools not found — pip install --user pwntools (exploit scripting)");
 
         // Heap-corruption detection readiness (tcache poisoning / double-free / UAF / overflow).
@@ -630,7 +630,8 @@ public static class LabDoctor
 
         lines.Add($"randall fuzz -c {configPath}");
         lines.Add($"Crashes land in data/crashes/{report.Project}/");
-        lines.Add("First-crash file labs: docs/MATURITY.md · targets/README.md");
+        lines.Add("After a scream: randall scream walk -i <crash-guid> --goal auto");
+        lines.Add("First-crash file labs: docs/MATURITY.md · docs/WINDBG_FUZZ_PKG.md");
         return lines;
     }
 }

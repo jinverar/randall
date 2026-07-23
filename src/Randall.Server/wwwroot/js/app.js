@@ -2380,7 +2380,23 @@ function renderCrashDetail(detail, title) {
       if (badInput && side.badChars?.badCharsHex) badInput.value = side.badChars.badCharsHex;
       if (!body) return;
       const parts = [];
-      if (side.walk?.controlledOffset != null) {
+      if (side.screamWalk) {
+        const sw = side.screamWalk;
+        parts.push(`<p class="hint">Scream walk · goal <code>${escapeAttr(sw.goalResolved || sw.goal || 'auto')}</code>` +
+          (sw.controlledOffset != null
+            ? ` · CONTROL <code>${escapeAttr(sw.controlledRegister || 'IP')}</code> @ ${sw.controlledOffset}`
+            : '') +
+          (sw.mitigationTier ? ` · ${escapeAttr(sw.mitigationTier)}` : '') +
+          `</p>`);
+        const swSteps = sw.steps || [];
+        if (swSteps.length) {
+          parts.push(`<ol>${swSteps.map((s) =>
+            `<li><strong>${escapeAttr(s.status || '')}</strong> ${escapeAttr(s.title || '')}` +
+            (s.detail ? `<div class="hint">${escapeAttr(s.detail)}</div>` : '') +
+            `</li>`).join('')}</ol>`);
+        }
+      }
+      if (side.walk?.controlledOffset != null && !side.screamWalk?.controlledOffset) {
         parts.push(`<p class="hint">CONTROL <code>${escapeAttr(side.walk.controlledRegister || 'IP')}</code> @ ${side.walk.controlledOffset}</p>`);
       }
       if (side.badChars?.badCharsHex) {
@@ -2388,17 +2404,25 @@ function renderCrashDetail(detail, title) {
       }
       const steps = side.sketch?.steps || [];
       if (steps.length) {
+        parts.push(`<p class="hint">ROP sketch · ${escapeAttr(side.sketch?.goal || '')}</p>`);
         parts.push(`<ol>${steps.map((s) =>
           `<li><code>${escapeAttr(s.gadget?.address || '')}</code>${s.gadget?.symbol ? ' @' + escapeAttr(s.gadget.symbol) : ''}
            ${escapeAttr(s.gadget?.instruction || s.role)}
            <div class="hint">${escapeAttr(s.why || '')}</div></li>`).join('')}</ol>`);
-      } else if (side.walkPath || side.ropPath) {
-        parts.push(`<p class="hint">Walk: <code>${escapeAttr(side.walkPath || '—')}</code></p>`);
+      } else if (side.walkPath || side.ropPath || side.screamWalkPath) {
+        parts.push(`<p class="hint">Artifacts: <code>${escapeAttr(side.screamWalkPath || side.walkPath || side.ropPath || '—')}</code></p>`);
+      }
+      if (side.gdbWalkPath || side.gdbWalk) {
+        parts.push(`<p class="hint">GDB walk: <code>${escapeAttr(side.gdbWalkPath || '—')}</code></p>`);
+      }
+      if (side.ladderPath) {
+        parts.push(`<p class="hint">Ladder: <code>${escapeAttr(side.ladderPath)}</code></p>`);
       }
       if (side.walk?.moduleCandidates?.length) {
         parts.push(`<p class="hint">Modules: ${side.walk.moduleCandidates.map((m) => escapeAttr(m.split(/[\\\\/]/).pop())).join(', ')}</p>`);
       }
       if (parts.length) body.innerHTML = parts.join('');
+      else if (status) status.textContent = side.summaryLine || 'No ROP / Scream Walk sidecars yet';
     } catch {
       /* no sidecars yet */
     }
@@ -2464,11 +2488,7 @@ function renderCrashDetail(detail, title) {
             `</li>`).join('')}</ol>`;
       }
       if (out) out.textContent = report.playbookPath ? `Wrote ${report.playbookPath}` : (report.summaryLine || '');
-      const badInput = document.getElementById('crash-rop-badchars');
-      if (badInput && report.badCharsPath) {
-        /* refresh sidecars */
-        loadCrashRopSidecars(detail.summary.id).catch(() => {});
-      }
+      loadCrashRopSidecars(detail.summary.id).catch(() => {});
     } catch (err) {
       if (status) status.textContent = 'Scream walk failed';
       if (out) out.textContent = err.message;
@@ -2488,6 +2508,7 @@ function renderCrashDetail(detail, title) {
           <pre class="hint">${(walk.scriptLines || []).slice(0, 8).map(escapeAttr).join('\n')}</pre>`;
       }
       if (out) out.textContent = walk.walkPath ? `Wrote ${walk.walkPath}` : (walk.summaryLine || '');
+      loadCrashRopSidecars(detail.summary.id).catch(() => {});
     } catch (err) {
       if (status) status.textContent = 'GDB walk failed';
       if (out) out.textContent = err.message;
@@ -2519,6 +2540,7 @@ function renderCrashDetail(detail, title) {
           <ul>${(report.findings || []).map((f) => `<li class="hint">${escapeAttr(f)}</li>`).join('')}</ul>`;
       }
       if (out) out.textContent = report.outputPath ? `Wrote ${report.outputPath}` : (report.summaryLine || '');
+      loadCrashRopSidecars(detail.summary.id).catch(() => {});
     } catch (err) {
       if (status) status.textContent = 'Ladder diff failed';
       if (out) out.textContent = err.message;
@@ -2591,6 +2613,7 @@ function renderCrashDetail(detail, title) {
           <pre class="hint">${(walk.scriptLines || []).slice(0, 8).map(escapeAttr).join('\n')}</pre>`;
       }
       if (out) out.textContent = walk.walkPath ? `Wrote ${walk.walkPath}` : (walk.summaryLine || '');
+      loadCrashRopSidecars(detail.summary.id).catch(() => {});
     } catch (err) {
       if (status) status.textContent = 'Walk failed';
       if (out) out.textContent = err.message;

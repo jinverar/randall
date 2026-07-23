@@ -241,4 +241,4 @@ Fuzz-dump walk scripts + extension stub for exploit-dev lab analysis (no payload
 - [randfuzzdbg/README.md](randfuzzdbg/README.md) — WinDbg Preview extension + scripts
 - [randfuzzgdb/README.md](randfuzzgdb/README.md) — Linux GDB/GEF walk twin
 - Docs: [WINDBG_FUZZ_PKG.md](../docs/WINDBG_FUZZ_PKG.md)
-- Host CLI: `randall rop …` · `randall windbg walk|scripts`
+- Host CLI: `randall scream walk` · `randall rop …` · `randall windbg|gdb walk|scripts` · `randall ladder diff`

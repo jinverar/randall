@@ -41,7 +41,7 @@ public sealed record RopSearchReportDto(
 
 public sealed record RopSketchRequest(
     string? Exe = null,
-    string Goal = "control",      // control | pivot | write
+    string Goal = "control",      // auto | control | pivot | write | leak | canary
     string? BadCharsHex = null,
     int MaxSteps = 8);
 
@@ -111,4 +111,9 @@ public sealed record RopSidecarsDto(
     RopSketchReportDto? Sketch,
     WindbgWalkReportDto? Walk,
     RopBadCharReportDto? BadChars,
-    string SummaryLine);
+    string SummaryLine,
+    string? ScreamWalkPath = null,
+    string? GdbWalkPath = null,
+    string? LadderPath = null,
+    ScreamWalkReportDto? ScreamWalk = null,
+    GdbWalkReportDto? GdbWalk = null);

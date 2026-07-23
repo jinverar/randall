@@ -286,6 +286,64 @@ public class RopStudioTests
     }
 
     [Fact]
+    public void ExploitGuide_MentionsScreamWalk()
+    {
+        var exe = FirstExisting("/bin/true", "/usr/bin/true", "/bin/ls", "/usr/bin/ls");
+        if (exe is null) return;
+        var plan = ExploitGuide.Build(exe);
+        Assert.Contains(plan.Steps, s =>
+            s.Commands.Any(c => c.Contains("scream walk", StringComparison.OrdinalIgnoreCase))
+            || s.Title.Contains("Scream Walk", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(plan.Steps, s =>
+            s.Commands.Any(c => c.Contains("ladder diff", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
+    public void LoadSidecars_SurfacesScreamGdbAndLadderPaths()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"randall_sidecars_{Guid.NewGuid():N}");
+        var project = "sidecars-lab";
+        var crashDir = Path.Combine(root, "data", "crashes", project);
+        Directory.CreateDirectory(crashDir);
+        try
+        {
+            var store = new CrashStore(crashDir);
+            var saved = store.Save(project, 1, "test", "AAAA"u8.ToArray(), exitCode: -11);
+            var id = saved.Id;
+            File.WriteAllText(Path.Combine(crashDir, $"{id:N}_scream_walk.json"),
+                """{"crashId":"00000000-0000-0000-0000-000000000000","project":"sidecars-lab","goalResolved":"control","steps":[],"summaryLine":"ok"}""");
+            File.WriteAllText(Path.Combine(crashDir, $"{id:N}_gdb_walk.json"),
+                """{"summaryLine":"gdb ok","registers":[],"modules":[],"scriptLines":[]}""");
+            File.WriteAllText(Path.Combine(crashDir, $"{id:N}_ladder.json"),
+                """{"labRoot":"/tmp","tiers":[],"findings":[],"nextCommands":[],"summaryLine":"ladder"}""");
+
+            var side = RopStudio.LoadSidecars(id, root);
+            Assert.NotNull(side);
+            Assert.NotNull(side!.ScreamWalkPath);
+            Assert.NotNull(side.GdbWalkPath);
+            Assert.NotNull(side.LadderPath);
+            Assert.Contains("scream-walk", side.SummaryLine, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("gdb", side.SummaryLine, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("ladder", side.SummaryLine, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public void Docs_WinDbgPkg_DocumentsAutoGoalAndScreamArtifacts()
+    {
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var text = File.ReadAllText(Path.Combine(root, "docs", "WINDBG_FUZZ_PKG.md"));
+        Assert.Contains("--goal auto", text, StringComparison.Ordinal);
+        Assert.Contains("_scream_walk.json", text, StringComparison.Ordinal);
+        Assert.Contains("_gdb_walk.json", text, StringComparison.Ordinal);
+        Assert.Contains("scream walk", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void ExploitGuide_MentionsRopStudio()
     {
         var exe = FirstExisting("/bin/true", "/usr/bin/true", "/bin/ls", "/usr/bin/ls");
@@ -293,7 +351,8 @@ public class RopStudioTests
         var plan = ExploitGuide.Build(exe);
         Assert.Contains(plan.Findings, f => f.Contains("ROP Studio", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(plan.Steps, s => s.Title.Contains("ROP", StringComparison.OrdinalIgnoreCase)
-                                         || s.Commands.Any(c => c.Contains("randall rop")));
+                                         || s.Commands.Any(c => c.Contains("randall rop")
+                                                               || c.Contains("scream walk")));
     }
 
     /// <summary>Minimal PE32 with one executable .text section containing <paramref name="code"/>.</summary>

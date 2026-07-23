@@ -114,7 +114,7 @@ epilogue. Pair it with `checksec` (mitigations) + `heaptriage` (heap primitive) 
 ```bash
 # 5) ROP Studio — gadget catalog + constrained sketch (no payloads)
 dotnet run --project src/Randall.Cli -- rop scan --exe targets/vulnlab/vulnlab-basic
-dotnet run --project src/Randall.Cli -- rop sketch --exe targets/vulnlab/vulnlab-basic --goal pivot
+dotnet run --project src/Randall.Cli -- rop sketch --exe targets/vulnlab/vulnlab-basic --goal auto
 
 # 6) WinDbg Preview walk (Windows lab dumps)
 dotnet run --project src/Randall.Cli -- windbg walk -i <crash-guid>

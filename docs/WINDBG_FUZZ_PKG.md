@@ -43,10 +43,11 @@ minidump + input + guide  →   ROP Studio scan/search/sketch → !rf.* extensio
 | Piece | Location | Role |
 |-------|----------|------|
 | ROP Studio | `src/Randall.Infrastructure/Rop/` | PE/ELF gadget harvest, search, sketch |
-| Walk export | `RandfuzzDbgWalk` | `*_windbg_walk.json` beside crash |
-| Extension | `tools/randfuzzdbg/` | dbgeng DLL (Windows build) + scripts |
-| CLI | `randall rop …` · `randall windbg …` | Scan / search / sketch / walk |
-| API | `/api/rop/*` · `/api/windbg/*` | UI + lab agent |
+| Scream Walk | `ScreamWalk` | CONTROL → badchars → sketch → WinDbg/GDB playbook |
+| Walk export | `RandfuzzDbgWalk` / `RandfuzzGdbWalk` | `*_windbg_walk.json` / `*_gdb_walk.json` |
+| Extension | `tools/randfuzzdbg/` · `tools/randfuzzgdb/` | dbgeng DLL + GDB scripts |
+| CLI | `randall scream|rop|windbg|gdb|ladder …` | Playbook / scan / walk / ladder |
+| API | `/api/scream/*` · `/api/rop/*` · `/api/windbg/*` · `/api/gdb/*` | UI + lab agent |
 
 ---
 
@@ -74,8 +75,8 @@ Also: `randall ladder diff` · `randall gdb walk -i <guid>` · `tools/randfuzzgd
 ```bash
 randall rop scan --exe <path> [--out gadgets.json] [--arch x64|x86|auto]
 randall rop search --exe <path> --need pop-rcx [--badchars "\x00\x0a"]
-randall rop sketch --exe <path> --goal pivot|write|control [--badchars …]
-randall rop from-crash -i <crash-guid> [--goal pivot] [--exe path] [--modules N]
+randall rop sketch --exe <path> --goal auto|pivot|write|control|leak|canary [--badchars …]
+randall rop from-crash -i <crash-guid> [--goal auto] [--exe path] [--modules N]
 randall rop search -i <crash-guid> --need pop-rdi
 randall rop show -i <crash-guid>                    # existing sidecars
 randall rop badchars -i <crash-guid>                    # write *_badchars.json
@@ -87,13 +88,16 @@ randall rop badchars -i <crash-guid>                    # write *_badchars.json
 
 **Multi-module:** `from-crash` ranks TargetDetail → project exe → loaded modules (system paths
 deprioritized) and merges gadget pools (default 3 modules).
-**Sketch goals (v1):**
+**Sketch goals:**
 
 | Goal | Meaning |
 |------|---------|
+| `auto` | Tier-aware (basic→control · NX→pivot · PIE→leak · canary→canary) |
 | `control` | Confirm ret-gadgets near controlled return |
 | `pivot` | Prefer `xchg reg,esp/rsp` / `add rsp` / `leave;ret` |
 | `write` | Sequence sketch toward write-what-where (register loads only — no payload bytes) |
+| `leak` | Prefer PLT / GOT-adjacent / info-leak oriented pops |
+| `canary` | Canary-aware sketch framing when stack cookies are on |
 
 Sketches are **ordered gadget citations** with why/constraints — not an exploit blob.
 
@@ -104,16 +108,19 @@ bytes** and **little-endian address bytes** (32-bit VAs as 4 bytes; larger as 8)
 On-disk:
 
 ```
+data/crashes/<project>/<guid>_scream_walk.json  # Scream Walk playbook
 data/crashes/<project>/<guid>_rop.json          # from-crash / sketch
-data/crashes/<project>/<guid>_windbg_walk.json  # debugger walk export
+data/crashes/<project>/<guid>_windbg_walk.json  # WinDbg walk export
+data/crashes/<project>/<guid>_gdb_walk.json     # GDB/GEF walk export
 data/crashes/<project>/<guid>_badchars.json     # learned filter
-data/crashes/<project>/<guid>_exploit_guide.json  # CONTROL (when present) → walk
+data/crashes/<project>/<guid>_ladder.json       # mitigation ladder (when run)
+data/crashes/<project>/<guid>_exploit_guide.json  # CONTROL (when present)
 data/rop/<sha256-of-module>.gadgets.json        # reusable module cache (read+write)
 ```
 
-Triage export (`randall export` / Crashes UI) auto-runs badchar learn + walk + pivot sketch and
-copies `rop_sketch.json`, `windbg_walk.json`, and `badchars.json` into `data/exports/<guid>/`.
----
+Triage export (`randall export` / Crashes UI) auto-runs Scream Walk (badchars + sketch + walks)
+and copies `scream_walk.json`, `rop_sketch.json`, `windbg_walk.json`, `gdb_walk.json`, and
+`badchars.json` into `data/exports/<guid>/` when present.---
 
 ## RandfuzzDbg (WinDbg Preview)
 
@@ -171,9 +178,9 @@ Linux CI keeps host ROP Studio + scripts; DLL is Windows-only.
 
 1. Fuzz until scream → minidump bottled  
 2. `randall analyze -i <guid>` · Memory lens · `exploit guide` / CONTROL offset  
-3. `randall rop from-crash -i <guid> --goal pivot` → gadget sketch  
-4. `randall windbg walk -i <guid>` → open WinDbg Preview · run `rf_walk.txt`  
-5. Climb mitigation ladder (`vulnlab` → `vulnlab-nx` → …) — sketches change with NX/ASLR  
+3. `randall scream walk -i <guid> --goal auto` → playbook (badchars → sketch → WinDbg/GDB)  
+4. Open WinDbg Preview / GDB · run `rf_walk.txt` / `rf_gdb.txt`  
+5. `randall ladder diff` — climb `vulnlab` → `vulnlab-nx` → … — sketches change with NX/ASLR  
 
 ---
 

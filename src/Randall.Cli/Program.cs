@@ -89,8 +89,8 @@ static void PrintHelp()
                                             Triage playbook → offset, then ROP Studio / WinDbg walk
           randall rop scan --exe <path> [--arch x64|x86]
           randall rop search --exe <path> --need pop-rdi [--badchars "00 0a"]
-          randall rop sketch --exe <path> --goal pivot|write|control
-          randall rop from-crash -i <crash-guid> [--goal pivot] [--exe path] [--modules N]
+          randall rop sketch --exe <path> --goal auto|pivot|write|control|leak|canary
+          randall rop from-crash -i <crash-guid> [--goal auto] [--exe path] [--modules N]
           randall rop show -i <crash-guid>       Existing ROP/walk/badchars sidecars
           randall rop badchars -i <crash-guid>   Learn badchars from crashing input
           randall windbg scripts            RandfuzzDbg script paths
@@ -1561,7 +1561,7 @@ static int RefuseExploitTemplate()
     Console.Error.WriteLine(
         "exploit template is disabled — no shellcode / payload skeletons.");
     Console.Error.WriteLine(
-        "Use: randall exploit guide · randall rop sketch · randall windbg walk");
+        "Use: randall scream walk -i <crash-guid> · randall rop sketch · randall ladder diff");
     Console.Error.WriteLine(
         "  (gadget catalogs + chain sketches for lab targets — docs/WINDBG_FUZZ_PKG.md)");
     return 2;
@@ -2896,6 +2896,18 @@ static async Task<int> RunScreamSelftestAsync()
 
 static int RunScreamWalk(string[] args)
 {
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall scream walk -i <crash-guid> [--goal auto|pivot|leak|canary|…] [--json]
+
+            One-shot playbook: CONTROL → badchars → ROP sketch → WinDbg/GDB walks.
+            Writes *_scream_walk.json beside the crash. See docs/WINDBG_FUZZ_PKG.md.
+            """);
+        return 0;
+    }
+
     Guid? crashId = null;
     string goal = "auto";
     string? bad = null;
@@ -2912,6 +2924,11 @@ static int RunScreamWalk(string[] args)
         else if (args[i] is "--modules" && i + 1 < args.Length && int.TryParse(args[i + 1], out var mm))
         { maxModules = mm; i++; }
         else if (args[i] is "--json") json = true;
+        else if (args[i] is "-h" or "--help")
+        {
+            Console.WriteLine("Usage: randall scream walk -i <crash-guid> [--goal auto]");
+            return 0;
+        }
     }
 
     if (crashId is null)
@@ -2967,6 +2984,17 @@ static int RunLadder(string[] args)
     var scan = true;
     for (var i = 1; i < args.Length; i++)
     {
+        if (args[i] is "-h" or "--help" or "help")
+        {
+            Console.WriteLine("""
+                Usage:
+                  randall ladder diff [-i <crash-guid>] [-p <project>] [--json]
+                  randall ladder diff --no-scan
+
+                Compare vulnlab-{basic,nx,aslr,modern} mitigations + gadget counts.
+                """);
+            return 0;
+        }
         if (args[i] is "-i" or "--id" or "--crash" && i + 1 < args.Length && Guid.TryParse(args[i + 1], out var g))
         { crashId = g; i++; }
         else if (args[i] is "-p" or "--project" && i + 1 < args.Length) project = args[++i];
@@ -3031,6 +3059,16 @@ static int RunGdb(string[] args)
         var json = false;
         for (var i = 1; i < args.Length; i++)
         {
+            if (args[i] is "-h" or "--help" or "help")
+            {
+                Console.WriteLine("""
+                    Usage:
+                      randall gdb walk -i <crash-guid> [--json]
+
+                    Linux GDB/GEF walk twin of RandfuzzDbg. Writes *_gdb_walk.json.
+                    """);
+                return 0;
+            }
             if (args[i] is "-i" or "--id" && i + 1 < args.Length && Guid.TryParse(args[i + 1], out var g))
             { id = g; i++; }
             else if (args[i] is "--json") json = true;
@@ -3071,21 +3109,28 @@ static int RunRop(string[] args)
               randall rop scan --exe <path> [--arch x64|x86] [--json]
               randall rop search --exe <path> --need <kind> [--badchars "00 0a"] [--json]
               randall rop sketch --exe <path> --goal auto|pivot|write|control|leak|canary [--badchars …] [--json]
-              randall rop from-crash -i <crash-guid> [--goal pivot] [--exe path] [--modules N] [--json]
+              randall rop from-crash -i <crash-guid> [--goal auto] [--exe path] [--modules N] [--json]
               randall rop search -i <crash-guid> --need <kind> [--badchars …] [--json]
               randall rop show -i <crash-guid> [--json]
               randall rop badchars -i <crash-guid> [--json]
 
             ROP Studio — gadget catalog + constrained chain sketches for lab binaries.
+            Prefer: randall scream walk -i <guid> for the full playbook.
             No shellcode / payloads. See docs/WINDBG_FUZZ_PKG.md.
             """);
         return 0;
     }
 
     var sub = args[0].ToLowerInvariant();
+    if (sub is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("Usage: randall rop scan|search|sketch|from-crash|show|badchars …");
+        return 0;
+    }
+
     string? exe = null;
     string? need = null;
-    string? goal = "pivot";
+    string? goal = "auto";
     string? arch = null;
     string? bad = null;
     Guid? crashId = null;
@@ -3093,6 +3138,11 @@ static int RunRop(string[] args)
     var maxModules = 3;
     for (var i = 1; i < args.Length; i++)
     {
+        if (args[i] is "-h" or "--help" or "help")
+        {
+            Console.WriteLine($"Usage: randall rop {sub} …  (try: randall rop -h)");
+            return 0;
+        }
         if (args[i] is "--exe" or "-e" && i + 1 < args.Length) exe = args[++i];
         else if (args[i] is "--need" or "-n" && i + 1 < args.Length) need = args[++i];
         else if (args[i] is "--goal" or "-g" && i + 1 < args.Length) goal = args[++i];
@@ -3117,11 +3167,11 @@ static int RunRop(string[] args)
     {
         if (crashId is null)
         {
-            Console.Error.WriteLine("Usage: randall rop from-crash -i <crash-guid> [--goal pivot] [--exe path] [--modules N]");
+            Console.Error.WriteLine("Usage: randall rop from-crash -i <crash-guid> [--goal auto] [--exe path] [--modules N]");
             return 1;
         }
 
-        report = RopStudio.FromCrash(crashId.Value, goal ?? "pivot", bad, exeOverride: exe, maxModules: maxModules);
+        report = RopStudio.FromCrash(crashId.Value, goal ?? "auto", bad, exeOverride: exe, maxModules: maxModules);
     }
     else if (sub is "show" or "status" or "sidecars")
     {
@@ -3228,14 +3278,21 @@ static int RunRop(string[] args)
             return badchars.Error is null ? 0 : 2;
         case RopSidecarsDto side:
             Console.WriteLine(side.SummaryLine);
+            if (side.ScreamWalkPath is not null) Console.WriteLine("  scream:   " + side.ScreamWalkPath);
             if (side.RopPath is not null) Console.WriteLine("  rop:      " + side.RopPath);
-            if (side.WalkPath is not null) Console.WriteLine("  walk:     " + side.WalkPath);
+            if (side.WalkPath is not null) Console.WriteLine("  windbg:   " + side.WalkPath);
+            if (side.GdbWalkPath is not null) Console.WriteLine("  gdb:      " + side.GdbWalkPath);
             if (side.BadCharsPath is not null) Console.WriteLine("  badchars: " + side.BadCharsPath);
+            if (side.LadderPath is not null) Console.WriteLine("  ladder:   " + side.LadderPath);
             if (side.GuidePath is not null) Console.WriteLine("  guide:    " + side.GuidePath);
             if (side.Walk?.ControlledOffset is { } off)
                 Console.WriteLine($"  CONTROL:  {side.Walk.ControlledRegister ?? "IP"} @ {off}");
+            else if (side.ScreamWalk?.ControlledOffset is { } soff)
+                Console.WriteLine($"  CONTROL:  {side.ScreamWalk.ControlledRegister ?? "IP"} @ {soff}");
             if (side.Sketch?.Steps.Count > 0)
                 Console.WriteLine($"  sketch:   {side.Sketch.Steps.Count} step(s) · {side.Sketch.Goal}");
+            if (side.ScreamWalk is { } sw)
+                Console.WriteLine($"  playbook: {sw.Steps.Count} step(s) · goal {sw.GoalResolved}");
             return 0;
         default:
             return 1;
@@ -3269,6 +3326,16 @@ static int RunWindbg(string[] args)
         var json = false;
         for (var i = 1; i < args.Length; i++)
         {
+            if (args[i] is "-h" or "--help" or "help")
+            {
+                Console.WriteLine("""
+                    Usage:
+                      randall windbg walk -i <crash-guid> [--json]
+
+                    Write *_windbg_walk.json + RandfuzzDbg script hints for the crash dump.
+                    """);
+                return 0;
+            }
             if (args[i] is "-i" or "--id" or "--crash" && i + 1 < args.Length
                 && Guid.TryParse(args[i + 1], out var g))
             {
