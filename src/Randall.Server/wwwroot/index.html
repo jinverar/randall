@@ -268,9 +268,9 @@
             Crash id (optional — import crash trace)
             <input type="text" id="stalking-crash" placeholder="guid" />
           </label>
-          <label class="check-row" title="EVTX/MFT/WER/Procmon quiet-host snapshot (±window). Soft-fails if tools missing.">
+            <label class="check-row" title="EVTX/MFT/WER/Procmon snapshot for every layer you record — compare phases later.">
             <input type="checkbox" id="stalking-mini-timeline" checked />
-            Mini-timeline on baseline (host context)
+            Mini-timeline each layer (compare phases)
           </label>
           <p class="hex">Leave paths empty to import current corpus edges.txt for this project.</p>
           <div class="btn-row">
@@ -302,6 +302,13 @@
           <div class="panel">
             <h2>Compare <span class="hex" id="stalking-compare-meta"></span></h2>
             <div id="stalking-deltas" class="table-wrap"></div>
+          </div>
+          <div class="panel">
+            <h2>Host timeline compare <span class="hex" id="stalking-tl-compare-meta"></span></h2>
+            <p class="hex">What changed on the box between baseline → fuzzed → fuzzier (EVTX/MFT/Procmon rows).</p>
+            <div id="stalking-tl-stats" class="table-wrap"></div>
+            <div id="stalking-tl-deltas" class="table-wrap" style="margin-top:0.75rem"></div>
+            <div id="stalking-tl-samples" class="table-wrap" style="margin-top:0.75rem"></div>
           </div>
           <div class="panel">
             <h2>Block map <span class="hex">(union of selected layers)</span></h2>
@@ -1370,6 +1377,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=mini-timeline-4"></script>
+  <script type="module" src="/js/app.js?v=mini-timeline-5"></script>
 </body>
 </html>

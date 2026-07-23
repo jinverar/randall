@@ -71,6 +71,7 @@ public class MiniTimelineTests
     {
         var fuzz = new FuzzConfig();
         Assert.False(fuzz.MiniTimeline);
+        Assert.False(fuzz.MiniTimelineOnStalk);
         Assert.False(fuzz.MiniTimelineOnBaseline);
         Assert.Equal(60, fuzz.MiniTimelineWindowSeconds);
     }
@@ -91,7 +92,7 @@ public class MiniTimelineTests
     }
 
     [Fact]
-    public void AddLayer_Baseline_WithMiniTimelineRequest_WritesTimelineFolder()
+    public void AddLayer_AnyTag_WithMiniTimelineRequest_WritesTimelineFolder()
     {
         var root = Path.Combine(Path.GetTempPath(), "randall-stalk-tl-" + Guid.NewGuid().ToString("N"));
         try
@@ -99,25 +100,28 @@ public class MiniTimelineTests
             Directory.CreateDirectory(Path.Combine(root, "data", "corpus", "demo"));
             File.WriteAllText(Path.Combine(root, "data", "corpus", "demo", "edges.txt"), "0:0x1000:16\n");
 
-            var layer = StalkCampaignStore.AddLayer(new StalkLayerCreateRequest(
-                "demo",
-                "baseline",
-                "quiet host",
-                null,
-                null,
-                null,
-                null,
-                null,
-                MiniTimeline: true,
-                MiniTimelineWindowSeconds: 30), root);
+            foreach (var tag in new[] { "baseline", "fuzzed", "fuzzier", "basic" })
+            {
+                var layer = StalkCampaignStore.AddLayer(new StalkLayerCreateRequest(
+                    "demo",
+                    tag,
+                    tag + " phase",
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    MiniTimeline: true,
+                    MiniTimelineWindowSeconds: 30), root);
 
-            Assert.False(string.IsNullOrWhiteSpace(layer.MiniTimelineDir));
-            Assert.Contains("layer-", layer.MiniTimelineDir!, StringComparison.Ordinal);
-            Assert.False(string.IsNullOrWhiteSpace(layer.MiniTimelineSummary));
-            var tlDir = MiniTimelineCapture.TimelineDir(
-                StalkCampaignStore.ProjectDir("demo", root),
-                $"layer-{layer.Id}");
-            Assert.True(File.Exists(Path.Combine(tlDir, "summary.json")));
+                Assert.False(string.IsNullOrWhiteSpace(layer.MiniTimelineDir));
+                Assert.Contains("layer-", layer.MiniTimelineDir!, StringComparison.Ordinal);
+                Assert.False(string.IsNullOrWhiteSpace(layer.MiniTimelineSummary));
+                var tlDir = MiniTimelineCapture.TimelineDir(
+                    StalkCampaignStore.ProjectDir("demo", root),
+                    $"layer-{layer.Id}");
+                Assert.True(File.Exists(Path.Combine(tlDir, "summary.json")));
+            }
         }
         finally
         {
@@ -147,6 +151,71 @@ public class MiniTimelineTests
         {
             try { Directory.Delete(root, true); } catch { /* */ }
         }
+    }
+
+    [Fact]
+    public void StalkTimelineCompare_ReportsNovelRows_BetweenPhases()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "randall-stalk-cmp-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "data", "corpus", "demo"));
+            File.WriteAllText(Path.Combine(root, "data", "corpus", "demo", "edges.txt"), "0:0x1000:16\n");
+
+            var baseLayer = StalkCampaignStore.AddLayer(new StalkLayerCreateRequest(
+                "demo", "baseline", "b", null, null, null, null, null, MiniTimeline: false), root);
+            var fuzzLayer = StalkCampaignStore.AddLayer(new StalkLayerCreateRequest(
+                "demo", "fuzzed", "f", null, null, null, null, null, MiniTimeline: false), root);
+
+            var stalkDir = StalkCampaignStore.ProjectDir("demo", root);
+            SeedLayerCsv(stalkDir, baseLayer.Id, "evtx,a\nevtx,\"shared-event\"\nevtx,\"only-base\"");
+            SeedLayerCsv(stalkDir, fuzzLayer.Id, "evtx,a\nevtx,\"shared-event\"\nevtx,\"only-fuzz\"\nevtx,\"also-fuzz\"");
+
+            // Rewrite layer meta to point at timeline dirs
+            TouchLayerMeta(stalkDir, baseLayer with
+            {
+                MiniTimelineDir = $"timeline/layer-{baseLayer.Id}",
+                MiniTimelineSummary = "base",
+            });
+            TouchLayerMeta(stalkDir, fuzzLayer with
+            {
+                MiniTimelineDir = $"timeline/layer-{fuzzLayer.Id}",
+                MiniTimelineSummary = "fuzz",
+            });
+
+            var cmp = StalkTimelineCompare.Compare("demo", repoRoot: root);
+            Assert.Equal(2, cmp.Layers.Count);
+            Assert.True(cmp.Layers.All(l => l.HasTimeline));
+            Assert.Single(cmp.Pairwise);
+            var delta = cmp.Pairwise[0];
+            Assert.Equal("baseline", delta.FromTag);
+            Assert.Equal("fuzzed", delta.ToTag);
+            Assert.True(delta.OnlyInTo >= 1);
+            Assert.True(delta.Shared >= 1);
+            Assert.Contains(delta.SampleOnlyInTo, s => s.Contains("only-fuzz", StringComparison.OrdinalIgnoreCase)
+                                                       || s.Contains("also-fuzz", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* */ }
+        }
+    }
+
+    private static void SeedLayerCsv(string stalkDir, string layerId, string mergedBody)
+    {
+        var dir = MiniTimelineCapture.TimelineDir(stalkDir, $"layer-{layerId}");
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "merged.csv"), "Source,Row\n" + mergedBody + "\n");
+        File.WriteAllText(Path.Combine(dir, "summary.json"),
+            """{"ok":true,"summaryLine":"seed","evtxRows":2,"mftRows":0,"prefetchRows":0,"amcacheRows":0,"werCopied":0,"notes":[],"toolsUsed":[],"artifacts":[],"crashId":"00000000-0000-0000-0000-000000000001","anchorUtc":"2026-01-01T00:00:00Z","windowStartUtc":"2026-01-01T00:00:00Z","windowEndUtc":"2026-01-01T00:01:00Z","windowSeconds":60,"capturedAtUtc":"2026-01-01T00:00:00Z"}""");
+    }
+
+    private static void TouchLayerMeta(string stalkDir, StalkLayerDto layer)
+    {
+        var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+        File.WriteAllText(
+            Path.Combine(stalkDir, $"layer-{layer.Id}.json"),
+            System.Text.Json.JsonSerializer.Serialize(layer, opts));
     }
 
     [Fact]

@@ -44,29 +44,37 @@ on the hot path.
 
 ```yaml
 fuzz:
-  miniTimeline: true              # unique screams + (with OnBaseline) quiet-host on stalk baseline
-  miniTimelineOnBaseline: true    # stalk baseline layer only (also implied by miniTimeline)
-  miniTimelineWindowSeconds: 60   # ± around crash At / baseline CreatedAt (UTC); clamp 5–3600
+  miniTimeline: true              # unique screams + stalk layers (all tags)
+  miniTimelineOnStalk: true       # stalk layers only (baseline / fuzzed / fuzzier / custom / …)
+  miniTimelineWindowSeconds: 60   # ± around crash At / layer CreatedAt (UTC); clamp 5–3600
   procmonCapture: true            # optional; enables PML bookend for Procmon slice
 ```
 
-CLI re-run / backfill:
+(`miniTimelineOnBaseline` remains as a legacy alias for `miniTimelineOnStalk`.)
+
+CLI:
 
 ```bash
 randall timeline capture -p <project> -i <crash-guid> [--window 60] [--pml path]
-randall timeline graph -p <project> -i <crash-guid>   # rebuild graph.json + merged.csv
-randall timeline tools                                 # discover EZ + Procmon
+randall timeline graph -p <project> -i <crash-guid>
+randall timeline tools
+randall stalk timeline-compare -p <project> [layerId…]   # host diffs across phases
 ```
 
-**Stalk baseline:** recording a layer tagged `baseline` (UI checkbox *Mini-timeline on baseline*,
-or `miniTimeline: true` on `POST /api/stalking/layers`) writes the same tool suite under:
+**Stalk layers:** recording any layer with the UI checkbox *Mini-timeline each layer*
+(or `miniTimeline: true` on the API / project flags above) writes:
 
 ```
 data/stalk/<project>/timeline/layer-<layerId>/
 ```
 
-That is the quiet-host contrast for later crash windows. Soft-fails if tools are missing;
-layer creation never fails because of mini-timeline.
+Compare phases in **Stalking bugs → Host timeline compare**, or:
+
+`GET /api/stalking/{project}/timeline/compare`
+
+Soft-fails if tools are missing; layer creation never fails because of mini-timeline.
+Auto-added **crash** layers (with a crash id) skip a duplicate stalk capture — the unique-scream
+path already wrote `data/crashes/…/timeline/`.
 
 Doctor shows `miniTimeline` ready|warn when the flag is on or tools are present.
 
@@ -74,7 +82,8 @@ API:
 
 - `GET /api/crashes/{id}/timeline` — crash `summary.json` DTO  
 - `GET /api/crashes/{id}/timeline/graph` — crash `graph.json`  
-- `GET /api/stalking/{project}/layers/{layerId}/timeline` — baseline (or opted-in) layer timeline  
+- `GET /api/stalking/{project}/layers/{layerId}/timeline` — per-layer timeline  
+- `GET /api/stalking/{project}/timeline/compare` — pairwise novel/shared host rows  
 
 ---
 
@@ -83,12 +92,17 @@ API:
 | Trigger | Behavior |
 |---------|----------|
 | Unique scream (`IsNew`) + `fuzz.miniTimeline: true` | Capture under the crash |
-| Stalk **baseline** layer + (`miniTimeline` / `miniTimelineOnBaseline` / request `miniTimeline: true`) | Quiet-host capture under stalk project |
+| Any stalk layer + (checkbox / `miniTimelineOnStalk` / `miniTimeline` / request) | Capture under stalk project |
+| Auto crash stalk layer (has `CrashId`) | Skipped (crash timeline already exists) |
 | Dedup crash | **Skipped** (no extra cost) |
 | Linux | Soft-skip (journalctl twin is future work) |
 | Tools missing | Warn once; fuzz / layer record continues |
 
 Hot path stays clean: no per-iteration EZ/Procmon convert work.
+
+**Compare:** after baseline → fuzzed → fuzzier (whatever you name the phases), use
+`randall stalk timeline-compare` or the Stalking bugs **Host timeline compare** panel to see
+which host rows are novel vs the previous phase — same idea as block compare, for the OS side.
 
 ---
 
@@ -114,7 +128,7 @@ data/crashes/<project>/
 `summary.json` is the stable join point for UI / API. `graph.json` is post-process
 only and can be rebuilt with `randall timeline graph`.
 
-**Stalk baseline layout** (quiet-host contrast):
+**Stalk layer layout** (one folder per phase — baseline / fuzzed / fuzzier / …):
 
 ```
 data/stalk/<project>/

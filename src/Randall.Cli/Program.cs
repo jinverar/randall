@@ -2159,6 +2159,8 @@ static int RunStalk(string[] args)
             Usage:
               randall stalk layers -p <project>
               randall stalk compare -p <project> [layerId…]
+              randall stalk timeline-compare -p <project> [layerId…]
+                                            Diff host mini-timelines across layers
               randall stalk missed -p <project> [--limit 40]
               randall stalk inventory -p <project> --import <blocks.txt|drcov.log>
               randall stalk dynapstalker <drcov.log> <process.exe> <out.idc|.py> [--format idc|ghidra] [--color 0x00ffff]
@@ -2180,6 +2182,7 @@ static int RunStalk(string[] args)
     {
         "layers" => StalkLayers(rest),
         "compare" => StalkCompare(rest),
+        "timeline-compare" or "tl-compare" or "host-compare" => StalkTimelineCompareCmd(rest),
         "missed" => StalkMissed(rest),
         "inventory" => StalkInventory(rest),
         "dynapstalker" or "drcov2idc" => StalkDynapstalker(rest),
@@ -2654,6 +2657,36 @@ static int StalkCompare(string[] args)
     if (cmp.Blocks.Count > 24)
         Console.WriteLine($"  … +{cmp.Blocks.Count - 24} more blocks");
     return 0;
+}
+
+static int StalkTimelineCompareCmd(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    var cmp = StalkTimelineCompare.Compare(project, PositionalIds(args));
+    Console.WriteLine($"{cmp.Project}: {cmp.SummaryLine}");
+    foreach (var s in cmp.Layers)
+    {
+        Console.WriteLine(
+            $"  [{s.Tag}] {s.LayerId}  tl={(s.HasTimeline ? "yes" : "no")}  rows≈{s.FingerprintCount}  " +
+            $"evtx={s.EvtxRows} mft={s.MftRows} procmon={s.ProcmonRows} wer={s.WerCopied}");
+        if (!string.IsNullOrWhiteSpace(s.SummaryLine))
+            Console.WriteLine($"             {s.SummaryLine}");
+    }
+
+    foreach (var d in cmp.Pairwise)
+    {
+        Console.WriteLine(
+            $"  {d.FromTag} → {d.ToTag}: shared={d.Shared} onlyPrev={d.OnlyInFrom} novel={d.OnlyInTo}");
+        foreach (var sample in d.SampleOnlyInTo.Take(6))
+            Console.WriteLine($"    + {sample}");
+        foreach (var sample in d.SampleOnlyInFrom.Take(3))
+            Console.WriteLine($"    - {sample}");
+    }
+
+    return cmp.Layers.Any(l => l.HasTimeline) ? 0 : 2;
 }
 
 static int StalkExport(string[] args)

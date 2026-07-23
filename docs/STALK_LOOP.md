@@ -84,11 +84,13 @@ If a campaign trashes the box, roll back — don’t fight a dirty lab.
    - Tag = **baseline (normal use)**  
    - Label e.g. `browser happy path`  
    - Paste **drcov log path** if you have one, **or** leave empty / click **From corpus edges**  
-   - Leave **Mini-timeline on baseline** checked (quiet-host EVTX/MFT/WER snapshot for contrast with later crashes)  
+   - Leave **Mini-timeline each layer** checked (host EVTX/MFT/WER/Procmon snapshot per phase — compare later)  
    - **Record layer**
 
 That layer is your “green” / normal map — code you already know how to reach — plus an optional
 host mini-timeline under `data/stalk/<project>/timeline/layer-…/` (see [MINI_TIMELINE.md](MINI_TIMELINE.md)).
+Record the same way for **fuzzed** / **fuzzier** / custom tags; then open **Host timeline compare**
+to see what changed on the box between phases.
 
 ### Option B — File-format target
 

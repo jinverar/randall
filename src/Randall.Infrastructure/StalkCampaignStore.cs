@@ -113,7 +113,7 @@ public static class StalkCampaignStore
             request.CrashId,
             request.Notes);
 
-        layer = MaybeCaptureBaselineMiniTimeline(layer, request, repoRoot, dir);
+        layer = MaybeCaptureLayerMiniTimeline(layer, request, repoRoot, dir);
 
         File.WriteAllText(Path.Combine(dir, $"layer-{id}.json"), JsonSerializer.Serialize(layer, JsonOptions));
         return layer;
@@ -124,13 +124,17 @@ public static class StalkCampaignStore
         !string.IsNullOrWhiteSpace(tag) &&
         tag.Contains("base", StringComparison.OrdinalIgnoreCase);
 
-    private static StalkLayerDto MaybeCaptureBaselineMiniTimeline(
+    public static bool IsCrashTag(string? tag) =>
+        !string.IsNullOrWhiteSpace(tag) &&
+        tag.Contains("crash", StringComparison.OrdinalIgnoreCase);
+
+    private static StalkLayerDto MaybeCaptureLayerMiniTimeline(
         StalkLayerDto layer,
         StalkLayerCreateRequest request,
         string repoRoot,
         string stalkProjectDir)
     {
-        var (want, window, exe) = ResolveBaselineMiniTimeline(request, repoRoot);
+        var (want, window, exe) = ResolveLayerMiniTimeline(request, repoRoot);
         if (!want)
             return layer;
 
@@ -167,18 +171,16 @@ public static class StalkCampaignStore
         }
     }
 
-    private static (bool Want, int Window, string? Exe) ResolveBaselineMiniTimeline(
+    private static (bool Want, int Window, string? Exe) ResolveLayerMiniTimeline(
         StalkLayerCreateRequest request,
         string repoRoot)
     {
-        var isBaseline = IsBaselineTag(request.Tag);
         var window = request.MiniTimelineWindowSeconds is int w && w > 0 ? w : 60;
         string? exe = null;
         var yamlWant = false;
         var yamlPath = Path.Combine(repoRoot, "projects", request.Project + ".yaml");
         if (!File.Exists(yamlPath))
         {
-            // also try .yml / nested discovery
             foreach (var candidate in new[]
                      {
                          Path.Combine(repoRoot, "projects", request.Project + ".yml"),
@@ -201,7 +203,9 @@ public static class StalkCampaignStore
                 window = request.MiniTimelineWindowSeconds is int rw && rw > 0
                     ? rw
                     : proj.Fuzz.MiniTimelineWindowSeconds;
-                yamlWant = proj.Fuzz.MiniTimelineOnBaseline || proj.Fuzz.MiniTimeline;
+                yamlWant = proj.Fuzz.MiniTimelineOnStalk
+                           || proj.Fuzz.MiniTimelineOnBaseline
+                           || proj.Fuzz.MiniTimeline;
                 if (!string.IsNullOrWhiteSpace(proj.Target.Executable))
                 {
                     var declared = ProjectLoader.ResolvePath(yamlPath, proj.Target.Executable);
@@ -214,12 +218,19 @@ public static class StalkCampaignStore
             }
         }
 
-        // Explicit request wins; otherwise auto on baseline when project enables mini-timeline.
+        // Explicit request wins.
         if (request.MiniTimeline == true)
             return (true, window, exe);
         if (request.MiniTimeline == false)
             return (false, window, exe);
-        return (isBaseline && yamlWant, window, exe);
+
+        // Auto-crash layers already get a crash-scoped mini-timeline in FuzzEngine — skip duplicate
+        // unless the operator asked explicitly (handled above).
+        if (IsCrashTag(request.Tag) && !string.IsNullOrWhiteSpace(request.CrashId))
+            return (false, window, exe);
+
+        // Every stalk phase (baseline / fuzzed / fuzzier / custom / …) when project enables it.
+        return (yamlWant, window, exe);
     }
 
     public static bool DeleteLayer(string project, string layerId, string? repoRoot = null)

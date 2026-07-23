@@ -315,14 +315,20 @@ public sealed class FuzzConfig
     /// <summary>
     /// After a <b>unique</b> crash, capture a Windows mini-timeline (EVTX/MFT/WER ± window)
     /// via Eric Zimmerman CLIs. Default off — soft-fails if tools missing. See docs/MINI_TIMELINE.md.
+    /// Also enables stalk-layer mini-timelines (baseline / fuzzed / fuzzier / …) unless
+    /// <see cref="MiniTimelineOnStalk"/> is explicitly preferred alone.
     /// </summary>
     public bool MiniTimeline { get; set; }
     /// <summary>
-    /// When recording a stalk <b>baseline</b> layer, also capture a quiet-host mini-timeline
-    /// (same tools/window as crash). Default off; also runs when the layer request sets
-    /// <c>miniTimeline: true</c>. Soft-fails if tools missing.
+    /// When recording <b>any</b> stalk layer (baseline, fuzzed, fuzzier, custom, …), capture a
+    /// host mini-timeline for phase-to-phase compare. Default off. Soft-fails if tools missing.
+    /// </summary>
+    public bool MiniTimelineOnStalk { get; set; }
+    /// <summary>
+    /// Legacy alias — treated like <see cref="MiniTimelineOnStalk"/> (all stalk layers).
+    /// Prefer <c>miniTimelineOnStalk</c>.
     /// </summary>
     public bool MiniTimelineOnBaseline { get; set; }
-    /// <summary>Seconds before/after crash <c>At</c> (UTC) for mini-timeline filter. Default 60; clamped 5–3600.</summary>
+    /// <summary>Seconds before/after crash <c>At</c> / layer <c>CreatedAt</c> (UTC). Default 60; clamped 5–3600.</summary>
     public int MiniTimelineWindowSeconds { get; set; } = 60;
 }

@@ -676,8 +676,18 @@ app.MapGet("/api/stalking/{project}/layers/{layerId}/timeline", (string project,
         ? Results.Ok(existing)
         : Results.NotFound(new
         {
-            error = "No mini-timeline for this layer. Enable fuzz.miniTimelineOnBaseline / miniTimeline, or record with miniTimeline: true.",
+            error = "No mini-timeline for this layer. Enable fuzz.miniTimelineOnStalk / miniTimeline, or record with miniTimeline: true.",
         });
+});
+
+app.MapGet("/api/stalking/{project}/timeline/compare", (string project, string? layers) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    var ids = string.IsNullOrWhiteSpace(layers)
+        ? Array.Empty<string>()
+        : layers.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    return Results.Ok(StalkTimelineCompare.Compare(project, ids));
 });
 
 app.MapGet("/api/stalking/{project}/compare", (string project, string? layers) =>

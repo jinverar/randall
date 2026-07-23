@@ -1850,8 +1850,62 @@ async function refreshStalkingWorkspace() {
   // Drag-to-pan the Stalking bugs block chip map (scrollable for large unions)
   enableDragScroll(graphEl);
 
+  await refreshStalkingTimelineCompare(project);
   await refreshStalkingMap(project);
   await refreshStalkingMissed(project);
+}
+
+async function refreshStalkingTimelineCompare(project) {
+  const meta = document.getElementById('stalking-tl-compare-meta');
+  const statsEl = document.getElementById('stalking-tl-stats');
+  const deltasEl = document.getElementById('stalking-tl-deltas');
+  const samplesEl = document.getElementById('stalking-tl-samples');
+  if (!statsEl || !deltasEl) return;
+  try {
+    const cmp = await api.get(`/api/stalking/${encodeURIComponent(project)}/timeline/compare`);
+    if (meta) meta.textContent = cmp.summaryLine ? `— ${cmp.summaryLine}` : '';
+    const layers = cmp.layers || [];
+    statsEl.innerHTML = layers.length
+      ? `<table><thead><tr>
+          <th>Tag</th><th>TL</th><th>Rows</th><th>EVTX</th><th>MFT</th><th>Procmon</th><th>WER</th>
+        </tr></thead><tbody>
+        ${layers.map((s) => `<tr>
+          <td><code>${escapeAttr(s.tag)}</code></td>
+          <td>${s.hasTimeline ? 'yes' : '—'}</td>
+          <td>${s.fingerprintCount ?? 0}</td>
+          <td>${s.evtxRows ?? 0}</td>
+          <td>${s.mftRows ?? 0}</td>
+          <td>${s.procmonRows ?? 0}</td>
+          <td>${s.werCopied ?? 0}</td>
+        </tr>`).join('')}
+      </tbody></table>`
+      : '<p class="empty">No layers yet.</p>';
+
+    const pairs = cmp.pairwise || [];
+    deltasEl.innerHTML = pairs.length
+      ? `<table><thead><tr><th>From → To</th><th>Shared</th><th>Only prev</th><th>Novel</th></tr></thead>
+        <tbody>${pairs.map((d) => `<tr>
+          <td><code>${escapeAttr(d.fromTag)}</code> → <code>${escapeAttr(d.toTag)}</code></td>
+          <td>${d.shared}</td>
+          <td>${d.onlyInFrom}</td>
+          <td class="diff">+${d.onlyInTo}</td>
+        </tr>`).join('')}</tbody></table>`
+      : '<p class="empty">Need 2+ layers with mini-timelines to diff host noise.</p>';
+
+    if (samplesEl) {
+      const samples = pairs.flatMap((d) =>
+        (d.sampleOnlyInTo || []).slice(0, 4).map((s) =>
+          `<li><code>${escapeAttr(d.toTag)}</code> + ${escapeAttr(s)}</li>`));
+      samplesEl.innerHTML = samples.length
+        ? `<p class="hint">Novel host rows (sample)</p><ul class="hint-list">${samples.join('')}</ul>`
+        : '';
+    }
+  } catch {
+    if (meta) meta.textContent = '';
+    statsEl.innerHTML = '<p class="empty">Host timeline compare unavailable.</p>';
+    deltasEl.innerHTML = '';
+    if (samplesEl) samplesEl.innerHTML = '';
+  }
 }
 
 async function refreshStalkingMap(project) {
@@ -2028,8 +2082,7 @@ document.getElementById('stalking-add')?.addEventListener('click', async () => {
     label: document.getElementById('stalking-label').value.trim() || null,
     drcovPath: document.getElementById('stalking-drcov').value.trim() || null,
     crashId: document.getElementById('stalking-crash').value.trim() || null,
-    // Always honor checkbox; for non-baseline tags only fires when checked.
-    miniTimeline: wantTl ? true : (tag && tag.toLowerCase().includes('base') ? false : null),
+    miniTimeline: wantTl,
   };
   try {
     const layer = await api.post('/api/stalking/layers', body);
@@ -2055,7 +2108,7 @@ document.getElementById('stalking-from-corpus')?.addEventListener('click', async
     const layer = await api.post('/api/stalking/layers/from-corpus', {
       project,
       tag,
-      miniTimeline: wantTl ? true : (tag.toLowerCase().includes('base') ? false : null),
+      miniTimeline: wantTl,
     });
     const tl = layer.miniTimelineSummary ? ` · ${layer.miniTimelineSummary}` : '';
     document.getElementById('stalking-export-result').textContent =
