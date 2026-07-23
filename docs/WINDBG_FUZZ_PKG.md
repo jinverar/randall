@@ -50,6 +50,25 @@ minidump + input + guide  →   ROP Studio scan/search/sketch → !rf.* extensio
 
 ---
 
+## Scream Walk (product verb)
+
+One crash-guid playbook that chains the lab path:
+
+```bash
+randall scream walk -i <crash-guid> --goal auto
+# API: POST /api/scream/walk
+# UI: Crashes → Walk this scream
+```
+
+Order: CONTROL (guide/triage) → badchars → tier-aware sketch goal → ROP sketch →
+WinDbg walk JSON → GDB walk JSON → ladder hint. Writes `*_scream_walk.json`.
+
+**Adaptive goals (`--goal auto`):** basic→`control` · NX→`pivot` · PIE→`leak` · canary→`canary`.
+
+Also: `randall ladder diff` · `randall gdb walk -i <guid>` · `tools/randfuzzgdb/`.
+
+---
+
 ## ROP Studio (host)
 
 ```bash
@@ -188,5 +207,9 @@ Linux CI keeps host ROP Studio + scripts; DLL is Windows-only.
 - [x] PE export-table naming (nearest symbol tags)
 - [x] Richer `!rf.regs` / `!rf.control` (IDebugRegisters + DML)
 - [x] Crashes UI auto-load of existing ROP/walk/badchars sidecars
+- [x] Scream Walk orchestrator (`randall scream walk` / UI)
+- [x] Tier-adaptive goals (`auto` / `leak` / `canary`)
+- [x] Mitigation ladder diff (`randall ladder diff`)
+- [x] Linux GDB walk twin (`randall gdb walk` / `tools/randfuzzgdb`)
 - [ ] Full Windows PDB/DIA naming (beyond export table)
 - [ ] Deeper dump-native stack parse (beyond Execute `k`)

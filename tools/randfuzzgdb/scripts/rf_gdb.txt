@@ -1,0 +1,18 @@
+# Randfuzz GDB/GEF walk — twin of tools/randfuzzdbg/scripts/rf_walk.txt
+#   randall gdb walk -i <crash-guid>
+#   gdb -q <exe> <core>
+#   source <repo>/tools/randfuzzgdb/scripts/rf_gdb.txt
+#
+set pagination off
+echo \n=== RANDFUZZ GDB WALK BEGIN ===\n
+echo --- registers ---\n
+info registers
+echo --- backtrace ---\n
+bt 16
+echo --- stack ---\n
+x/32gx $sp
+echo --- mappings ---\n
+info proc mappings
+echo === RANDFUZZ GDB WALK END ===\n
+echo Next: randall rop from-crash -i <guid> --goal auto\n
+echo Docs: docs/WINDBG_FUZZ_PKG.md · docs/MITIGATION_LAB.md\n

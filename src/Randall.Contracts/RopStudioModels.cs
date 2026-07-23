@@ -64,7 +64,7 @@ public sealed record RopSketchReportDto(
 
 public sealed record RopFromCrashRequest(
     Guid CrashId,
-    string Goal = "pivot",
+    string Goal = "auto",
     string? BadCharsHex = null,
     string? Exe = null,
     int MaxModules = 3);

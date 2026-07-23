@@ -2332,9 +2332,12 @@ function renderCrashDetail(detail, title) {
       <div class="btn-row wrap" style="margin-top:0.5rem; align-items:center; gap:0.5rem">
         <label class="hint" for="crash-rop-goal">Goal
           <select id="crash-rop-goal">
-            <option value="pivot" selected>pivot</option>
+            <option value="auto" selected>auto</option>
+            <option value="pivot">pivot</option>
             <option value="control">control</option>
             <option value="write">write</option>
+            <option value="leak">leak</option>
+            <option value="canary">canary</option>
           </select>
         </label>
         <label class="hint" for="crash-rop-need">Need
@@ -2343,10 +2346,13 @@ function renderCrashDetail(detail, title) {
         <label class="hint" for="crash-rop-badchars">Badchars
           <input type="text" id="crash-rop-badchars" size="16" placeholder="\x00\x0a (auto)" />
         </label>
+        <button type="button" class="btn primary" id="crash-scream-walk-btn">Walk this scream</button>
         <button type="button" class="btn" id="crash-rop-sketch-btn">ROP sketch</button>
         <button type="button" class="btn" id="crash-rop-search-btn">Search gadgets</button>
         <button type="button" class="btn" id="crash-rop-badchars-btn">Learn badchars</button>
-        <button type="button" class="btn" id="crash-windbg-walk-btn">WinDbg walk JSON</button>
+        <button type="button" class="btn" id="crash-windbg-walk-btn">WinDbg walk</button>
+        <button type="button" class="btn" id="crash-gdb-walk-btn">GDB walk</button>
+        <button type="button" class="btn" id="crash-ladder-btn">Ladder diff</button>
       </div>
     </div>
     <p class="hint crash-path"><code>${escapeAttr(detail.summary.inputPath)}</code></p>
@@ -2402,7 +2408,7 @@ function renderCrashDetail(detail, title) {
     const status = document.getElementById('crash-rop-status');
     const body = document.getElementById('crash-rop-body');
     const out = document.getElementById('export-result');
-    const goal = document.getElementById('crash-rop-goal')?.value || 'pivot';
+    const goal = document.getElementById('crash-rop-goal')?.value || 'auto';
     const badCharsHex = (document.getElementById('crash-rop-badchars')?.value || '').trim() || null;
     try {
       if (status) status.textContent = 'Sketching…';
@@ -2418,13 +2424,103 @@ function renderCrashDetail(detail, title) {
           `<li class="hint">${escapeAttr(c)}</li>`).join('');
         body.innerHTML = (constraints ? `<ul>${constraints}</ul>` : '') + (steps.length
           ? `<ol>${steps.map((s) =>
-              `<li><code>${escapeAttr(s.gadget?.address || '')}</code> ${escapeAttr(s.gadget?.instruction || s.role)}
+              `<li><code>${escapeAttr(s.gadget?.address || '')}</code>${s.gadget?.symbol ? ' @' + escapeAttr(s.gadget.symbol) : ''}
+               ${escapeAttr(s.gadget?.instruction || s.role)}
                <div class="hint">${escapeAttr(s.why || '')}</div></li>`).join('')}</ol>`
           : `<p class="empty">${escapeAttr(sketch.error || 'No gadgets — ensure TargetDetail / module path exists')}</p>`);
       }
       if (out) out.textContent = sketch.outputPath ? `Wrote ${sketch.outputPath}` : (sketch.summaryLine || '');
     } catch (err) {
       if (status) status.textContent = 'ROP sketch failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-scream-walk-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    const goal = document.getElementById('crash-rop-goal')?.value || 'auto';
+    const badCharsHex = (document.getElementById('crash-rop-badchars')?.value || '').trim() || null;
+    try {
+      if (status) status.textContent = 'Walking scream…';
+      const report = await api.post('/api/scream/walk', {
+        crashId: detail.summary.id,
+        goal,
+        badCharsHex,
+      });
+      if (status) status.textContent = report.summaryLine || 'Scream walk';
+      if (body) {
+        const steps = report.steps || [];
+        body.innerHTML = `<p class="hint">Goal <code>${escapeAttr(report.goalResolved || goal)}</code>` +
+          (report.controlledOffset != null
+            ? ` · CONTROL ${escapeAttr(report.controlledRegister || 'IP')} @ ${report.controlledOffset}`
+            : '') +
+          (report.mitigationTier ? ` · ${escapeAttr(report.mitigationTier)}` : '') +
+          `</p><ol>${steps.map((s) =>
+            `<li><strong>${escapeAttr(s.status)}</strong> ${escapeAttr(s.title)}` +
+            (s.detail ? `<div class="hint">${escapeAttr(s.detail)}</div>` : '') +
+            (s.artifactPath ? `<div class="hint"><code>${escapeAttr(s.artifactPath)}</code></div>` : '') +
+            `</li>`).join('')}</ol>`;
+      }
+      if (out) out.textContent = report.playbookPath ? `Wrote ${report.playbookPath}` : (report.summaryLine || '');
+      const badInput = document.getElementById('crash-rop-badchars');
+      if (badInput && report.badCharsPath) {
+        /* refresh sidecars */
+        loadCrashRopSidecars(detail.summary.id).catch(() => {});
+      }
+    } catch (err) {
+      if (status) status.textContent = 'Scream walk failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-gdb-walk-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    try {
+      if (status) status.textContent = 'Writing GDB walk…';
+      const walk = await api.post('/api/gdb/walk', detail.summary.id);
+      if (status) status.textContent = walk.summaryLine || 'GDB walk';
+      if (body) {
+        body.innerHTML = `<p>GDB walk: <code>${escapeAttr(walk.walkPath || '—')}</code></p>
+          <pre class="hint">${(walk.scriptLines || []).slice(0, 8).map(escapeAttr).join('\n')}</pre>`;
+      }
+      if (out) out.textContent = walk.walkPath ? `Wrote ${walk.walkPath}` : (walk.summaryLine || '');
+    } catch (err) {
+      if (status) status.textContent = 'GDB walk failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-ladder-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    try {
+      if (status) status.textContent = 'Comparing ladder…';
+      const report = await api.post('/api/ladder/diff', {
+        crashId: detail.summary.id,
+        project: detail.summary.project,
+      });
+      if (status) status.textContent = report.summaryLine || 'Ladder diff';
+      if (body) {
+        const tiers = report.tiers || [];
+        body.innerHTML = `<table class="hint"><thead><tr><th>tier</th><th>NX</th><th>canary</th><th>PIE</th><th>goal</th><th>gadgets</th></tr></thead><tbody>` +
+          tiers.map((t) => `<tr>
+            <td>${escapeAttr(t.tier)}</td>
+            <td>${t.exists ? (t.nx ? 'yes' : 'no') : '—'}</td>
+            <td>${t.exists ? (t.canary ? 'yes' : 'no') : '—'}</td>
+            <td>${t.exists ? (t.pie ? 'yes' : 'no') : '—'}</td>
+            <td>${escapeAttr(t.sketchGoalHint || '')}</td>
+            <td>${t.gadgetCount ?? (t.exists ? '?' : 'missing')}</td>
+          </tr>`).join('') + `</tbody></table>
+          <ul>${(report.findings || []).map((f) => `<li class="hint">${escapeAttr(f)}</li>`).join('')}</ul>`;
+      }
+      if (out) out.textContent = report.outputPath ? `Wrote ${report.outputPath}` : (report.summaryLine || '');
+    } catch (err) {
+      if (status) status.textContent = 'Ladder diff failed';
       if (out) out.textContent = err.message;
     }
   });

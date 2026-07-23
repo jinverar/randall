@@ -716,6 +716,29 @@ app.MapPost("/api/rop/from-crash", (RopFromCrashRequest body) =>
         exeOverride: body.Exe, maxModules: body.MaxModules <= 0 ? 3 : body.MaxModules));
 });
 
+app.MapPost("/api/scream/walk", (ScreamWalkRequest body) =>
+{
+    var report = ScreamWalk.Run(
+        body.CrashId, body.Goal, body.BadCharsHex, body.Exe,
+        body.MaxModules <= 0 ? 3 : body.MaxModules);
+    return report.Error is null ? Results.Ok(report) : Results.BadRequest(report);
+});
+
+app.MapPost("/api/ladder/diff", (LadderDiffRequest body) =>
+{
+    var report = MitigationLadder.Diff(body.CrashId, body.Project);
+    return report.Error is null ? Results.Ok(report) : Results.BadRequest(report);
+});
+
+app.MapGet("/api/gdb/scripts", () =>
+    Results.Ok(new { help = RandfuzzGdbWalk.FormatScriptHelp(), scriptsDir = RandfuzzGdbWalk.ScriptsDir() }));
+
+app.MapPost("/api/gdb/walk", (Guid crashId) =>
+{
+    var walk = RandfuzzGdbWalk.BuildForCrash(crashId);
+    return walk.Error is null ? Results.Ok(walk) : Results.BadRequest(walk);
+});
+
 app.MapGet("/api/crashes/{id:guid}/rop-sidecars", (Guid id) =>
 {
     var sidecars = RopStudio.LoadSidecars(id);

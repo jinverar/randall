@@ -238,6 +238,7 @@ See also [README.md](../README.md#optional--dynamorio-coverage-guided-stalking),
 
 Fuzz-dump walk scripts + extension stub for exploit-dev lab analysis (no payloads):
 
-- [randfuzzdbg/README.md](randfuzzdbg/README.md)
+- [randfuzzdbg/README.md](randfuzzdbg/README.md) — WinDbg Preview extension + scripts
+- [randfuzzgdb/README.md](randfuzzgdb/README.md) — Linux GDB/GEF walk twin
 - Docs: [WINDBG_FUZZ_PKG.md](../docs/WINDBG_FUZZ_PKG.md)
 - Host CLI: `randall rop …` · `randall windbg walk|scripts`

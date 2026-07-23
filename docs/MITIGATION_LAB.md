@@ -68,6 +68,19 @@ VulnLab with `scripts/build-mitigation-lab.sh`.
 > DVWA / OWASP Juice Shop / a `vulnweb`-style stack) are best run as separate Docker services and
 > pointed at via a TCP/HTTP profile — a `docker-compose` lab bundle is planned.
 
+
+## Scream Walk + ladder diff
+
+```bash
+randall scream walk -i <crash-guid> --goal auto   # CONTROL → sketch → WinDbg/GDB walks
+randall ladder diff                               # compare vulnlab-{basic,nx,aslr,modern}
+randall ladder diff -i <crash-guid>               # attach CONTROL context from a scream
+randall gdb walk -i <crash-guid>                  # Linux core twin of windbg walk
+```
+
+Adaptive sketch goals follow the tier: `control` → `pivot` → `leak` → `canary`.
+Details: [WINDBG_FUZZ_PKG.md](WINDBG_FUZZ_PKG.md).
+
 ## Exploit-dev workflow (Immunity / mona style)
 
 1. Cyclic pattern → CONTROL @ offset (`randall pattern` / `exploitdev` / `exploit guide`)

@@ -17,6 +17,32 @@ public static class RopStudio
         PropertyNameCaseInsensitive = true,
     };
 
+    /// <summary>
+    /// Map goal=auto (or empty) to a tier-aware sketch goal from checksec.
+    /// </summary>
+    public static string ResolveSketchGoal(string? goal, string? modulePath)
+    {
+        var g = (goal ?? "auto").Trim().ToLowerInvariant();
+        if (g is not ("auto" or "" or "tier"))
+            return g is "leak" or "canary" or "pivot" or "write" or "control" ? g : "control";
+
+        if (string.IsNullOrWhiteSpace(modulePath) || !File.Exists(modulePath))
+            return "pivot";
+
+        try
+        {
+            var mit = MitigationInspector.Inspect(modulePath);
+            if (mit.Canary) return "canary";
+            if (mit.Pie) return "leak";
+            if (mit.Nx) return "pivot";
+            return "control";
+        }
+        catch
+        {
+            return "pivot";
+        }
+    }
+
     public static RopSearchReportDto Search(
         string modulePath,
         string need,
@@ -125,7 +151,7 @@ public static class RopStudio
         string? repoRoot = null,
         string? outputPath = null)
     {
-        goal = (goal ?? "control").Trim().ToLowerInvariant();
+        goal = ResolveSketchGoal(goal, modulePath);
         maxSteps = Math.Clamp(maxSteps, 1, 16);
         var scan = RopGadgetScanner.Scan(modulePath, archHint, repoRoot: repoRoot, writeCache: true);
         if (scan.Error is not null)
@@ -167,6 +193,34 @@ public static class RopStudio
                 Pick(steps, clean, g => g.Kind.StartsWith("add-sp", StringComparison.Ordinal),
                     "adjust-sp", "adjust stack after pivot");
                 Pick(steps, clean, g => g.Kind == "ret", "ret", "return / continue chain");
+                break;
+            case "leak":
+                // Info-leak setup citations (PLT/GOT-adjacent / ABI register loads) — no payload.
+                constraints.Add("leak goal: cite gadgets toward an info-leak setup under PIE/ASLR — not a packed leak exploit");
+                Pick(steps, clean, g => g.Tags.Contains("plt"),
+                    "plt", "PLT-adjacent gadget (leak / call surface)");
+                foreach (var reg in (scan.Arch == "x86"
+                             ? new[] { "eax", "ecx", "edx" }
+                             : new[] { "rdi", "rsi", "rdx" }))
+                {
+                    Pick(steps, clean, g => g.Kind == $"pop-{reg}",
+                        "load-" + reg, $"ABI load {reg} (leak setup citation)");
+                    if (steps.Count >= maxSteps - 1) break;
+                }
+                Pick(steps, clean, g => g.Kind.StartsWith("call-", StringComparison.Ordinal)
+                                        || g.Kind.StartsWith("jmp-", StringComparison.Ordinal),
+                    "transfer", "call/jmp-reg toward PLT / resolved symbol");
+                Pick(steps, clean, g => g.Kind == "ret", "ret", "return / continue chain");
+                break;
+            case "canary":
+                constraints.Add("canary goal: stack protector present — sketch documents the wall (no bypass blob)");
+                constraints.Add("next lab step: leak canary / bypass separately; ROP Studio stays citation-only");
+                Pick(steps, clean, g => g.Kind == "ret", "entry", "ret still useful after a future canary bypass");
+                Pick(steps, clean, g => g.Kind.StartsWith("pop-", StringComparison.Ordinal)
+                                        && g.Kind != "pop-pop-ret",
+                    "load-reg", "register load for post-canary chain planning");
+                Pick(steps, clean, g => g.Tags.Contains("plt"),
+                    "plt", "PLT citation if you later chain after a leak");
                 break;
             case "write":
                 // Register-load sketch toward a write-what-where — citations only.
@@ -242,6 +296,8 @@ public static class RopStudio
             return new RopSketchReportDto("", goal, "unknown", [],
                 "no module path on crash — pass --exe or ensure sidecar TargetDetail / analysis modules",
                 [], Error: "no module");
+
+        goal = ResolveSketchGoal(goal, modules[0]);
 
         // Auto-learn badchars from crashing input when caller did not pass a filter.
         var bad = badCharsHex;
@@ -423,6 +479,7 @@ public static class RopStudio
         string? outputPath,
         IReadOnlyList<string> scanned)
     {
+        goal = ResolveSketchGoal(goal, primaryModule);
         var bad = ParseBadChars(badCharsHex);
         var clean = gadgets.Where(g => !GadgetHitsBadChars(g, bad)).ToList();
         var steps = new List<RopSketchStepDto>();
@@ -457,6 +514,34 @@ public static class RopStudio
                 Pick(steps, clean, g => g.Kind.StartsWith("add-sp", StringComparison.Ordinal),
                     "adjust-sp", "adjust stack after pivot");
                 Pick(steps, clean, g => g.Kind == "ret", "ret", "return / continue chain");
+                break;
+            case "leak":
+                // Info-leak setup citations (PLT/GOT-adjacent / ABI register loads) — no payload.
+                constraints.Add("leak goal: cite gadgets toward an info-leak setup under PIE/ASLR — not a packed leak exploit");
+                Pick(steps, clean, g => g.Tags.Contains("plt"),
+                    "plt", "PLT-adjacent gadget (leak / call surface)");
+                foreach (var reg in (arch == "x86"
+                             ? new[] { "eax", "ecx", "edx" }
+                             : new[] { "rdi", "rsi", "rdx" }))
+                {
+                    Pick(steps, clean, g => g.Kind == $"pop-{reg}",
+                        "load-" + reg, $"ABI load {reg} (leak setup citation)");
+                    if (steps.Count >= maxSteps - 1) break;
+                }
+                Pick(steps, clean, g => g.Kind.StartsWith("call-", StringComparison.Ordinal)
+                                        || g.Kind.StartsWith("jmp-", StringComparison.Ordinal),
+                    "transfer", "call/jmp-reg toward PLT / resolved symbol");
+                Pick(steps, clean, g => g.Kind == "ret", "ret", "return / continue chain");
+                break;
+            case "canary":
+                constraints.Add("canary goal: stack protector present — sketch documents the wall (no bypass blob)");
+                constraints.Add("next lab step: leak canary / bypass separately; ROP Studio stays citation-only");
+                Pick(steps, clean, g => g.Kind == "ret", "entry", "ret still useful after a future canary bypass");
+                Pick(steps, clean, g => g.Kind.StartsWith("pop-", StringComparison.Ordinal)
+                                        && g.Kind != "pop-pop-ret",
+                    "load-reg", "register load for post-canary chain planning");
+                Pick(steps, clean, g => g.Tags.Contains("plt"),
+                    "plt", "PLT citation if you later chain after a leak");
                 break;
             case "write":
                 foreach (var reg in (arch == "x86"

@@ -14,6 +14,55 @@ public class RopStudioTests
         Assert.Contains(DocsCatalog.Index, i => i.Path == "WINDBG_FUZZ_PKG.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "EXPLOIT_GUIDE.md"
             && i.Title.Contains("ROP", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(DocsCatalog.Index, i => i.Path == "WINDBG_FUZZ_PKG.md"
+            && i.Title.Contains("Scream", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ResolveSketchGoal_MapsTiers()
+    {
+        Assert.Equal("pivot", RopStudio.ResolveSketchGoal("pivot", null));
+        Assert.Equal("leak", RopStudio.ResolveSketchGoal("leak", null));
+        Assert.Equal("canary", RopStudio.ResolveSketchGoal("canary", null));
+        Assert.Equal("pivot", RopStudio.ResolveSketchGoal("auto", null)); // no module → pivot default
+        var exe = FirstExisting("/bin/true", "/usr/bin/true", "/bin/ls", "/usr/bin/ls");
+        if (exe is null) return;
+        var auto = RopStudio.ResolveSketchGoal("auto", exe);
+        Assert.Contains(auto, new[] { "control", "pivot", "leak", "canary" });
+    }
+
+    [Fact]
+    public void LadderDiff_ReportsMissingOrPresentTiers()
+    {
+        var report = MitigationLadder.Diff(scanGadgets: false);
+        Assert.Equal(4, report.Tiers.Count);
+        Assert.Contains(report.Tiers, t => t.Tier == "basic");
+        Assert.Contains(report.Tiers, t => t.SketchGoalHint == "control");
+        Assert.Contains(report.Findings, f => f.Contains("nx", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void GdbScripts_ExistInRepo()
+    {
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        Assert.True(File.Exists(Path.Combine(root, "tools", "randfuzzgdb", "scripts", "rf_gdb.txt")));
+        Assert.Contains("rf_gdb", RandfuzzGdbWalk.FormatScriptHelp(root), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ScreamWalk_MissingCrash_FailsHonestly()
+    {
+        var report = ScreamWalk.Run(Guid.NewGuid());
+        Assert.Equal("crash not found", report.Error);
+    }
+
+    [Fact]
+    public void LadderGoalForTier_MatchesAdaptiveStory()
+    {
+        Assert.Equal("control", MitigationLadder.GoalForTierName("basic"));
+        Assert.Equal("pivot", MitigationLadder.GoalForTierName("nx"));
+        Assert.Equal("leak", MitigationLadder.GoalForTierName("aslr"));
+        Assert.Equal("canary", MitigationLadder.GoalForTierName("modern"));
     }
 
     [Fact]
