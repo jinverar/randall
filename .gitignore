@@ -77,3 +77,6 @@ data/rop/
 # Update signing secrets (never commit private keys)
 *.pem
 !docs/**/*.pem
+
+targets/vulndrone/*
+!targets/vulndrone/.gitkeep
