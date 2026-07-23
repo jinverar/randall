@@ -2239,6 +2239,38 @@ async function loadCrashMemoryLens(crashId) {
   }
 }
 
+function renderMiniTimelineHtml(tl) {
+  if (!tl) {
+    return '<p class="hint">Loading… (or enable <code>fuzz.miniTimeline</code> / <code>randall timeline capture</code>)</p>';
+  }
+  if (!tl.ok && !(tl.evtxRows || tl.mftRows || tl.werCopied || tl.appCompatRows)) {
+    return `<p class="hint">${escapeAttr(tl.summaryLine || tl.error || 'No mini-timeline')}</p>`;
+  }
+  const dir = tl.directory ? `<code>${escapeAttr(tl.directory)}</code>` : '';
+  return `
+    <p><strong>${escapeAttr(tl.summaryLine || '')}</strong></p>
+    <p class="hint">±${tl.windowSeconds || 60}s around ${tl.anchorUtc ? new Date(tl.anchorUtc).toLocaleString() : '—'}</p>
+    <ul class="hint-list">
+      <li>EVTX rows: <code>${tl.evtxRows ?? 0}</code></li>
+      <li>MFT rows: <code>${tl.mftRows ?? 0}</code></li>
+      <li>Prefetch: <code>${tl.prefetchRows ?? 0}</code> · Amcache: <code>${tl.amcacheRows ?? 0}</code> · AppCompat: <code>${tl.appCompatRows ?? 0}</code></li>
+      <li>WER copies: <code>${tl.werCopied ?? 0}</code>${tl.bstringsPath ? ' · bstrings captured' : ''}</li>
+    </ul>
+    ${dir ? `<p class="hint">Folder: ${dir}</p>` : ''}
+    ${(tl.notes && tl.notes.length) ? `<p class="hint">${escapeAttr(tl.notes.slice(0, 2).join(' · '))}</p>` : ''}`;
+}
+
+async function loadCrashMiniTimeline(id) {
+  const body = document.getElementById('crash-timeline-body');
+  if (!body) return;
+  try {
+    const tl = await api.get(`/api/crashes/${id}/timeline`);
+    body.innerHTML = renderMiniTimelineHtml(tl);
+  } catch {
+    body.innerHTML = '<p class="hint">No mini-timeline yet — set <code>fuzz.miniTimeline: true</code> or run <code>randall timeline capture</code>.</p>';
+  }
+}
+
 function renderCrashDetail(detail, title) {
   const box = document.getElementById('crash-detail');
   const metaEl = document.getElementById('crash-invest-meta');
@@ -2325,6 +2357,10 @@ function renderCrashDetail(detail, title) {
       <p class="hint" id="crash-memory-status">Loading…</p>
       <div id="crash-memory-body"></div>
     </div>
+    <div class="triage-box" id="crash-timeline-box">
+      <h4>Mini-timeline <span class="hint-inline">(EVTX / MFT / WER)</span></h4>
+      <div id="crash-timeline-body">${renderMiniTimelineHtml(detail.miniTimeline)}</div>
+    </div>
     <p class="hint crash-path"><code>${escapeAttr(detail.summary.inputPath)}</code></p>
     <div class="btn-row tool-cmds wrap">
       <button type="button" class="btn primary" id="export-crash-btn">Export triage</button>
@@ -2337,6 +2373,9 @@ function renderCrashDetail(detail, title) {
     <p id="export-result" class="empty"></p>`;
 
   loadCrashMemoryLens(detail.summary.id).catch(() => {});
+  if (!detail.miniTimeline) {
+    loadCrashMiniTimeline(detail.summary.id).catch(() => {});
+  }
 
   document.getElementById('crash-filter-cluster-btn')?.addEventListener('click', () => {
     const key = t?.clusterKey || crashClusterKey(detail.summary) || cluster?.clusterId;

@@ -407,6 +407,25 @@ app.MapGet("/api/crashes/{id:guid}/memory", (Guid id) =>
         MemoryLensWriter.Write(crashesDir, id, report);
     return report.Ok ? Results.Ok(report) : Results.Ok(report);
 });
+app.MapGet("/api/crashes/{id:guid}/timeline", (Guid id) =>
+{
+    var detail = CrashCatalog.GetDetail(id);
+    if (detail is null)
+        return Results.NotFound();
+    if (!WebTargetFilter.IsVisibleProject(detail.Summary.Project))
+        return Results.NotFound();
+
+    if (detail.MiniTimeline is not null)
+        return Results.Ok(detail.MiniTimeline);
+
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesDir = Path.Combine(repo, "data", "crashes", detail.Summary.Project);
+    var existing = MiniTimelineCapture.TryRead(crashesDir, id);
+    return existing is not null ? Results.Ok(existing) : Results.NotFound(new
+    {
+        error = "No mini-timeline for this crash. Enable fuzz.miniTimeline or run: randall timeline capture -p <project> -i <guid>",
+    });
+});
 
 // Crash artifact pack — offline backup of dumps + lens; pull from remote agent into laptop console.
 app.MapPost("/api/crashes/pack", (CrashArtifactPackRequest request) =>

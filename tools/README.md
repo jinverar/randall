@@ -73,8 +73,11 @@ For `fuzz.miniTimeline: true` (unique-scream EVTX/MFT/WER windows), install free
 ```
 tools/ez/EvtxECmd.exe
 tools/ez/MFTECmd.exe
-tools/ez/PECmd.exe            # optional
-tools/ez/AmcacheParser.exe    # optional
+tools/ez/PECmd.exe                 # optional
+tools/ez/AmcacheParser.exe         # optional
+tools/ez/AppCompatCacheParser.exe  # optional
+tools/ez/bstrings.exe              # optional
+tools/ez/RECmd.exe                 # detected; deep hive batch later
 ```
 
 Use [Get-ZimmermanTools](https://ericzimmerman.github.io/) (`-NetVersion 9 -Dest tools\ez`). See [docs/MINI_TIMELINE.md](../docs/MINI_TIMELINE.md). Verify with `randall timeline tools`.

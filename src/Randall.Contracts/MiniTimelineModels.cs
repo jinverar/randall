@@ -20,4 +20,7 @@ public sealed record MiniTimelineSummaryDto(
     int WerCopied,
     IReadOnlyList<string> Notes,
     string SummaryLine,
-    DateTimeOffset CapturedAtUtc);
+    DateTimeOffset CapturedAtUtc,
+    int AppCompatRows = 0,
+    string? BstringsPath = null,
+    string? Directory = null);

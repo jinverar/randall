@@ -101,14 +101,14 @@ powershell -ExecutionPolicy Bypass -File .\Get-ZimmermanTools.ps1 -NetVersion 9 
 | `MFTECmd.exe` | `$MFT` CSV (live volume may need elevation) |
 | `PECmd.exe` | Prefetch (optional) |
 | `AmcacheParser.exe` | Amcache (optional) |
+| `AppCompatCacheParser.exe` | ShimCache / AppCompat (optional) |
+| `bstrings.exe` | Strings from dump/input into `bstrings.txt` (optional) |
 
 **Also useful later (documented, not required)**
 
 | Binary | Role |
 |--------|------|
-| `RECmd.exe` / Registry Explorer | Narrow registry plugins |
-| `AppCompatCacheParser.exe` | ShimCache |
-| `bstrings.exe` | Strings/regex on dumps |
+| `RECmd.exe` / Registry Explorer | Narrow registry plugins (detected; deep batch later) |
 | `SrumECmd.exe` | SRUM resource usage |
 | **Timeline Explorer** | Human review of CSVs |
 | **KAPE** | Optional collector accelerator — free for personal / research / internal use; enterprise license for third-party paid engagements. Randfuzz does **not** depend on KAPE. |
@@ -149,6 +149,6 @@ recorder plus mini-timeline on long campaigns unless you are debugging.
 ## Future
 
 - Slice Procmon `.pml` to the same window and merge CSVs  
-- `timeline/` pane on the scream canister  
 - Graph export: crash ↔ EVTX ↔ file ↔ stalk block  
 - Linux: `journalctl --since/--until` twin  
+- RECmd batch plugins for Services / AppPaths around the crash  

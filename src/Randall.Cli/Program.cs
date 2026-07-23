@@ -3944,7 +3944,9 @@ static int RunTimeline(string[] args)
         window,
         targetExe: exe,
         repoRoot: repo,
-        projectName: project);
+        projectName: project,
+        miniDumpPath: detail.Summary.MiniDumpPath,
+        inputPath: detail.Summary.InputPath);
     Console.WriteLine(summary.SummaryLine);
     Console.WriteLine($"  dir: {MiniTimelineCapture.TimelineDir(crashesDir, id.Value)}");
     foreach (var note in summary.Notes.Take(5))

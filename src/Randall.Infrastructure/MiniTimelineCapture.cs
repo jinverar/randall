@@ -50,7 +50,9 @@ public static class MiniTimelineCapture
         int windowSeconds = 60,
         string? targetExe = null,
         string? repoRoot = null,
-        string? projectName = null)
+        string? projectName = null,
+        string? miniDumpPath = null,
+        string? inputPath = null)
     {
         windowSeconds = Math.Clamp(windowSeconds <= 0 ? 60 : windowSeconds, 5, 3600);
         var windowStart = anchorUtc - TimeSpan.FromSeconds(windowSeconds);
@@ -59,11 +61,12 @@ public static class MiniTimelineCapture
         var used = new List<string>();
         var artifacts = new List<string>();
         var notes = new List<string>();
+        var timelineRel = Path.Combine("timeline", crashId.ToString("N")).Replace('\\', '/');
 
         if (!OperatingSystem.IsWindows())
         {
             var skip = Fail(crashId, windowStart, windowEnd, windowSeconds, projectName, targetExe, anchorUtc,
-                "mini-timeline is Windows-only for now (journalctl twin later)");
+                "mini-timeline is Windows-only for now (journalctl twin later)", timelineRel);
             WriteSummary(crashesDir, crashId, skip);
             return skip;
         }
@@ -71,7 +74,7 @@ public static class MiniTimelineCapture
         if (!tools.HasCore)
         {
             var skip = Fail(crashId, windowStart, windowEnd, windowSeconds, projectName, targetExe, anchorUtc,
-                "EvtxECmd/MFTECmd not found — install EZ tools under tools/ez/ (docs/MINI_TIMELINE.md)");
+                "EvtxECmd/MFTECmd not found — install EZ tools under tools/ez/ (docs/MINI_TIMELINE.md)", timelineRel);
             WriteSummary(crashesDir, crashId, skip);
             return skip;
         }
@@ -85,7 +88,9 @@ public static class MiniTimelineCapture
         var mftRows = 0;
         var prefetchRows = 0;
         var amcacheRows = 0;
+        var appCompatRows = 0;
         var werCopied = 0;
+        string? bstringsPath = null;
 
         if (tools.EvtxECmd is not null)
         {
@@ -171,6 +176,33 @@ public static class MiniTimelineCapture
             }
         }
 
+        if (tools.AppCompatCacheParser is not null)
+        {
+            used.Add(tools.AppCompatCacheParser);
+            try
+            {
+                var rawCsv = RunAppCompat(tools.AppCompatCacheParser, rawDir, notes);
+                if (rawCsv is not null && File.Exists(rawCsv))
+                {
+                    var filtered = Path.Combine(outDir, "appcompat.csv");
+                    appCompatRows = FilterCsvByTime(rawCsv, filtered, windowStart, windowEnd, targetExe);
+                    if (File.Exists(filtered))
+                        artifacts.Add(filtered);
+                    artifacts.Add(rawCsv);
+                }
+            }
+            catch (Exception ex)
+            {
+                notes.Add($"AppCompatCacheParser: {ex.Message}");
+            }
+        }
+
+        if (tools.RECmd is not null)
+        {
+            used.Add(tools.RECmd);
+            notes.Add("RECmd present — use Timeline Explorer / manual RECmd for deep hive work (not auto-batched yet)");
+        }
+
         try
         {
             werCopied = CopyWerReports(Path.Combine(outDir, "wer"), windowStart, windowEnd, targetExe, artifacts);
@@ -180,10 +212,26 @@ public static class MiniTimelineCapture
             notes.Add($"WER: {ex.Message}");
         }
 
-        var ok = evtxRows > 0 || mftRows > 0 || prefetchRows > 0 || amcacheRows > 0 || werCopied > 0
-                 || artifacts.Count > 0;
+        if (tools.Bstrings is not null)
+        {
+            used.Add(tools.Bstrings);
+            try
+            {
+                bstringsPath = RunBstrings(tools.Bstrings, outDir, miniDumpPath, inputPath, notes);
+                if (bstringsPath is not null)
+                    artifacts.Add(bstringsPath);
+            }
+            catch (Exception ex)
+            {
+                notes.Add($"bstrings: {ex.Message}");
+            }
+        }
+
+        var ok = evtxRows > 0 || mftRows > 0 || prefetchRows > 0 || amcacheRows > 0 || appCompatRows > 0
+                 || werCopied > 0 || bstringsPath is not null || artifacts.Count > 0;
         var summaryLine = ok
-            ? $"mini-timeline ±{windowSeconds}s: evtx={evtxRows} mft={mftRows} pf={prefetchRows} amcache={amcacheRows} wer={werCopied}"
+            ? $"mini-timeline ±{windowSeconds}s: evtx={evtxRows} mft={mftRows} pf={prefetchRows} amcache={amcacheRows} appcompat={appCompatRows} wer={werCopied}" +
+              (bstringsPath is not null ? " bstrings=yes" : "")
             : $"mini-timeline soft: no rows in window (±{windowSeconds}s)" +
               (notes.Count > 0 ? $" — {notes[0]}" : "");
 
@@ -206,9 +254,11 @@ public static class MiniTimelineCapture
             WerCopied: werCopied,
             Notes: notes,
             SummaryLine: summaryLine,
-            CapturedAtUtc: DateTimeOffset.UtcNow);
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            AppCompatRows: appCompatRows,
+            BstringsPath: bstringsPath?.Replace('\\', '/'),
+            Directory: timelineRel);
 
-        var summaryPath = SummaryPath(crashesDir, crashId);
         WriteSummary(crashesDir, crashId, dto);
         return dto;
     }
@@ -228,7 +278,8 @@ public static class MiniTimelineCapture
         string? projectName,
         string? targetExe,
         DateTimeOffset anchorUtc,
-        string error) =>
+        string error,
+        string? directory = null) =>
         new(
             Ok: false,
             Error: error,
@@ -248,7 +299,8 @@ public static class MiniTimelineCapture
             WerCopied: 0,
             Notes: [error],
             SummaryLine: $"mini-timeline skipped: {error}",
-            CapturedAtUtc: DateTimeOffset.UtcNow);
+            CapturedAtUtc: DateTimeOffset.UtcNow,
+            Directory: directory);
 
     private static string? RunEvtxECmd(
         string exe, string rawDir, DateTimeOffset start, DateTimeOffset end, List<string> notes)
@@ -408,6 +460,76 @@ public static class MiniTimelineCapture
         }
 
         return outCsv;
+    }
+
+    private static string? RunAppCompat(string exe, string rawDir, List<string> notes)
+    {
+        var systemHive = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            "System32", "config", "SYSTEM");
+        if (!File.Exists(systemHive))
+        {
+            notes.Add("SYSTEM hive missing for AppCompatCacheParser");
+            return null;
+        }
+
+        var outName = "appcompat_raw.csv";
+        var outCsv = Path.Combine(rawDir, outName);
+        if (File.Exists(outCsv)) File.Delete(outCsv);
+        var args = $"-f \"{systemHive}\" --csv \"{rawDir}\" --csvf \"{outName}\"";
+        var (code, err) = RunTool(exe, args, 180_000);
+        if (!File.Exists(outCsv))
+        {
+            var alt = Directory.GetFiles(rawDir, "*AppCompat*.csv")
+                .Concat(Directory.GetFiles(rawDir, "*ShimCache*.csv"))
+                .OrderByDescending(f => new FileInfo(f).Length)
+                .FirstOrDefault();
+            if (alt is not null)
+            {
+                File.Copy(alt, outCsv, overwrite: true);
+                return outCsv;
+            }
+
+            notes.Add($"AppCompatCacheParser exit={code}: {TrimNote(err)}");
+            return null;
+        }
+
+        return outCsv;
+    }
+
+    private static string? RunBstrings(
+        string exe, string outDir, string? miniDumpPath, string? inputPath, List<string> notes)
+    {
+        var target = !string.IsNullOrWhiteSpace(miniDumpPath) && File.Exists(miniDumpPath)
+            ? miniDumpPath
+            : !string.IsNullOrWhiteSpace(inputPath) && File.Exists(inputPath)
+                ? inputPath
+                : null;
+        if (target is null)
+        {
+            notes.Add("bstrings: no dump/input to scan");
+            return null;
+        }
+
+        var outPath = Path.Combine(outDir, "bstrings.txt");
+        if (File.Exists(outPath)) File.Delete(outPath);
+        // Quiet dump of ASCII/Unicode strings; -m minimum length 6
+        var args = $"-f \"{target}\" -m 6 -q";
+        var (code, err) = RunTool(exe, args, 120_000);
+        // bstrings writes to stdout when -q; capture via our RunTool stderr/stdout merge
+        if (!string.IsNullOrWhiteSpace(err) && err.Length > 20)
+        {
+            var body = new StringBuilder();
+            body.AppendLine($"# bstrings -f \"{target}\" -m 6");
+            body.AppendLine($"# exit={code} utc={DateTimeOffset.UtcNow:O}");
+            var text = err.Length > 2_000_000 ? err[..2_000_000] + "\n# truncated\n" : err;
+            body.AppendLine(text);
+            File.WriteAllText(outPath, body.ToString());
+            return outPath;
+        }
+
+        notes.Add($"bstrings exit={code}: {TrimNote(err)}");
+        return File.Exists(outPath) ? outPath : null;
     }
 
     private static int CopyWerReports(
@@ -571,6 +693,7 @@ public static class MiniTimelineCapture
             "Created0x10", "Created0x30", "LastModified0x10", "LastModified0x30",
             "LastAccess0x10", "LastAccess0x30", "RecordTime", "RunTime", "LastRun",
             "FileKeyLastWriteTimestamp", "LinkDate", "SourceCreatedOn",
+            "LastModifiedTimeUTC", "CacheEntryTime", "InsertTime",
         ];
         for (var i = 0; i < cols.Count; i++)
         {

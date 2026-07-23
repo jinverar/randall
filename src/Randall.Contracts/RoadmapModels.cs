@@ -42,7 +42,8 @@ public sealed record CrashDetailDto(
     string AsciiPreview,
     CrashSidecarDto? Sidecar,
     CrashAnalysisDto? Analysis,
-    CrashTriageDto? Triage = null);
+    CrashTriageDto? Triage = null,
+    MiniTimelineSummaryDto? MiniTimeline = null);
 
 public sealed record SessionGraphReportDto(
     string Project,

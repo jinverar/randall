@@ -71,6 +71,9 @@ public static class ZimmermanToolPaths
     public static string? FindAppCompatCacheParser(string? repoRoot = null) =>
         Find(repoRoot, "AppCompatCacheParser.exe", "appcompatcacheparser.exe");
 
+    public static string? FindRECmd(string? repoRoot = null) =>
+        Find(repoRoot, "RECmd.exe", "recmd.exe");
+
     public static string? FindBstrings(string? repoRoot = null) =>
         Find(repoRoot, "bstrings.exe", "Bstrings.exe");
 
@@ -81,6 +84,7 @@ public static class ZimmermanToolPaths
             FindPECmd(repoRoot),
             FindAmcacheParser(repoRoot),
             FindAppCompatCacheParser(repoRoot),
+            FindRECmd(repoRoot),
             FindBstrings(repoRoot));
 }
 
@@ -90,6 +94,7 @@ public sealed record MiniTimelineToolStatus(
     string? PECmd,
     string? AmcacheParser,
     string? AppCompatCacheParser,
+    string? RECmd,
     string? Bstrings)
 {
     public bool HasCore => EvtxECmd is not null || MFTECmd is not null;
@@ -108,6 +113,7 @@ public sealed record MiniTimelineToolStatus(
         Add("PECmd", PECmd);
         Add("AmcacheParser", AmcacheParser);
         Add("AppCompatCacheParser", AppCompatCacheParser);
+        Add("RECmd", RECmd);
         Add("bstrings", Bstrings);
         return lines;
     }

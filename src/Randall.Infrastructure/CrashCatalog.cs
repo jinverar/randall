@@ -133,7 +133,8 @@ public static class CrashCatalog
                     ? CrashAnalysisWriter.AnalyzeDump(summary.MiniDumpPath)
                     : null);
             var triage = CrashTriage.Classify(analysis, sidecar, summary, bytes);
-            return new CrashDetailDto(summary, bytes.Length, hex, ascii, sidecar, analysis, triage);
+            var miniTl = MiniTimelineCapture.TryRead(crashesDir, summary.Id);
+            return new CrashDetailDto(summary, bytes.Length, hex, ascii, sidecar, analysis, triage, miniTl);
         }
         return null;
     }

@@ -1196,7 +1196,9 @@ public sealed class FuzzEngine
                                 miniTimelineWindow,
                                 targetExeResolved,
                                 repoRoot: CrashCatalog.FindRepoRoot(),
-                                projectName: project.Name);
+                                projectName: project.Name,
+                                miniDumpPath: saved.MiniDumpPath,
+                                inputPath: saved.InputPath);
                             Console.WriteLine($"  {tl.SummaryLine} → {MiniTimelineCapture.TimelineDir(crashesDir, saved.Id)}");
                             if (tl.Ok)
                                 FuzzAnalystLog.Info(progress, $"[mini-timeline] {tl.SummaryLine}", iterations);
