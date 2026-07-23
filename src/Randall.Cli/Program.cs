@@ -117,9 +117,11 @@ static void PrintHelp()
           randall runtime stop|restart <id>
           randall runtime stop-all
           randall recorders stop         Stop orphaned Procmon/DebugView/ProcDump/WPR/pktmon/tshark
-          randall timeline tools         Discover Eric Zimmerman EZ CLIs (EvtxECmd/MFTECmd/…)
+          randall timeline tools         Discover EZ CLIs + Procmon for mini-timeline
           randall timeline capture -p <project> -i <crash-guid> [--window 60]
-                                            Unique-scream mini-timeline (EVTX/MFT/WER) — docs/MINI_TIMELINE.md
+                                            Unique-scream mini-timeline (EVTX/MFT/WER/Procmon)
+          randall timeline graph -p <project> -i <crash-guid>
+                                            Rebuild graph.json + merged.csv from timeline CSVs
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
           randall serve [--port N] [--bind host] [--token SECRET] [--allow-open]
@@ -3841,11 +3843,13 @@ static int RunTimeline(string[] args)
         Console.WriteLine("""
             Usage:
               randall timeline tools
-              randall timeline capture -p <project> -i <crash-guid> [--window 60] [--exe path]
+              randall timeline capture -p <project> -i <crash-guid> [--window 60] [--exe path] [--pml path]
+              randall timeline graph -p <project> -i <crash-guid>
 
             Unique-scream Windows mini-timeline via Eric Zimmerman CLIs (EvtxECmd, MFTECmd,
-            optional PECmd/AmcacheParser) + WER copy. Soft-fails if tools missing.
-            See docs/MINI_TIMELINE.md.
+            optional PECmd/Amcache/AppCompat/bstrings) + WER copy + optional Procmon .pml
+            window slice → procmon.csv, then graph.json + merged.csv.
+            Soft-fails if tools missing. See docs/MINI_TIMELINE.md.
             """);
         return 0;
     }
@@ -3854,25 +3858,37 @@ static int RunTimeline(string[] args)
     if (sub is "tools" or "status" or "doctor")
     {
         var ez = ZimmermanToolPaths.Probe();
+        var procmon = ProcmonCapture.DiscoverExecutable();
         Console.WriteLine("Eric Zimmerman (EZ) tools:");
         if (ez.FoundLines().Count == 0)
-        {
             Console.WriteLine("  (none found — install under tools/ez/ via Get-ZimmermanTools)");
-            Console.WriteLine("  docs/MINI_TIMELINE.md");
-            return 1;
+        else
+        {
+            foreach (var line in ez.FoundLines())
+                Console.WriteLine($"  {line}");
         }
 
-        foreach (var line in ez.FoundLines())
-            Console.WriteLine($"  {line}");
-        Console.WriteLine(ez.HasCore
-            ? "Core ready (EvtxECmd and/or MFTECmd)."
-            : "Core missing — need EvtxECmd or MFTECmd for capture.");
-        return ez.HasCore ? 0 : 1;
+        Console.WriteLine("Procmon:");
+        Console.WriteLine(procmon is not null
+            ? $"  Procmon={procmon}"
+            : "  (not found — optional; enables .pml → CSV window slice)");
+
+        var ready = ez.HasCore || procmon is not null;
+        Console.WriteLine(ready
+            ? (ez.HasCore
+                ? "Ready (EZ core and/or Procmon)."
+                : "Ready (Procmon-only — EZ CLIs still recommended).")
+            : "Core missing — need EvtxECmd/MFTECmd and/or Procmon.");
+        Console.WriteLine("  docs/MINI_TIMELINE.md");
+        return ready ? 0 : 1;
     }
+
+    if (sub is "graph" or "export-graph" or "rebuild-graph")
+        return RunTimelineGraph(args.Skip(1).ToArray());
 
     if (sub is not "capture" and not "run")
     {
-        Console.Error.WriteLine("Usage: randall timeline tools | capture -p <project> -i <guid>");
+        Console.Error.WriteLine("Usage: randall timeline tools | capture | graph -p <project> -i <guid>");
         return 1;
     }
 
@@ -3880,6 +3896,7 @@ static int RunTimeline(string[] args)
     Guid? id = null;
     var window = 60;
     string? exe = null;
+    string? pml = null;
     for (var i = 1; i < args.Length; i++)
     {
         if (args[i] is "-p" or "--project" && i + 1 < args.Length)
@@ -3896,6 +3913,8 @@ static int RunTimeline(string[] args)
         }
         else if (args[i] is "--exe" or "-e" && i + 1 < args.Length)
             exe = args[++i];
+        else if (args[i] is "--pml" && i + 1 < args.Length)
+            pml = args[++i];
     }
 
     if (id is null)
@@ -3946,12 +3965,62 @@ static int RunTimeline(string[] args)
         repoRoot: repo,
         projectName: project,
         miniDumpPath: detail.Summary.MiniDumpPath,
-        inputPath: detail.Summary.InputPath);
+        inputPath: detail.Summary.InputPath,
+        runId: detail.Summary.RunId,
+        procmonPmlPath: pml);
     Console.WriteLine(summary.SummaryLine);
     Console.WriteLine($"  dir: {MiniTimelineCapture.TimelineDir(crashesDir, id.Value)}");
+    if (!string.IsNullOrWhiteSpace(summary.GraphPath))
+        Console.WriteLine($"  graph: {summary.GraphPath}");
     foreach (var note in summary.Notes.Take(5))
         Console.WriteLine($"  note: {note}");
     return summary.Ok || summary.ToolsUsed.Count > 0 ? 0 : 2;
+}
+
+static int RunTimelineGraph(string[] args)
+{
+    string? project = null;
+    Guid? id = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "-i" or "--id" && i + 1 < args.Length && Guid.TryParse(args[i + 1], out var g))
+        {
+            id = g;
+            i++;
+        }
+    }
+
+    if (id is null)
+    {
+        Console.Error.WriteLine("Usage: randall timeline graph -p <project> -i <crash-guid>");
+        return 1;
+    }
+
+    var detail = CrashCatalog.GetDetail(id.Value);
+    if (detail is null)
+    {
+        Console.Error.WriteLine($"Crash not found: {id}");
+        return 1;
+    }
+
+    project ??= detail.Summary.Project;
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesDir = Path.Combine(repo, "data", "crashes", project);
+    var summary = MiniTimelineCapture.TryRead(crashesDir, id.Value) ?? detail.MiniTimeline;
+    if (summary is null)
+    {
+        Console.Error.WriteLine("No mini-timeline summary — run: randall timeline capture -p … -i …");
+        return 2;
+    }
+
+    var path = MiniTimelineGraphBuilder.Write(crashesDir, id.Value, summary, detail.Summary.InputPath);
+    var graph = MiniTimelineGraphBuilder.TryRead(crashesDir, id.Value);
+    Console.WriteLine(graph?.SummaryLine ?? "graph written");
+    Console.WriteLine($"  {path}");
+    Console.WriteLine($"  merged: {MiniTimelineGraphBuilder.MergedCsvPath(crashesDir, id.Value)}");
+    return 0;
 }
 
 static int RunRuntime(string[] args)

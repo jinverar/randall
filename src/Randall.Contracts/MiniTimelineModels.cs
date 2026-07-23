@@ -23,4 +23,27 @@ public sealed record MiniTimelineSummaryDto(
     DateTimeOffset CapturedAtUtc,
     int AppCompatRows = 0,
     string? BstringsPath = null,
-    string? Directory = null);
+    string? Directory = null,
+    int ProcmonRows = 0,
+    string? GraphPath = null,
+    string? ProcmonPml = null);
+
+public sealed record MiniTimelineGraphDto(
+    string CrashId,
+    string? Project,
+    DateTimeOffset AnchorUtc,
+    IReadOnlyList<MiniTimelineGraphNodeDto> Nodes,
+    IReadOnlyList<MiniTimelineGraphEdgeDto> Edges,
+    string SummaryLine);
+
+public sealed record MiniTimelineGraphNodeDto(
+    string Id,
+    string Kind,
+    string Label,
+    IReadOnlyDictionary<string, string>? Properties = null);
+
+public sealed record MiniTimelineGraphEdgeDto(
+    string From,
+    string To,
+    string Kind,
+    string? Label = null);

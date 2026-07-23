@@ -2243,21 +2243,26 @@ function renderMiniTimelineHtml(tl) {
   if (!tl) {
     return '<p class="hint">Loading… (or enable <code>fuzz.miniTimeline</code> / <code>randall timeline capture</code>)</p>';
   }
-  if (!tl.ok && !(tl.evtxRows || tl.mftRows || tl.werCopied || tl.appCompatRows)) {
+  if (!tl.ok && !(tl.evtxRows || tl.mftRows || tl.werCopied || tl.appCompatRows || tl.procmonRows)) {
     return `<p class="hint">${escapeAttr(tl.summaryLine || tl.error || 'No mini-timeline')}</p>`;
   }
   const dir = tl.directory ? `<code>${escapeAttr(tl.directory)}</code>` : '';
+  const graph = tl.graphPath
+    ? `<p class="hint">Graph: <code>${escapeAttr(tl.graphPath)}</code> · <button type="button" class="linkish" data-timeline-graph="${escapeAttr(tl.crashId || '')}">view nodes</button></p>`
+    : '';
   return `
     <p><strong>${escapeAttr(tl.summaryLine || '')}</strong></p>
     <p class="hint">±${tl.windowSeconds || 60}s around ${tl.anchorUtc ? new Date(tl.anchorUtc).toLocaleString() : '—'}</p>
     <ul class="hint-list">
       <li>EVTX rows: <code>${tl.evtxRows ?? 0}</code></li>
       <li>MFT rows: <code>${tl.mftRows ?? 0}</code></li>
+      <li>Procmon rows: <code>${tl.procmonRows ?? 0}</code>${tl.procmonPml ? ' · PML sliced' : ''}</li>
       <li>Prefetch: <code>${tl.prefetchRows ?? 0}</code> · Amcache: <code>${tl.amcacheRows ?? 0}</code> · AppCompat: <code>${tl.appCompatRows ?? 0}</code></li>
       <li>WER copies: <code>${tl.werCopied ?? 0}</code>${tl.bstringsPath ? ' · bstrings captured' : ''}</li>
     </ul>
     ${dir ? `<p class="hint">Folder: ${dir}</p>` : ''}
-    ${(tl.notes && tl.notes.length) ? `<p class="hint">${escapeAttr(tl.notes.slice(0, 2).join(' · '))}</p>` : ''}`;
+    ${graph}
+  ${(tl.notes && tl.notes.length) ? `<p class="hint">${escapeAttr(tl.notes.slice(0, 2).join(' · '))}</p>` : ''}`;
 }
 
 async function loadCrashMiniTimeline(id) {
@@ -2266,8 +2271,32 @@ async function loadCrashMiniTimeline(id) {
   try {
     const tl = await api.get(`/api/crashes/${id}/timeline`);
     body.innerHTML = renderMiniTimelineHtml(tl);
+    body.querySelector('[data-timeline-graph]')?.addEventListener('click', () => {
+      loadCrashTimelineGraph(id).catch(() => {});
+    });
   } catch {
     body.innerHTML = '<p class="hint">No mini-timeline yet — set <code>fuzz.miniTimeline: true</code> or run <code>randall timeline capture</code>.</p>';
+  }
+}
+
+async function loadCrashTimelineGraph(id) {
+  const body = document.getElementById('crash-timeline-body');
+  if (!body) return;
+  try {
+    const g = await api.get(`/api/crashes/${id}/timeline/graph`);
+    const nodes = (g.nodes || []).slice(0, 24)
+      .map((n) => `<li><code>${escapeAttr(n.kind)}</code> ${escapeAttr(n.label || n.id)}</li>`)
+      .join('');
+    const more = (g.nodes?.length || 0) > 24 ? `<li class="hint">… +${g.nodes.length - 24} more (see graph.json)</li>` : '';
+    const panel = document.createElement('div');
+    panel.className = 'timeline-graph-preview';
+    panel.innerHTML = `<p class="hint">${escapeAttr(g.summaryLine || 'graph')} · ${g.edges?.length ?? 0} edges</p><ul class="hint-list">${nodes}${more}</ul>`;
+    body.appendChild(panel);
+  } catch {
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = 'Graph not available — run timeline capture first.';
+    body.appendChild(hint);
   }
 }
 
@@ -2358,7 +2387,7 @@ function renderCrashDetail(detail, title) {
       <div id="crash-memory-body"></div>
     </div>
     <div class="triage-box" id="crash-timeline-box">
-      <h4>Mini-timeline <span class="hint-inline">(EVTX / MFT / WER)</span></h4>
+      <h4>Mini-timeline <span class="hint-inline">(EVTX / MFT / Procmon / WER)</span></h4>
       <div id="crash-timeline-body">${renderMiniTimelineHtml(detail.miniTimeline)}</div>
     </div>
     <p class="hint crash-path"><code>${escapeAttr(detail.summary.inputPath)}</code></p>

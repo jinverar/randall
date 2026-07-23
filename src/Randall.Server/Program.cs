@@ -427,6 +427,36 @@ app.MapGet("/api/crashes/{id:guid}/timeline", (Guid id) =>
     });
 });
 
+app.MapGet("/api/crashes/{id:guid}/timeline/graph", (Guid id) =>
+{
+    var detail = CrashCatalog.GetDetail(id);
+    if (detail is null)
+        return Results.NotFound();
+    if (!WebTargetFilter.IsVisibleProject(detail.Summary.Project))
+        return Results.NotFound();
+
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesDir = Path.Combine(repo, "data", "crashes", detail.Summary.Project);
+    var graph = MiniTimelineGraphBuilder.TryRead(crashesDir, id);
+    if (graph is not null)
+        return Results.Ok(graph);
+
+    var summary = detail.MiniTimeline ?? MiniTimelineCapture.TryRead(crashesDir, id);
+    if (summary is null)
+    {
+        return Results.NotFound(new
+        {
+            error = "No mini-timeline/graph for this crash. Run: randall timeline capture -p <project> -i <guid>",
+        });
+    }
+
+    MiniTimelineGraphBuilder.Write(crashesDir, id, summary, detail.Summary.InputPath);
+    graph = MiniTimelineGraphBuilder.TryRead(crashesDir, id);
+    return graph is not null
+        ? Results.Ok(graph)
+        : Results.NotFound(new { error = "Graph rebuild failed" });
+});
+
 // Crash artifact pack — offline backup of dumps + lens; pull from remote agent into laptop console.
 app.MapPost("/api/crashes/pack", (CrashArtifactPackRequest request) =>
 {

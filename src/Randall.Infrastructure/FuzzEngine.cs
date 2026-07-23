@@ -1198,7 +1198,9 @@ public sealed class FuzzEngine
                                 repoRoot: CrashCatalog.FindRepoRoot(),
                                 projectName: project.Name,
                                 miniDumpPath: saved.MiniDumpPath,
-                                inputPath: saved.InputPath);
+                                inputPath: saved.InputPath,
+                                runId: saved.RunId,
+                                procmonPmlPath: procmon?.PmlPath ?? (runDir is not null ? Path.Combine(runDir, "fuzz.pml") : null));
                             Console.WriteLine($"  {tl.SummaryLine} → {MiniTimelineCapture.TimelineDir(crashesDir, saved.Id)}");
                             if (tl.Ok)
                                 FuzzAnalystLog.Info(progress, $"[mini-timeline] {tl.SummaryLine}", iterations);

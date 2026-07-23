@@ -52,7 +52,9 @@ public static class MiniTimelineCapture
         string? repoRoot = null,
         string? projectName = null,
         string? miniDumpPath = null,
-        string? inputPath = null)
+        string? inputPath = null,
+        string? runId = null,
+        string? procmonPmlPath = null)
     {
         windowSeconds = Math.Clamp(windowSeconds <= 0 ? 60 : windowSeconds, 5, 3600);
         var windowStart = anchorUtc - TimeSpan.FromSeconds(windowSeconds);
@@ -62,6 +64,7 @@ public static class MiniTimelineCapture
         var artifacts = new List<string>();
         var notes = new List<string>();
         var timelineRel = Path.Combine("timeline", crashId.ToString("N")).Replace('\\', '/');
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
 
         if (!OperatingSystem.IsWindows())
         {
@@ -71,13 +74,16 @@ public static class MiniTimelineCapture
             return skip;
         }
 
-        if (!tools.HasCore)
+        if (!tools.HasCore && ProcmonCapture.DiscoverExecutable(repoRoot) is null)
         {
             var skip = Fail(crashId, windowStart, windowEnd, windowSeconds, projectName, targetExe, anchorUtc,
-                "EvtxECmd/MFTECmd not found — install EZ tools under tools/ez/ (docs/MINI_TIMELINE.md)", timelineRel);
+                "EvtxECmd/MFTECmd/Procmon not found — install EZ tools under tools/ez/ and/or Procmon (docs/MINI_TIMELINE.md)", timelineRel);
             WriteSummary(crashesDir, crashId, skip);
             return skip;
         }
+
+        if (!tools.HasCore)
+            notes.Add("EZ core missing — Procmon/WER/bstrings-only mini-timeline");
 
         var outDir = TimelineDir(crashesDir, crashId);
         var rawDir = Path.Combine(outDir, "raw");
@@ -227,10 +233,39 @@ public static class MiniTimelineCapture
             }
         }
 
+        var procmonRows = 0;
+        string? pmlUsed = null;
+        try
+        {
+            pmlUsed = procmonPmlPath;
+            if (string.IsNullOrWhiteSpace(pmlUsed) || !File.Exists(pmlUsed))
+                pmlUsed = ProcmonTimelineSlice.FindPmlForRun(repoRoot, runId, projectName);
+
+            var (filtered, rows, note) = ProcmonTimelineSlice.TrySlice(
+                pmlUsed, outDir, windowStart, windowEnd, targetExe, repoRoot);
+            if (filtered is not null)
+            {
+                artifacts.Add(filtered);
+                procmonRows = rows;
+                var procmonExe = ProcmonCapture.DiscoverExecutable(repoRoot);
+                if (procmonExe is not null && !used.Contains(procmonExe))
+                    used.Add(procmonExe);
+                if (pmlUsed is not null)
+                    artifacts.Add(pmlUsed);
+            }
+
+            if (!string.IsNullOrWhiteSpace(note))
+                notes.Add(note);
+        }
+        catch (Exception ex)
+        {
+            notes.Add($"Procmon slice: {ex.Message}");
+        }
+
         var ok = evtxRows > 0 || mftRows > 0 || prefetchRows > 0 || amcacheRows > 0 || appCompatRows > 0
-                 || werCopied > 0 || bstringsPath is not null || artifacts.Count > 0;
+                 || werCopied > 0 || bstringsPath is not null || procmonRows > 0 || artifacts.Count > 0;
         var summaryLine = ok
-            ? $"mini-timeline ±{windowSeconds}s: evtx={evtxRows} mft={mftRows} pf={prefetchRows} amcache={amcacheRows} appcompat={appCompatRows} wer={werCopied}" +
+            ? $"mini-timeline ±{windowSeconds}s: evtx={evtxRows} mft={mftRows} pf={prefetchRows} amcache={amcacheRows} appcompat={appCompatRows} procmon={procmonRows} wer={werCopied}" +
               (bstringsPath is not null ? " bstrings=yes" : "")
             : $"mini-timeline soft: no rows in window (±{windowSeconds}s)" +
               (notes.Count > 0 ? $" — {notes[0]}" : "");
@@ -257,9 +292,25 @@ public static class MiniTimelineCapture
             CapturedAtUtc: DateTimeOffset.UtcNow,
             AppCompatRows: appCompatRows,
             BstringsPath: bstringsPath?.Replace('\\', '/'),
-            Directory: timelineRel);
+            Directory: timelineRel,
+            ProcmonRows: procmonRows,
+            ProcmonPml: pmlUsed?.Replace('\\', '/'));
 
         WriteSummary(crashesDir, crashId, dto);
+
+        try
+        {
+            var graphPath = MiniTimelineGraphBuilder.Write(crashesDir, crashId, dto, inputPath);
+            dto = dto with { GraphPath = graphPath.Replace('\\', '/') };
+            WriteSummary(crashesDir, crashId, dto);
+        }
+        catch (Exception ex)
+        {
+            notes.Add($"graph: {ex.Message}");
+            dto = dto with { Notes = notes };
+            WriteSummary(crashesDir, crashId, dto);
+        }
+
         return dto;
     }
 
