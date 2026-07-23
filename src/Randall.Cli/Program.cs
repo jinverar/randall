@@ -2718,6 +2718,7 @@ static int RunSurface(string[] args)
               randall surface assess -p <project> [--layer <id>] [--baseline] [--json]
               randall surface list   -p <project> [--json]
               randall surface compare -p <project> [layerId…] [--json]
+              randall surface ideas  -p <project> [--json]
 
             Exploit Surface — host assessor + baseline session (natural use under Procmon).
             Suggests fuzz next steps + hints.md / dictionary tokens / Magician soft needs.
@@ -2734,7 +2735,7 @@ static int RunSurface(string[] args)
     string? layerId = null;
     var baselineOnly = false;
     var json = false;
-    var start = sub is "assess" or "list" or "findings" or "run" or "report" or "compare" ? 1 : 0;
+    var start = sub is "assess" or "list" or "findings" or "run" or "report" or "compare" or "ideas" ? 1 : 0;
     if (start == 0)
         sub = "assess";
 
@@ -2794,6 +2795,36 @@ static int RunSurface(string[] args)
         }
 
         return cmp.Layers.Any(l => l.HasReport) ? 0 : 2;
+    }
+
+    if (sub is "ideas")
+    {
+        var ideas = ExploitSurfaceIdeas.FromLatest(project);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(ideas, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            }));
+            return 0;
+        }
+
+        if (ideas.Count == 0)
+        {
+            Console.WriteLine($"{project}: no surface ideas — run a baseline session / assess first");
+            return 2;
+        }
+
+        foreach (var idea in ideas)
+        {
+            Console.WriteLine($"[{idea.Priority}] {idea.Title}");
+            Console.WriteLine($"         {idea.Detail}");
+            if (!string.IsNullOrWhiteSpace(idea.CliHint))
+                Console.WriteLine($"         cli: {idea.CliHint}");
+        }
+
+        return 0;
     }
 
     if (sub is "list" or "findings")

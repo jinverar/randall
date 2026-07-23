@@ -1862,9 +1862,14 @@ async function refreshBaselineSessionStatus(project) {
   if (!el || !project) return;
   try {
     const s = await api.get(`/api/stalking/${encodeURIComponent(project)}/baseline`);
-    el.textContent = s.status === 'running'
-      ? `Baseline session: RUNNING · ${s.runId || ''} — use the app, then Stop + record`
-      : `Baseline session: ${s.status || 'stopped'}${s.message ? ' — ' + s.message : ''}`;
+    if (s.status === 'running') {
+      const attach = s.pid
+        ? ` · pid ${s.pid}${s.targetExe ? ' · ' + s.targetExe.split(/[/\\\\]/).pop() : ''}`
+        : ' · waiting for Target Runtime PID';
+      el.textContent = `Baseline session: RUNNING · ${s.runId || ''}${attach} — use the app, then Stop + record`;
+    } else {
+      el.textContent = `Baseline session: ${s.status || 'stopped'}${s.message ? ' — ' + s.message : ''}`;
+    }
   } catch {
     el.textContent = 'Baseline session: —';
   }
@@ -1907,6 +1912,7 @@ async function refreshStalkingSurface(project) {
   const recsEl = document.getElementById('stalking-surface-recs');
   const cmpMeta = document.getElementById('stalking-surface-compare-meta');
   const cmpEl = document.getElementById('stalking-surface-compare');
+  const ideasEl = document.getElementById('stalking-surface-ideas');
   if (!findingsEl) return;
   try {
     const report = await api.get(`/api/stalking/${encodeURIComponent(project)}/surface`);
@@ -1950,6 +1956,20 @@ async function refreshStalkingSurface(project) {
     } catch {
       if (cmpMeta) cmpMeta.textContent = '';
       cmpEl.innerHTML = '';
+    }
+  }
+
+  if (ideasEl) {
+    try {
+      const ideas = await api.get(`/api/stalking/${encodeURIComponent(project)}/surface/ideas`);
+      const list = Array.isArray(ideas) ? ideas : [];
+      ideasEl.innerHTML = list.length
+        ? `<ul class="hint-list">${list.slice(0, 10).map((i) =>
+            `<li><strong>[${escapeAttr(i.priority)}]</strong> ${escapeAttr(i.title)}
+             <div class="hint">${escapeAttr(i.detail || '')}${i.cliHint ? ` · <code>${escapeAttr(i.cliHint)}</code>` : ''}</div></li>`).join('')}</ul>`
+        : '<p class="empty">No surface ideas yet — run a baseline session.</p>';
+    } catch {
+      ideasEl.innerHTML = '';
     }
   }
 }

@@ -782,6 +782,13 @@ app.MapGet("/api/stalking/{project}/surface/compare", (string project, string? l
     return Results.Ok(ExploitSurfaceCompare.Compare(project, ids));
 });
 
+app.MapGet("/api/stalking/{project}/surface/ideas", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    return Results.Ok(ExploitSurfaceIdeas.FromLatest(project));
+});
+
 app.MapGet("/api/stalking/{project}/baseline", (string project) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

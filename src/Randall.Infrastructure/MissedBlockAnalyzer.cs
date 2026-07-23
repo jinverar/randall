@@ -1,5 +1,6 @@
 using System.Globalization;
 using Randall.Contracts;
+using Randall.Infrastructure.ExploitSurface;
 
 namespace Randall.Infrastructure;
 
@@ -144,6 +145,19 @@ public static class MissedBlockAnalyzer
             }
             topIdeas = RankIdeas(topIdeas.ToList(), 12);
         }
+
+        // Fold in Exploit Surface host ideas (sideload / injection / listen).
+        try
+        {
+            var hostIdeas = ExploitSurfaceIdeas.FromLatest(project, repoRoot);
+            foreach (var idea in hostIdeas)
+            {
+                if (!topIdeas.Any(t => t.Id == idea.Id))
+                    topIdeas = topIdeas.Concat([idea]).ToList();
+            }
+            topIdeas = RankIdeas(topIdeas.ToList(), 14);
+        }
+        catch { /* soft */ }
 
         return new StalkMissedReportDto(
             project,
