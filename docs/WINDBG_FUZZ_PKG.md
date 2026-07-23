@@ -56,14 +56,18 @@ minidump + input + guide  →   ROP Studio scan/search/sketch → !rf.* extensio
 randall rop scan --exe <path> [--out gadgets.json] [--arch x64|x86|auto]
 randall rop search --exe <path> --need pop-rcx [--badchars "\x00\x0a"]
 randall rop sketch --exe <path> --goal pivot|write|control [--badchars …]
-randall rop from-crash -i <crash-guid> [--goal pivot]   # auto-learns badchars when omitted
+randall rop from-crash -i <crash-guid> [--goal pivot] [--exe path] [--modules N]
+randall rop search -i <crash-guid> --need pop-rdi
+randall rop show -i <crash-guid>                    # existing sidecars
 randall rop badchars -i <crash-guid>                    # write *_badchars.json
 ```
 
 **Gadget kinds (v1+):** `ret`, `retn`, `pop-<reg>`, `pop3-ret`, `add-sp`, `sub-sp`, `xchg-sp`,
 `jmp-reg`, `call-reg`, `leave-ret`, `pop-pop-ret`, `mov-rm` / `mov-rr`, `pushad-ret` / `popad-ret` (x86),
-`nop-ret`.
+`nop-ret`. PE gadgets may carry a nearest **export** symbol (`Symbol` / `export:Name` tag).
 
+**Multi-module:** `from-crash` ranks TargetDetail → project exe → loaded modules (system paths
+deprioritized) and merges gadget pools (default 3 modules).
 **Sketch goals (v1):**
 
 | Goal | Meaning |
