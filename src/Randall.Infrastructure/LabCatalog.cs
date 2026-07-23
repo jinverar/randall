@@ -109,6 +109,13 @@ public static class LabCatalog
             ["robot", "io", "tcp", "modbus-shaped", "length-field"], DocsPath: "ROBOT_LAB.md",
             BuildHint: "scripts/build-vulnrobotio.ps1 · scripts/build-lab-targets.sh"),
 
+        // —— AI-codegen / AI-gateway labs (fictional RAG1 — not a real LLM API) ——
+        new("vulnai", "VulnAi", "Fictional AI-gateway (RAG1) — INFER / TOOL / ADMIN length & auth-skip crashes",
+            "ai", "intermediate", 18765, "tcp", "randall-vulnai",
+            "targets/vulnai/randall-vulnai.exe", "projects/vulnai.yaml",
+            ["ai", "codegen", "bug-hunter", "length-field", "auth-skip"], DocsPath: "AI_LAB.md",
+            BuildHint: "scripts/build-vulnai.ps1 · scripts/build-lab-targets.sh"),
+
         // —— Exploit-dev / mitigation (native; start when built) ——
         // Port 9998 for UI start so it does not fight Vulnserver on 9999; fuzz YAML still defaults to 9999.
         new("vulnlab", "VulnLab (basic)", "Native mitigation-ladder TCP ECHO service (Linux/gcc). UI start uses :9998.",

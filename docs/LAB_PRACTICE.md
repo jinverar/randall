@@ -54,6 +54,7 @@ Labs listen on **127.0.0.1** by default. Manage them from **Fuzz → Lab library
 | vulnrobot / udp | 15560 / 15561 | `projects/vulnrobot.yaml`, `vulnrobot-udp.yaml` — see [ROBOT_LAB.md](ROBOT_LAB.md) |
 | vulnrosbus | 15562 | `projects/vulnrosbus.yaml` — see [ROBOT_LAB.md](ROBOT_LAB.md) |
 | vulnrobotio | 15502 | `projects/vulnrobotio.yaml` — see [ROBOT_LAB.md](ROBOT_LAB.md) |
+| vulnai | 18765 | `projects/vulnai.yaml` — see [AI_LAB.md](AI_LAB.md) |
 
 **File shelf** (profile-only — no Start/Stop listener; build separately):
 

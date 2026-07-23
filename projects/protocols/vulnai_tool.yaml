@@ -1,0 +1,38 @@
+name: vulnai-tool
+description: RAG1 TOOL — type 0x02 + tool name + args (AI tool-bridge lab)
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnai_type_tool.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: sized
+          lengthName: name_len
+          lengthBytes: 2
+          littleEndian: false
+          child:
+            type: string
+            name: tool_name
+            mutable: true
+            value: "fetch"
+            minSize: 1
+            maxSize: 128
+        - type: sized
+          lengthName: args_len
+          lengthBytes: 2
+          littleEndian: false
+          child:
+            type: bytes
+            name: tool_args
+            mutable: true
+            minSize: 0
+            maxSize: 400
+            seedFile: seeds/vulnai_tool_args.bin

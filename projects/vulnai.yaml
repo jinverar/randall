@@ -1,0 +1,74 @@
+name: vulnai
+description: "Fictional RAG1 AI-gateway lab (TCP) — AI-codegen mistake crashes. Build scripts/build-vulnai.ps1"
+kind: tcp
+target:
+  executable: ../targets/vulnai/randall-vulnai.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 18765
+  receiveTimeoutMs: 800
+sessionCommands:
+  - name: INFER
+    model: protocols/vulnai_infer.yaml
+    readBanner: true
+  - name: TOOL
+    model: protocols/vulnai_tool.yaml
+    readBanner: true
+  - name: ADMIN
+    model: protocols/vulnai_admin.yaml
+    readBanner: true
+sessionFlows:
+  - name: infer_only
+    steps: [INFER]
+    mutateStep: last
+  - name: tool_only
+    steps: [TOOL]
+    mutateStep: last
+  - name: admin_only
+    steps: [ADMIN]
+    mutateStep: last
+  - name: infer_tool
+    steps: [INFER, TOOL]
+    mutateStep: last
+bugHunter:
+  enabled: true
+  scanOnFuzzStart: true
+  autoArmOracles: true
+  autoArmDictionary: true
+  persistReport: true
+  sourceRoots:
+    - ../examples/vulnai-sample
+    - ../targets/Randall.VulnAi
+oracles:
+  enabled: true
+magician:
+  enabled: true
+  autoCastOnOracle: true
+  blessOnStart: true
+  allowSummonHunter: true
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  sessionFlowBias: 0.45
+  corpusDir: ../data/corpus/vulnai
+  crashesDir: ../data/crashes/vulnai
+dictionaryFile: dictionaries/ai_codegen_mistakes.txt
+seeds:
+  - seeds/vulnai_infer.bin
+  - seeds/vulnai_tool.bin
+  - seeds/vulnai_admin.bin
+  - seeds/vulnai_infer_boom.bin
+  - seeds/vulnai_tool_boom.bin
+  - seeds/vulnai_admin_boom.bin
+mutators:
+  - dictionary
+  - boundary
+  - interesting
+  - expand
+  - havoc
+  - bitflip
+  - splice

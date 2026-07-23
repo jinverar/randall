@@ -5,7 +5,7 @@ public sealed record LabLibraryEntryDto(
     string Id,
     string Name,
     string Description,
-    string Category,       // network | drone | iot | robot | exploit-dev | file
+    string Category,       // network | drone | iot | robot | ai | exploit-dev | file
     string Difficulty,     // intro | intermediate | advanced
     int Port,
     string Protocol,       // tcp | udp | file

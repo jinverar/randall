@@ -20,9 +20,11 @@ public class LabCatalogTests
         Assert.Contains(lib.Categories, c => c == "file");
         Assert.Contains(lib.Categories, c => c == "iot");
         Assert.Contains(lib.Categories, c => c == "robot");
+        Assert.Contains(lib.Categories, c => c == "ai");
         Assert.Contains(LabCatalog.Categories(), c => c == "exploit-dev");
         Assert.Contains(lib.Labs, l => l.Id == "vulnmqtt" && l.Category == "iot");
         Assert.Contains(lib.Labs, l => l.Id == "vulnrobot" && l.Category == "robot");
+        Assert.Contains(lib.Labs, l => l.Id == "vulnai" && l.Category == "ai");
     }
 
     [Fact]
@@ -79,6 +81,7 @@ public class LabCatalogTests
         Assert.Contains(DocsCatalog.Index, i => i.Path == "DRONE_LAB.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "MQTT_LAB.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "ROBOT_LAB.md");
+        Assert.Contains(DocsCatalog.Index, i => i.Path == "AI_LAB.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "RPC_LAB.md");
     }
 
@@ -125,6 +128,27 @@ public class LabCatalogTests
         Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnRosBus", "Program.cs")));
         Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnRobotIo", "Program.cs")));
         Assert.True(File.Exists(Path.Combine(root, "docs", "ROBOT_LAB.md")));
+    }
+
+    [Fact]
+    public void AiLab_IsCataloguedUnderAi()
+    {
+        var labs = LabServerManager.List(category: "ai");
+        Assert.Contains(labs, l => l.Id == "vulnai");
+        var ai = labs.First(l => l.Id == "vulnai");
+        Assert.Equal(18765, ai.Port);
+        Assert.Equal("tcp", ai.Protocol);
+        Assert.True(ai.Startable);
+        Assert.Equal("AI_LAB.md", ai.DocsPath);
+        Assert.Contains("bug-hunter", ai.Tags!);
+        Assert.Contains("codegen", ai.Tags!);
+
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        Assert.True(File.Exists(Path.Combine(root, "projects", "vulnai.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "protocols", "vulnai_infer.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnAi", "Program.cs")));
+        Assert.True(File.Exists(Path.Combine(root, "examples", "vulnai-sample", "handler.c")));
+        Assert.True(File.Exists(Path.Combine(root, "docs", "AI_LAB.md")));
     }
 
     [Fact]

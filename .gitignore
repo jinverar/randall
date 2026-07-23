@@ -50,6 +50,8 @@ targets/vulnrosbus/*
 !targets/vulnrosbus/.gitkeep
 targets/vulnrobotio/*
 !targets/vulnrobotio/.gitkeep
+targets/vulnai/*
+!targets/vulnai/.gitkeep
 targets/screamcrash/*
 !targets/screamcrash/.gitkeep
 # VulnLab: keep the C source, ignore compiled tier binaries

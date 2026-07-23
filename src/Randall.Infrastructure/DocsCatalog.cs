@@ -29,6 +29,7 @@ public static class DocsCatalog
         ("FUZZING.md", "Fuzzing techniques & mutators", "Fuzzing"),
         ("ORACLES.md", "Hybrid semantic oracles", "Fuzzing"),
         ("BUG_HUNTER.md", "Bug Hunter — AI/human analysis", "Fuzzing"),
+        ("AI_LAB.md", "AI-codegen / AI-gateway lab (RAG1)", "Lab"),
         ("AI_CODE_FUZZ.md", "Fuzzing AI-generated programs", "Fuzzing"),
         ("WEB_FUZZ.md", "Web application fuzzing (HTTP)", "Fuzzing"),
         ("ENGINE_ADAPTERS.md", "AFL++ / honggfuzz engine adapters", "Fuzzing"),

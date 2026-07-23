@@ -32,8 +32,9 @@ scripts/build-lab-targets.sh
 | **VulnRobot UDP** | 15561/udp | `projects/vulnrobot-udp.yaml` | same binary, `--mode udp` |
 | **VulnRosBus** | 15562/tcp | `projects/vulnrosbus.yaml` | [Randall.VulnRosBus](Randall.VulnRosBus/) (fictional RRBS bus) |
 | **VulnRobotIo** | 15502/tcp | `projects/vulnrobotio.yaml` | [Randall.VulnRobotIo](Randall.VulnRobotIo/) (fictional RMB1 I/O) |
+| **VulnAi** | 18765/tcp | `projects/vulnai.yaml` | [Randall.VulnAi](Randall.VulnAi/) (fictional RAG1 AI-gateway) |
 
-Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md). Labs: [RPC_LAB.md](../docs/RPC_LAB.md) · [SMB_LAB.md](../docs/SMB_LAB.md) · [DRONE_LAB.md](../docs/DRONE_LAB.md) · [MQTT_LAB.md](../docs/MQTT_LAB.md) · [ROBOT_LAB.md](../docs/ROBOT_LAB.md) · [LAB_LIBRARY.md](../docs/LAB_LIBRARY.md).
+Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md). Labs: [RPC_LAB.md](../docs/RPC_LAB.md) · [SMB_LAB.md](../docs/SMB_LAB.md) · [DRONE_LAB.md](../docs/DRONE_LAB.md) · [MQTT_LAB.md](../docs/MQTT_LAB.md) · [ROBOT_LAB.md](../docs/ROBOT_LAB.md) · [AI_LAB.md](../docs/AI_LAB.md) · [LAB_LIBRARY.md](../docs/LAB_LIBRARY.md).
 
 ## Randfuzz Vulnserver (included)
 
