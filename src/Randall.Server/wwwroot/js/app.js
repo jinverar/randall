@@ -1782,12 +1782,15 @@ async function refreshStalkingWorkspace() {
     layersEl.innerHTML = '<p class="empty">No layers yet — record a <strong>baseline</strong> after normal use under drcov (or import corpus edges).</p>';
   } else {
     layersEl.innerHTML = `<table><thead><tr>
-      <th>Tag</th><th>Label</th><th>Blocks</th><th>When</th><th>Color</th><th></th>
+      <th>Tag</th><th>Label</th><th>Blocks</th><th>Host TL</th><th>When</th><th>Color</th><th></th>
     </tr></thead><tbody>
       ${layers.map((l) => `<tr>
         <td><code>${l.tag}</code></td>
         <td>${l.label}</td>
         <td><strong>${l.blockCount}</strong></td>
+        <td class="hint">${l.miniTimelineDir
+          ? `<code title="${escapeAttr(l.miniTimelineSummary || '')}">${escapeAttr(l.miniTimelineDir)}</code>`
+          : '—'}</td>
         <td>${new Date(l.createdAt).toLocaleString()}</td>
         <td><code>${l.colorHex}</code></td>
         <td><button type="button" class="btn" data-del-layer="${l.id}">Delete</button></td>
@@ -1847,8 +1850,235 @@ async function refreshStalkingWorkspace() {
   // Drag-to-pan the Stalking bugs block chip map (scrollable for large unions)
   enableDragScroll(graphEl);
 
+  await refreshStalkingTimelineCompare(project);
+  await refreshStalkingSurface(project);
+  await refreshBaselineSessionStatus(project);
   await refreshStalkingMap(project);
   await refreshStalkingMissed(project);
+}
+
+async function refreshBaselineSessionStatus(project) {
+  const el = document.getElementById('stalking-baseline-status');
+  if (!el || !project) return;
+  try {
+    const s = await api.get(`/api/stalking/${encodeURIComponent(project)}/baseline`);
+    if (s.status === 'running') {
+      const chips = [
+        s.procmonArmed ? 'procmon✓' : 'procmon—',
+        (s.hostProbesArmed || s.sysinternalsArmed) ? 'probes✓' : 'probes—',
+      ];
+      const attach = s.pid
+        ? `pid ${s.pid}${s.targetExe ? ' · ' + s.targetExe.split(/[/\\\\]/).pop() : ''}`
+        : 'waiting for Target Runtime PID';
+      el.textContent = `Baseline session: RUNNING · ${chips.join(' · ')} · ${attach} — use the app, then Stop + record`;
+    } else {
+      el.textContent = `Baseline session: ${s.status || 'stopped'}${s.message ? ' — ' + s.message : ''}`;
+    }
+  } catch {
+    el.textContent = 'Baseline session: —';
+  }
+}
+
+document.getElementById('stalking-baseline-start')?.addEventListener('click', async () => {
+  const project = document.getElementById('stalking-project')?.value;
+  const out = document.getElementById('stalking-export-result');
+  if (!project) return;
+  try {
+    const s = await api.post(`/api/stalking/${encodeURIComponent(project)}/baseline/start`, { project });
+    if (out) out.textContent = s.message || `Baseline started → ${s.runDir}`;
+    await refreshBaselineSessionStatus(project);
+  } catch (err) {
+    if (out) out.textContent = err.message;
+  }
+});
+
+document.getElementById('stalking-baseline-stop')?.addEventListener('click', async () => {
+  const project = document.getElementById('stalking-project')?.value;
+  const out = document.getElementById('stalking-export-result');
+  if (!project) return;
+  try {
+    const label = document.getElementById('stalking-label')?.value?.trim() || null;
+    const s = await api.post(`/api/stalking/${encodeURIComponent(project)}/baseline/stop`, {
+      project,
+      recordLayer: true,
+      label,
+    });
+    if (out) out.textContent = s.message || 'Baseline stopped';
+    await refreshStalkingWorkspace();
+  } catch (err) {
+    if (out) out.textContent = err.message;
+  }
+});
+
+async function refreshStalkingSurface(project) {
+  const meta = document.getElementById('stalking-surface-meta');
+  const findingsEl = document.getElementById('stalking-surface-findings');
+  const recsEl = document.getElementById('stalking-surface-recs');
+  const cmpMeta = document.getElementById('stalking-surface-compare-meta');
+  const cmpEl = document.getElementById('stalking-surface-compare');
+  const ideasEl = document.getElementById('stalking-surface-ideas');
+  if (!findingsEl) return;
+  try {
+    const report = await api.get(`/api/stalking/${encodeURIComponent(project)}/surface`);
+    const armBits = [];
+    if (report.dictionaryTokensAdded?.length)
+      armBits.push(`dict+${report.dictionaryTokensAdded.length}`);
+    else if (report.summaryLine?.includes('dict+'))
+      armBits.push((report.summaryLine.match(/dict\+\d+/) || [])[0]);
+    if (report.hintsPath) armBits.push('hints.md');
+    if (report.summaryLine?.includes('· mage')) armBits.push('mage');
+    const armStrip = armBits.length ? ` · armed ${armBits.join(' · ')}` : '';
+    if (meta) meta.textContent = report.summaryLine ? `— ${report.summaryLine}${armStrip}` : armStrip;
+    const findings = report.findings || [];
+    const arts = (report.artifactsUsed || []).filter((a) => a && !String(a).startsWith('note:'));
+    findingsEl.innerHTML = findings.length
+      ? `<table><thead><tr><th>Sev</th><th>Kind</th><th>Finding</th><th>Evidence</th></tr></thead>
+        <tbody>${findings.map((f) => `<tr>
+          <td><span class="badge">${escapeAttr(f.severity)}</span></td>
+          <td><code>${escapeAttr(f.kind)}</code></td>
+          <td>${escapeAttr(f.title)}<div class="hint">${escapeAttr(f.detail || '')}</div></td>
+          <td class="hint">${escapeAttr(f.evidenceSnippet || '—')}</td>
+        </tr>`).join('')}</tbody></table>`
+      : `<p class="empty">${escapeAttr(report.error || 'No heuristic hits yet — run a baseline session (Windows: Procmon · Linux: ss/maps), then Assess.')}${
+          arts.length ? `<div class="hint">Artifacts seen: ${arts.slice(0, 4).map((a) => escapeAttr(String(a).split(/[/\\\\]/).pop())).join(', ')}</div>` : ''
+        }</p>`;
+    const recs = report.recommendations || [];
+    if (recsEl) {
+      recsEl.innerHTML = recs.length
+        ? `<p class="hint">Recommendations</p><ul class="hint-list">${recs.slice(0, 8).map((r) => `<li>${escapeAttr(r)}</li>`).join('')}</ul>`
+        : '';
+    }
+  } catch {
+    if (meta) meta.textContent = '';
+    findingsEl.innerHTML = '<p class="empty">No surface report yet — start a baseline session or click Assess latest.</p>';
+    if (recsEl) recsEl.innerHTML = '';
+  }
+
+  if (cmpEl) {
+    try {
+      const cmp = await api.get(`/api/stalking/${encodeURIComponent(project)}/surface/compare`);
+      if (cmpMeta) cmpMeta.textContent = cmp.summaryLine || '';
+      const pairs = cmp.pairwise || [];
+      cmpEl.innerHTML = pairs.length
+        ? `<table><thead><tr><th>From → To</th><th>Shared</th><th>Only prev</th><th>Novel</th></tr></thead>
+          <tbody>${pairs.map((d) => `<tr>
+            <td><code>${escapeAttr(d.fromTag)}</code> → <code>${escapeAttr(d.toTag)}</code></td>
+            <td>${d.shared}</td><td>${d.onlyInFrom}</td><td class="diff">+${d.onlyInTo}</td>
+          </tr>`).join('')}</tbody></table>
+          ${pairs.flatMap((d) => (d.sampleOnlyInTo || []).slice(0, 3).map((s) =>
+            `<div class="hint">+ [${escapeAttr(d.toTag)}] ${escapeAttr(s)}</div>`)).join('')}`
+        : '<p class="empty">Need 2+ assessed layers to compare surface findings.</p>';
+    } catch (err) {
+      if (cmpMeta) cmpMeta.textContent = '';
+      cmpEl.innerHTML = `<p class="empty">Surface compare unavailable${err?.message ? ' — ' + escapeAttr(err.message) : ''}.</p>`;
+    }
+  }
+
+  if (ideasEl) {
+    try {
+      const ideas = await api.get(`/api/stalking/${encodeURIComponent(project)}/surface/ideas`);
+      const list = Array.isArray(ideas) ? ideas : [];
+      ideasEl.innerHTML = list.length
+        ? `<ul class="hint-list">${list.slice(0, 10).map((i) => {
+            const act = i.action || '';
+            const canApply = act.startsWith('apply-port:') || act === 'arm-dictionary';
+            const btn = canApply
+              ? ` <button type="button" class="btn surface-apply-btn" data-idea="${escapeAttr(i.id)}" data-action="${escapeAttr(act)}">Apply</button>`
+              : '';
+            return `<li><strong>[${escapeAttr(i.priority)}]</strong> ${escapeAttr(i.title)}${btn}
+             <div class="hint">${escapeAttr(i.detail || '')}${i.cliHint ? ` · <code>${escapeAttr(i.cliHint)}</code>` : ''}</div></li>`;
+          }).join('')}</ul>`
+        : '<p class="empty">No surface ideas yet — run a baseline session, then Assess.</p>';
+      ideasEl.querySelectorAll('.surface-apply-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const out = document.getElementById('stalking-export-result');
+          try {
+            const result = await api.post(`/api/stalking/${encodeURIComponent(project)}/surface/apply`, {
+              project,
+              ideaId: btn.dataset.idea,
+              action: btn.dataset.action,
+            });
+            if (out) {
+              out.textContent = result.summary
+                + (result.targetProject && result.targetProject !== project
+                  ? ` → project ${result.targetProject}` : '');
+            }
+            await refreshStalkingSurface(project);
+          } catch (err) {
+            if (out) out.textContent = err.message;
+          }
+        });
+      });
+    } catch (err) {
+      ideasEl.innerHTML = `<p class="empty">Surface ideas unavailable${err?.message ? ' — ' + escapeAttr(err.message) : ''}.</p>`;
+    }
+  }
+}
+
+document.getElementById('stalking-surface-assess')?.addEventListener('click', async () => {
+  const project = document.getElementById('stalking-project')?.value;
+  const out = document.getElementById('stalking-export-result');
+  if (!project) return;
+  try {
+    const report = await api.post(`/api/stalking/${encodeURIComponent(project)}/surface/assess`, { project });
+    if (out) out.textContent = report.summaryLine || 'Surface assessed';
+    await refreshStalkingSurface(project);
+  } catch (err) {
+    if (out) out.textContent = err.message;
+  }
+});
+
+async function refreshStalkingTimelineCompare(project) {
+  const meta = document.getElementById('stalking-tl-compare-meta');
+  const statsEl = document.getElementById('stalking-tl-stats');
+  const deltasEl = document.getElementById('stalking-tl-deltas');
+  const samplesEl = document.getElementById('stalking-tl-samples');
+  if (!statsEl || !deltasEl) return;
+  try {
+    const cmp = await api.get(`/api/stalking/${encodeURIComponent(project)}/timeline/compare`);
+    if (meta) meta.textContent = cmp.summaryLine ? `— ${cmp.summaryLine}` : '';
+    const layers = cmp.layers || [];
+    statsEl.innerHTML = layers.length
+      ? `<table><thead><tr>
+          <th>Tag</th><th>TL</th><th>Rows</th><th>EVTX</th><th>MFT</th><th>Procmon</th><th>WER</th>
+        </tr></thead><tbody>
+        ${layers.map((s) => `<tr>
+          <td><code>${escapeAttr(s.tag)}</code></td>
+          <td>${s.hasTimeline ? 'yes' : '—'}</td>
+          <td>${s.fingerprintCount ?? 0}</td>
+          <td>${s.evtxRows ?? 0}</td>
+          <td>${s.mftRows ?? 0}</td>
+          <td>${s.procmonRows ?? 0}</td>
+          <td>${s.werCopied ?? 0}</td>
+        </tr>`).join('')}
+      </tbody></table>`
+      : '<p class="empty">No layers yet.</p>';
+
+    const pairs = cmp.pairwise || [];
+    deltasEl.innerHTML = pairs.length
+      ? `<table><thead><tr><th>From → To</th><th>Shared</th><th>Only prev</th><th>Novel</th></tr></thead>
+        <tbody>${pairs.map((d) => `<tr>
+          <td><code>${escapeAttr(d.fromTag)}</code> → <code>${escapeAttr(d.toTag)}</code></td>
+          <td>${d.shared}</td>
+          <td>${d.onlyInFrom}</td>
+          <td class="diff">+${d.onlyInTo}</td>
+        </tr>`).join('')}</tbody></table>`
+      : '<p class="empty">Need 2+ layers with mini-timelines to diff host noise.</p>';
+
+    if (samplesEl) {
+      const samples = pairs.flatMap((d) =>
+        (d.sampleOnlyInTo || []).slice(0, 4).map((s) =>
+          `<li><code>${escapeAttr(d.toTag)}</code> + ${escapeAttr(s)}</li>`));
+      samplesEl.innerHTML = samples.length
+        ? `<p class="hint">Novel host rows (sample)</p><ul class="hint-list">${samples.join('')}</ul>`
+        : '';
+    }
+  } catch {
+    if (meta) meta.textContent = '';
+    statsEl.innerHTML = '<p class="empty">Host timeline compare unavailable.</p>';
+    deltasEl.innerHTML = '';
+    if (samplesEl) samplesEl.innerHTML = '';
+  }
 }
 
 async function refreshStalkingMap(project) {
@@ -2017,19 +2247,26 @@ document.getElementById('stalking-refresh')?.addEventListener('click', () => ref
 
 document.getElementById('stalking-add')?.addEventListener('click', async () => {
   const project = document.getElementById('stalking-project').value;
+  const tag = document.getElementById('stalking-tag').value;
+  const wantTl = !!document.getElementById('stalking-mini-timeline')?.checked;
   const body = {
     project,
-    tag: document.getElementById('stalking-tag').value,
+    tag,
     label: document.getElementById('stalking-label').value.trim() || null,
     drcovPath: document.getElementById('stalking-drcov').value.trim() || null,
     crashId: document.getElementById('stalking-crash').value.trim() || null,
+    miniTimeline: wantTl,
   };
   try {
-    await api.post('/api/stalking/layers', body);
+    const layer = await api.post('/api/stalking/layers', body);
     document.getElementById('stalking-label').value = '';
     document.getElementById('stalking-drcov').value = '';
     document.getElementById('stalking-crash').value = '';
-    document.getElementById('stalking-export-result').textContent = `Layer recorded for ${project}`;
+    const tl = layer.miniTimelineSummary
+      ? ` · ${layer.miniTimelineSummary}`
+      : '';
+    document.getElementById('stalking-export-result').textContent =
+      `Layer recorded for ${project}${tl}`;
     await refreshStalkingWorkspace();
   } catch (err) {
     document.getElementById('stalking-export-result').textContent = err.message;
@@ -2039,10 +2276,16 @@ document.getElementById('stalking-add')?.addEventListener('click', async () => {
 document.getElementById('stalking-from-corpus')?.addEventListener('click', async () => {
   const project = document.getElementById('stalking-project').value;
   const tag = document.getElementById('stalking-tag').value || 'fuzzed';
+  const wantTl = !!document.getElementById('stalking-mini-timeline')?.checked;
   try {
-    const layer = await api.post('/api/stalking/layers/from-corpus', { project, tag });
+    const layer = await api.post('/api/stalking/layers/from-corpus', {
+      project,
+      tag,
+      miniTimeline: wantTl,
+    });
+    const tl = layer.miniTimelineSummary ? ` · ${layer.miniTimelineSummary}` : '';
     document.getElementById('stalking-export-result').textContent =
-      `Corpus layer: ${layer.tag} · ${layer.blockCount} blocks`;
+      `Corpus layer: ${layer.tag} · ${layer.blockCount} blocks${tl}`;
     await refreshStalkingWorkspace();
   } catch (err) {
     document.getElementById('stalking-export-result').textContent = err.message;
@@ -2239,6 +2482,67 @@ async function loadCrashMemoryLens(crashId) {
   }
 }
 
+function renderMiniTimelineHtml(tl) {
+  if (!tl) {
+    return '<p class="hint">Loading… (or enable <code>fuzz.miniTimeline</code> / <code>randall timeline capture</code>)</p>';
+  }
+  if (!tl.ok && !(tl.evtxRows || tl.mftRows || tl.werCopied || tl.appCompatRows || tl.procmonRows)) {
+    return `<p class="hint">${escapeAttr(tl.summaryLine || tl.error || 'No mini-timeline')}</p>`;
+  }
+  const dir = tl.directory ? `<code>${escapeAttr(tl.directory)}</code>` : '';
+  const graph = tl.graphPath
+    ? `<p class="hint">Graph: <code>${escapeAttr(tl.graphPath)}</code> · <button type="button" class="linkish" data-timeline-graph="${escapeAttr(tl.crashId || '')}">view nodes</button></p>`
+    : '';
+  return `
+    <p><strong>${escapeAttr(tl.summaryLine || '')}</strong></p>
+    <p class="hint">±${tl.windowSeconds || 60}s around ${tl.anchorUtc ? new Date(tl.anchorUtc).toLocaleString() : '—'}</p>
+    <ul class="hint-list">
+      <li>EVTX rows: <code>${tl.evtxRows ?? 0}</code></li>
+      <li>MFT rows: <code>${tl.mftRows ?? 0}</code></li>
+      <li>Procmon rows: <code>${tl.procmonRows ?? 0}</code>${tl.procmonPml ? ' · PML sliced' : ''}</li>
+      <li>Prefetch: <code>${tl.prefetchRows ?? 0}</code> · Amcache: <code>${tl.amcacheRows ?? 0}</code> · AppCompat: <code>${tl.appCompatRows ?? 0}</code></li>
+      <li>WER copies: <code>${tl.werCopied ?? 0}</code>${tl.bstringsPath ? ' · bstrings captured' : ''}</li>
+    </ul>
+    ${dir ? `<p class="hint">Folder: ${dir}</p>` : ''}
+    ${graph}
+  ${(tl.notes && tl.notes.length) ? `<p class="hint">${escapeAttr(tl.notes.slice(0, 2).join(' · '))}</p>` : ''}`;
+}
+
+async function loadCrashMiniTimeline(id) {
+  const body = document.getElementById('crash-timeline-body');
+  if (!body) return;
+  try {
+    const tl = await api.get(`/api/crashes/${id}/timeline`);
+    body.innerHTML = renderMiniTimelineHtml(tl);
+    body.querySelector('[data-timeline-graph]')?.addEventListener('click', () => {
+      loadCrashTimelineGraph(id).catch(() => {});
+    });
+  } catch {
+    body.innerHTML = '<p class="hint">No mini-timeline yet — set <code>fuzz.miniTimeline: true</code> or run <code>randall timeline capture</code>.</p>';
+  }
+}
+
+async function loadCrashTimelineGraph(id) {
+  const body = document.getElementById('crash-timeline-body');
+  if (!body) return;
+  try {
+    const g = await api.get(`/api/crashes/${id}/timeline/graph`);
+    const nodes = (g.nodes || []).slice(0, 24)
+      .map((n) => `<li><code>${escapeAttr(n.kind)}</code> ${escapeAttr(n.label || n.id)}</li>`)
+      .join('');
+    const more = (g.nodes?.length || 0) > 24 ? `<li class="hint">… +${g.nodes.length - 24} more (see graph.json)</li>` : '';
+    const panel = document.createElement('div');
+    panel.className = 'timeline-graph-preview';
+    panel.innerHTML = `<p class="hint">${escapeAttr(g.summaryLine || 'graph')} · ${g.edges?.length ?? 0} edges</p><ul class="hint-list">${nodes}${more}</ul>`;
+    body.appendChild(panel);
+  } catch {
+    const hint = document.createElement('p');
+    hint.className = 'hint';
+    hint.textContent = 'Graph not available — run timeline capture first.';
+    body.appendChild(hint);
+  }
+}
+
 function renderCrashDetail(detail, title) {
   const box = document.getElementById('crash-detail');
   const metaEl = document.getElementById('crash-invest-meta');
@@ -2325,6 +2629,10 @@ function renderCrashDetail(detail, title) {
       <p class="hint" id="crash-memory-status">Loading…</p>
       <div id="crash-memory-body"></div>
     </div>
+    <div class="triage-box" id="crash-timeline-box">
+      <h4>Mini-timeline <span class="hint-inline">(EVTX / MFT / Procmon / WER)</span></h4>
+      <div id="crash-timeline-body">${renderMiniTimelineHtml(detail.miniTimeline)}</div>
+    </div>
     <div class="triage-box" id="crash-rop-box">
       <h4>ROP Studio / RandfuzzDbg <span class="hint-inline">lab sketches — no payloads</span></h4>
       <p class="hint" id="crash-rop-status">Gadget catalog + WinDbg walk for this scream.</p>
@@ -2368,6 +2676,9 @@ function renderCrashDetail(detail, title) {
     <p id="export-result" class="empty"></p>`;
 
   loadCrashMemoryLens(detail.summary.id).catch(() => {});
+  if (!detail.miniTimeline) {
+    loadCrashMiniTimeline(detail.summary.id).catch(() => {});
+  }
   loadCrashRopSidecars(detail.summary.id).catch(() => {});
 
   async function loadCrashRopSidecars(id) {

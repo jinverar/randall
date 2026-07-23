@@ -81,12 +81,15 @@ If a campaign trashes the box, roll back — don’t fight a dirty lab.
 4. Stop when done. Capture a drcov log if you ran under DynamoRIO manually, **or** let a short coverage-guided run with “normal” seeds create corpus edges.
 5. Open **Stalking bugs**:
    - Project = your target  
-   - Tag = **baseline (normal use)**  
-   - Label e.g. `browser happy path`  
-   - Paste **drcov log path** if you have one, **or** leave empty / click **From corpus edges**  
-   - **Record layer**
+   - **Start baseline session** (Windows: Procmon + Sysinternals · Linux: `ss` + `/proc` maps) → use the app naturally → **Stop + record** (auto-attaches Target Runtime PID when available)  
+   - Or: Tag = **baseline**, leave **Mini-timeline each layer** checked, **Record layer** / **From corpus edges**  
+   - Review **Exploit Surface** findings and **Surface fuzz ideas**
 
-That layer is your “green” / normal map — code you already know how to reach.
+That layer is your “green” / normal map — code you already know how to reach — plus host
+mini-timeline and Exploit Surface suggestions (see [MINI_TIMELINE.md](MINI_TIMELINE.md) ·
+[SURFACE.md](SURFACE.md)).
+Record the same way for **fuzzed** / **fuzzier** / custom tags; then open **Host timeline compare**
+and **Surface compare** to see what changed between phases.
 
 ### Option B — File-format target
 
@@ -184,8 +187,11 @@ That brings dumps + lens + crash index. Stalk layer zips are still under `data/s
 | Start/stop target | **Fuzz → Lab servers / Target Runtime** |
 | Build smarter cases | **Fuzz → Scare Floor** |
 | Run a campaign | **Fuzz → Campaign** (on the lab host) |
+| Natural-use baseline session | **Stalking bugs → Start baseline session** / Stop + record |
 | Record baseline / fuzzed / fuzzier | **Stalking bugs → Add layer** |
-| See what changed | **Stalking bugs → Compare / Block map** |
+| Host surface (sideload / listen) | **Stalking bugs → Exploit Surface** (+ Surface fuzz ideas → **Apply**) |
+| See what changed (coverage) | **Stalking bugs → Compare / Block map** |
+| See what changed (host) | **Stalking bugs → Host timeline compare / Surface compare** |
 | Why still dark + how to fuzz | **Stalking bugs → Missed blocks** (`randall stalk missed`) |
 | Study a crash | **Crashes** (+ Memory lens) |
 | Color IDA / Ghidra | **Stalking bugs → Export** |
@@ -212,8 +218,8 @@ Help tab also serves this doc and [STALKING.md](STALKING.md) (API/CLI reference)
 
 - [ ] Snapshot lab  
 - [ ] Work in lab console (`serve` local or `agent` Remote lab)  
-- [ ] Baseline: normal use → record **baseline**  
-- [ ] Basic campaign → record **fuzzed** → compare novel blocks  
+- [ ] Baseline session (or normal use → record **baseline**) → review Exploit Surface  
+- [ ] Basic campaign → record **fuzzed** → compare novel blocks + surface  
 - [ ] Improve cases → campaign → record **fuzzier** → compare (repeat)  
 - [ ] On crash: lens + debugger + learn → feed next round  
 - [ ] Optional: pull crash pack to laptop when done  

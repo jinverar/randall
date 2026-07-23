@@ -200,12 +200,12 @@ Linux CI keeps host ROP Studio + scripts; DLL is Windows-only.
 
 ## Walk the scream (lab flow)
 
-1. Fuzz until scream → minidump bottled  
-2. `randall analyze -i <guid>` · Memory lens · `exploit guide` / CONTROL offset  
-3. `randall stack lens -i <guid>` → CONTROL map (stack slots × input)  
-4. `randall scream walk -i <guid> --goal auto` → playbook (lens → badchars → sketch → WinDbg/GDB)  
-5. Open WinDbg Preview / GDB · run `rf_walk.txt` / `rf_gdb.txt`  
-6. `randall ladder diff` — climb `vulnlab` → `vulnlab-nx` → … — sketches change with NX/ASLR  
+1. Fuzz until scream → minidump bottled
+2. `randall analyze -i <guid>` · Memory lens · `exploit guide` / CONTROL offset
+3. `randall stack lens -i <guid>` → CONTROL map (stack slots × input)
+4. `randall scream walk -i <guid> --goal auto` → playbook (lens → badchars → sketch → WinDbg/GDB)
+5. Open WinDbg Preview / GDB · run `rf_walk.txt` / `rf_gdb.txt`
+6. `randall ladder diff` — climb `vulnlab` → `vulnlab-nx` → … — sketches change with NX/ASLR
 
 ---
 

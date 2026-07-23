@@ -2,6 +2,7 @@
 using Randall.Contracts;
 using Randall.Infrastructure;
 using Randall.Infrastructure.BugHunt;
+using Randall.Infrastructure.ExploitSurface;
 using Randall.Infrastructure.Magician;
 using Randall.Infrastructure.Oracles;
 using Randall.Infrastructure.Rop;
@@ -53,6 +54,8 @@ return args[0].ToLowerInvariant() switch
     "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
     "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
     "recorders" or "recorder" => RunRecorders(args.Skip(1).ToArray()),
+    "timeline" or "minitimeline" => RunTimeline(args.Skip(1).ToArray()),
+    "surface" or "exploit-surface" or "exploitsurface" => RunSurface(args.Skip(1).ToArray()),
     "harness-worker" => RunHarnessWorker(args.Skip(1).ToArray()),
     _ => Unknown(args[0]),
 };
@@ -135,6 +138,20 @@ static void PrintHelp()
           randall runtime stop|restart <id>
           randall runtime stop-all
           randall recorders stop         Stop orphaned Procmon/DebugView/ProcDump/WPR/pktmon/tshark
+          randall timeline tools         Discover EZ CLIs + Procmon for mini-timeline
+          randall timeline capture -p <project> -i <crash-guid> [--window 60]
+                                            Unique-scream mini-timeline (EVTX/MFT/WER/Procmon)
+          randall timeline graph -p <project> -i <crash-guid>
+                                            Rebuild graph.json + merged.csv from timeline CSVs
+          randall surface assess -p <project> [--layer id] [--baseline]
+                                            Exploit Surface — sideload/injection/listen suggestions
+          randall surface baseline start|stop|status -p <project>
+                                            Natural-use baseline (Windows Procmon · Linux ss/proc)
+          randall surface compare -p <project>   Novel findings baseline → fuzzed
+          randall surface ideas -p <project>     Surface → fuzz ideas
+          randall surface apply -p <project> [--port N|--all]
+                                            Apply listen port / dictionary into campaign
+          randall surface list -p <project>  List persisted surface findings
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
           randall serve [--port N] [--bind host] [--token SECRET] [--allow-open]
@@ -2172,6 +2189,10 @@ static int RunStalk(string[] args)
             Usage:
               randall stalk layers -p <project>
               randall stalk compare -p <project> [layerId…]
+              randall stalk timeline-compare -p <project> [layerId…]
+                                            Diff host mini-timelines across layers
+              randall stalk surface-assess -p <project> [--layer id]
+                                            Exploit Surface assess (docs/SURFACE.md)
               randall stalk missed -p <project> [--limit 40]
               randall stalk inventory -p <project> --import <blocks.txt|drcov.log>
               randall stalk dynapstalker <drcov.log> <process.exe> <out.idc|.py> [--format idc|ghidra] [--color 0x00ffff]
@@ -2193,6 +2214,8 @@ static int RunStalk(string[] args)
     {
         "layers" => StalkLayers(rest),
         "compare" => StalkCompare(rest),
+        "timeline-compare" or "tl-compare" or "host-compare" => StalkTimelineCompareCmd(rest),
+        "surface-assess" or "exploit-surface" => StalkSurfaceAssess(rest),
         "missed" => StalkMissed(rest),
         "inventory" => StalkInventory(rest),
         "dynapstalker" or "drcov2idc" => StalkDynapstalker(rest),
@@ -2645,6 +2668,8 @@ static int StalkLayers(string[] args)
             $"{l.Id}  [{l.Tag}] blocks={l.BlockCount}  {l.Label}  {l.CreatedAt:u}");
         if (!string.IsNullOrWhiteSpace(l.CrashId))
             Console.WriteLine($"             crash={l.CrashId}");
+        if (!string.IsNullOrWhiteSpace(l.MiniTimelineDir))
+            Console.WriteLine($"             mini-timeline={l.MiniTimelineDir}  {l.MiniTimelineSummary}");
     }
     return 0;
 }
@@ -2665,6 +2690,351 @@ static int StalkCompare(string[] args)
     if (cmp.Blocks.Count > 24)
         Console.WriteLine($"  … +{cmp.Blocks.Count - 24} more blocks");
     return 0;
+}
+
+static int StalkTimelineCompareCmd(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    var cmp = StalkTimelineCompare.Compare(project, PositionalIds(args));
+    Console.WriteLine($"{cmp.Project}: {cmp.SummaryLine}");
+    foreach (var s in cmp.Layers)
+    {
+        Console.WriteLine(
+            $"  [{s.Tag}] {s.LayerId}  tl={(s.HasTimeline ? "yes" : "no")}  rows≈{s.FingerprintCount}  " +
+            $"evtx={s.EvtxRows} mft={s.MftRows} procmon={s.ProcmonRows} wer={s.WerCopied}");
+        if (!string.IsNullOrWhiteSpace(s.SummaryLine))
+            Console.WriteLine($"             {s.SummaryLine}");
+    }
+
+    foreach (var d in cmp.Pairwise)
+    {
+        Console.WriteLine(
+            $"  {d.FromTag} → {d.ToTag}: shared={d.Shared} onlyPrev={d.OnlyInFrom} novel={d.OnlyInTo}");
+        foreach (var sample in d.SampleOnlyInTo.Take(6))
+            Console.WriteLine($"    + {sample}");
+        foreach (var sample in d.SampleOnlyInFrom.Take(3))
+            Console.WriteLine($"    - {sample}");
+    }
+
+    return cmp.Layers.Any(l => l.HasTimeline) ? 0 : 2;
+}
+
+static int StalkSurfaceAssess(string[] args)
+{
+    var forwarded = new List<string> { "assess" };
+    forwarded.AddRange(args);
+    return RunSurface(forwarded.ToArray());
+}
+
+static int RunSurface(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall surface baseline start -p <project> [--pid N] [--exe path]
+              randall surface baseline stop  -p <project> [--no-layer] [--label text] [--pid N]
+              randall surface baseline status -p <project>
+              randall surface assess -p <project> [--layer <id>] [--baseline] [--json]
+              randall surface list   -p <project> [--json]
+              randall surface compare -p <project> [layerId…] [--json]
+              randall surface ideas  -p <project> [--json]
+              randall surface apply  -p <project> [--idea id|--port N|--action X|--all] [--json]
+
+            Exploit Surface — host assessor + baseline session (natural use under
+            Windows Procmon/Sysinternals or Linux ss+/proc/maps/ldd).
+            Suggests fuzz next steps + hints.md / dictionary tokens / Magician soft needs.
+            Not Oracle judgment. See docs/SURFACE.md.
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    if (sub is "baseline" or "session")
+        return RunSurfaceBaseline(args.Skip(1).ToArray());
+
+    string? project = null;
+    string? layerId = null;
+    string? ideaId = null;
+    string? applyAction = null;
+    int? applyPort = null;
+    var applyAll = false;
+    var baselineOnly = false;
+    var json = false;
+    var start = sub is "assess" or "list" or "findings" or "run" or "report" or "compare" or "ideas" or "apply" ? 1 : 0;
+    if (start == 0)
+        sub = "assess";
+
+    for (var i = start; i < args.Length; i++)
+    {
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "--layer" or "-l" && i + 1 < args.Length)
+            layerId = args[++i];
+        else if (args[i] is "--idea" or "--id" && i + 1 < args.Length)
+            ideaId = args[++i];
+        else if (args[i] is "--action" && i + 1 < args.Length)
+            applyAction = args[++i];
+        else if (args[i] is "--port" && i + 1 < args.Length && int.TryParse(args[i + 1], out var ap))
+        {
+            applyPort = ap;
+            i++;
+        }
+        else if (args[i] is "--all")
+            applyAll = true;
+        else if (args[i] is "--baseline" or "--baseline-only")
+            baselineOnly = true;
+        else if (args[i] is "--json")
+            json = true;
+    }
+
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("Usage: randall surface assess|list|compare|ideas|apply -p <project>");
+        return 1;
+    }
+
+    if (sub is "compare")
+    {
+        var layerIds = new List<string>();
+        for (var i = start; i < args.Length; i++)
+        {
+            if (args[i].StartsWith('-'))
+            {
+                if (i + 1 < args.Length && args[i] is "-p" or "--project" or "--layer" or "-l")
+                    i++;
+                continue;
+            }
+
+            if (!args[i].Equals(project, StringComparison.OrdinalIgnoreCase))
+                layerIds.Add(args[i]);
+        }
+
+        var cmp = ExploitSurfaceCompare.Compare(project, layerIds);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(cmp, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            }));
+            return 0;
+        }
+
+        Console.WriteLine($"{cmp.Project}: {cmp.SummaryLine}");
+        foreach (var s in cmp.Layers)
+            Console.WriteLine($"  [{s.Tag}] findings={s.FindingCount}  {s.SummaryLine}");
+        foreach (var d in cmp.Pairwise)
+        {
+            Console.WriteLine($"  {d.FromTag} → {d.ToTag}: shared={d.Shared} onlyPrev={d.OnlyInFrom} novel={d.OnlyInTo}");
+            foreach (var sample in d.SampleOnlyInTo.Take(6))
+                Console.WriteLine($"    + {sample}");
+        }
+
+        return cmp.Layers.Any(l => l.HasReport) ? 0 : 2;
+    }
+
+    if (sub is "ideas")
+    {
+        var ideas = ExploitSurfaceIdeas.FromLatestOrHint(project);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(ideas, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            }));
+            return 0;
+        }
+
+        if (ideas.Count == 0 || (ideas.Count == 1 && ideas[0].Id == "surface-baseline"))
+        {
+            Console.WriteLine($"{project}: no assessed surface yet — run a baseline session / assess first");
+            if (ideas.Count == 1)
+            {
+                Console.WriteLine($"[{ideas[0].Priority}] {ideas[0].Title}");
+                Console.WriteLine($"         {ideas[0].Detail}");
+            }
+            return 2;
+        }
+
+        foreach (var idea in ideas)
+        {
+            Console.WriteLine($"[{idea.Priority}] {idea.Title}");
+            Console.WriteLine($"         {idea.Detail}");
+            if (!string.IsNullOrWhiteSpace(idea.CliHint))
+                Console.WriteLine($"         cli: {idea.CliHint}");
+            if (!string.IsNullOrWhiteSpace(idea.Action))
+                Console.WriteLine($"         action: {idea.Action}");
+        }
+
+        return 0;
+    }
+
+    if (sub is "apply")
+    {
+        var result = ExploitSurfaceApply.Apply(project, ideaId, applyAction, applyPort, applyAll);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            }));
+            return result.Ok ? 0 : 2;
+        }
+
+        Console.WriteLine(result.Ok ? $"[ok] {result.Summary}" : $"[fail] {result.Summary}");
+        foreach (var a in result.Applied)
+            Console.WriteLine($"  · {a}");
+        if (!string.IsNullOrWhiteSpace(result.TargetProject) &&
+            !result.TargetProject.Equals(project, StringComparison.OrdinalIgnoreCase))
+            Console.WriteLine($"  target project: {result.TargetProject}");
+        if (!string.IsNullOrWhiteSpace(result.ConfigPath))
+            Console.WriteLine($"  yaml: {result.ConfigPath}");
+        return result.Ok ? 0 : 2;
+    }
+
+    if (sub is "list" or "findings")
+    {
+        var dir = ExploitSurfaceEngine.SurfaceDir(project);
+        var store = new ExploitSurfaceFindingStore(dir);
+        var findings = store.List(project);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(findings,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        if (findings.Count == 0)
+        {
+            Console.WriteLine($"{project}: no surface findings yet — record baseline or: randall surface assess -p {project}");
+            return 2;
+        }
+
+        foreach (var f in findings.TakeLast(40))
+            Console.WriteLine($"[{f.Severity}] {f.Kind}  {f.Title}  ({f.LayerTag ?? "-"})");
+        return 0;
+    }
+
+    var report = ExploitSurfaceEngine.AssessProject(project, layerId, baselineOnly);
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        }));
+        return report.Ok || report.Findings.Count > 0 ? 0 : 2;
+    }
+
+    Console.WriteLine(report.SummaryLine);
+    if (!string.IsNullOrWhiteSpace(report.LayerId))
+        Console.WriteLine($"  layer: [{report.LayerTag}] {report.LayerId}");
+    foreach (var a in report.ArtifactsUsed.Where(x => !x.StartsWith("note:", StringComparison.Ordinal)).Take(6))
+        Console.WriteLine($"  artifact: {a}");
+    foreach (var f in report.Findings)
+    {
+        Console.WriteLine($"  [{f.Severity}] {f.Kind}: {f.Title}");
+        Console.WriteLine($"           {f.Detail}");
+        if (!string.IsNullOrWhiteSpace(f.EvidenceSnippet))
+            Console.WriteLine($"           evidence: {f.EvidenceSnippet}");
+        foreach (var r in f.Recommendations.Take(2))
+            Console.WriteLine($"           → {r}");
+    }
+
+    if (report.Findings.Count == 0)
+        foreach (var r in report.Recommendations.Take(4))
+            Console.WriteLine($"  tip: {r}");
+
+    return report.Ok || report.Findings.Count > 0 ? 0 : 2;
+}
+
+static int RunSurfaceBaseline(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall surface baseline start  -p <project> [--pid N] [--exe path]
+              randall surface baseline stop   -p <project> [--no-layer] [--label text] [--pid N]
+              randall surface baseline status -p <project>
+
+            Start host recorders (Windows: Procmon + Sysinternals · Linux: ss + /proc maps + ldd),
+            use the app naturally, then stop to record a baseline stalk layer + Exploit Surface assess.
+            Auto-attaches Target Runtime PID when a matching slot is already running.
+            """);
+        return 0;
+    }
+
+    var action = args[0].ToLowerInvariant();
+    string? project = null;
+    int? pid = null;
+    string? exe = null;
+    string? label = null;
+    var recordLayer = true;
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "--pid" && i + 1 < args.Length && int.TryParse(args[i + 1], out var p))
+        {
+            pid = p;
+            i++;
+        }
+        else if (args[i] is "--exe" or "-e" && i + 1 < args.Length)
+            exe = args[++i];
+        else if (args[i] is "--label" && i + 1 < args.Length)
+            label = args[++i];
+        else if (args[i] is "--no-layer")
+            recordLayer = false;
+    }
+
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("Usage: randall surface baseline start|stop|status -p <project>");
+        return 1;
+    }
+
+    if (action is "start")
+    {
+        var s = BaselineSession.Start(project, pid, exe);
+        Console.WriteLine($"[{s.Status}] {s.Message}");
+        Console.WriteLine($"  run: {s.RunDir}");
+        if (!string.IsNullOrWhiteSpace(s.PmlPath))
+            Console.WriteLine($"  pml: {s.PmlPath}");
+        return s.Status == "running" ? 0 : 1;
+    }
+
+    if (action is "status")
+    {
+        var s = BaselineSession.Status(project);
+        Console.WriteLine($"[{s.Status}] {s.Message ?? s.RunId}");
+        if (s.Pid is int statusPid)
+            Console.WriteLine($"  pid: {statusPid}");
+        if (!string.IsNullOrWhiteSpace(s.TargetExe))
+            Console.WriteLine($"  exe: {s.TargetExe}");
+        if (!string.IsNullOrWhiteSpace(s.RunDir))
+            Console.WriteLine($"  run: {s.RunDir}");
+        Console.WriteLine($"  probes: procmon={(s.ProcmonArmed ? "yes" : "no")} host={(s.HostProbesArmed ? "yes" : "no")}");
+        return 0;
+    }
+
+    if (action is "stop")
+    {
+        var s = BaselineSession.Stop(project, recordLayer, label, pid);
+        Console.WriteLine($"[{s.Status}] {s.Message}");
+        if (!string.IsNullOrWhiteSpace(s.LayerId))
+            Console.WriteLine($"  layer: {s.LayerId}");
+        return 0;
+    }
+
+    Console.Error.WriteLine("Usage: randall surface baseline start|stop|status -p <project>");
+    return 1;
 }
 
 static int StalkExport(string[] args)
@@ -4414,6 +4784,193 @@ static int RunRecorders(string[] args)
     }
 
     return result.Ok ? 0 : 1;
+}
+
+static int RunTimeline(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall timeline tools
+              randall timeline capture -p <project> -i <crash-guid> [--window 60] [--exe path] [--pml path]
+              randall timeline graph -p <project> -i <crash-guid>
+
+            Unique-scream Windows mini-timeline via Eric Zimmerman CLIs (EvtxECmd, MFTECmd,
+            optional PECmd/Amcache/AppCompat/bstrings) + WER copy + optional Procmon .pml
+            window slice → procmon.csv, then graph.json + merged.csv.
+            Soft-fails if tools missing. See docs/MINI_TIMELINE.md.
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    if (sub is "tools" or "status" or "doctor")
+    {
+        var ez = ZimmermanToolPaths.Probe();
+        var procmon = ProcmonCapture.DiscoverExecutable();
+        Console.WriteLine("Eric Zimmerman (EZ) tools:");
+        if (ez.FoundLines().Count == 0)
+            Console.WriteLine("  (none found — install under tools/ez/ via Get-ZimmermanTools)");
+        else
+        {
+            foreach (var line in ez.FoundLines())
+                Console.WriteLine($"  {line}");
+        }
+
+        Console.WriteLine("Procmon:");
+        Console.WriteLine(procmon is not null
+            ? $"  Procmon={procmon}"
+            : "  (not found — optional; enables .pml → CSV window slice)");
+
+        var ready = ez.HasCore || procmon is not null;
+        Console.WriteLine(ready
+            ? (ez.HasCore
+                ? "Ready (EZ core and/or Procmon)."
+                : "Ready (Procmon-only — EZ CLIs still recommended).")
+            : "Core missing — need EvtxECmd/MFTECmd and/or Procmon.");
+        Console.WriteLine("  docs/MINI_TIMELINE.md");
+        return ready ? 0 : 1;
+    }
+
+    if (sub is "graph" or "export-graph" or "rebuild-graph")
+        return RunTimelineGraph(args.Skip(1).ToArray());
+
+    if (sub is not "capture" and not "run")
+    {
+        Console.Error.WriteLine("Usage: randall timeline tools | capture | graph -p <project> -i <guid>");
+        return 1;
+    }
+
+    string? project = null;
+    Guid? id = null;
+    var window = 60;
+    string? exe = null;
+    string? pml = null;
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "-i" or "--id" && i + 1 < args.Length && Guid.TryParse(args[i + 1], out var g))
+        {
+            id = g;
+            i++;
+        }
+        else if (args[i] is "--window" or "-w" && i + 1 < args.Length && int.TryParse(args[i + 1], out var w))
+        {
+            window = w;
+            i++;
+        }
+        else if (args[i] is "--exe" or "-e" && i + 1 < args.Length)
+            exe = args[++i];
+        else if (args[i] is "--pml" && i + 1 < args.Length)
+            pml = args[++i];
+    }
+
+    if (id is null)
+    {
+        Console.Error.WriteLine("Usage: randall timeline capture -p <project> -i <crash-guid> [--window 60]");
+        return 1;
+    }
+
+    var detail = CrashCatalog.GetDetail(id.Value);
+    if (detail is null)
+    {
+        Console.Error.WriteLine($"Crash not found: {id}");
+        return 1;
+    }
+
+    project ??= detail.Summary.Project;
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesDir = Path.Combine(repo, "data", "crashes", project);
+    Directory.CreateDirectory(crashesDir);
+
+    if (string.IsNullOrWhiteSpace(exe))
+    {
+        var yamlGuess = Path.Combine(repo, "projects", project + ".yaml");
+        if (File.Exists(yamlGuess))
+        {
+            try
+            {
+                var proj = ProjectLoader.Load(yamlGuess);
+                if (!string.IsNullOrWhiteSpace(proj.Target.Executable))
+                {
+                    var declared = ProjectLoader.ResolvePath(yamlGuess, proj.Target.Executable);
+                    exe = ExecutableResolver.FindExisting(declared) ?? declared;
+                }
+            }
+            catch
+            {
+                // ignore — exe filter is optional
+            }
+        }
+    }
+
+    var summary = MiniTimelineCapture.TryCapture(
+        crashesDir,
+        id.Value,
+        detail.Summary.ObservedAt,
+        window,
+        targetExe: exe,
+        repoRoot: repo,
+        projectName: project,
+        miniDumpPath: detail.Summary.MiniDumpPath,
+        inputPath: detail.Summary.InputPath,
+        runId: detail.Summary.RunId,
+        procmonPmlPath: pml);
+    Console.WriteLine(summary.SummaryLine);
+    Console.WriteLine($"  dir: {MiniTimelineCapture.TimelineDir(crashesDir, id.Value)}");
+    if (!string.IsNullOrWhiteSpace(summary.GraphPath))
+        Console.WriteLine($"  graph: {summary.GraphPath}");
+    foreach (var note in summary.Notes.Take(5))
+        Console.WriteLine($"  note: {note}");
+    return summary.Ok || summary.ToolsUsed.Count > 0 ? 0 : 2;
+}
+
+static int RunTimelineGraph(string[] args)
+{
+    string? project = null;
+    Guid? id = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "-i" or "--id" && i + 1 < args.Length && Guid.TryParse(args[i + 1], out var g))
+        {
+            id = g;
+            i++;
+        }
+    }
+
+    if (id is null)
+    {
+        Console.Error.WriteLine("Usage: randall timeline graph -p <project> -i <crash-guid>");
+        return 1;
+    }
+
+    var detail = CrashCatalog.GetDetail(id.Value);
+    if (detail is null)
+    {
+        Console.Error.WriteLine($"Crash not found: {id}");
+        return 1;
+    }
+
+    project ??= detail.Summary.Project;
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesDir = Path.Combine(repo, "data", "crashes", project);
+    var summary = MiniTimelineCapture.TryRead(crashesDir, id.Value) ?? detail.MiniTimeline;
+    if (summary is null)
+    {
+        Console.Error.WriteLine("No mini-timeline summary — run: randall timeline capture -p … -i …");
+        return 2;
+    }
+
+    var path = MiniTimelineGraphBuilder.Write(crashesDir, id.Value, summary, detail.Summary.InputPath);
+    var graph = MiniTimelineGraphBuilder.TryRead(crashesDir, id.Value);
+    Console.WriteLine(graph?.SummaryLine ?? "graph written");
+    Console.WriteLine($"  {path}");
+    Console.WriteLine($"  merged: {MiniTimelineGraphBuilder.MergedCsvPath(crashesDir, id.Value)}");
+    return 0;
 }
 
 static int RunRuntime(string[] args)

@@ -17,6 +17,11 @@ jobs:
       - run: dotnet restore
       - run: dotnet build --no-restore -c Release
       - run: dotnet test -c Release --no-build --verbosity minimal
+      # Lab binaries are gitignored; campaign/graph need them on disk.
+      - name: Build lab targets
+        shell: pwsh
+        run: |
+          ./scripts/build-all-lab-targets.ps1 -SkipGcc
       - run: dotnet run --no-build -c Release --project src/Randall.Cli -- campaign -c campaigns/lab-smoke.yaml
       - run: dotnet run --no-build -c Release --project src/Randall.Cli -- graph -c projects/vulnftp.yaml
 

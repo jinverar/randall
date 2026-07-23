@@ -246,6 +246,11 @@
           </label>
           <p id="stalking-hint" class="hex"></p>
           <h2>Add layer</h2>
+          <div class="btn-row" style="margin-bottom:0.75rem">
+            <button type="button" class="btn primary" id="stalking-baseline-start">Start baseline session</button>
+            <button type="button" class="btn" id="stalking-baseline-stop">Stop + record</button>
+          </div>
+          <p class="hex" id="stalking-baseline-status">Baseline session: —</p>
           <label>
             Tag
             <select id="stalking-tag">
@@ -267,6 +272,10 @@
           <label>
             Crash id (optional — import crash trace)
             <input type="text" id="stalking-crash" placeholder="guid" />
+          </label>
+            <label class="check-row" title="Windows: EVTX/MFT/WER/Procmon per layer. Linux soft-skips EZ tools — still records layer metadata for compare.">
+            <input type="checkbox" id="stalking-mini-timeline" checked />
+            Mini-timeline each layer (compare phases)
           </label>
           <p class="hex">Leave paths empty to import current corpus edges.txt for this project.</p>
           <div class="btn-row">
@@ -298,6 +307,27 @@
           <div class="panel">
             <h2>Compare <span class="hex" id="stalking-compare-meta"></span></h2>
             <div id="stalking-deltas" class="table-wrap"></div>
+          </div>
+          <div class="panel">
+            <h2>Host timeline compare <span class="hex" id="stalking-tl-compare-meta"></span></h2>
+            <p class="hex">What changed on the box between baseline → fuzzed → fuzzier (Windows EVTX/MFT/Procmon; Linux soft-skip).</p>
+            <div id="stalking-tl-stats" class="table-wrap"></div>
+            <div id="stalking-tl-deltas" class="table-wrap" style="margin-top:0.75rem"></div>
+            <div id="stalking-tl-samples" class="table-wrap" style="margin-top:0.75rem"></div>
+          </div>
+          <div class="panel">
+            <h2>Exploit Surface <span class="hex" id="stalking-surface-meta"></span></h2>
+            <p class="hex">Host assessor after baseline — sideload, injection, listen, unusual modules (Windows Procmon · Linux ss/maps; not Oracle).</p>
+            <div class="btn-row">
+              <button type="button" class="btn" id="stalking-surface-assess">Assess latest</button>
+            </div>
+            <div id="stalking-surface-findings" class="table-wrap" style="margin-top:0.75rem"></div>
+            <div id="stalking-surface-recs" class="table-wrap" style="margin-top:0.5rem"></div>
+            <h3 class="stalking-subh">Surface compare</h3>
+            <p class="hex" id="stalking-surface-compare-meta"></p>
+            <div id="stalking-surface-compare" class="table-wrap"></div>
+            <h3 class="stalking-subh">Surface fuzz ideas</h3>
+            <div id="stalking-surface-ideas" class="table-wrap"></div>
           </div>
           <div class="panel">
             <h2>Block map <span class="hex">(union of selected layers)</span></h2>
@@ -1366,6 +1396,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=scream-walk-1"></script>
+  <script type="module" src="/js/app.js?v=mini-timeline-scream-merge-1"></script>
 </body>
 </html>

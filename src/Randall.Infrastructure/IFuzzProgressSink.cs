@@ -53,4 +53,5 @@ public sealed record FuzzRunOptions(
     bool? EtwCapture = null,
     bool? DebugViewCapture = null,
     bool? SysinternalsSnapshots = null,
-    bool? StringsOnCrash = null);
+    bool? StringsOnCrash = null,
+    bool? MiniTimeline = null);

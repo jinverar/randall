@@ -1,5 +1,6 @@
 using System.Globalization;
 using Randall.Contracts;
+using Randall.Infrastructure.ExploitSurface;
 
 namespace Randall.Infrastructure;
 
@@ -116,6 +117,17 @@ public static class StalkMapBuilder
             .ToList();
 
         var surfaceIdeas = BuildSurfaceIdeas(project, surface, interestingImports, hotStrings, hotspots);
+        try
+        {
+            var host = ExploitSurfaceIdeas.FromLatest(project, repoRoot);
+            foreach (var idea in host)
+            {
+                if (!surfaceIdeas.Any(s => s.Id == idea.Id))
+                    surfaceIdeas = surfaceIdeas.Concat([idea]).ToList();
+            }
+        }
+        catch { /* soft */ }
+
         var format = surface?.Format ?? (resolvedBinary is null ? "missing" : "unknown");
         var summary = surface is null
             ? $"Missed gaps only — no PE/ELF surface (binary {(resolvedBinary ?? "not found")}). " +

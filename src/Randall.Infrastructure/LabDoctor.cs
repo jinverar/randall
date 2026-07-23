@@ -123,6 +123,50 @@ public static class LabDoctor
                 "joker disabled — optional chaotic tricks; Magician can summonJoker (docs/MAGICIAN.md#joker)");
         }
 
+        var surface = project.ExploitSurface ?? new ExploitSurfaceConfig();
+        if (surface.Enabled)
+        {
+            var scope = surface.AssessAllLayers
+                ? "all stalk layers"
+                : surface.AssessBaseline ? "baseline layers" : "manual assess only";
+            var soft = surface.SoftSummonMagician ? "soft Magician" : "no Magician soft-summon";
+            Add("exploitSurface", "ok",
+                $"enabled · {scope} · {soft} — host sideload/injection/listen (docs/SURFACE.md)");
+        }
+        else
+        {
+            Add("exploitSurface", "warn",
+                "exploitSurface disabled — set exploitSurface.enabled: true after baseline (docs/SURFACE.md)");
+        }
+
+        // Baseline session host probes (Windows Sysinternals / Linux ss+proc).
+        if (OperatingSystem.IsWindows())
+        {
+            var procmon = ProcmonCapture.DiscoverExecutable();
+            var listDlls = SysinternalsToolPaths.FindListDlls();
+            var core = (procmon is not null ? 1 : 0) + (listDlls is not null ? 1 : 0);
+            Add("baselineSession", core == 2 ? "ok" : "warn",
+                core == 2
+                    ? $"Baseline session ready — Procmon + ListDLLs (docs/SURFACE.md)"
+                    : $"Baseline session partial ({core}/2) — need Procmon + ListDLLs for rich surface (docs/SURFACE.md)");
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            var ssOk = File.Exists("/bin/ss") || File.Exists("/usr/bin/ss");
+            var procOk = Directory.Exists("/proc");
+            var lddOk = File.Exists("/usr/bin/ldd") || File.Exists("/bin/ldd");
+            var score = (ssOk ? 1 : 0) + (procOk ? 1 : 0) + (lddOk ? 1 : 0);
+            Add("baselineSession", score >= 2 ? "ok" : "warn",
+                score >= 2
+                    ? $"Baseline session ready — Linux ss+/proc/ldd probes (docs/SURFACE.md)"
+                    : $"Baseline session weak ({score}/3) — need ss, /proc, ldd for Linux surface twin (docs/SURFACE.md)");
+        }
+        else
+        {
+            Add("baselineSession", "warn",
+                "Baseline session host probes need Windows or Linux (docs/SURFACE.md)");
+        }
+
         // Optional external engines (AFL++ / honggfuzz) — fail preflight when selected but missing.
         var engineId = ExternalEngineCampaign.Normalize(project.Fuzz.Engine);
         if (ExternalEngineCampaign.IsExternal(engineId))
@@ -414,6 +458,30 @@ public static class LabDoctor
                 stringsExe is not null
                     ? $"{stringsExe} (set fuzz.stringsOnCrash: true to dump strings on crashing input)"
                     : "strings64.exe not found — optional strings-on-crash disabled (scripts/install-recording-tools.ps1)");
+        }
+
+        var ez = ZimmermanToolPaths.Probe();
+        var tlWindow = Math.Clamp(
+            project.Fuzz.MiniTimelineWindowSeconds <= 0 ? 60 : project.Fuzz.MiniTimelineWindowSeconds,
+            5, 3600);
+        if (project.Fuzz.MiniTimeline || project.Fuzz.MiniTimelineOnStalk || project.Fuzz.MiniTimelineOnBaseline)
+        {
+            var parts = new List<string>();
+            if (project.Fuzz.MiniTimeline) parts.Add("unique screams");
+            if (project.Fuzz.MiniTimelineOnStalk || project.Fuzz.MiniTimelineOnBaseline || project.Fuzz.MiniTimeline)
+                parts.Add("stalk layers");
+            var scope = string.Join(" + ", parts.Distinct());
+            Add("miniTimeline", ez.HasCore ? "ok" : "warn",
+                ez.HasCore
+                    ? $"MiniTimeline ({scope}, ±{tlWindow}s) → {string.Join(", ", ez.FoundLines().Take(3))}"
+                    : "MiniTimeline enabled but EvtxECmd/MFTECmd not found — install under tools/ez/ (docs/MINI_TIMELINE.md)");
+        }
+        else
+        {
+            Add("miniTimeline", ez.HasCore ? "ok" : "warn",
+                ez.HasCore
+                    ? $"EZ tools ready (set fuzz.miniTimelineOnStalk / miniTimeline, or UI checkbox per layer) — {string.Join(", ", ez.FoundLines().Take(2))}"
+                    : "EZ mini-timeline optional — EvtxECmd/MFTECmd not found (docs/MINI_TIMELINE.md)");
         }
 
         // Linux fuzzing / triage toolchain — the Unix counterparts to the Windows stack above.

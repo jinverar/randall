@@ -1,5 +1,6 @@
 using Randall.Contracts;
 using Randall.Infrastructure;
+using Randall.Infrastructure.ExploitSurface;
 using Randall.Infrastructure.Rop;
 using Randall.Server;
 
@@ -408,6 +409,55 @@ app.MapGet("/api/crashes/{id:guid}/memory", (Guid id) =>
         MemoryLensWriter.Write(crashesDir, id, report);
     return report.Ok ? Results.Ok(report) : Results.Ok(report);
 });
+app.MapGet("/api/crashes/{id:guid}/timeline", (Guid id) =>
+{
+    var detail = CrashCatalog.GetDetail(id);
+    if (detail is null)
+        return Results.NotFound();
+    if (!WebTargetFilter.IsVisibleProject(detail.Summary.Project))
+        return Results.NotFound();
+
+    if (detail.MiniTimeline is not null)
+        return Results.Ok(detail.MiniTimeline);
+
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesDir = Path.Combine(repo, "data", "crashes", detail.Summary.Project);
+    var existing = MiniTimelineCapture.TryRead(crashesDir, id);
+    return existing is not null ? Results.Ok(existing) : Results.NotFound(new
+    {
+        error = "No mini-timeline for this crash. Enable fuzz.miniTimeline or run: randall timeline capture -p <project> -i <guid>",
+    });
+});
+
+app.MapGet("/api/crashes/{id:guid}/timeline/graph", (Guid id) =>
+{
+    var detail = CrashCatalog.GetDetail(id);
+    if (detail is null)
+        return Results.NotFound();
+    if (!WebTargetFilter.IsVisibleProject(detail.Summary.Project))
+        return Results.NotFound();
+
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesDir = Path.Combine(repo, "data", "crashes", detail.Summary.Project);
+    var graph = MiniTimelineGraphBuilder.TryRead(crashesDir, id);
+    if (graph is not null)
+        return Results.Ok(graph);
+
+    var summary = detail.MiniTimeline ?? MiniTimelineCapture.TryRead(crashesDir, id);
+    if (summary is null)
+    {
+        return Results.NotFound(new
+        {
+            error = "No mini-timeline/graph for this crash. Run: randall timeline capture -p <project> -i <guid>",
+        });
+    }
+
+    MiniTimelineGraphBuilder.Write(crashesDir, id, summary, detail.Summary.InputPath);
+    graph = MiniTimelineGraphBuilder.TryRead(crashesDir, id);
+    return graph is not null
+        ? Results.Ok(graph)
+        : Results.NotFound(new { error = "Graph rebuild failed" });
+});
 
 // Crash artifact pack — offline backup of dumps + lens; pull from remote agent into laptop console.
 app.MapPost("/api/crashes/pack", (CrashArtifactPackRequest request) =>
@@ -594,7 +644,8 @@ app.MapPost("/api/stalking/layers/from-corpus", (StalkLayerFromCorpusRequest req
             null,
             null,
             null,
-            "Imported from data/corpus/<project>/edges.txt"));
+            "Imported from data/corpus/<project>/edges.txt",
+            request.MiniTimeline));
         return Results.Ok(layer);
     }
     catch (Exception ex)
@@ -608,6 +659,37 @@ app.MapDelete("/api/stalking/{project}/layers/{layerId}", (string project, strin
     if (WebTargetFilter.IsHiddenProject(project))
         return Results.NotFound();
     return StalkCampaignStore.DeleteLayer(project, layerId) ? Results.NoContent() : Results.NotFound();
+});
+
+app.MapGet("/api/stalking/{project}/layers/{layerId}/timeline", (string project, string layerId) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    var layers = StalkCampaignStore.ListLayers(project);
+    var layer = layers.FirstOrDefault(l => l.Id.Equals(layerId, StringComparison.OrdinalIgnoreCase));
+    if (layer is null)
+        return Results.NotFound(new { error = "layer not found" });
+
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var stalkDir = StalkCampaignStore.ProjectDir(project, repo);
+    var key = $"layer-{layer.Id}";
+    var existing = MiniTimelineCapture.TryRead(stalkDir, key);
+    return existing is not null
+        ? Results.Ok(existing)
+        : Results.NotFound(new
+        {
+            error = "No mini-timeline for this layer. Enable fuzz.miniTimelineOnStalk / miniTimeline, or record with miniTimeline: true.",
+        });
+});
+
+app.MapGet("/api/stalking/{project}/timeline/compare", (string project, string? layers) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    var ids = string.IsNullOrWhiteSpace(layers)
+        ? Array.Empty<string>()
+        : layers.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    return Results.Ok(StalkTimelineCompare.Compare(project, ids));
 });
 
 app.MapGet("/api/stalking/{project}/compare", (string project, string? layers) =>
@@ -650,6 +732,137 @@ app.MapGet("/api/stalking/{project}/map", (string project, int? limit, string? b
     {
         return Results.BadRequest(new { error = ex.Message });
     }
+});
+
+app.MapGet("/api/stalking/{project}/surface", (string project, string? layerId) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    if (!string.IsNullOrWhiteSpace(layerId))
+    {
+            var one = ExploitSurfaceEngine.TryRead(project, layerId);
+        return one is not null
+            ? Results.Ok(one)
+            : Results.NotFound(new { error = "No surface report for layer — run assess" });
+    }
+
+    var latest = ExploitSurfaceEngine.TryReadLatest(project);
+    return latest is not null
+        ? Results.Ok(latest)
+        : Results.NotFound(new
+        {
+            error = "No exploit-surface report yet. Record a baseline (auto-assess) or: randall surface assess -p " + project,
+        });
+});
+
+app.MapPost("/api/stalking/{project}/surface/assess", (string project, ExploitSurfaceAssessRequest? body) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        var report = ExploitSurfaceEngine.AssessProject(
+            project,
+            layerId: body?.LayerId,
+            baselineOnly: body?.BaselineOnly == true);
+        return Results.Ok(report);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/stalking/{project}/surface/compare", (string project, string? layers) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    var ids = string.IsNullOrWhiteSpace(layers)
+        ? Array.Empty<string>()
+        : layers.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    return Results.Ok(ExploitSurfaceCompare.Compare(project, ids));
+});
+
+app.MapGet("/api/stalking/{project}/surface/ideas", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    return Results.Ok(ExploitSurfaceIdeas.FromLatest(project));
+});
+
+app.MapPost("/api/stalking/{project}/surface/apply", (string project, ExploitSurfaceApplyRequest? body) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        var result = ExploitSurfaceApply.Apply(
+            project,
+            ideaId: body?.IdeaId,
+            action: body?.Action,
+            port: body?.Port,
+            all: body?.All == true);
+        return result.Ok ? Results.Ok(result) : Results.BadRequest(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/stalking/{project}/baseline", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    return Results.Ok(BaselineSession.Status(project));
+});
+
+app.MapPost("/api/stalking/{project}/baseline/start", (string project, BaselineSessionStartRequest? body) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(BaselineSession.Start(
+            project, body?.Pid, body?.Executable ?? body?.TargetExe));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/stalking/{project}/baseline/stop", (string project, BaselineSessionStopRequest? body) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(BaselineSession.Stop(
+            project,
+            recordLayer: body?.RecordLayer ?? true,
+            label: body?.Label,
+            pid: body?.Pid));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/stalking/{project}/layers/{layerId}/surface", (string project, string layerId) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    var report = ExploitSurfaceEngine.TryRead(project, layerId);
+    if (report is not null)
+        return Results.Ok(report);
+    // On-demand assess if layer exists
+    var layer = StalkCampaignStore.ListLayers(project)
+        .FirstOrDefault(l => l.Id.Equals(layerId, StringComparison.OrdinalIgnoreCase));
+    if (layer is null)
+        return Results.NotFound(new { error = "layer not found" });
+    return Results.Ok(ExploitSurfaceEngine.AssessLayer(layer));
 });
 
 app.MapPost("/api/stalking/{project}/inventory", (string project, StalkInventoryImportBody body) =>

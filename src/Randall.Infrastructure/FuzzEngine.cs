@@ -124,6 +124,8 @@ public sealed class FuzzEngine
         var wantDebugView = options.DebugViewCapture ?? project.Fuzz.DebugViewCapture;
         var wantSysinternalsSnap = options.SysinternalsSnapshots ?? project.Fuzz.SysinternalsSnapshots;
         var wantStringsOnCrash = options.StringsOnCrash ?? project.Fuzz.StringsOnCrash;
+        var wantMiniTimeline = options.MiniTimeline ?? project.Fuzz.MiniTimeline;
+        var miniTimelineWindow = project.Fuzz.MiniTimelineWindowSeconds;
         string? runDir = journal?.RunDirectory;
         if (!dryRun && (wantProcmon || wantTcpvcon || wantPktmon || wantTshark || wantEtw || wantDebugView || wantSysinternalsSnap))
         {
@@ -1180,6 +1182,35 @@ public sealed class FuzzEngine
                         catch (Exception ex)
                         {
                             FuzzAnalystLog.Warn(progress, $"stringsOnCrash: {ex.Message}", iterations);
+                        }
+                    }
+
+                    if (wantMiniTimeline && savedResult.IsNew)
+                    {
+                        try
+                        {
+                            var tl = MiniTimelineCapture.TryCapture(
+                                crashesDir,
+                                saved.Id,
+                                saved.At,
+                                miniTimelineWindow,
+                                targetExeResolved,
+                                repoRoot: CrashCatalog.FindRepoRoot(),
+                                projectName: project.Name,
+                                miniDumpPath: saved.MiniDumpPath,
+                                inputPath: saved.InputPath,
+                                runId: saved.RunId,
+                                procmonPmlPath: procmon?.PmlPath ?? (runDir is not null ? Path.Combine(runDir, "fuzz.pml") : null));
+                            Console.WriteLine($"  {tl.SummaryLine} → {MiniTimelineCapture.TimelineDir(crashesDir, saved.Id)}");
+                            if (tl.Ok)
+                                FuzzAnalystLog.Info(progress, $"[mini-timeline] {tl.SummaryLine}", iterations);
+                            else
+                                FuzzAnalystLog.Warn(progress, $"[mini-timeline] {tl.SummaryLine}", iterations);
+                        }
+                        catch (Exception tlEx)
+                        {
+                            FuzzAnalystLog.Warn(progress, $"miniTimeline: {tlEx.Message}", iterations);
+                            Console.WriteLine($"  mini-timeline skipped: {tlEx.Message}");
                         }
                     }
 

@@ -49,6 +49,8 @@ Default campaign checklist: **Wait (Scream)** + **Procmon** (or **ETW** for long
 
 **Sysmon footnote:** host-wide EVTX remains an optional **External** companion if you already run it on the lab box. Randfuzz does **not** export or configure Sysmon — it is not part of the fuzz product path.
 
+**Mini-timeline:** for **unique-scream** EVTX/MFT/WER windows via Eric Zimmerman tools, see [MINI_TIMELINE.md](MINI_TIMELINE.md) (`fuzz.miniTimeline`). That is post-crash enrichment, not a run bookend — pair it with Procmon/ETW when you want both process activity and OS event context.
+
 ---
 
 ## Beyond Sysinternals — modern observation stack

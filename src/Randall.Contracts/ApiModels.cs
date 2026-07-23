@@ -95,7 +95,8 @@ public sealed record FuzzStartRequest(
     bool? EtwCapture = null,
     bool? DebugViewCapture = null,
     bool? SysinternalsSnapshots = null,
-    bool? StringsOnCrash = null);
+    bool? StringsOnCrash = null,
+    bool? MiniTimeline = null);
 
 public sealed record FuzzSessionStatusDto(
     bool Running,

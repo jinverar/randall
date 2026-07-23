@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Randall.Contracts;
+using Randall.Infrastructure.ExploitSurface;
 
 namespace Randall.Infrastructure;
 
@@ -113,8 +114,152 @@ public static class StalkCampaignStore
             request.CrashId,
             request.Notes);
 
+        layer = MaybeCaptureLayerMiniTimeline(layer, request, repoRoot, dir);
+        layer = MaybeAssessExploitSurface(layer, repoRoot);
+
         File.WriteAllText(Path.Combine(dir, $"layer-{id}.json"), JsonSerializer.Serialize(layer, JsonOptions));
         return layer;
+    }
+
+    /// <summary>Tag contains "base" (baseline, base, …) — same rule as MissedBlockAnalyzer / CrashStalker.</summary>
+    public static bool IsBaselineTag(string? tag) =>
+        !string.IsNullOrWhiteSpace(tag) &&
+        tag.Contains("base", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsCrashTag(string? tag) =>
+        !string.IsNullOrWhiteSpace(tag) &&
+        tag.Contains("crash", StringComparison.OrdinalIgnoreCase);
+
+    private static StalkLayerDto MaybeCaptureLayerMiniTimeline(
+        StalkLayerDto layer,
+        StalkLayerCreateRequest request,
+        string repoRoot,
+        string stalkProjectDir)
+    {
+        var (want, window, exe) = ResolveLayerMiniTimeline(request, repoRoot);
+        if (!want)
+            return layer;
+
+        try
+        {
+            var key = $"layer-{layer.Id}";
+            var anchorId = Guid.NewGuid();
+            var summary = MiniTimelineCapture.TryCapture(
+                stalkProjectDir,
+                anchorId,
+                layer.CreatedAt,
+                window,
+                targetExe: exe,
+                repoRoot: repoRoot,
+                projectName: layer.Project,
+                timelineKey: key,
+                runId: request.RunId,
+                procmonPmlPath: request.ProcmonPmlPath);
+            var rel = Path.Combine("timeline", key).Replace('\\', '/');
+            var note = string.IsNullOrWhiteSpace(layer.Notes)
+                ? summary.SummaryLine
+                : layer.Notes + " · " + summary.SummaryLine;
+            return layer with
+            {
+                MiniTimelineDir = rel,
+                MiniTimelineSummary = summary.SummaryLine,
+                Notes = note,
+            };
+        }
+        catch (Exception ex)
+        {
+            return layer with
+            {
+                MiniTimelineSummary = "mini-timeline soft-fail: " + ex.Message,
+            };
+        }
+    }
+
+    private static (bool Want, int Window, string? Exe) ResolveLayerMiniTimeline(
+        StalkLayerCreateRequest request,
+        string repoRoot)
+    {
+        var window = request.MiniTimelineWindowSeconds is int w && w > 0 ? w : 60;
+        string? exe = null;
+        var yamlWant = false;
+        var yamlPath = Path.Combine(repoRoot, "projects", request.Project + ".yaml");
+        if (!File.Exists(yamlPath))
+        {
+            foreach (var candidate in new[]
+                     {
+                         Path.Combine(repoRoot, "projects", request.Project + ".yml"),
+                         Path.Combine(repoRoot, "projects", request.Project, "project.yaml"),
+                     })
+            {
+                if (File.Exists(candidate))
+                {
+                    yamlPath = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (File.Exists(yamlPath))
+        {
+            try
+            {
+                var proj = ProjectLoader.Load(yamlPath);
+                window = request.MiniTimelineWindowSeconds is int rw && rw > 0
+                    ? rw
+                    : proj.Fuzz.MiniTimelineWindowSeconds;
+                yamlWant = proj.Fuzz.MiniTimelineOnStalk
+                           || proj.Fuzz.MiniTimelineOnBaseline
+                           || proj.Fuzz.MiniTimeline;
+                if (!string.IsNullOrWhiteSpace(proj.Target.Executable))
+                {
+                    var declared = ProjectLoader.ResolvePath(yamlPath, proj.Target.Executable);
+                    exe = ExecutableResolver.FindExisting(declared) ?? declared;
+                }
+            }
+            catch
+            {
+                // ignore — optional enrichment
+            }
+        }
+
+        // Explicit request wins.
+        if (request.MiniTimeline == true)
+            return (true, window, exe);
+        if (request.MiniTimeline == false)
+            return (false, window, exe);
+
+        // Auto-crash layers already get a crash-scoped mini-timeline in FuzzEngine — skip duplicate
+        // unless the operator asked explicitly (handled above).
+        if (IsCrashTag(request.Tag) && !string.IsNullOrWhiteSpace(request.CrashId))
+            return (false, window, exe);
+
+        // Every stalk phase (baseline / fuzzed / fuzzier / custom / …) when project enables it.
+        return (yamlWant, window, exe);
+    }
+
+    private static StalkLayerDto MaybeAssessExploitSurface(StalkLayerDto layer, string repoRoot)
+    {
+        try
+        {
+            if (!ExploitSurfaceEngine.ShouldAutoAssess(layer))
+                return layer;
+            var report = ExploitSurfaceEngine.AssessLayer(layer, repoRoot);
+            var note = string.IsNullOrWhiteSpace(layer.Notes)
+                ? report.SummaryLine
+                : layer.Notes + " · " + report.SummaryLine;
+            return layer with
+            {
+                ExploitSurfaceSummary = report.SummaryLine,
+                Notes = note,
+            };
+        }
+        catch (Exception ex)
+        {
+            return layer with
+            {
+                ExploitSurfaceSummary = "exploit-surface soft-fail: " + ex.Message,
+            };
+        }
     }
 
     public static bool DeleteLayer(string project, string layerId, string? repoRoot = null)
@@ -129,6 +274,18 @@ public static class StalkCampaignStore
             var p = Path.Combine(dir, pattern);
             if (File.Exists(p))
                 File.Delete(p);
+        }
+
+        var tlDir = MiniTimelineCapture.TimelineDir(dir, $"layer-{layerId}");
+        if (Directory.Exists(tlDir))
+        {
+            try { Directory.Delete(tlDir, true); } catch { /* soft */ }
+        }
+
+        var surfaceReport = Path.Combine(dir, "surface", $"layer-{layerId}.json");
+        if (File.Exists(surfaceReport))
+        {
+            try { File.Delete(surfaceReport); } catch { /* soft */ }
         }
 
         return true;
@@ -225,10 +382,10 @@ public static class StalkCampaignStore
         var campaign = GetCampaign(project, repoRoot);
         var tools = ProbeTools(repoRoot);
         var hint = campaign.Layers.Count == 0
-            ? "Record a baseline layer (normal use under drcov), then add fuzzed layers and compare. Missed-block guidance appears after layers exist."
+            ? "Record a baseline layer (normal use under coverage + Procmon). Exploit Surface will suggest sideload/injection/listen items."
             : campaign.Layers.Count == 1
-                ? "Baseline recorded. Add a fuzzed layer after your next campaign, then open Missed blocks for why/how-to-fuzz ideas."
-                : "Compare layers, inspect Missed blocks (baseline-only / gaps), export IDC/Ghidra colors, refine seeds & mutators.";
+                ? "Baseline recorded — review Exploit Surface findings, then add a fuzzed layer after your next campaign."
+                : "Compare layers + host timelines, inspect Exploit Surface / Missed blocks, export IDC/Ghidra, refine seeds.";
         return new StalkWorkspaceDto(project, campaign, tools, hint);
     }
 
@@ -314,6 +471,13 @@ public static class StalkCampaignStore
                 SysinternalsToolPaths.FindStrings(repoRoot) is not null ? "ready" : "missing",
                 "Strings dump of crashing input — fuzz.stringsOnCrash (strings64.exe)",
                 "strings64 -accepteula -n 4 <crash.bin>"),
+            new("mini-timeline", "Mini-timeline (EZ)",
+                ZimmermanToolPaths.Probe(repoRoot).HasCore ? "ready" : "missing",
+                "Unique-scream / stalk-layer EVTX/MFT/WER/Procmon window — fuzz.miniTimelineOnStalk",
+                "randall timeline capture -p <project> -i <guid>"),
+            new("exploit-surface", "Exploit Surface", "ready",
+                "Assess baseline/phase host artifacts for sideload, injection, listen, unusual modules — docs/SURFACE.md",
+                "randall surface assess -p <project>"),
             new("procexp", "Process Explorer", ExistsOnPath("procexp") || ExistsOnPath("procexp64") ? "ready" : "planned",
                 "Live process tree, handles, and module view (GUI companion — Monitor 2/3)",
                 null),
