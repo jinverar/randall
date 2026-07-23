@@ -3,9 +3,18 @@
 **RandfuzzDbg** is a WinDbg Preview / dbgeng analysis package for **fuzz crash dumps**.
 **ROP Studio** is the host-side gadget catalog + constrained chain **sketch** tool.
 
-Together they walk a scream from fault → control offset → candidate gadgets for
+Together they walk a crash from fault → CONTROL offset → candidate gadgets for
 **authorized lab targets** (mitigation ladder / owned binaries). They do **not** emit
 shellcode, NOP sleds, or weaponized exploit payloads.
+
+### Start here (crash triage)
+
+1. Open the scream in **Crashes** (or use the CLI with the crash guid).
+2. Click **Run triage walk** — CONTROL → stack map → badchars → ROP sketch → debugger notes.
+3. Open the dump in WinDbg Preview / GDB and use the exported walk script.
+4. Climb the mitigation ladder (`basic` → `nx` → `aslr` → `modern`) and re-sketch.
+
+Step tools (stack map, gadget search, ladder) stay under **Step tools** when you need them one at a time.
 
 Related: [EXPLOIT_GUIDE.md](EXPLOIT_GUIDE.md) · [MITIGATION_LAB.md](MITIGATION_LAB.md) ·
 [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md) · [RECORDING.md](RECORDING.md)
@@ -59,7 +68,7 @@ One crash-guid playbook that chains the lab path:
 ```bash
 randall scream walk -i <crash-guid> --goal auto
 # API: POST /api/scream/walk
-# UI: Crashes → Walk this scream
+# UI: Crashes → Run triage walk
 ```
 
 Order: CONTROL (guide/triage) → **Stack Lens** → badchars → tier-aware sketch goal → ROP sketch →
@@ -76,7 +85,7 @@ Also: `randall stack lens -i <guid>` · `randall ladder diff` · `randall gdb wa
 ```bash
 randall stack lens -i <crash-guid> [--window 128] [--json]
 # API: POST /api/stack/lens
-# UI: Crashes → Stack Lens
+# UI: Crashes → Step tools → Stack map
 ```
 
 Reads a stack window from the dump (gdb core / minidump Memory64) or falls back to registers +

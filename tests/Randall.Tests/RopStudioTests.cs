@@ -15,7 +15,17 @@ public class RopStudioTests
         Assert.Contains(DocsCatalog.Index, i => i.Path == "EXPLOIT_GUIDE.md"
             && i.Title.Contains("ROP", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(DocsCatalog.Index, i => i.Path == "WINDBG_FUZZ_PKG.md"
-            && i.Title.Contains("Scream", StringComparison.OrdinalIgnoreCase));
+            && (i.Title.Contains("Crash triage", StringComparison.OrdinalIgnoreCase)
+                || i.Title.Contains("ROP", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
+    public void Docs_WinDbgPkg_HasStartHereTriagePath()
+    {
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var text = File.ReadAllText(Path.Combine(root, "docs", "WINDBG_FUZZ_PKG.md"));
+        Assert.Contains("Start here", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Run triage walk", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
