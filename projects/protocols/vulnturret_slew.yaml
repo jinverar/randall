@@ -1,0 +1,27 @@
+name: vulnturret-slew
+description: STT1 SLEW — type 0x02 + az/el pair count (sentry station lab)
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnturret_type_slew.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: word
+          name: pair_count
+          mutable: true
+          littleEndian: false
+          value: 2
+        - type: bytes
+          name: angles
+          mutable: true
+          minSize: 8
+          maxSize: 256
+          seedFile: seeds/vulnturret_angles.bin

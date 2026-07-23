@@ -35,6 +35,8 @@ $Required = @(
     "build-vulnrpc.ps1",
     "build-vulnsmb.ps1",
     "build-vulndrone.ps1",
+    "build-vulnuas.ps1",
+    "build-vulnturret.ps1",
     "build-vulnmqtt.ps1",
     "build-vulnrobot.ps1",
     "build-vulnrosbus.ps1",

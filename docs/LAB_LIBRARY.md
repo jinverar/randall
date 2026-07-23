@@ -8,6 +8,7 @@ Randfuzz ships a curated **lab library**: startable vulnerable-by-design servers
 |----------|----------------|
 | **network** | TCP/UDP protocol labs (HTTP, FTP, SSH-shaped, TFTP, RPC, SMB-shaped, Vulnserver) |
 | **drone** | Fictional RDL1 drone / GCS labs — see [DRONE_LAB.md](DRONE_LAB.md) |
+| **defense** | Fictional UAS / sentry labs (UAS1, STT1) — see [DEFENSE_LAB.md](DEFENSE_LAB.md) |
 | **iot** | Fictional MQTT-shaped broker (RMQ1) — see [MQTT_LAB.md](MQTT_LAB.md) |
 | **robot** | Fictional robot motion / bus / I/O labs (RBT1, RRBS, RMB1) — see [ROBOT_LAB.md](ROBOT_LAB.md) |
 | **ai** | Fictional AI-gateway lab (RAG1) for AI-codegen mistake fuzzing — see [AI_LAB.md](AI_LAB.md) |
@@ -40,11 +41,11 @@ powershell -File scripts/build-file-framed.ps1
 powershell -File scripts/build-reeldeck.ps1
 ```
 
-Per-target scripts: `scripts/build-vuln*.ps1`, `scripts/build-vulndrone.ps1`, `scripts/build-vulnmqtt.ps1`, `scripts/build-vulnrobot.ps1`, `scripts/build-vulnrosbus.ps1`, `scripts/build-vulnrobotio.ps1`, `scripts/build-vulnai.ps1`.
+Per-target scripts: `scripts/build-vuln*.ps1`, `scripts/build-vulndrone.ps1`, `scripts/build-vulnuas.ps1`, `scripts/build-vulnturret.ps1`, `scripts/build-vulnmqtt.ps1`, `scripts/build-vulnrobot.ps1`, `scripts/build-vulnrosbus.ps1`, `scripts/build-vulnrobotio.ps1`, `scripts/build-vulnai.ps1`.
 
 ## UI
 
-Fuzz → **Lab library** shows category, difficulty, tags, endpoint, PID, and Start/Stop (or **Fuzz cmd** for profile-only). Filter with the category dropdown. Docs links point at `docs/*.md` (e.g. `DRONE_LAB.md`, `MQTT_LAB.md`, `ROBOT_LAB.md`, `AI_LAB.md`, `REELDECK.md`, `RPC_LAB.md`).
+Fuzz → **Lab library** shows category, difficulty, tags, endpoint, PID, and Start/Stop (or **Fuzz cmd** for profile-only). Filter with the category dropdown. Docs links point at `docs/*.md` (e.g. `DRONE_LAB.md`, `DEFENSE_LAB.md`, `MQTT_LAB.md`, `ROBOT_LAB.md`, `AI_LAB.md`, `REELDECK.md`, `RPC_LAB.md`).
 
 ## API
 

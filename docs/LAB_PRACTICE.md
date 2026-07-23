@@ -50,6 +50,8 @@ Labs listen on **127.0.0.1** by default. Manage them from **Fuzz → Lab library
 | vulnrpc | 1355 | `projects/vulnrpc.yaml` |
 | vulnsmb | 4455 | `projects/vulnsmb.yaml` |
 | vulndrone-udp / tcp | 15550 / 15551 | `projects/vulndrone-*.yaml` — see [DRONE_LAB.md](DRONE_LAB.md) |
+| vulnuas / udp | 15650 / 15651 | `projects/vulnuas.yaml`, `vulnuas-udp.yaml` — see [DEFENSE_LAB.md](DEFENSE_LAB.md) |
+| vulnturret / udp | 15660 / 15661 | `projects/vulnturret.yaml`, `vulnturret-udp.yaml` — see [DEFENSE_LAB.md](DEFENSE_LAB.md) |
 | vulnmqtt | 18883 | `projects/vulnmqtt.yaml` — see [MQTT_LAB.md](MQTT_LAB.md) |
 | vulnrobot / udp | 15560 / 15561 | `projects/vulnrobot.yaml`, `vulnrobot-udp.yaml` — see [ROBOT_LAB.md](ROBOT_LAB.md) |
 | vulnrosbus | 15562 | `projects/vulnrosbus.yaml` — see [ROBOT_LAB.md](ROBOT_LAB.md) |

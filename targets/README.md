@@ -27,6 +27,10 @@ scripts/build-lab-targets.sh
 | **VulnSmb** | 4455 | `projects/vulnsmb.yaml` | [Randall.VulnSmb](Randall.VulnSmb/) (NBSS+SMB2-shaped lab) |
 | **VulnDrone UDP** | 15550/udp | `projects/vulndrone-udp.yaml` | [Randall.VulnDrone](Randall.VulnDrone/) (fictional RDL1) |
 | **VulnDrone TCP** | 15551/tcp | `projects/vulndrone-tcp.yaml` | same binary, `--mode tcp` |
+| **VulnUas TCP** | 15650/tcp | `projects/vulnuas.yaml` | [Randall.VulnUas](Randall.VulnUas/) (fictional UAS1 tactical link) |
+| **VulnUas UDP** | 15651/udp | `projects/vulnuas-udp.yaml` | same binary, `--mode udp` |
+| **VulnTurret TCP** | 15660/tcp | `projects/vulnturret.yaml` | [Randall.VulnTurret](Randall.VulnTurret/) (fictional STT1 sentry) |
+| **VulnTurret UDP** | 15661/udp | `projects/vulnturret-udp.yaml` | same binary, `--mode udp` |
 | **VulnMqtt** | 18883/tcp | `projects/vulnmqtt.yaml` | [Randall.VulnMqtt](Randall.VulnMqtt/) (fictional RMQ1 MQTT-shaped) |
 | **VulnRobot TCP** | 15560/tcp | `projects/vulnrobot.yaml` | [Randall.VulnRobot](Randall.VulnRobot/) (fictional RBT1 motion) |
 | **VulnRobot UDP** | 15561/udp | `projects/vulnrobot-udp.yaml` | same binary, `--mode udp` |
@@ -34,7 +38,7 @@ scripts/build-lab-targets.sh
 | **VulnRobotIo** | 15502/tcp | `projects/vulnrobotio.yaml` | [Randall.VulnRobotIo](Randall.VulnRobotIo/) (fictional RMB1 I/O) |
 | **VulnAi** | 18765/tcp | `projects/vulnai.yaml` | [Randall.VulnAi](Randall.VulnAi/) (fictional RAG1 AI-gateway) |
 
-Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md). Labs: [RPC_LAB.md](../docs/RPC_LAB.md) · [SMB_LAB.md](../docs/SMB_LAB.md) · [DRONE_LAB.md](../docs/DRONE_LAB.md) · [MQTT_LAB.md](../docs/MQTT_LAB.md) · [ROBOT_LAB.md](../docs/ROBOT_LAB.md) · [AI_LAB.md](../docs/AI_LAB.md) · [LAB_LIBRARY.md](../docs/LAB_LIBRARY.md).
+Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md). Labs: [RPC_LAB.md](../docs/RPC_LAB.md) · [SMB_LAB.md](../docs/SMB_LAB.md) · [DRONE_LAB.md](../docs/DRONE_LAB.md) · [DEFENSE_LAB.md](../docs/DEFENSE_LAB.md) · [MQTT_LAB.md](../docs/MQTT_LAB.md) · [ROBOT_LAB.md](../docs/ROBOT_LAB.md) · [AI_LAB.md](../docs/AI_LAB.md) · [LAB_LIBRARY.md](../docs/LAB_LIBRARY.md).
 
 ## Randfuzz Vulnserver (included)
 

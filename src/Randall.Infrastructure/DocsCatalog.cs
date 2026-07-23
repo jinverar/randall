@@ -24,6 +24,7 @@ public static class DocsCatalog
         ("TARGETS.md", "Lab targets", "Getting started"),
         ("LAB_LIBRARY.md", "Lab library (catalog)", "Lab"),
         ("DRONE_LAB.md", "Drone protocol labs (RDL1)", "Lab"),
+        ("DEFENSE_LAB.md", "Defense-shaped UAS / sentry labs (UAS1 / STT1)", "Lab"),
         ("MQTT_LAB.md", "MQTT-shaped IoT lab (RMQ1)", "Lab"),
         ("ROBOT_LAB.md", "Robot protocol labs (RBT1 / RRBS / RMB1)", "Lab"),
         ("FUZZING.md", "Fuzzing techniques & mutators", "Fuzzing"),

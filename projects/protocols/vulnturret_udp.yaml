@@ -1,0 +1,22 @@
+name: vulnturret-udp
+description: STT1 UDP telemetry — magic + msgId + BE length + payload
+blocks:
+  - type: static
+    value: "STT1"
+  - type: bytes
+    name: msg_id
+    mutable: true
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnturret_udp_msgid_pose.bin
+  - type: sized
+    lengthName: telem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: bytes
+      name: payload
+      mutable: true
+      minSize: 4
+      maxSize: 512
+      seedFile: seeds/vulnturret_udp_payload.bin

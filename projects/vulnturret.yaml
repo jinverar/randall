@@ -1,0 +1,59 @@
+name: vulnturret
+description: "Fictional STT1 sentry-station (TCP) — lab only, not a weapon system. Build scripts/build-vulnturret.ps1"
+kind: tcp
+target:
+  executable: ../targets/vulnturret/randall-vulnturret.exe
+  args: ["--mode", "tcp"]
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 15660
+  receiveTimeoutMs: 1200
+sessionCommands:
+  - name: HELLO
+    model: protocols/vulnturret_hello.yaml
+    readBanner: true
+  - name: SLEW
+    model: protocols/vulnturret_slew.yaml
+    readBanner: true
+  - name: TRACK
+    model: protocols/vulnturret_track.yaml
+    readBanner: true
+  - name: CONFIG
+    model: protocols/vulnturret_config.yaml
+    readBanner: true
+sessionFlows:
+  - name: hello_slew
+    steps: [HELLO, SLEW]
+    mutateStep: last
+  - name: hello_track
+    steps: [HELLO, TRACK]
+    mutateStep: last
+  - name: hello_config
+    steps: [HELLO, CONFIG]
+    mutateStep: last
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  sessionFlowBias: 0.45
+  corpusDir: ../data/corpus/vulnturret
+  crashesDir: ../data/crashes/vulnturret
+seeds:
+  - seeds/vulnturret_hello.bin
+  - seeds/vulnturret_slew.bin
+  - seeds/vulnturret_track.bin
+  - seeds/vulnturret_config.bin
+  - seeds/vulnturret_hello_boom.bin
+  - seeds/vulnturret_slew_boom.bin
+  - seeds/vulnturret_track_boom.bin
+  - seeds/vulnturret_config_boom.bin
+mutators:
+  - boundary
+  - interesting
+  - expand
+  - havoc
+  - bitflip
+  - splice

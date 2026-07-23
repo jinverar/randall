@@ -42,6 +42,10 @@ targets/vulnsmb/*
 !targets/vulnsmb/.gitkeep
 targets/vulndrone/*
 !targets/vulndrone/.gitkeep
+targets/vulnuas/*
+!targets/vulnuas/.gitkeep
+targets/vulnturret/*
+!targets/vulnturret/.gitkeep
 targets/vulnmqtt/*
 !targets/vulnmqtt/.gitkeep
 targets/vulnrobot/*

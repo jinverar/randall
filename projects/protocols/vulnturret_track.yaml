@@ -1,0 +1,32 @@
+name: vulnturret-track
+description: STT1 TRACK — type 0x03 + track_id + blob (sentry station lab)
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnturret_type_track.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: word
+          name: track_id
+          mutable: true
+          littleEndian: false
+          value: 1
+        - type: sized
+          lengthName: blob_len
+          lengthBytes: 2
+          littleEndian: false
+          child:
+            type: bytes
+            name: track_blob
+            mutable: true
+            minSize: 0
+            maxSize: 400
+            seedFile: seeds/vulnturret_trackblob.bin

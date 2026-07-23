@@ -64,3 +64,5 @@ Models: `vulndrone_tcp_hello.yaml`, `vulndrone_tcp_cmd.yaml`, `vulndrone_tcp_mis
 - Protocol shape is deliberately small so length-field and table-size bugs are easy to hit.
 - Do not treat crashes as evidence about real drone products — use your own harnesses for those.
 - Randfuzz will not ship weaponized vehicle control, shellcode, or exploit templates for this lab.
+
+See also defense-shaped UAS / sentry labs: [DEFENSE_LAB.md](DEFENSE_LAB.md).

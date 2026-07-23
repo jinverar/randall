@@ -16,6 +16,7 @@ public class LabCatalogTests
         Assert.Contains(lib.Labs, l => l.Id == "file-framed" && l.Category == "file" && !l.Startable);
         Assert.Contains(lib.Labs, l => l.Id == "reeldeck" && l.Category == "file" && !l.Startable);
         Assert.Contains(lib.Categories, c => c == "drone");
+        Assert.Contains(lib.Categories, c => c == "defense");
         Assert.Contains(lib.Categories, c => c == "network");
         Assert.Contains(lib.Categories, c => c == "file");
         Assert.Contains(lib.Categories, c => c == "iot");
@@ -63,6 +64,37 @@ public class LabCatalogTests
     }
 
     [Fact]
+    public void DefenseLabs_AreCataloguedUnderDefense()
+    {
+        var labs = LabServerManager.List(category: "defense");
+        Assert.Contains(labs, l => l.Id == "vulnuas");
+        Assert.Contains(labs, l => l.Id == "vulnuas-udp");
+        Assert.Contains(labs, l => l.Id == "vulnturret");
+        Assert.Contains(labs, l => l.Id == "vulnturret-udp");
+
+        var uas = labs.First(l => l.Id == "vulnuas");
+        var uasUdp = labs.First(l => l.Id == "vulnuas-udp");
+        Assert.Equal(15650, uas.Port);
+        Assert.Equal(15651, uasUdp.Port);
+        Assert.Equal(uas.ProcessName, uasUdp.ProcessName);
+        Assert.Equal("DEFENSE_LAB.md", uas.DocsPath);
+
+        var turret = labs.First(l => l.Id == "vulnturret");
+        var turretUdp = labs.First(l => l.Id == "vulnturret-udp");
+        Assert.Equal(15660, turret.Port);
+        Assert.Equal(15661, turretUdp.Port);
+        Assert.Equal(turret.ProcessName, turretUdp.ProcessName);
+        Assert.Contains("sentry", turret.Tags!);
+
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        Assert.True(File.Exists(Path.Combine(root, "projects", "vulnuas.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "vulnturret.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnUas", "Program.cs")));
+        Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnTurret", "Program.cs")));
+        Assert.True(File.Exists(Path.Combine(root, "docs", "DEFENSE_LAB.md")));
+    }
+
+    [Fact]
     public void Library_FiltersByCategory()
     {
         var drone = LabServerManager.Library(category: "drone");
@@ -79,6 +111,7 @@ public class LabCatalogTests
     {
         Assert.Contains(DocsCatalog.Index, i => i.Path == "LAB_LIBRARY.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "DRONE_LAB.md");
+        Assert.Contains(DocsCatalog.Index, i => i.Path == "DEFENSE_LAB.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "MQTT_LAB.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "ROBOT_LAB.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "AI_LAB.md");
