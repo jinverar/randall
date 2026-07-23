@@ -62,7 +62,8 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                             request.EtwCapture,
                             request.DebugViewCapture,
                             request.SysinternalsSnapshots,
-                            request.StringsOnCrash),
+                            request.StringsOnCrash,
+                            request.MiniTimeline),
                         token);
 
                     progress.OnCompleted(result);

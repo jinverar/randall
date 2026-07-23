@@ -47,6 +47,7 @@ return args[0].ToLowerInvariant() switch
     "labs" or "lab" => RunLabs(args.Skip(1).ToArray()),
     "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
     "recorders" or "recorder" => RunRecorders(args.Skip(1).ToArray()),
+    "timeline" or "minitimeline" => RunTimeline(args.Skip(1).ToArray()),
     "harness-worker" => RunHarnessWorker(args.Skip(1).ToArray()),
     _ => Unknown(args[0]),
 };
@@ -116,6 +117,9 @@ static void PrintHelp()
           randall runtime stop|restart <id>
           randall runtime stop-all
           randall recorders stop         Stop orphaned Procmon/DebugView/ProcDump/WPR/pktmon/tshark
+          randall timeline tools         Discover Eric Zimmerman EZ CLIs (EvtxECmd/MFTECmd/…)
+          randall timeline capture -p <project> -i <crash-guid> [--window 60]
+                                            Unique-scream mini-timeline (EVTX/MFT/WER) — docs/MINI_TIMELINE.md
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
           randall serve [--port N] [--bind host] [--token SECRET] [--allow-open]
@@ -3828,6 +3832,124 @@ static int RunRecorders(string[] args)
     }
 
     return result.Ok ? 0 : 1;
+}
+
+static int RunTimeline(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall timeline tools
+              randall timeline capture -p <project> -i <crash-guid> [--window 60] [--exe path]
+
+            Unique-scream Windows mini-timeline via Eric Zimmerman CLIs (EvtxECmd, MFTECmd,
+            optional PECmd/AmcacheParser) + WER copy. Soft-fails if tools missing.
+            See docs/MINI_TIMELINE.md.
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    if (sub is "tools" or "status" or "doctor")
+    {
+        var ez = ZimmermanToolPaths.Probe();
+        Console.WriteLine("Eric Zimmerman (EZ) tools:");
+        if (ez.FoundLines().Count == 0)
+        {
+            Console.WriteLine("  (none found — install under tools/ez/ via Get-ZimmermanTools)");
+            Console.WriteLine("  docs/MINI_TIMELINE.md");
+            return 1;
+        }
+
+        foreach (var line in ez.FoundLines())
+            Console.WriteLine($"  {line}");
+        Console.WriteLine(ez.HasCore
+            ? "Core ready (EvtxECmd and/or MFTECmd)."
+            : "Core missing — need EvtxECmd or MFTECmd for capture.");
+        return ez.HasCore ? 0 : 1;
+    }
+
+    if (sub is not "capture" and not "run")
+    {
+        Console.Error.WriteLine("Usage: randall timeline tools | capture -p <project> -i <guid>");
+        return 1;
+    }
+
+    string? project = null;
+    Guid? id = null;
+    var window = 60;
+    string? exe = null;
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "-i" or "--id" && i + 1 < args.Length && Guid.TryParse(args[i + 1], out var g))
+        {
+            id = g;
+            i++;
+        }
+        else if (args[i] is "--window" or "-w" && i + 1 < args.Length && int.TryParse(args[i + 1], out var w))
+        {
+            window = w;
+            i++;
+        }
+        else if (args[i] is "--exe" or "-e" && i + 1 < args.Length)
+            exe = args[++i];
+    }
+
+    if (id is null)
+    {
+        Console.Error.WriteLine("Usage: randall timeline capture -p <project> -i <crash-guid> [--window 60]");
+        return 1;
+    }
+
+    var detail = CrashCatalog.GetDetail(id.Value);
+    if (detail is null)
+    {
+        Console.Error.WriteLine($"Crash not found: {id}");
+        return 1;
+    }
+
+    project ??= detail.Summary.Project;
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var crashesDir = Path.Combine(repo, "data", "crashes", project);
+    Directory.CreateDirectory(crashesDir);
+
+    if (string.IsNullOrWhiteSpace(exe))
+    {
+        var yamlGuess = Path.Combine(repo, "projects", project + ".yaml");
+        if (File.Exists(yamlGuess))
+        {
+            try
+            {
+                var proj = ProjectLoader.Load(yamlGuess);
+                if (!string.IsNullOrWhiteSpace(proj.Target.Executable))
+                {
+                    var declared = ProjectLoader.ResolvePath(yamlGuess, proj.Target.Executable);
+                    exe = ExecutableResolver.FindExisting(declared) ?? declared;
+                }
+            }
+            catch
+            {
+                // ignore — exe filter is optional
+            }
+        }
+    }
+
+    var summary = MiniTimelineCapture.TryCapture(
+        crashesDir,
+        id.Value,
+        detail.Summary.ObservedAt,
+        window,
+        targetExe: exe,
+        repoRoot: repo,
+        projectName: project);
+    Console.WriteLine(summary.SummaryLine);
+    Console.WriteLine($"  dir: {MiniTimelineCapture.TimelineDir(crashesDir, id.Value)}");
+    foreach (var note in summary.Notes.Take(5))
+        Console.WriteLine($"  note: {note}");
+    return summary.Ok || summary.ToolsUsed.Count > 0 ? 0 : 2;
 }
 
 static int RunRuntime(string[] args)

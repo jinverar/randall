@@ -230,7 +230,7 @@ Start·stop·restart for long-lived targets, remote lab agent, crash artifact pa
 
 - [docs/TARGET_RUNTIME.md](docs/TARGET_RUNTIME.md) · [docs/LAB_AGENT.md](docs/LAB_AGENT.md) · [TARGET_RUNTIME_README.txt](TARGET_RUNTIME_README.txt)
 
-**Observation stack (Procmon, ETW/WPR, snapshots, TCPVCon, DebugView, pktmon, Scream/PageHeap, + Frida/API Monitor companions) + workstation layout:** [docs/RECORDING.md](docs/RECORDING.md). **IMPORTANT:** pktmon + ETW/WPR need `serve` / `agent` from an **Administrator** terminal (see that doc).
+**Observation stack (Procmon, ETW/WPR, snapshots, TCPVCon, DebugView, pktmon, Scream/PageHeap, + Frida/API Monitor companions) + workstation layout:** [docs/RECORDING.md](docs/RECORDING.md). **Unique-scream mini-timeline (EVTX/MFT/WER via Zimmerman tools):** [docs/MINI_TIMELINE.md](docs/MINI_TIMELINE.md). **IMPORTANT:** pktmon + ETW/WPR need `serve` / `agent` from an **Administrator** terminal (see recording doc).
 
 ### In-process harnesses (persistent / cold / forkServer)
 

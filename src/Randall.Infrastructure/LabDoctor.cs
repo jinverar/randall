@@ -416,6 +416,25 @@ public static class LabDoctor
                     : "strings64.exe not found — optional strings-on-crash disabled (scripts/install-recording-tools.ps1)");
         }
 
+        var ez = ZimmermanToolPaths.Probe();
+        var tlWindow = Math.Clamp(
+            project.Fuzz.MiniTimelineWindowSeconds <= 0 ? 60 : project.Fuzz.MiniTimelineWindowSeconds,
+            5, 3600);
+        if (project.Fuzz.MiniTimeline)
+        {
+            Add("miniTimeline", ez.HasCore ? "ok" : "warn",
+                ez.HasCore
+                    ? $"MiniTimeline enabled (±{tlWindow}s) → {string.Join(", ", ez.FoundLines().Take(3))}"
+                    : "MiniTimeline enabled but EvtxECmd/MFTECmd not found — install under tools/ez/ (docs/MINI_TIMELINE.md)");
+        }
+        else
+        {
+            Add("miniTimeline", ez.HasCore ? "ok" : "warn",
+                ez.HasCore
+                    ? $"EZ tools ready (set fuzz.miniTimeline: true for unique-scream EVTX/MFT window) — {string.Join(", ", ez.FoundLines().Take(2))}"
+                    : "EZ mini-timeline optional — EvtxECmd/MFTECmd not found (docs/MINI_TIMELINE.md)");
+        }
+
         // Linux fuzzing / triage toolchain — the Unix counterparts to the Windows stack above.
         // Reported on every host so users previewing "linux" from Windows see install hints too.
         foreach (var tool in LinuxToolPaths.Catalog)

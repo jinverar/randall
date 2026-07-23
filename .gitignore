@@ -24,6 +24,8 @@ logs/
 tools/dynamorio/
 tools/DynamoRIO-*/
 tools/mingw64/
+tools/ez/
+tools/Zimmerman/
 tools/*.exe
 tools/API Monitor/
 targets/vulnserver/*

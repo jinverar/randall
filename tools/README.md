@@ -66,6 +66,19 @@ tools/tcpvcon64.exe
 
 Also accepted: `tools/tcpvcon.exe`, or those names on `PATH`. Captures at arm / disarm / crash under `data/runs/<runId>/tcpvcon/` (+ `tcpvcon-capture.txt` meta). Soft-fails if missing. (Sysmon is not exported by Randfuzz — run it externally if you still want EVTX.)
 
+## Eric Zimmerman tools — optional mini-timeline
+
+For `fuzz.miniTimeline: true` (unique-scream EVTX/MFT/WER windows), install free EZ CLIs under `tools/ez/`:
+
+```
+tools/ez/EvtxECmd.exe
+tools/ez/MFTECmd.exe
+tools/ez/PECmd.exe            # optional
+tools/ez/AmcacheParser.exe    # optional
+```
+
+Use [Get-ZimmermanTools](https://ericzimmerman.github.io/) (`-NetVersion 9 -Dest tools\ez`). See [docs/MINI_TIMELINE.md](../docs/MINI_TIMELINE.md). Verify with `randall timeline tools`.
+
 ## pktmon — built into Windows
 
 `fuzz.pktmonCapture` uses `%SystemRoot%\System32\pktmon.exe` (no download). **Requires an elevated Randfuzz process** (`randall serve` / `randall agent` as Administrator); otherwise soft-skips with a clear warning. Writes `data/runs/<runId>/fuzz-pktmon.etl`.

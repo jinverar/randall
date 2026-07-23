@@ -312,4 +312,11 @@ public sealed class FuzzConfig
     /// (needs strings64.exe in tools/ or PATH).
     /// </summary>
     public bool StringsOnCrash { get; set; }
+    /// <summary>
+    /// After a <b>unique</b> crash, capture a Windows mini-timeline (EVTX/MFT/WER ± window)
+    /// via Eric Zimmerman CLIs. Default off — soft-fails if tools missing. See docs/MINI_TIMELINE.md.
+    /// </summary>
+    public bool MiniTimeline { get; set; }
+    /// <summary>Seconds before/after crash <c>At</c> (UTC) for mini-timeline filter. Default 60; clamped 5–3600.</summary>
+    public int MiniTimelineWindowSeconds { get; set; } = 60;
 }

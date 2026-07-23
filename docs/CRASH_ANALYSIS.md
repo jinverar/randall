@@ -12,6 +12,17 @@ data/crashes/<project>/<crash-guid>_analysis.json
 
 Fields include exception code, fault address, module+offset, and x64 register snapshot (RIP, RSP, …).
 
+## Mini-timeline (optional)
+
+With `fuzz.miniTimeline: true`, each **unique** scream also gets a Windows host window
+(EVTX / MFT / optional Prefetch·Amcache / WER) under `data/crashes/<project>/timeline/<guid>/`.
+See [MINI_TIMELINE.md](MINI_TIMELINE.md). Soft-fails without Eric Zimmerman CLIs; default **off**.
+
+```powershell
+randall timeline tools
+randall timeline capture -p vulnserver -i <guid> --window 60
+```
+
 ## CLI
 
 ```powershell
