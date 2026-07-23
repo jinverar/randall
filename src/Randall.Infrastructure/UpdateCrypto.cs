@@ -72,28 +72,50 @@ public static partial class UpdateCrypto
         if (raw.Length == 0)
             return raw;
 
-        // Already binary DER / P1363-looking
-        if (raw[0] == 0x30 || raw.Length is 64 or 96)
-            return raw;
-
-        // Try UTF-8 base64 / base64url
-        try
+        // ASCII base64/base64url text (common for .sig files checked in as text).
+        // Check this BEFORE the length-64/96 heuristic — base64 of a 64-byte P1363
+        // sig is 88 chars, but base64 of DER is often ~96 chars and would be
+        // misclassified as raw P1363 on Windows.
+        if (LooksLikeBase64Text(raw))
         {
-            var text = Encoding.UTF8.GetString(raw).Trim();
-            if (text.Length == 0)
-                return raw;
-            text = text.Replace('-', '+').Replace('_', '/');
-            switch (text.Length % 4)
+            try
             {
-                case 2: text += "=="; break;
-                case 3: text += "="; break;
+                var text = Encoding.UTF8.GetString(raw).Trim();
+                text = text.Replace('-', '+').Replace('_', '/');
+                switch (text.Length % 4)
+                {
+                    case 2: text += "=="; break;
+                    case 3: text += "="; break;
+                }
+                return Convert.FromBase64String(text);
             }
-            return Convert.FromBase64String(text);
+            catch
+            {
+                /* fall through to raw */
+            }
         }
-        catch
+
+        return raw;
+    }
+
+    private static bool LooksLikeBase64Text(byte[] raw)
+    {
+        if (raw.Length < 16)
+            return false;
+        // Reject obvious DER (SEQUENCE tag) as binary.
+        if (raw[0] == 0x30)
+            return false;
+        for (var i = 0; i < raw.Length; i++)
         {
-            return raw;
+            var b = raw[i];
+            if (b is >= (byte)'A' and <= (byte)'Z') continue;
+            if (b is >= (byte)'a' and <= (byte)'z') continue;
+            if (b is >= (byte)'0' and <= (byte)'9') continue;
+            if (b is (byte)'+' or (byte)'/' or (byte)'=' or (byte)'-' or (byte)'_') continue;
+            if (b is (byte)'\r' or (byte)'\n' or (byte)' ' or (byte)'\t') continue;
+            return false;
         }
+        return true;
     }
 
     public static string Sha256Hex(Stream stream)
