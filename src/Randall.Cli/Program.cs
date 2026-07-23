@@ -2,6 +2,7 @@
 using Randall.Contracts;
 using Randall.Infrastructure;
 using Randall.Infrastructure.BugHunt;
+using Randall.Infrastructure.ExploitSurface;
 using Randall.Infrastructure.Magician;
 using Randall.Infrastructure.Oracles;
 
@@ -48,6 +49,7 @@ return args[0].ToLowerInvariant() switch
     "runtime" or "rt" => RunRuntime(args.Skip(1).ToArray()),
     "recorders" or "recorder" => RunRecorders(args.Skip(1).ToArray()),
     "timeline" or "minitimeline" => RunTimeline(args.Skip(1).ToArray()),
+    "surface" or "exploit-surface" or "exploitsurface" => RunSurface(args.Skip(1).ToArray()),
     "harness-worker" => RunHarnessWorker(args.Skip(1).ToArray()),
     _ => Unknown(args[0]),
 };
@@ -122,6 +124,9 @@ static void PrintHelp()
                                             Unique-scream mini-timeline (EVTX/MFT/WER/Procmon)
           randall timeline graph -p <project> -i <crash-guid>
                                             Rebuild graph.json + merged.csv from timeline CSVs
+          randall surface assess -p <project> [--layer id] [--baseline]
+                                            Exploit Surface — sideload/injection/listen suggestions
+          randall surface list -p <project>  List persisted surface findings
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
           randall serve [--port N] [--bind host] [--token SECRET] [--allow-open]
@@ -2161,6 +2166,8 @@ static int RunStalk(string[] args)
               randall stalk compare -p <project> [layerId…]
               randall stalk timeline-compare -p <project> [layerId…]
                                             Diff host mini-timelines across layers
+              randall stalk surface-assess -p <project> [--layer id]
+                                            Exploit Surface assess (docs/SURFACE.md)
               randall stalk missed -p <project> [--limit 40]
               randall stalk inventory -p <project> --import <blocks.txt|drcov.log>
               randall stalk dynapstalker <drcov.log> <process.exe> <out.idc|.py> [--format idc|ghidra] [--color 0x00ffff]
@@ -2183,6 +2190,7 @@ static int RunStalk(string[] args)
         "layers" => StalkLayers(rest),
         "compare" => StalkCompare(rest),
         "timeline-compare" or "tl-compare" or "host-compare" => StalkTimelineCompareCmd(rest),
+        "surface-assess" or "exploit-surface" => StalkSurfaceAssess(rest),
         "missed" => StalkMissed(rest),
         "inventory" => StalkInventory(rest),
         "dynapstalker" or "drcov2idc" => StalkDynapstalker(rest),
@@ -2687,6 +2695,112 @@ static int StalkTimelineCompareCmd(string[] args)
     }
 
     return cmp.Layers.Any(l => l.HasTimeline) ? 0 : 2;
+}
+
+static int StalkSurfaceAssess(string[] args)
+{
+    var forwarded = new List<string> { "assess" };
+    forwarded.AddRange(args);
+    return RunSurface(forwarded.ToArray());
+}
+
+static int RunSurface(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall surface assess -p <project> [--layer <id>] [--baseline] [--json]
+              randall surface list   -p <project> [--json]
+
+            Exploit Surface — host assessor (DLL sideload, injection, child process,
+            network listen, unusual modules) from stalk/recording artifacts.
+            Suggests fuzz next steps. Not Oracle judgment. See docs/SURFACE.md.
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    string? project = null;
+    string? layerId = null;
+    var baselineOnly = false;
+    var json = false;
+    var start = sub is "assess" or "list" or "findings" or "run" or "report" ? 1 : 0;
+    if (start == 0)
+        sub = "assess";
+
+    for (var i = start; i < args.Length; i++)
+    {
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "--layer" or "-l" && i + 1 < args.Length)
+            layerId = args[++i];
+        else if (args[i] is "--baseline" or "--baseline-only")
+            baselineOnly = true;
+        else if (args[i] is "--json")
+            json = true;
+    }
+
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("Usage: randall surface assess|list -p <project>");
+        return 1;
+    }
+
+    if (sub is "list" or "findings")
+    {
+        var dir = ExploitSurfaceEngine.SurfaceDir(project);
+        var store = new ExploitSurfaceFindingStore(dir);
+        var findings = store.List(project);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(findings,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        if (findings.Count == 0)
+        {
+            Console.WriteLine($"{project}: no surface findings yet — record baseline or: randall surface assess -p {project}");
+            return 2;
+        }
+
+        foreach (var f in findings.TakeLast(40))
+            Console.WriteLine($"[{f.Severity}] {f.Kind}  {f.Title}  ({f.LayerTag ?? "-"})");
+        return 0;
+    }
+
+    var report = ExploitSurfaceEngine.AssessProject(project, layerId, baselineOnly);
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        }));
+        return report.Ok || report.Findings.Count > 0 ? 0 : 2;
+    }
+
+    Console.WriteLine(report.SummaryLine);
+    if (!string.IsNullOrWhiteSpace(report.LayerId))
+        Console.WriteLine($"  layer: [{report.LayerTag}] {report.LayerId}");
+    foreach (var a in report.ArtifactsUsed.Where(x => !x.StartsWith("note:", StringComparison.Ordinal)).Take(6))
+        Console.WriteLine($"  artifact: {a}");
+    foreach (var f in report.Findings)
+    {
+        Console.WriteLine($"  [{f.Severity}] {f.Kind}: {f.Title}");
+        Console.WriteLine($"           {f.Detail}");
+        if (!string.IsNullOrWhiteSpace(f.EvidenceSnippet))
+            Console.WriteLine($"           evidence: {f.EvidenceSnippet}");
+        foreach (var r in f.Recommendations.Take(2))
+            Console.WriteLine($"           → {r}");
+    }
+
+    if (report.Findings.Count == 0)
+        foreach (var r in report.Recommendations.Take(4))
+            Console.WriteLine($"  tip: {r}");
+
+    return report.Ok || report.Findings.Count > 0 ? 0 : 2;
 }
 
 static int StalkExport(string[] args)

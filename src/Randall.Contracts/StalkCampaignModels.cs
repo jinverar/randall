@@ -13,7 +13,8 @@ public sealed record StalkLayerDto(
     string? CrashId,
     string? Notes,
     string? MiniTimelineDir = null,
-    string? MiniTimelineSummary = null);
+    string? MiniTimelineSummary = null,
+    string? ExploitSurfaceSummary = null);
 
 public sealed record StalkBlockHitDto(
     string Address,

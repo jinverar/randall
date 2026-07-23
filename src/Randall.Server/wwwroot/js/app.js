@@ -1851,9 +1851,54 @@ async function refreshStalkingWorkspace() {
   enableDragScroll(graphEl);
 
   await refreshStalkingTimelineCompare(project);
+  await refreshStalkingSurface(project);
   await refreshStalkingMap(project);
   await refreshStalkingMissed(project);
 }
+
+async function refreshStalkingSurface(project) {
+  const meta = document.getElementById('stalking-surface-meta');
+  const findingsEl = document.getElementById('stalking-surface-findings');
+  const recsEl = document.getElementById('stalking-surface-recs');
+  if (!findingsEl) return;
+  try {
+    const report = await api.get(`/api/stalking/${encodeURIComponent(project)}/surface`);
+    if (meta) meta.textContent = report.summaryLine ? `— ${report.summaryLine}` : '';
+    const findings = report.findings || [];
+    findingsEl.innerHTML = findings.length
+      ? `<table><thead><tr><th>Sev</th><th>Kind</th><th>Finding</th><th>Evidence</th></tr></thead>
+        <tbody>${findings.map((f) => `<tr>
+          <td><span class="badge">${escapeAttr(f.severity)}</span></td>
+          <td><code>${escapeAttr(f.kind)}</code></td>
+          <td>${escapeAttr(f.title)}<div class="hint">${escapeAttr(f.detail || '')}</div></td>
+          <td class="hint">${escapeAttr(f.evidenceSnippet || '—')}</td>
+        </tr>`).join('')}</tbody></table>`
+      : `<p class="empty">${escapeAttr(report.error || 'No heuristic hits yet — enable Procmon + snapshots on baseline, then Assess.')}</p>`;
+    const recs = report.recommendations || [];
+    if (recsEl) {
+      recsEl.innerHTML = recs.length
+        ? `<p class="hint">Recommendations</p><ul class="hint-list">${recs.slice(0, 8).map((r) => `<li>${escapeAttr(r)}</li>`).join('')}</ul>`
+        : '';
+    }
+  } catch {
+    if (meta) meta.textContent = '';
+    findingsEl.innerHTML = '<p class="empty">No surface report yet — record a baseline (auto) or click Assess latest.</p>';
+    if (recsEl) recsEl.innerHTML = '';
+  }
+}
+
+document.getElementById('stalking-surface-assess')?.addEventListener('click', async () => {
+  const project = document.getElementById('stalking-project')?.value;
+  const out = document.getElementById('stalking-export-result');
+  if (!project) return;
+  try {
+    const report = await api.post(`/api/stalking/${encodeURIComponent(project)}/surface/assess`, { project, baselineOnly: true });
+    if (out) out.textContent = report.summaryLine || 'Surface assessed';
+    await refreshStalkingSurface(project);
+  } catch (err) {
+    if (out) out.textContent = err.message;
+  }
+});
 
 async function refreshStalkingTimelineCompare(project) {
   const meta = document.getElementById('stalking-tl-compare-meta');

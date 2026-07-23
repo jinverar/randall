@@ -311,6 +311,15 @@
             <div id="stalking-tl-samples" class="table-wrap" style="margin-top:0.75rem"></div>
           </div>
           <div class="panel">
+            <h2>Exploit Surface <span class="hex" id="stalking-surface-meta"></span></h2>
+            <p class="hex">Host assessor after baseline — sideload, injection, listen, unusual modules (not Oracle).</p>
+            <div class="btn-row">
+              <button type="button" class="btn" id="stalking-surface-assess">Assess latest</button>
+            </div>
+            <div id="stalking-surface-findings" class="table-wrap" style="margin-top:0.75rem"></div>
+            <div id="stalking-surface-recs" class="table-wrap" style="margin-top:0.5rem"></div>
+          </div>
+          <div class="panel">
             <h2>Block map <span class="hex">(union of selected layers)</span></h2>
             <div id="stalking-block-graph" class="stalking-block-graph"></div>
             <div id="stalking-blocks" class="table-wrap" style="margin-top:0.75rem"></div>
@@ -1377,6 +1386,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=mini-timeline-5"></script>
+  <script type="module" src="/js/app.js?v=surface-1"></script>
 </body>
 </html>

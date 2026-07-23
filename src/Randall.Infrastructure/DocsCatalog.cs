@@ -37,6 +37,7 @@ public static class DocsCatalog
         ("STALKING.md", "Stalking bugs reference", "Stalk & scream"),
         ("RECORDING.md", "Recording — observation stack & bookends", "Stalk & scream"),
         ("MINI_TIMELINE.md", "Mini-timeline (EVTX/MFT on unique screams)", "Stalk & scream"),
+        ("SURFACE.md", "Exploit Surface — stalk host assessor", "Stalk & scream"),
         ("CRASH_ANALYSIS.md", "Crash analysis", "Stalk & scream"),
         ("MITIGATION_LAB.md", "Mitigation ladder + vuln services (Linux)", "Stalk & scream"),
         ("EXPLOIT_GUIDE.md", "Scream triage — registers & offsets (Linux)", "Stalk & scream"),

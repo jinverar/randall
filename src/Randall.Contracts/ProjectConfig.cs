@@ -46,6 +46,13 @@ public sealed class ProjectConfig
     public MagicianConfig? Magician { get; set; }
 
     /// <summary>
+    /// Exploit Surface — host/stalk assessor (DLL sideload, injection, listen, …) from
+    /// baseline/phase recording artifacts. Suggests fuzz next steps. See docs/SURFACE.md.
+    /// Not Oracle judgment.
+    /// </summary>
+    public ExploitSurfaceConfig? ExploitSurface { get; set; }
+
+    /// <summary>
     /// Joker engine — very random / funny fuzz decisions. Magician can summon, watch,
     /// and capitalize on Joker's crashes. See docs/MAGICIAN.md#joker.
     /// </summary>

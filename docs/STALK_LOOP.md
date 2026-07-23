@@ -92,6 +92,9 @@ host mini-timeline under `data/stalk/<project>/timeline/layer-…/` (see [MINI_T
 Record the same way for **fuzzed** / **fuzzier** / custom tags; then open **Host timeline compare**
 to see what changed on the box between phases.
 
+After baseline, **Exploit Surface** auto-suggests sideload / injection / listen / unusual-module
+items (see [SURFACE.md](SURFACE.md)) — recommendations for what to fuzz next, not Oracle judgment.
+
 ### Option B — File-format target
 
 Run the parser once on a few valid files under coverage, then record **baseline** from that drcov / corpus edges the same way.

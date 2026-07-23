@@ -123,6 +123,21 @@ public static class LabDoctor
                 "joker disabled — optional chaotic tricks; Magician can summonJoker (docs/MAGICIAN.md#joker)");
         }
 
+        var surface = project.ExploitSurface ?? new ExploitSurfaceConfig();
+        if (surface.Enabled)
+        {
+            var scope = surface.AssessAllLayers
+                ? "all stalk layers"
+                : surface.AssessBaseline ? "baseline layers" : "manual assess only";
+            Add("exploitSurface", "ok",
+                $"enabled · {scope} — host sideload/injection/listen suggestions (docs/SURFACE.md)");
+        }
+        else
+        {
+            Add("exploitSurface", "warn",
+                "exploitSurface disabled — set exploitSurface.enabled: true after baseline (docs/SURFACE.md)");
+        }
+
         // Optional external engines (AFL++ / honggfuzz) — fail preflight when selected but missing.
         var engineId = ExternalEngineCampaign.Normalize(project.Fuzz.Engine);
         if (ExternalEngineCampaign.IsExternal(engineId))

@@ -1,5 +1,6 @@
 using Randall.Contracts;
 using Randall.Infrastructure;
+using Randall.Infrastructure.ExploitSurface;
 using Randall.Server;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -730,6 +731,60 @@ app.MapGet("/api/stalking/{project}/map", (string project, int? limit, string? b
     {
         return Results.BadRequest(new { error = ex.Message });
     }
+});
+
+app.MapGet("/api/stalking/{project}/surface", (string project, string? layerId) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    if (!string.IsNullOrWhiteSpace(layerId))
+    {
+            var one = ExploitSurfaceEngine.TryRead(project, layerId);
+        return one is not null
+            ? Results.Ok(one)
+            : Results.NotFound(new { error = "No surface report for layer — run assess" });
+    }
+
+    var latest = ExploitSurfaceEngine.TryReadLatest(project);
+    return latest is not null
+        ? Results.Ok(latest)
+        : Results.NotFound(new
+        {
+            error = "No exploit-surface report yet. Record a baseline (auto-assess) or: randall surface assess -p " + project,
+        });
+});
+
+app.MapPost("/api/stalking/{project}/surface/assess", (string project, ExploitSurfaceAssessRequest? body) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        var report = ExploitSurfaceEngine.AssessProject(
+            project,
+            layerId: body?.LayerId,
+            baselineOnly: body?.BaselineOnly == true);
+        return Results.Ok(report);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/stalking/{project}/layers/{layerId}/surface", (string project, string layerId) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    var report = ExploitSurfaceEngine.TryRead(project, layerId);
+    if (report is not null)
+        return Results.Ok(report);
+    // On-demand assess if layer exists
+    var layer = StalkCampaignStore.ListLayers(project)
+        .FirstOrDefault(l => l.Id.Equals(layerId, StringComparison.OrdinalIgnoreCase));
+    if (layer is null)
+        return Results.NotFound(new { error = "layer not found" });
+    return Results.Ok(ExploitSurfaceEngine.AssessLayer(layer));
 });
 
 app.MapPost("/api/stalking/{project}/inventory", (string project, StalkInventoryImportBody body) =>

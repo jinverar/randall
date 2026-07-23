@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Randall.Contracts;
+using Randall.Infrastructure.ExploitSurface;
 
 namespace Randall.Infrastructure;
 
@@ -114,6 +115,7 @@ public static class StalkCampaignStore
             request.Notes);
 
         layer = MaybeCaptureLayerMiniTimeline(layer, request, repoRoot, dir);
+        layer = MaybeAssessExploitSurface(layer, repoRoot);
 
         File.WriteAllText(Path.Combine(dir, $"layer-{id}.json"), JsonSerializer.Serialize(layer, JsonOptions));
         return layer;
@@ -233,6 +235,31 @@ public static class StalkCampaignStore
         return (yamlWant, window, exe);
     }
 
+    private static StalkLayerDto MaybeAssessExploitSurface(StalkLayerDto layer, string repoRoot)
+    {
+        try
+        {
+            if (!ExploitSurfaceEngine.ShouldAutoAssess(layer))
+                return layer;
+            var report = ExploitSurfaceEngine.AssessLayer(layer, repoRoot);
+            var note = string.IsNullOrWhiteSpace(layer.Notes)
+                ? report.SummaryLine
+                : layer.Notes + " · " + report.SummaryLine;
+            return layer with
+            {
+                ExploitSurfaceSummary = report.SummaryLine,
+                Notes = note,
+            };
+        }
+        catch (Exception ex)
+        {
+            return layer with
+            {
+                ExploitSurfaceSummary = "exploit-surface soft-fail: " + ex.Message,
+            };
+        }
+    }
+
     public static bool DeleteLayer(string project, string layerId, string? repoRoot = null)
     {
         var dir = ProjectDir(project, repoRoot);
@@ -251,6 +278,12 @@ public static class StalkCampaignStore
         if (Directory.Exists(tlDir))
         {
             try { Directory.Delete(tlDir, true); } catch { /* soft */ }
+        }
+
+        var surfaceReport = Path.Combine(dir, "surface", $"layer-{layerId}.json");
+        if (File.Exists(surfaceReport))
+        {
+            try { File.Delete(surfaceReport); } catch { /* soft */ }
         }
 
         return true;
@@ -347,10 +380,10 @@ public static class StalkCampaignStore
         var campaign = GetCampaign(project, repoRoot);
         var tools = ProbeTools(repoRoot);
         var hint = campaign.Layers.Count == 0
-            ? "Record a baseline layer (normal use under drcov), then add fuzzed layers and compare. Missed-block guidance appears after layers exist."
+            ? "Record a baseline layer (normal use under coverage + Procmon). Exploit Surface will suggest sideload/injection/listen items."
             : campaign.Layers.Count == 1
-                ? "Baseline recorded. Add a fuzzed layer after your next campaign, then open Missed blocks for why/how-to-fuzz ideas."
-                : "Compare layers, inspect Missed blocks (baseline-only / gaps), export IDC/Ghidra colors, refine seeds & mutators.";
+                ? "Baseline recorded — review Exploit Surface findings, then add a fuzzed layer after your next campaign."
+                : "Compare layers + host timelines, inspect Exploit Surface / Missed blocks, export IDC/Ghidra, refine seeds.";
         return new StalkWorkspaceDto(project, campaign, tools, hint);
     }
 
@@ -438,8 +471,11 @@ public static class StalkCampaignStore
                 "strings64 -accepteula -n 4 <crash.bin>"),
             new("mini-timeline", "Mini-timeline (EZ)",
                 ZimmermanToolPaths.Probe(repoRoot).HasCore ? "ready" : "missing",
-                "Unique-scream EVTX/MFT/WER window — fuzz.miniTimeline (EvtxECmd/MFTECmd under tools/ez/)",
+                "Unique-scream / stalk-layer EVTX/MFT/WER/Procmon window — fuzz.miniTimelineOnStalk",
                 "randall timeline capture -p <project> -i <guid>"),
+            new("exploit-surface", "Exploit Surface", "ready",
+                "Assess baseline/phase host artifacts for sideload, injection, listen, unusual modules — docs/SURFACE.md",
+                "randall surface assess -p <project>"),
             new("procexp", "Process Explorer", ExistsOnPath("procexp") || ExistsOnPath("procexp64") ? "ready" : "planned",
                 "Live process tree, handles, and module view (GUI companion — Monitor 2/3)",
                 null),
