@@ -1,0 +1,40 @@
+name: vulndrone-tcp
+description: Fictional RDL1 GCS command link (TCP) — lab only. Build scripts/build-vulndrone.ps1
+kind: tcp
+target:
+  executable: ../targets/vulndrone/randall-vulndrone.exe
+  args: ["--mode", "tcp"]
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 15551
+  receiveTimeoutMs: 1500
+sessionCommands:
+  - name: HELLO
+    model: protocols/vulndrone_tcp_hello.yaml
+    readBanner: true
+  - name: CMD
+    model: protocols/vulndrone_tcp_cmd.yaml
+    readBanner: true
+  - name: MISSION
+    model: protocols/vulndrone_tcp_mission.yaml
+    readBanner: true
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  corpusDir: ../data/corpus/vulndrone-tcp
+  crashesDir: ../data/crashes/vulndrone-tcp
+seeds:
+  - seeds/vulndrone_hello.bin
+  - seeds/vulndrone_cmd.bin
+  - seeds/vulndrone_mission.bin
+mutators:
+  - havoc
+  - bitflip
+  - interesting
+  - expand
+  - boundary
+  - splice

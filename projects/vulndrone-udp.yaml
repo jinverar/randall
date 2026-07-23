@@ -1,0 +1,30 @@
+name: vulndrone-udp
+description: Fictional RDL1 drone telemetry (UDP) — lab only, not MAVLink. Build scripts/build-vulndrone.ps1
+kind: udp
+target:
+  executable: ../targets/vulndrone/randall-vulndrone.exe
+  args: ["--mode", "udp"]
+  longLived: true
+  timeoutMs: 3000
+transport:
+  type: udp
+  host: 127.0.0.1
+  port: 15550
+  receiveTimeoutMs: 500
+sessionCommands:
+  - name: TELEMETRY
+    model: protocols/vulndrone_udp.yaml
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  corpusDir: ../data/corpus/vulndrone-udp
+  crashesDir: ../data/crashes/vulndrone-udp
+seeds:
+  - seeds/vulndrone_udp.bin
+mutators:
+  - havoc
+  - bitflip
+  - interesting
+  - expand
+  - boundary

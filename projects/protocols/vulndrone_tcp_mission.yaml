@@ -1,0 +1,11 @@
+name: vulndrone-tcp-mission
+description: RDL1 TCP MISSION — magic + M + mutable count/waypoint body
+blocks:
+  - type: static
+    value: "RDL1M"
+  - type: bytes
+    name: mission_body
+    mutable: true
+    minSize: 2
+    maxSize: 512
+    seedFile: seeds/vulndrone_mission_body.bin

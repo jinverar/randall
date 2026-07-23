@@ -5018,7 +5018,14 @@ document.getElementById('labs-open-tab')?.addEventListener('click', () => {
 async function refreshLabs() {
   const tbody = document.getElementById('labs-tbody');
   const status = document.getElementById('labs-status');
-  const q = labsAgentQuery();
+  const catSel = document.getElementById('labs-category-filter');
+  const category = (catSel && catSel.value && catSel.value !== 'all') ? catSel.value : '';
+  const qBase = labsAgentQuery();
+  const q = (() => {
+    if (!category) return qBase;
+    if (!qBase) return `?category=${encodeURIComponent(category)}`;
+    return `${qBase}&category=${encodeURIComponent(category)}`;
+  })();
   try {
     const labs = await api.get(`/api/labs${q}`);
     updateLabsCampaignStrip(labs);
@@ -5035,12 +5042,19 @@ async function refreshLabs() {
       const pid = lab.pid != null ? lab.pid : '—';
       const startDis = (!lab.exeExists || lab.running) ? 'disabled' : '';
       const stopDis = lab.running ? '' : 'disabled';
+      const tags = (lab.tags || []).slice(0, 4).map((t) =>
+        `<span class="lab-tag">${escapeAttr(t)}</span>`).join(' ');
+      const diff = lab.difficulty
+        ? `<span class="lab-diff lab-diff-${escapeAttr(lab.difficulty)}">${escapeAttr(lab.difficulty)}</span>`
+        : '';
       return `<tr data-lab="${escapeAttr(lab.id)}">
         <td>
-          <strong>${escapeAttr(lab.name)}</strong>
+          <strong>${escapeAttr(lab.name)}</strong> ${diff}
           <div class="hint">${escapeAttr(lab.description || '')}</div>
-          <div class="hint"><code>${escapeAttr(lab.projectYaml || '')}</code></div>
+          <div class="lab-tags">${tags}</div>
+          <div class="hint"><code>${escapeAttr(lab.projectYaml || '')}</code>${lab.docsPath ? ` · <code>${escapeAttr(lab.docsPath)}</code>` : ''}</div>
         </td>
+        <td><span class="lab-cat">${escapeAttr(lab.category || 'network')}</span></td>
         <td><code>${escapeAttr(lab.protocol)}/${lab.port}</code><div class="hint">${escapeAttr(lab.bindHint || '127.0.0.1')}</div></td>
         <td>${state}${lab.statusNote ? `<div class="hint">${escapeAttr(lab.statusNote)}</div>` : ''}</td>
         <td>${pid}</td>
@@ -5049,13 +5063,13 @@ async function refreshLabs() {
           <button type="button" class="btn" data-lab-stop="${escapeAttr(lab.id)}" ${stopDis}>Stop</button>
         </td>
       </tr>`;
-    }).join('') || '<tr><td colspan="5" class="hint">No labs in catalog</td></tr>';
+    }).join('') || '<tr><td colspan="6" class="hint">No labs in this category</td></tr>';
 
     tbody.querySelectorAll('[data-lab-start]').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (status) status.textContent = `Starting ${btn.dataset.labStart}…`;
         try {
-          const r = await api.post(`/api/labs/${encodeURIComponent(btn.dataset.labStart)}/start${q}`, {});
+          const r = await api.post(`/api/labs/${encodeURIComponent(btn.dataset.labStart)}/start${qBase}`, {});
           if (status) status.textContent = r.message || 'Started';
           await refreshLabs();
         } catch (err) {
@@ -5067,7 +5081,7 @@ async function refreshLabs() {
       btn.addEventListener('click', async () => {
         if (status) status.textContent = `Stopping ${btn.dataset.labStop}…`;
         try {
-          const r = await api.post(`/api/labs/${encodeURIComponent(btn.dataset.labStop)}/stop${q}`, {});
+          const r = await api.post(`/api/labs/${encodeURIComponent(btn.dataset.labStop)}/stop${qBase}`, {});
           if (status) status.textContent = r.message || 'Stopped';
           await refreshLabs();
         } catch (err) {
@@ -5083,7 +5097,7 @@ async function refreshLabs() {
     await refreshRuntime();
   } catch (err) {
     updateLabsCampaignStrip([]);
-    if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="hint">${escapeAttr(err.message)}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="hint">${escapeAttr(err.message)}</td></tr>`;
     if (status) status.textContent = err.message;
   }
 }
@@ -5157,6 +5171,9 @@ async function refreshRuntime() {
 
 document.getElementById('labs-refresh')?.addEventListener('click', () => {
   persistLabsAgentUrl();
+  refreshLabs().catch(() => {});
+});
+document.getElementById('labs-category-filter')?.addEventListener('change', () => {
   refreshLabs().catch(() => {});
 });
 document.getElementById('runtime-refresh')?.addEventListener('click', () => {
