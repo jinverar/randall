@@ -44,7 +44,12 @@ public sealed record MissedFuzzIdeaDto(
     /// <summary>high | medium | low</summary>
     string Priority,
     string? CliHint = null,
-    string? UiHint = null);
+    string? UiHint = null,
+    /// <summary>
+    /// Optional machine action for UI/CLI apply:
+    /// <c>apply-port:8080</c>, <c>arm-dictionary</c>, <c>baseline-start</c>.
+    /// </summary>
+    string? Action = null);
 
 public sealed record StalkInventoryImportResultDto(
     string Project,

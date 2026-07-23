@@ -58,6 +58,7 @@ randall surface assess -p <project> [--layer <id>] [--baseline] [--json]
 randall surface list   -p <project>
 randall surface compare -p <project> [layerId…]
 randall surface ideas  -p <project> [--json]
+randall surface apply  -p <project> [--port N|--idea id|--all]
 randall stalk surface-assess -p <project>
 ```
 
@@ -70,6 +71,7 @@ API:
 - `POST /api/stalking/{project}/surface/assess`
 - `GET /api/stalking/{project}/surface/compare`
 - `GET /api/stalking/{project}/surface/ideas`
+- `POST /api/stalking/{project}/surface/apply` — set listen port / ensure dictionary on campaign YAML
 
 ---
 
@@ -83,6 +85,7 @@ data/stalk/<project>/
     findings.jsonl             # append-only findings
     surface_needs.jsonl        # Magician needs (soft)
     ideas.json                 # MissedFuzzIdeaDto list (also folded into Missed / Stalk map)
+    applied.jsonl              # audit of surface apply (port / dictionary)
     hints.md                   # ranked recommendations for analysts
     dictionary-tokens.txt      # auto-merged into fuzz dictionary mutator
 data/runs/<project>_baseline_<ts>/
@@ -119,7 +122,9 @@ Soft-fail when artifacts are missing — layer record never fails.
 | `unsignedBinary` | SigCheck `Verified: Unsigned` (or Signed as info) | Lab tamper / sideload policy |
 
 **Surface fuzz ideas:** after assess, findings become `ideas.json` and appear in Missed blocks /
-Stalk map / the **Surface fuzz ideas** panel (`randall surface ideas`).
+Stalk map / the **Surface fuzz ideas** panel (`randall surface ideas`). Listen ideas carry an
+**Apply** action that sets `transport.port` (or mints a TCP companion project); sideload/module
+ideas re-ensure the dictionary mutator (`randall surface apply` / UI Apply button).
 
 **Compare phases:** after assessing baseline + fuzzed (+ fuzzier), use
 `randall surface compare` or the Stalking bugs **Surface compare** panel — novel findings
@@ -156,4 +161,4 @@ Exploit Surface assess the artifacts from *that* session (not a random newer run
 - Richer Authenticode / catalog parsing beyond SigCheck text
 - ELF signature / package provenance probes on Linux
 - Deeper Target Runtime multi-slot attach heuristics
-- Scare Floor one-click “Apply listen port” from surface ideas
+- Scare Floor one-click “Apply listen port” from surface ideas ✅ (`surface apply`)

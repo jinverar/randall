@@ -789,6 +789,26 @@ app.MapGet("/api/stalking/{project}/surface/ideas", (string project) =>
     return Results.Ok(ExploitSurfaceIdeas.FromLatest(project));
 });
 
+app.MapPost("/api/stalking/{project}/surface/apply", (string project, ExploitSurfaceApplyRequest? body) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        var result = ExploitSurfaceApply.Apply(
+            project,
+            ideaId: body?.IdeaId,
+            action: body?.Action,
+            port: body?.Port,
+            all: body?.All == true);
+        return result.Ok ? Results.Ok(result) : Results.BadRequest(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/stalking/{project}/baseline", (string project) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

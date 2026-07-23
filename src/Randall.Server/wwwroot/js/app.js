@@ -1979,10 +1979,36 @@ async function refreshStalkingSurface(project) {
       const ideas = await api.get(`/api/stalking/${encodeURIComponent(project)}/surface/ideas`);
       const list = Array.isArray(ideas) ? ideas : [];
       ideasEl.innerHTML = list.length
-        ? `<ul class="hint-list">${list.slice(0, 10).map((i) =>
-            `<li><strong>[${escapeAttr(i.priority)}]</strong> ${escapeAttr(i.title)}
-             <div class="hint">${escapeAttr(i.detail || '')}${i.cliHint ? ` · <code>${escapeAttr(i.cliHint)}</code>` : ''}</div></li>`).join('')}</ul>`
+        ? `<ul class="hint-list">${list.slice(0, 10).map((i) => {
+            const act = i.action || '';
+            const canApply = act.startsWith('apply-port:') || act === 'arm-dictionary';
+            const btn = canApply
+              ? ` <button type="button" class="btn surface-apply-btn" data-idea="${escapeAttr(i.id)}" data-action="${escapeAttr(act)}">Apply</button>`
+              : '';
+            return `<li><strong>[${escapeAttr(i.priority)}]</strong> ${escapeAttr(i.title)}${btn}
+             <div class="hint">${escapeAttr(i.detail || '')}${i.cliHint ? ` · <code>${escapeAttr(i.cliHint)}</code>` : ''}</div></li>`;
+          }).join('')}</ul>`
         : '<p class="empty">No surface ideas yet — run a baseline session, then Assess.</p>';
+      ideasEl.querySelectorAll('.surface-apply-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const out = document.getElementById('stalking-export-result');
+          try {
+            const result = await api.post(`/api/stalking/${encodeURIComponent(project)}/surface/apply`, {
+              project,
+              ideaId: btn.dataset.idea,
+              action: btn.dataset.action,
+            });
+            if (out) {
+              out.textContent = result.summary
+                + (result.targetProject && result.targetProject !== project
+                  ? ` → project ${result.targetProject}` : '');
+            }
+            await refreshStalkingSurface(project);
+          } catch (err) {
+            if (out) out.textContent = err.message;
+          }
+        });
+      });
     } catch (err) {
       ideasEl.innerHTML = `<p class="empty">Surface ideas unavailable${err?.message ? ' — ' + escapeAttr(err.message) : ''}.</p>`;
     }

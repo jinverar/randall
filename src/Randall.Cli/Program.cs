@@ -130,6 +130,8 @@ static void PrintHelp()
                                             Natural-use baseline (Windows Procmon · Linux ss/proc)
           randall surface compare -p <project>   Novel findings baseline → fuzzed
           randall surface ideas -p <project>     Surface → fuzz ideas
+          randall surface apply -p <project> [--port N|--all]
+                                            Apply listen port / dictionary into campaign
           randall surface list -p <project>  List persisted surface findings
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
@@ -2721,6 +2723,7 @@ static int RunSurface(string[] args)
               randall surface list   -p <project> [--json]
               randall surface compare -p <project> [layerId…] [--json]
               randall surface ideas  -p <project> [--json]
+              randall surface apply  -p <project> [--idea id|--port N|--action X|--all] [--json]
 
             Exploit Surface — host assessor + baseline session (natural use under
             Windows Procmon/Sysinternals or Linux ss+/proc/maps/ldd).
@@ -2736,9 +2739,13 @@ static int RunSurface(string[] args)
 
     string? project = null;
     string? layerId = null;
+    string? ideaId = null;
+    string? applyAction = null;
+    int? applyPort = null;
+    var applyAll = false;
     var baselineOnly = false;
     var json = false;
-    var start = sub is "assess" or "list" or "findings" or "run" or "report" or "compare" or "ideas" ? 1 : 0;
+    var start = sub is "assess" or "list" or "findings" or "run" or "report" or "compare" or "ideas" or "apply" ? 1 : 0;
     if (start == 0)
         sub = "assess";
 
@@ -2748,6 +2755,17 @@ static int RunSurface(string[] args)
             project = args[++i];
         else if (args[i] is "--layer" or "-l" && i + 1 < args.Length)
             layerId = args[++i];
+        else if (args[i] is "--idea" or "--id" && i + 1 < args.Length)
+            ideaId = args[++i];
+        else if (args[i] is "--action" && i + 1 < args.Length)
+            applyAction = args[++i];
+        else if (args[i] is "--port" && i + 1 < args.Length && int.TryParse(args[i + 1], out var ap))
+        {
+            applyPort = ap;
+            i++;
+        }
+        else if (args[i] is "--all")
+            applyAll = true;
         else if (args[i] is "--baseline" or "--baseline-only")
             baselineOnly = true;
         else if (args[i] is "--json")
@@ -2756,7 +2774,7 @@ static int RunSurface(string[] args)
 
     if (string.IsNullOrWhiteSpace(project))
     {
-        Console.Error.WriteLine("Usage: randall surface assess|list|compare -p <project>");
+        Console.Error.WriteLine("Usage: randall surface assess|list|compare|ideas|apply -p <project>");
         return 1;
     }
 
@@ -2830,9 +2848,35 @@ static int RunSurface(string[] args)
             Console.WriteLine($"         {idea.Detail}");
             if (!string.IsNullOrWhiteSpace(idea.CliHint))
                 Console.WriteLine($"         cli: {idea.CliHint}");
+            if (!string.IsNullOrWhiteSpace(idea.Action))
+                Console.WriteLine($"         action: {idea.Action}");
         }
 
         return 0;
+    }
+
+    if (sub is "apply")
+    {
+        var result = ExploitSurfaceApply.Apply(project, ideaId, applyAction, applyPort, applyAll);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            }));
+            return result.Ok ? 0 : 2;
+        }
+
+        Console.WriteLine(result.Ok ? $"[ok] {result.Summary}" : $"[fail] {result.Summary}");
+        foreach (var a in result.Applied)
+            Console.WriteLine($"  · {a}");
+        if (!string.IsNullOrWhiteSpace(result.TargetProject) &&
+            !result.TargetProject.Equals(project, StringComparison.OrdinalIgnoreCase))
+            Console.WriteLine($"  target project: {result.TargetProject}");
+        if (!string.IsNullOrWhiteSpace(result.ConfigPath))
+            Console.WriteLine($"  yaml: {result.ConfigPath}");
+        return result.Ok ? 0 : 2;
     }
 
     if (sub is "list" or "findings")
