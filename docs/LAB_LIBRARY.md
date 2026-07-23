@@ -9,6 +9,7 @@ Randfuzz ships a curated **lab library**: startable vulnerable-by-design servers
 | **network** | TCP/UDP protocol labs (HTTP, FTP, SSH-shaped, TFTP, RPC, SMB-shaped, Vulnserver) |
 | **drone** | Fictional RDL1 drone / GCS labs — see [DRONE_LAB.md](DRONE_LAB.md) |
 | **iot** | Fictional MQTT-shaped broker (RMQ1) — see [MQTT_LAB.md](MQTT_LAB.md) |
+| **robot** | Fictional robot-arm motion controller (RBT1) — see [ROBOT_LAB.md](ROBOT_LAB.md) |
 | **file** | Profile-only file parsers (`file-text`, `file-framed`, [ReelDeck](REELDECK.md)) — no Start/Stop listener |
 | **exploit-dev** | Native mitigation-ladder ECHO (`vulnlab`) |
 
@@ -38,11 +39,11 @@ powershell -File scripts/build-file-framed.ps1
 powershell -File scripts/build-reeldeck.ps1
 ```
 
-Per-target scripts: `scripts/build-vuln*.ps1`, `scripts/build-vulndrone.ps1`, `scripts/build-vulnmqtt.ps1`.
+Per-target scripts: `scripts/build-vuln*.ps1`, `scripts/build-vulndrone.ps1`, `scripts/build-vulnmqtt.ps1`, `scripts/build-vulnrobot.ps1`.
 
 ## UI
 
-Fuzz → **Lab library** shows category, difficulty, tags, endpoint, PID, and Start/Stop (or **Fuzz cmd** for profile-only). Filter with the category dropdown. Docs links point at `docs/*.md` (e.g. `DRONE_LAB.md`, `MQTT_LAB.md`, `REELDECK.md`, `RPC_LAB.md`).
+Fuzz → **Lab library** shows category, difficulty, tags, endpoint, PID, and Start/Stop (or **Fuzz cmd** for profile-only). Filter with the category dropdown. Docs links point at `docs/*.md` (e.g. `DRONE_LAB.md`, `MQTT_LAB.md`, `ROBOT_LAB.md`, `REELDECK.md`, `RPC_LAB.md`).
 
 ## API
 

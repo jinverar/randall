@@ -1,0 +1,58 @@
+name: vulnrobot
+description: "Fictional RBT1 robot-arm motion controller (TCP) — lab only, not ROS/UR/Fanuc. Build scripts/build-vulnrobot.ps1"
+kind: tcp
+target:
+  executable: ../targets/vulnrobot/randall-vulnrobot.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 15560
+  receiveTimeoutMs: 1200
+sessionCommands:
+  - name: HELLO
+    model: protocols/vulnrobot_hello.yaml
+    readBanner: true
+  - name: JOINT
+    model: protocols/vulnrobot_joint.yaml
+    readBanner: true
+  - name: TRAJ
+    model: protocols/vulnrobot_traj.yaml
+    readBanner: true
+  - name: TOOL
+    model: protocols/vulnrobot_tool.yaml
+    readBanner: true
+sessionFlows:
+  - name: hello_joint
+    steps: [HELLO, JOINT]
+    mutateStep: last
+  - name: hello_traj
+    steps: [HELLO, TRAJ]
+    mutateStep: last
+  - name: hello_tool
+    steps: [HELLO, TOOL]
+    mutateStep: last
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  sessionFlowBias: 0.45
+  corpusDir: ../data/corpus/vulnrobot
+  crashesDir: ../data/crashes/vulnrobot
+seeds:
+  - seeds/vulnrobot_hello.bin
+  - seeds/vulnrobot_joint.bin
+  - seeds/vulnrobot_traj.bin
+  - seeds/vulnrobot_tool.bin
+  - seeds/vulnrobot_hello_boom.bin
+  - seeds/vulnrobot_joint_boom.bin
+  - seeds/vulnrobot_traj_boom.bin
+  - seeds/vulnrobot_tool_boom.bin
+mutators:
+  - boundary
+  - interesting
+  - expand
+  - havoc
+  - bitflip
+  - splice

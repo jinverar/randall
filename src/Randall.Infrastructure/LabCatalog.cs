@@ -85,6 +85,13 @@ public static class LabCatalog
             ["mqtt-shaped", "iot", "tcp", "length-field"], DocsPath: "MQTT_LAB.md",
             BuildHint: "scripts/build-vulnmqtt.ps1 · scripts/build-lab-targets.sh"),
 
+        // —— Robot motion / arm controller labs (fictional RBT1 — not ROS / UR / Fanuc) ——
+        new("vulnrobot", "VulnRobot", "Fictional robot-arm motion controller (RBT1) — HELLO / JOINT / TRAJ / TOOL length crashes",
+            "robot", "intermediate", 15560, "tcp", "randall-vulnrobot",
+            "targets/vulnrobot/randall-vulnrobot.exe", "projects/vulnrobot.yaml",
+            ["robot", "motion", "tcp", "length-field", "trajectory"], DocsPath: "ROBOT_LAB.md",
+            BuildHint: "scripts/build-vulnrobot.ps1 · scripts/build-lab-targets.sh"),
+
         // —— Exploit-dev / mitigation (native; start when built) ——
         // Port 9998 for UI start so it does not fight Vulnserver on 9999; fuzz YAML still defaults to 9999.
         new("vulnlab", "VulnLab (basic)", "Native mitigation-ladder TCP ECHO service (Linux/gcc). UI start uses :9998.",

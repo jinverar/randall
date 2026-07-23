@@ -44,6 +44,8 @@ targets/vulndrone/*
 !targets/vulndrone/.gitkeep
 targets/vulnmqtt/*
 !targets/vulnmqtt/.gitkeep
+targets/vulnrobot/*
+!targets/vulnrobot/.gitkeep
 targets/screamcrash/*
 !targets/screamcrash/.gitkeep
 # VulnLab: keep the C source, ignore compiled tier binaries

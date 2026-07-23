@@ -19,8 +19,10 @@ public class LabCatalogTests
         Assert.Contains(lib.Categories, c => c == "network");
         Assert.Contains(lib.Categories, c => c == "file");
         Assert.Contains(lib.Categories, c => c == "iot");
+        Assert.Contains(lib.Categories, c => c == "robot");
         Assert.Contains(LabCatalog.Categories(), c => c == "exploit-dev");
         Assert.Contains(lib.Labs, l => l.Id == "vulnmqtt" && l.Category == "iot");
+        Assert.Contains(lib.Labs, l => l.Id == "vulnrobot" && l.Category == "robot");
     }
 
     [Fact]
@@ -76,7 +78,27 @@ public class LabCatalogTests
         Assert.Contains(DocsCatalog.Index, i => i.Path == "LAB_LIBRARY.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "DRONE_LAB.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "MQTT_LAB.md");
+        Assert.Contains(DocsCatalog.Index, i => i.Path == "ROBOT_LAB.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "RPC_LAB.md");
+    }
+
+    [Fact]
+    public void RobotLab_IsCataloguedUnderRobot()
+    {
+        var labs = LabServerManager.List(category: "robot");
+        Assert.Contains(labs, l => l.Id == "vulnrobot");
+        var robot = labs.First(l => l.Id == "vulnrobot");
+        Assert.Equal(15560, robot.Port);
+        Assert.Equal("tcp", robot.Protocol);
+        Assert.True(robot.Startable);
+        Assert.Equal("ROBOT_LAB.md", robot.DocsPath);
+        Assert.Contains("robot", robot.Tags!);
+
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        Assert.True(File.Exists(Path.Combine(root, "projects", "vulnrobot.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "protocols", "vulnrobot_hello.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnRobot", "Program.cs")));
+        Assert.True(File.Exists(Path.Combine(root, "docs", "ROBOT_LAB.md")));
     }
 
     [Fact]
