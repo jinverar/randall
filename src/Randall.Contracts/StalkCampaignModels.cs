@@ -54,7 +54,11 @@ public sealed record StalkLayerCreateRequest(
     string? Notes,
     /// <summary>When true, capture mini-timeline for this layer. When null, auto for all stalk tags if project enables miniTimeline / miniTimelineOnStalk.</summary>
     bool? MiniTimeline = null,
-    int? MiniTimelineWindowSeconds = null);
+    int? MiniTimelineWindowSeconds = null,
+    /// <summary>Prefer this run journal for Procmon PML / host snapshots (baseline session).</summary>
+    string? RunId = null,
+    /// <summary>Explicit Procmon PML path from a baseline session (overrides run discovery).</summary>
+    string? ProcmonPmlPath = null);
 
 public sealed record StalkLayerFromCrashRequest(
     string CrashId,

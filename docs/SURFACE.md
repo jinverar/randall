@@ -125,11 +125,17 @@ Stalk map / the **Surface fuzz ideas** panel (`randall surface ideas`).
 `randall surface compare` or the Stalking bugs **Surface compare** panel — novel findings
 vs the previous phase (same idea as host timeline compare).
 
-**Arming:** high/medium findings mint dictionary tokens (DLL basenames, ports, API names).
-The next fuzz campaign auto-loads `dictionary-tokens.txt` into the dictionary mutator.
+**Arming:** high/medium findings mint dictionary tokens (DLL basenames, `.so` names, ports, API names).
+The next fuzz campaign auto-loads `dictionary-tokens.txt` into the dictionary mutator, and assess
+soft-ensures `dictionary` is listed in the project YAML mutators when a YAML exists.
 With `softSummonMagician`, findings also emit Magician needs (`surface_needs.jsonl`) and
 may cast dictionary/army/knight/bots when Magician is enabled — post-assess only, never on
-the fuzz hot path. When `softSummonMagician: false`, neither needs nor cast run.
+the fuzz hot path. Magician `dictionaryBoost` for surface rule classes prefers those same
+surface tokens (not generic Bug Hunter defaults). When `softSummonMagician: false`, neither
+needs nor cast run.
+
+Baseline session **Stop** pins `runId` / Procmon PML into the stalk layer so mini-timeline and
+Exploit Surface assess the artifacts from *that* session (not a random newer run).
 
 ---
 
@@ -150,3 +156,4 @@ the fuzz hot path. When `softSummonMagician: false`, neither needs nor cast run.
 - Richer Authenticode / catalog parsing beyond SigCheck text
 - ELF signature / package provenance probes on Linux
 - Deeper Target Runtime multi-slot attach heuristics
+- Scare Floor one-click “Apply listen port” from surface ideas

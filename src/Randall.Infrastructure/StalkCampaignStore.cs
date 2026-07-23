@@ -152,7 +152,9 @@ public static class StalkCampaignStore
                 targetExe: exe,
                 repoRoot: repoRoot,
                 projectName: layer.Project,
-                timelineKey: key);
+                timelineKey: key,
+                runId: request.RunId,
+                procmonPmlPath: request.ProcmonPmlPath);
             var rel = Path.Combine("timeline", key).Replace('\\', '/');
             var note = string.IsNullOrWhiteSpace(layer.Notes)
                 ? summary.SummaryLine

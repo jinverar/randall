@@ -1863,10 +1863,14 @@ async function refreshBaselineSessionStatus(project) {
   try {
     const s = await api.get(`/api/stalking/${encodeURIComponent(project)}/baseline`);
     if (s.status === 'running') {
+      const chips = [
+        s.procmonArmed ? 'procmon✓' : 'procmon—',
+        (s.hostProbesArmed || s.sysinternalsArmed) ? 'probes✓' : 'probes—',
+      ];
       const attach = s.pid
-        ? ` · pid ${s.pid}${s.targetExe ? ' · ' + s.targetExe.split(/[/\\\\]/).pop() : ''}`
-        : ' · waiting for Target Runtime PID';
-      el.textContent = `Baseline session: RUNNING · ${s.runId || ''}${attach} — use the app, then Stop + record`;
+        ? `pid ${s.pid}${s.targetExe ? ' · ' + s.targetExe.split(/[/\\\\]/).pop() : ''}`
+        : 'waiting for Target Runtime PID';
+      el.textContent = `Baseline session: RUNNING · ${chips.join(' · ')} · ${attach} — use the app, then Stop + record`;
     } else {
       el.textContent = `Baseline session: ${s.status || 'stopped'}${s.message ? ' — ' + s.message : ''}`;
     }
@@ -1916,8 +1920,17 @@ async function refreshStalkingSurface(project) {
   if (!findingsEl) return;
   try {
     const report = await api.get(`/api/stalking/${encodeURIComponent(project)}/surface`);
-    if (meta) meta.textContent = report.summaryLine ? `— ${report.summaryLine}` : '';
+    const armBits = [];
+    if (report.dictionaryTokensAdded?.length)
+      armBits.push(`dict+${report.dictionaryTokensAdded.length}`);
+    else if (report.summaryLine?.includes('dict+'))
+      armBits.push((report.summaryLine.match(/dict\+\d+/) || [])[0]);
+    if (report.hintsPath) armBits.push('hints.md');
+    if (report.summaryLine?.includes('· mage')) armBits.push('mage');
+    const armStrip = armBits.length ? ` · armed ${armBits.join(' · ')}` : '';
+    if (meta) meta.textContent = report.summaryLine ? `— ${report.summaryLine}${armStrip}` : armStrip;
     const findings = report.findings || [];
+    const arts = (report.artifactsUsed || []).filter((a) => a && !String(a).startsWith('note:'));
     findingsEl.innerHTML = findings.length
       ? `<table><thead><tr><th>Sev</th><th>Kind</th><th>Finding</th><th>Evidence</th></tr></thead>
         <tbody>${findings.map((f) => `<tr>
@@ -1926,7 +1939,9 @@ async function refreshStalkingSurface(project) {
           <td>${escapeAttr(f.title)}<div class="hint">${escapeAttr(f.detail || '')}</div></td>
           <td class="hint">${escapeAttr(f.evidenceSnippet || '—')}</td>
         </tr>`).join('')}</tbody></table>`
-      : `<p class="empty">${escapeAttr(report.error || 'No heuristic hits yet — run a baseline session (Windows: Procmon · Linux: ss/maps), then Assess.')}</p>`;
+      : `<p class="empty">${escapeAttr(report.error || 'No heuristic hits yet — run a baseline session (Windows: Procmon · Linux: ss/maps), then Assess.')}${
+          arts.length ? `<div class="hint">Artifacts seen: ${arts.slice(0, 4).map((a) => escapeAttr(String(a).split(/[/\\\\]/).pop())).join(', ')}</div>` : ''
+        }</p>`;
     const recs = report.recommendations || [];
     if (recsEl) {
       recsEl.innerHTML = recs.length

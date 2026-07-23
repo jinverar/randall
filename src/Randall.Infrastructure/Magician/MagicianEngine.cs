@@ -391,7 +391,7 @@ public static class MagicianEngine
             case "dictionaryBoost":
             {
                 var added = 0;
-                foreach (var tok in TokensFor(need.RuleClass))
+                foreach (var tok in TokensFor(need.RuleClass, project, yamlPath))
                 {
                     if (project.Dictionary.Contains(tok, StringComparer.Ordinal))
                         continue;
@@ -501,9 +501,17 @@ public static class MagicianEngine
         File.WriteAllText(path, sb.ToString());
     }
 
-    private static IEnumerable<string> TokensFor(string? ruleClass)
+    private static IEnumerable<string> TokensFor(string? ruleClass, ProjectConfig project, string yamlPath)
     {
         var cls = (ruleClass ?? "").ToLowerInvariant();
+        if (cls is "dllsideload" or "unusualmodule" or "unsignedbinary"
+            or "injection" or "networklisten" or "childprocess")
+        {
+            var surface = ReadSurfaceDictionaryTokens(project.Name, yamlPath);
+            if (surface.Count > 0)
+                return surface;
+        }
+
         return cls switch
         {
             "auth" or "state" =>
@@ -519,6 +527,26 @@ public static class MagicianEngine
             "resource" => ["AAAA", new string('A', 256), new string('B', 1024)],
             _ => BugHunterMistakes.DefaultDictionaryTokens().Take(12),
         };
+    }
+
+    private static IReadOnlyList<string> ReadSurfaceDictionaryTokens(string projectName, string yamlPath)
+    {
+        try
+        {
+            var repo = CrashCatalog.FindRepoRoot()
+                       ?? Path.GetFullPath(Path.Combine(Path.GetDirectoryName(yamlPath)!, ".."));
+            var path = Randall.Infrastructure.ExploitSurface.ExploitSurfaceArming.DictionaryTokensPath(projectName, repo);
+            if (!File.Exists(path)) return [];
+            return File.ReadAllLines(path)
+                .Select(l => l.Trim())
+                .Where(l => l.Length > 0 && !l.StartsWith('#'))
+                .Take(24)
+                .ToList();
+        }
+        catch
+        {
+            return [];
+        }
     }
 
     private static void EnsureMutator(
