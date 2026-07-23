@@ -588,7 +588,102 @@ async function loadHealth() {
     } catch { /* ignore */ }
   }
 }
+
+let updateBannerState = null;
+
+function isSafeNotesUrl(url) {
+  try {
+    const u = new URL(String(url || ''));
+    return u.protocol === 'https:' && (u.hostname === 'github.com' || u.hostname === 'www.github.com');
+  } catch {
+    return false;
+  }
 }
+
+function renderUpdateBanner(st) {
+  const ban = document.getElementById('update-banner');
+  const text = document.getElementById('update-banner-text');
+  const notes = document.getElementById('update-banner-notes');
+  const applyBtn = document.getElementById('update-banner-apply');
+  if (!ban || !text) return;
+  updateBannerState = st;
+  const show = st && st.updateAvailable && st.majorUpdate && !st.bannerSuppressed && st.signatureValid;
+  ban.classList.toggle('hidden', !show);
+  if (!show) return;
+  text.textContent = st.message
+    || `Major update available: ${st.currentVersion} → ${st.lastCheckedVersion}`;
+  if (notes) {
+    if (st.notesUrl && isSafeNotesUrl(st.notesUrl)) {
+      notes.href = st.notesUrl;
+      notes.classList.remove('hidden');
+    } else {
+      notes.removeAttribute('href');
+      notes.classList.add('hidden');
+    }
+  }
+  if (applyBtn) applyBtn.disabled = false;
+}
+
+async function refreshUpdateBanner(doCheck) {
+  try {
+    const st = doCheck
+      ? await api.post('/api/update/check?force=1', {})
+      : await api.get('/api/update/status');
+    const normalized = st.currentVersion != null && st.bannerSuppressed !== undefined
+      ? st
+      : {
+          currentVersion: st.currentVersion,
+          lastCheckedVersion: st.latestVersion,
+          updateAvailable: st.updateAvailable,
+          majorUpdate: st.majorUpdate,
+          signatureValid: st.signatureValid,
+          notesUrl: st.notesUrl,
+          bannerSuppressed: !(st.updateAvailable && st.majorUpdate && st.signatureValid),
+          message: st.message,
+        };
+    if (doCheck) {
+      const status = await api.get('/api/update/status');
+      renderUpdateBanner(status);
+      return status;
+    }
+    renderUpdateBanner(normalized);
+    return normalized;
+  } catch (err) {
+    console.warn('update check', err);
+    return null;
+  }
+}
+
+document.getElementById('update-banner-check')?.addEventListener('click', () => {
+  refreshUpdateBanner(true).catch(() => {});
+});
+document.getElementById('update-banner-dismiss')?.addEventListener('click', async () => {
+  try {
+    const st = await api.post('/api/update/dismiss', {
+      version: updateBannerState?.lastCheckedVersion || null,
+    });
+    renderUpdateBanner(st);
+  } catch (err) {
+    console.warn(err);
+  }
+});
+document.getElementById('update-banner-apply')?.addEventListener('click', async () => {
+  const applyBtn = document.getElementById('update-banner-apply');
+  const text = document.getElementById('update-banner-text');
+  if (!window.confirm('Apply the verified update now? Stop active fuzz sessions first. This downloads a signed release and replaces binaries.'))
+    return;
+  if (applyBtn) applyBtn.disabled = true;
+  if (text) text.textContent = 'Applying verified update…';
+  try {
+    const r = await api.post('/api/update/apply?confirm=true', { confirm: true });
+    if (text) text.textContent = r.message || 'Update applied — restart Randfuzz.';
+    if (r.restartRequired)
+      window.alert((r.message || 'Update applied.') + '\n\nRestart the UI/server to finish.');
+  } catch (err) {
+    if (text) text.textContent = err.message || 'Update failed';
+    if (applyBtn) applyBtn.disabled = false;
+  }
+});
 
 // —— Recipe catalog (Scare Floor): browse target-class recipes and instantiate projects ——
 let recipeCatalogInit = false;
@@ -7350,6 +7445,9 @@ async function init() {
   initRecipeCatalog();
   applyRemoteLabChrome();
   await loadHealth();
+  refreshUpdateBanner(false).catch(() => {});
+  // Background check once per session (signed manifest); major updates raise the banner.
+  setTimeout(() => refreshUpdateBanner(true).catch(() => {}), 2500);
   await loadTargets();
   await loadDashboard();
   await loadStalkingView().catch(() => {});

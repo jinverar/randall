@@ -25,6 +25,7 @@ return args[0].ToLowerInvariant() switch
     "proxy" => await RunProxyAsync(args.Skip(1).ToArray()),
     "campaign" => await RunCampaignAsync(args.Skip(1).ToArray()),
     "pack" => await RunPackAsync(args.Skip(1).ToArray()),
+    "update" => await RunUpdateAsync(args.Skip(1).ToArray()),
     "bundle" => RunBundle(args.Skip(1).ToArray()),
     "export" => RunExport(args.Skip(1).ToArray()),
     "doctor" => RunDoctor(args.Skip(1).ToArray()),
@@ -74,6 +75,11 @@ static void PrintHelp()
           randall proxy [--listen N] [--target host:port]
           randall campaign -c campaigns/lab-smoke.yaml
           randall pack -o publish/standalone [--rid win-x64|linux-x64|…]
+          randall update check [--json] [--force]  Secure update check (signed GitHub manifest)
+          randall update apply --yes        Apply verified update when you are ready
+          randall update status             Show last check / dismiss banner
+          randall update dismiss [version]  Hide major-update banner for a version
+          randall update sign-manifest -i f -k key.pem   Maintainer: sign release manifest
           randall bundle export -c projects/vulnserver.yaml -o bundles/vulnserver.zip
           randall bundle import -i bundles/vulnserver.zip -o projects/imported
           randall doctor -c <project>     Preflight lab checks before fuzzing
@@ -992,7 +998,198 @@ static int PrintLegs()
 
 static int PrintVersion()
 {
-    Console.WriteLine("Randfuzz by Randall 0.16.0-alpha (Phase 16 — edge counters + crash analyze)");
+    Console.WriteLine(AppVersion.InformalLine);
+    return 0;
+}
+
+static async Task<int> RunUpdateAsync(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Secure updates (signed update-manifest.json + SHA-256 assets)
+
+              randall update check [--json] [--force]
+              randall update status [--json]
+              randall update apply --yes [--json]
+              randall update dismiss [version]
+              randall update sign-manifest -i update-manifest.json -k private.pem [-o update-manifest.json.sig]
+
+            Checks use a signed update-manifest.json (ECDSA P-256) + SHA-256 assets.
+            Results cache for 1 hour unless --force. Apply never runs without --yes.
+            See docs/UPDATES.md.
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    var rest = args.Skip(1).ToArray();
+    return sub switch
+    {
+        "check" => await UpdateCheck(rest),
+        "status" => UpdateStatusCmd(rest),
+        "apply" => await UpdateApply(rest),
+        "dismiss" => UpdateDismissCmd(rest),
+        "sign-manifest" or "sign" => UpdateSignManifest(rest),
+        _ => Unknown("update " + args[0]),
+    };
+}
+
+static async Task<int> UpdateCheck(string[] args)
+{
+    var json = args.Any(a => a is "--json");
+    var force = args.Any(a => a is "--force" or "-f");
+    var result = await UpdateService.CheckAsync(force: force);
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        }));
+    }
+    else
+    {
+        Console.WriteLine(result.Message);
+        if (result.Findings is { Count: > 0 })
+        {
+            foreach (var f in result.Findings)
+                Console.WriteLine("  · " + f);
+        }
+        if (result.UpdateAvailable && result.SignatureValid)
+        {
+            Console.WriteLine(result.MajorUpdate
+                ? "Major update — apply when ready: randall update apply --yes"
+                : "Apply when ready: randall update apply --yes");
+            if (!string.IsNullOrWhiteSpace(result.NotesUrl))
+                Console.WriteLine("Notes: " + result.NotesUrl);
+        }
+        else if (!result.SignatureValid && !result.Ok)
+        {
+            Console.WriteLine("Signature/trust checks failed — nothing will be applied.");
+        }
+    }
+
+    // Soft "no release yet" stays exit 0; hard trust failures exit 1.
+    return result.Ok ? 0 : 1;
+}
+
+static int UpdateStatusCmd(string[] args)
+{
+    var json = args.Any(a => a is "--json");
+    var st = UpdateService.Status();
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(st, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        }));
+    }
+    else
+    {
+        Console.WriteLine($"Current: {st.CurrentVersion} ({st.InstallMode})");
+        Console.WriteLine(st.LastCheckedAt is null
+            ? "No check yet — run: randall update check"
+            : $"Last check: {st.LastCheckedAt:u} → {st.LastCheckedVersion ?? "—"}");
+        if (st.UpdateAvailable)
+            Console.WriteLine(st.MajorUpdate ? "Major update available." : "Update available.");
+        if (!string.IsNullOrWhiteSpace(st.Message))
+            Console.WriteLine(st.Message);
+        if (st.BannerSuppressed && st.MajorUpdate)
+            Console.WriteLine($"Banner dismissed for {st.DismissedVersion}.");
+    }
+
+    return 0;
+}
+
+static async Task<int> UpdateApply(string[] args)
+{
+    var yes = args.Any(a => a is "--yes" or "-y" or "--confirm");
+    var json = args.Any(a => a is "--json");
+    var result = await UpdateService.ApplyAsync(confirm: yes);
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        }));
+    }
+    else
+    {
+        Console.WriteLine(result.Message);
+        if (result.Steps is { Count: > 0 })
+        {
+            foreach (var s in result.Steps)
+            {
+                if (!string.IsNullOrWhiteSpace(s))
+                    Console.WriteLine("  · " + s);
+            }
+        }
+        if (result.RestartRequired)
+            Console.WriteLine("Restart Randfuzz (CLI/UI) to load the new build.");
+    }
+
+    return result.Ok ? 0 : 1;
+}
+
+static int UpdateDismissCmd(string[] args)
+{
+    string? ver = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-v" or "--version" && i + 1 < args.Length)
+            ver = args[++i];
+        else if (!args[i].StartsWith('-'))
+            ver = args[i];
+    }
+
+    var st = UpdateService.Dismiss(ver);
+    Console.WriteLine(string.IsNullOrWhiteSpace(st.DismissedVersion)
+        ? "Nothing to dismiss — run update check first."
+        : $"Dismissed update banner for {st.DismissedVersion}.");
+    return 0;
+}
+
+static int UpdateSignManifest(string[] args)
+{
+    string? input = null;
+    string? key = null;
+    string? output = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-i" or "--input" && i + 1 < args.Length)
+            input = args[++i];
+        else if (args[i] is "-k" or "--key" && i + 1 < args.Length)
+            key = args[++i];
+        else if (args[i] is "-o" or "--output" && i + 1 < args.Length)
+            output = args[++i];
+    }
+
+    key ??= Environment.GetEnvironmentVariable(UpdateCrypto.SignKeyEnv);
+    if (string.IsNullOrWhiteSpace(input) || string.IsNullOrWhiteSpace(key))
+    {
+        Console.Error.WriteLine("Usage: randall update sign-manifest -i update-manifest.json -k private.pem [-o update-manifest.json.sig]");
+        Console.Error.WriteLine($"Or set {UpdateCrypto.SignKeyEnv} to a PEM private key path/contents.");
+        return 1;
+    }
+
+    if (!File.Exists(input))
+    {
+        Console.Error.WriteLine("Manifest not found: " + input);
+        return 1;
+    }
+
+    var keyPem = File.Exists(key) ? File.ReadAllText(key) : key;
+    var json = File.ReadAllText(input);
+    var (normalized, sig) = UpdateService.SignManifestFile(json, keyPem);
+    // Rewrite normalized bytes so verify matches what we signed.
+    File.WriteAllText(input, normalized);
+    output ??= input + ".sig";
+    File.WriteAllBytes(output, sig);
+    Console.WriteLine($"Signed {input} → {output} ({sig.Length} bytes ECDSA P-256).");
+    Console.WriteLine("Attach both files to the GitHub Release along with the RID zips.");
     return 0;
 }
 

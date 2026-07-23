@@ -27,12 +27,13 @@ Contents: self-contained `cli/` + `server/`, copied `projects/` / `docs/` / `cam
 1. Tag `v0.x.y` from `main` after CI green (`dotnet test` + smoke).
 2. Attach packs for at least **win-x64** and **linux-x64** (zip the `publish/standalone*` folders).
 3. Release notes link: [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md), [INSTALL_LINUX.md](INSTALL_LINUX.md), [BENCHMARKS.md](BENCHMARKS.md), [MATURITY.md](MATURITY.md).
-4. Call out: no code signing yet; prefer `git clone` for labs that already have `tools/`.
+4. Call out: portable packs are verified at update-time via signed `update-manifest.json` (see [UPDATES.md](UPDATES.md)); Authenticode on the `.exe` itself is still unfinished.
+5. Attach `update-manifest.json` + `update-manifest.json.sig` + RID zips.
 
 ## Still unfinished (maturity)
 
-- Authenticode / Linux package signing
+- Authenticode / Linux package signing of the binaries themselves
 - Single zip that bundles lab targets + tools
 - Auto-publish workflow
 
-Until then, keep README honest: **portable pack**, not “installer.”
+Until then, keep README honest: **portable pack**, not “installer.” Updates: [UPDATES.md](UPDATES.md).

@@ -26,6 +26,17 @@
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
+  <div id="update-banner" class="update-banner hidden" role="status" aria-live="polite">
+    <div class="update-banner-inner">
+      <span id="update-banner-text">Update available</span>
+      <div class="update-banner-actions">
+        <button type="button" class="btn primary" id="update-banner-check">Check</button>
+        <button type="button" class="btn primary" id="update-banner-apply" title="Download and apply the verified update">Update now</button>
+        <a class="btn" id="update-banner-notes" href="#" target="_blank" rel="noopener">Notes</a>
+        <button type="button" class="btn" id="update-banner-dismiss">Dismiss</button>
+      </div>
+    </div>
+  </div>
   <button type="button" id="nav-reopen" class="nav-reopen" aria-label="Show navigation" title="Show navigation">☰</button>
   <aside class="sidebar" id="sidebar">
     <div class="brand">
