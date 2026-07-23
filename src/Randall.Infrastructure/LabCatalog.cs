@@ -85,6 +85,26 @@ public static class LabCatalog
             "targets/vulnlab/vulnlab-basic", "projects/vulnlab.yaml",
             ["native", "echo", "mitigation-ladder"], DocsPath: "MITIGATION_LAB.md",
             BuildHint: "scripts/build-mitigation-lab.sh"),
+
+        // —— File parser labs (profile-only — fuzz via project YAML; no long-lived listener) ——
+        new("file-text", "File Text", "Structured text/XML mini-parser — first-crash file fuzz path",
+            "file", "intro", 0, "file", "",
+            "targets/file-text/app.exe", "projects/file-text.yaml",
+            ["file", "text", "xml", "mini-parser"], Startable: false,
+            DocsPath: "TARGETS.md",
+            BuildHint: "scripts/build-file-text.ps1 · scripts/build-file-text.sh"),
+        new("file-framed", "File Framed", "Length-prefixed binary mini-parser — size / checksum bugs",
+            "file", "intro", 0, "file", "",
+            "targets/file-framed/app.exe", "projects/file-framed.yaml",
+            ["file", "binary", "length-field", "mini-parser"], Startable: false,
+            DocsPath: "TARGETS.md",
+            BuildHint: "scripts/build-file-framed.ps1 · scripts/build-file-framed.sh"),
+        new("reeldeck", "ReelDeck", "Media container (.rndl) player + studio paths — deeper file stalking",
+            "file", "advanced", 0, "file", "",
+            "targets/reeldeck/reeldeck", "projects/reeldeck.yaml",
+            ["file", "media", "path-stalking", "deep-parser"], Startable: false,
+            DocsPath: "REELDECK.md",
+            BuildHint: "scripts/build-reeldeck.ps1 · scripts/build-reeldeck.sh"),
     ];
 
     public static IReadOnlyList<string> Categories() =>

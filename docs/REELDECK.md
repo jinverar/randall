@@ -7,7 +7,7 @@
 3. **Stalk** (path novelty + seeds/dict) to push deeper  
 4. Capitalize deeper crashes  
 
-Source: `targets/reeldeck/reeldeck.c` · Profile: `projects/reeldeck.yaml` · Guide below.
+Source: `targets/reeldeck/reeldeck.c` · Profile: `projects/reeldeck.yaml` · Lab library category **file** (profile-only) · Guide below.
 
 ## Container map (`.rndl`)
 

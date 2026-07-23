@@ -546,8 +546,9 @@
         <div class="panel">
           <h2>Lab library <span id="labs-scope-label" class="hint-inline">— this machine</span></h2>
           <p class="hint">
-            Curated startable labs (network · drone · exploit-dev). New starts bind <strong>127.0.0.1</strong>.
-            Remote control uses <code>randall agent</code> on the fuzz box — see docs/LAB_LIBRARY.md · docs/DRONE_LAB.md.
+            Curated lab library (network · drone · file · exploit-dev). Listener labs bind <strong>127.0.0.1</strong>;
+            file entries are profile-only (fuzz via Campaign / <code>randall fuzz -c …</code>).
+            Remote control uses <code>randall agent</code> — see docs/LAB_LIBRARY.md · docs/DRONE_LAB.md · docs/REELDECK.md.
           </p>
           <div class="labs-agent-row">
             <label class="case-grow">Remote agent URL
@@ -566,6 +567,7 @@
                 <option value="all">All</option>
                 <option value="network">Network</option>
                 <option value="drone">Drone</option>
+                <option value="file">File</option>
                 <option value="exploit-dev">Exploit-dev</option>
               </select>
             </label>
@@ -579,7 +581,7 @@
                 <tr>
                   <th>Lab</th>
                   <th>Category</th>
-                  <th>Port</th>
+                  <th>Endpoint</th>
                   <th>Status</th>
                   <th>PID</th>
                   <th>Actions</th>

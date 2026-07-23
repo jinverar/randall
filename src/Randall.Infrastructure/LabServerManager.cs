@@ -187,11 +187,13 @@ public static class LabServerManager
         if (!exeExists)
             note = "Build: " + (def.BuildHint ?? ("scripts/build-" + def.Id + ".ps1"));
         else if (!def.Startable)
-            note = "Profile-only — fuzz with the project YAML";
+            note = "Profile-only — fuzz with: randall fuzz -c " + def.ProjectYaml.Replace('\\', '/');
         else if (running && !reachable)
             note = "Process up but port not accepting yet";
         else if (running)
             note = "Listening on 127.0.0.1";
+
+        var bindHint = def.Startable ? "127.0.0.1" : "profile";
 
         return new LabServerInfoDto(
             def.Id,
@@ -206,7 +208,7 @@ public static class LabServerManager
             running,
             pid,
             reachable,
-            "127.0.0.1",
+            bindHint,
             note,
             def.Category,
             def.Difficulty,
@@ -221,6 +223,10 @@ public static class LabServerManager
 
     private static Process? FindRunning(LabCatalog.Def def)
     {
+        // Profile-only / file labs have no long-lived listener.
+        if (!def.Startable || string.IsNullOrWhiteSpace(def.ProcessName) || def.Port <= 0)
+            return null;
+
         // Prefer the PID we started for this catalog id (shared binaries like vulndrone udp/tcp).
         if (PidsWeStarted.TryGetValue(def.Id, out var knownPid))
         {
@@ -312,6 +318,10 @@ public static class LabServerManager
 
     private static bool IsReachable(LabCatalog.Def def)
     {
+        if (!def.Startable || def.Port <= 0 ||
+            def.Protocol.Equals("file", StringComparison.OrdinalIgnoreCase))
+            return false;
+
         try
         {
             if (def.Protocol.Equals("udp", StringComparison.OrdinalIgnoreCase))

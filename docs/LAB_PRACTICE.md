@@ -36,7 +36,7 @@ Compiles the vulnerable lab servers (gitignored `.exe` files under `targets/`).
 .\scripts\build-all-lab-targets.ps1
 ```
 
-Labs listen on **127.0.0.1** by default. Manage them from **Fuzz → Lab servers** (status + PID in the table; running count also on the Campaign strip). CLI: `randall labs` / `randall labs stop-all`. For a remote fuzz VM use `randall agent` — see [LAB_AGENT.md](LAB_AGENT.md).
+Labs listen on **127.0.0.1** by default. Manage them from **Fuzz → Lab library** (category filter, status + PID; running count also on the Campaign strip). CLI: `randall labs` / `randall labs stop-all`. For a remote fuzz VM use `randall agent` — see [LAB_AGENT.md](LAB_AGENT.md) · [LAB_LIBRARY.md](LAB_LIBRARY.md).
 
 **Expect:** Lab targets built:
 
@@ -48,6 +48,22 @@ Labs listen on **127.0.0.1** by default. Manage them from **Fuzz → Lab servers
 | vulnssh | 2222 | `projects/vulnssh.yaml` |
 | vulntftp | 6969 | `projects/vulntftp.yaml` |
 | vulnrpc | 1355 | `projects/vulnrpc.yaml` |
+| vulnsmb | 4455 | `projects/vulnsmb.yaml` |
+| vulndrone-udp / tcp | 15550 / 15551 | `projects/vulndrone-*.yaml` — see [DRONE_LAB.md](DRONE_LAB.md) |
+
+**File shelf** (profile-only — no Start/Stop listener; build separately):
+
+```powershell
+.\scripts\build-file-text.ps1
+.\scripts\build-file-framed.ps1
+.\scripts\build-reeldeck.ps1
+```
+
+| Lab | Profile | Docs |
+|-----|---------|------|
+| file-text | `projects/file-text.yaml` | [TARGETS.md](TARGETS.md) |
+| file-framed | `projects/file-framed.yaml` | [TARGETS.md](TARGETS.md) |
+| reeldeck | `projects/reeldeck.yaml` | [REELDECK.md](REELDECK.md) |
 | vulnsmb | 4455 | `projects/vulnsmb.yaml` |
 
 ---

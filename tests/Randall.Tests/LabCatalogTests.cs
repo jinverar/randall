@@ -6,15 +6,39 @@ namespace Randall.Tests;
 public class LabCatalogTests
 {
     [Fact]
-    public void Library_IncludesNetworkAndDroneLabs()
+    public void Library_IncludesNetworkDroneAndFileLabs()
     {
         var lib = LabServerManager.Library();
         Assert.Contains(lib.Labs, l => l.Id == "vulnserver" && l.Category == "network");
         Assert.Contains(lib.Labs, l => l.Id == "vulndrone-udp" && l.Category == "drone");
         Assert.Contains(lib.Labs, l => l.Id == "vulndrone-tcp" && l.Category == "drone");
+        Assert.Contains(lib.Labs, l => l.Id == "file-text" && l.Category == "file" && !l.Startable);
+        Assert.Contains(lib.Labs, l => l.Id == "file-framed" && l.Category == "file" && !l.Startable);
+        Assert.Contains(lib.Labs, l => l.Id == "reeldeck" && l.Category == "file" && !l.Startable);
         Assert.Contains(lib.Categories, c => c == "drone");
         Assert.Contains(lib.Categories, c => c == "network");
+        Assert.Contains(lib.Categories, c => c == "file");
         Assert.Contains(LabCatalog.Categories(), c => c == "exploit-dev");
+    }
+
+    [Fact]
+    public void FileLabs_AreProfileOnly_AndRefuseStart()
+    {
+        var files = LabServerManager.List(category: "file");
+        Assert.Equal(3, files.Count);
+        Assert.All(files, l =>
+        {
+            Assert.Equal("file", l.Category);
+            Assert.False(l.Startable);
+            Assert.Equal("file", l.Protocol);
+            Assert.Equal(0, l.Port);
+            Assert.False(l.Running);
+            Assert.Equal("profile", l.BindHint);
+        });
+
+        var start = LabServerManager.Start("file-text");
+        Assert.False(start.Ok);
+        Assert.Contains("profile-only", start.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -62,5 +86,16 @@ public class LabCatalogTests
         Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnDrone", "Program.cs")));
         Assert.True(File.Exists(Path.Combine(root, "docs", "DRONE_LAB.md")));
         Assert.True(File.Exists(Path.Combine(root, "docs", "LAB_LIBRARY.md")));
+    }
+
+    [Fact]
+    public void FileProjectFiles_Exist()
+    {
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        Assert.True(File.Exists(Path.Combine(root, "projects", "file-text.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "file-framed.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "reeldeck.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "docs", "REELDECK.md")));
+        Assert.True(File.Exists(Path.Combine(root, "docs", "TARGETS.md")));
     }
 }

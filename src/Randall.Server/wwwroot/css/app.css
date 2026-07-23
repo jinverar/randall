@@ -1093,6 +1093,12 @@ code, .mono {
   background: color-mix(in srgb, var(--danger) 12%, var(--panel));
 }
 
+.lab-badge.profile {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
 .labs-filter-row label {
   display: flex;
   flex-direction: column;

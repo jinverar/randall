@@ -297,7 +297,7 @@ app.MapGet("/api/labs", async (HttpRequest http, string? agent, string? agentTok
         if (string.IsNullOrWhiteSpace(agent))
             return Results.Ok(LabServerManager.List(category: category));
         var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
-        return Results.Ok(await LabAgentClient.ListAsync(agent, token, ct));
+        return Results.Ok(await LabAgentClient.ListAsync(agent, token, category, ct));
     }
     catch (Exception ex)
     {

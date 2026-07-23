@@ -4328,13 +4328,23 @@ static int RunLabs(string[] args)
     {
         foreach (var lab in LabServerManager.List())
         {
-            var state = !lab.ExeExists ? "not-built" : lab.Running ? (lab.Reachable ? "running" : "starting") : "stopped";
+            var state = !lab.ExeExists
+                ? "not-built"
+                : !lab.Startable
+                    ? "profile"
+                    : lab.Running
+                        ? (lab.Reachable ? "running" : "starting")
+                        : "stopped";
+            var endpoint = !lab.Startable || lab.Protocol.Equals("file", StringComparison.OrdinalIgnoreCase) || lab.Port <= 0
+                ? "file"
+                : $"{lab.Protocol}/{lab.Port}";
             Console.WriteLine(
-                $"{lab.Id,-12} {lab.Protocol}/{lab.Port,-5} {state,-10} pid={(lab.Pid?.ToString() ?? "-"),-6} {lab.Name}");
+                $"{lab.Id,-14} {endpoint,-10} {state,-10} pid={(lab.Pid?.ToString() ?? "-"),-6} [{lab.Category}] {lab.Name}");
         }
 
         Console.WriteLine();
-        Console.WriteLine("Tips: labs start on 127.0.0.1 only. UI: Fuzz → Lab servers. Rebuild: .\\scripts\\build-all-lab-targets.ps1");
+        Console.WriteLine("Tips: listener labs bind 127.0.0.1. File entries are profile-only — randall fuzz -c <project>.");
+        Console.WriteLine("UI: Fuzz → Lab library. Rebuild: .\\scripts\\build-all-lab-targets.ps1 · scripts/build-file-text.sh");
         Console.WriteLine("Target Runtime (arbitrary exe): randall runtime — see docs/TARGET_RUNTIME.md");
         return 0;
     }

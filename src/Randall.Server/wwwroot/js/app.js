@@ -5011,21 +5011,31 @@ async function refreshLabs() {
 
     if (!tbody) return;
     tbody.innerHTML = (labs || []).map((lab) => {
+      const startable = lab.startable !== false;
       const state = !lab.exeExists
         ? '<span class="lab-badge miss">not built</span>'
-        : lab.running
-          ? (lab.reachable
-            ? '<span class="lab-badge ok">running</span>'
-            : '<span class="lab-badge warn">starting…</span>')
-          : '<span class="lab-badge off">stopped</span>';
+        : !startable
+          ? '<span class="lab-badge profile">profile</span>'
+          : lab.running
+            ? (lab.reachable
+              ? '<span class="lab-badge ok">running</span>'
+              : '<span class="lab-badge warn">starting…</span>')
+            : '<span class="lab-badge off">stopped</span>';
       const pid = lab.pid != null ? lab.pid : '—';
-      const startDis = (!lab.exeExists || lab.running) ? 'disabled' : '';
-      const stopDis = lab.running ? '' : 'disabled';
+      const startDis = (!startable || !lab.exeExists || lab.running) ? 'disabled' : '';
+      const stopDis = (!startable || !lab.running) ? 'disabled' : '';
       const tags = (lab.tags || []).slice(0, 4).map((t) =>
         `<span class="lab-tag">${escapeAttr(t)}</span>`).join(' ');
       const diff = lab.difficulty
         ? `<span class="lab-diff lab-diff-${escapeAttr(lab.difficulty)}">${escapeAttr(lab.difficulty)}</span>`
         : '';
+      const endpoint = (!startable || lab.protocol === 'file' || !lab.port)
+        ? `<code>file</code><div class="hint">fuzz profile</div>`
+        : `<code>${escapeAttr(lab.protocol)}/${lab.port}</code><div class="hint">${escapeAttr(lab.bindHint || '127.0.0.1')}</div>`;
+      const actions = startable
+        ? `<button type="button" class="btn primary" data-lab-start="${escapeAttr(lab.id)}" ${startDis}>Start</button>
+          <button type="button" class="btn" data-lab-stop="${escapeAttr(lab.id)}" ${stopDis}>Stop</button>`
+        : `<button type="button" class="btn primary" data-lab-fuzz="${escapeAttr(lab.projectYaml || '')}" title="Copy fuzz command">Fuzz cmd</button>`;
       return `<tr data-lab="${escapeAttr(lab.id)}">
         <td>
           <strong>${escapeAttr(lab.name)}</strong> ${diff}
@@ -5034,12 +5044,11 @@ async function refreshLabs() {
           <div class="hint"><code>${escapeAttr(lab.projectYaml || '')}</code>${lab.docsPath ? ` · <code>${escapeAttr(lab.docsPath)}</code>` : ''}</div>
         </td>
         <td><span class="lab-cat">${escapeAttr(lab.category || 'network')}</span></td>
-        <td><code>${escapeAttr(lab.protocol)}/${lab.port}</code><div class="hint">${escapeAttr(lab.bindHint || '127.0.0.1')}</div></td>
+        <td>${endpoint}</td>
         <td>${state}${lab.statusNote ? `<div class="hint">${escapeAttr(lab.statusNote)}</div>` : ''}</td>
         <td>${pid}</td>
         <td class="labs-actions">
-          <button type="button" class="btn primary" data-lab-start="${escapeAttr(lab.id)}" ${startDis}>Start</button>
-          <button type="button" class="btn" data-lab-stop="${escapeAttr(lab.id)}" ${stopDis}>Stop</button>
+          ${actions}
         </td>
       </tr>`;
     }).join('') || '<tr><td colspan="6" class="hint">No labs in this category</td></tr>';
@@ -5065,6 +5074,18 @@ async function refreshLabs() {
           await refreshLabs();
         } catch (err) {
           if (status) status.textContent = err.message;
+        }
+      });
+    });
+    tbody.querySelectorAll('[data-lab-fuzz]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const yaml = btn.dataset.labFuzz || '';
+        const cmd = `randall fuzz -c ${yaml}`;
+        try {
+          await navigator.clipboard.writeText(cmd);
+          if (status) status.textContent = `Copied: ${cmd}`;
+        } catch {
+          if (status) status.textContent = cmd;
         }
       });
     });
