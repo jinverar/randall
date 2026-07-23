@@ -1,0 +1,24 @@
+LIBRARY RandfuzzDbg
+EXPORTS
+    DebugExtensionInitialize
+    DebugExtensionUninitialize
+    rf_help
+    help=rf_help
+    rf_walk
+    walk=rf_walk
+    rf_crash
+    crash=rf_crash
+    rf_regs
+    regs=rf_regs
+    rf_control
+    control=rf_control
+    rf_stack
+    stack=rf_stack
+    rf_modules
+    modules=rf_modules
+    rf_rop
+    rop=rf_rop
+    rf_badchars
+    badchars=rf_badchars
+    rf_export
+    export=rf_export

@@ -2633,6 +2633,37 @@ function renderCrashDetail(detail, title) {
       <h4>Mini-timeline <span class="hint-inline">(EVTX / MFT / Procmon / WER)</span></h4>
       <div id="crash-timeline-body">${renderMiniTimelineHtml(detail.miniTimeline)}</div>
     </div>
+    <div class="triage-box" id="crash-rop-box">
+      <h4>ROP Studio / RandfuzzDbg <span class="hint-inline">lab sketches — no payloads</span></h4>
+      <p class="hint" id="crash-rop-status">Gadget catalog + WinDbg walk for this scream.</p>
+      <div id="crash-rop-body" class="hint"></div>
+      <div class="btn-row wrap" style="margin-top:0.5rem; align-items:center; gap:0.5rem">
+        <label class="hint" for="crash-rop-goal">Goal
+          <select id="crash-rop-goal">
+            <option value="auto" selected>auto</option>
+            <option value="pivot">pivot</option>
+            <option value="control">control</option>
+            <option value="write">write</option>
+            <option value="leak">leak</option>
+            <option value="canary">canary</option>
+          </select>
+        </label>
+        <label class="hint" for="crash-rop-need">Need
+          <input type="text" id="crash-rop-need" value="ret" size="10" placeholder="pop-rdi / pivot" />
+        </label>
+        <label class="hint" for="crash-rop-badchars">Badchars
+          <input type="text" id="crash-rop-badchars" size="16" placeholder="\x00\x0a (auto)" />
+        </label>
+        <button type="button" class="btn primary" id="crash-scream-walk-btn">Walk this scream</button>
+        <button type="button" class="btn" id="crash-stack-lens-btn">Stack Lens</button>
+        <button type="button" class="btn" id="crash-rop-sketch-btn">ROP sketch</button>
+        <button type="button" class="btn" id="crash-rop-search-btn">Search gadgets</button>
+        <button type="button" class="btn" id="crash-rop-badchars-btn">Learn badchars</button>
+        <button type="button" class="btn" id="crash-windbg-walk-btn">WinDbg walk</button>
+        <button type="button" class="btn" id="crash-gdb-walk-btn">GDB walk</button>
+        <button type="button" class="btn" id="crash-ladder-btn">Ladder diff</button>
+      </div>
+    </div>
     <p class="hint crash-path"><code>${escapeAttr(detail.summary.inputPath)}</code></p>
     <div class="btn-row tool-cmds wrap">
       <button type="button" class="btn primary" id="export-crash-btn">Export triage</button>
@@ -2648,6 +2679,313 @@ function renderCrashDetail(detail, title) {
   if (!detail.miniTimeline) {
     loadCrashMiniTimeline(detail.summary.id).catch(() => {});
   }
+  loadCrashRopSidecars(detail.summary.id).catch(() => {});
+
+  async function loadCrashRopSidecars(id) {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const badInput = document.getElementById('crash-rop-badchars');
+    try {
+      const side = await api.get(`/api/crashes/${id}/rop-sidecars`);
+      if (!side) return;
+      if (status) status.textContent = side.summaryLine || 'ROP sidecars';
+      if (badInput && side.badChars?.badCharsHex) badInput.value = side.badChars.badCharsHex;
+      if (!body) return;
+      const parts = [];
+      if (side.screamWalk) {
+        const sw = side.screamWalk;
+        parts.push(`<p class="hint">Scream walk · goal <code>${escapeAttr(sw.goalResolved || sw.goal || 'auto')}</code>` +
+          (sw.controlledOffset != null
+            ? ` · CONTROL <code>${escapeAttr(sw.controlledRegister || 'IP')}</code> @ ${sw.controlledOffset}`
+            : '') +
+          (sw.mitigationTier ? ` · ${escapeAttr(sw.mitigationTier)}` : '') +
+          `</p>`);
+        const swSteps = sw.steps || [];
+        if (swSteps.length) {
+          parts.push(`<ol>${swSteps.map((s) =>
+            `<li><strong>${escapeAttr(s.status || '')}</strong> ${escapeAttr(s.title || '')}` +
+            (s.detail ? `<div class="hint">${escapeAttr(s.detail)}</div>` : '') +
+            `</li>`).join('')}</ol>`);
+        }
+      }
+      if (side.stackLens) {
+        const lens = side.stackLens;
+        const pc = lens.primaryControl;
+        parts.push(`<p class="hint">Stack Lens · <code>${escapeAttr(lens.source || '')}</code>` +
+          (pc
+            ? ` · CONTROL <code>${escapeAttr(pc.where || '')}</code>` +
+              (pc.inputOffset != null ? ` @ ${pc.inputOffset}` : '')
+            : '') +
+          `</p>`);
+        const words = (lens.words || []).slice(0, 12);
+        if (words.length) {
+          parts.push(`<pre class="hint">${words.map((w) => {
+            const slot = w.offsetFromSp >= 0
+              ? `${escapeAttr(lens.spRegister || 'SP')}+0x${Number(w.offsetFromSp).toString(16)}`
+              : escapeAttr(w.addressHex || '');
+            return `${slot}  ${escapeAttr(w.valueHex || '')}  ${escapeAttr(w.role || '')}` +
+              (w.inputOffset != null ? ` @ ${w.inputOffset}` : '');
+          }).join('\n')}</pre>`);
+        }
+      }
+      if (side.walk?.controlledOffset != null && !side.screamWalk?.controlledOffset && !side.stackLens?.primaryControl) {
+        parts.push(`<p class="hint">CONTROL <code>${escapeAttr(side.walk.controlledRegister || 'IP')}</code> @ ${side.walk.controlledOffset}</p>`);
+      }
+      if (side.badChars?.badCharsHex) {
+        parts.push(`<p>Badchars: <code>${escapeAttr(side.badChars.badCharsHex)}</code></p>`);
+      }
+      const steps = side.sketch?.steps || [];
+      if (steps.length) {
+        parts.push(`<p class="hint">ROP sketch · ${escapeAttr(side.sketch?.goal || '')}</p>`);
+        parts.push(`<ol>${steps.map((s) =>
+          `<li><code>${escapeAttr(s.gadget?.address || '')}</code>${s.gadget?.symbol ? ' @' + escapeAttr(s.gadget.symbol) : ''}
+           ${escapeAttr(s.gadget?.instruction || s.role)}
+           <div class="hint">${escapeAttr(s.why || '')}</div></li>`).join('')}</ol>`);
+      } else if (side.walkPath || side.ropPath || side.screamWalkPath) {
+        parts.push(`<p class="hint">Artifacts: <code>${escapeAttr(side.screamWalkPath || side.walkPath || side.ropPath || '—')}</code></p>`);
+      }
+      if (side.gdbWalkPath || side.gdbWalk) {
+        parts.push(`<p class="hint">GDB walk: <code>${escapeAttr(side.gdbWalkPath || '—')}</code></p>`);
+      }
+      if (side.ladderPath) {
+        parts.push(`<p class="hint">Ladder: <code>${escapeAttr(side.ladderPath)}</code></p>`);
+      }
+      if (side.walk?.moduleCandidates?.length) {
+        parts.push(`<p class="hint">Modules: ${side.walk.moduleCandidates.map((m) => escapeAttr(m.split(/[\\\\/]/).pop())).join(', ')}</p>`);
+      }
+      if (parts.length) body.innerHTML = parts.join('');
+      else if (status) status.textContent = side.summaryLine || 'No ROP / Scream Walk sidecars yet';
+    } catch {
+      /* no sidecars yet */
+    }
+  }
+
+  document.getElementById('crash-rop-sketch-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    const goal = document.getElementById('crash-rop-goal')?.value || 'auto';
+    const badCharsHex = (document.getElementById('crash-rop-badchars')?.value || '').trim() || null;
+    try {
+      if (status) status.textContent = 'Sketching…';
+      const sketch = await api.post('/api/rop/from-crash', {
+        crashId: detail.summary.id,
+        goal,
+        badCharsHex,
+      });
+      if (status) status.textContent = sketch.summaryLine || 'ROP sketch';
+      if (body) {
+        const steps = sketch.steps || [];
+        const constraints = (sketch.constraints || []).map((c) =>
+          `<li class="hint">${escapeAttr(c)}</li>`).join('');
+        body.innerHTML = (constraints ? `<ul>${constraints}</ul>` : '') + (steps.length
+          ? `<ol>${steps.map((s) =>
+              `<li><code>${escapeAttr(s.gadget?.address || '')}</code>${s.gadget?.symbol ? ' @' + escapeAttr(s.gadget.symbol) : ''}
+               ${escapeAttr(s.gadget?.instruction || s.role)}
+               <div class="hint">${escapeAttr(s.why || '')}</div></li>`).join('')}</ol>`
+          : `<p class="empty">${escapeAttr(sketch.error || 'No gadgets — ensure TargetDetail / module path exists')}</p>`);
+      }
+      if (out) out.textContent = sketch.outputPath ? `Wrote ${sketch.outputPath}` : (sketch.summaryLine || '');
+    } catch (err) {
+      if (status) status.textContent = 'ROP sketch failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-stack-lens-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    try {
+      if (status) status.textContent = 'Stack Lens…';
+      const report = await api.post('/api/stack/lens', {
+        crashId: detail.summary.id,
+        windowBytes: 128,
+      });
+      if (status) status.textContent = report.summaryLine || 'Stack Lens';
+      if (body) {
+        const pc = report.primaryControl;
+        const words = report.words || [];
+        body.innerHTML = `<p class="hint">Source <code>${escapeAttr(report.source || '')}</code>` +
+          (pc
+            ? ` · CONTROL <code>${escapeAttr(pc.where || '')}</code>` +
+              (pc.inputOffset != null ? ` @ ${pc.inputOffset}` : '')
+            : '') +
+          `</p><pre class="hint">${words.slice(0, 16).map((w) => {
+            const slot = w.offsetFromSp >= 0
+              ? `${escapeAttr(report.spRegister || 'SP')}+0x${Number(w.offsetFromSp).toString(16)}`
+              : escapeAttr(w.addressHex || '');
+            return `${slot}  ${escapeAttr(w.valueHex || '')}  ${escapeAttr(w.role || '')}` +
+              (w.inputOffset != null ? ` @ ${w.inputOffset}` : '');
+          }).join('\n')}</pre>`;
+      }
+      if (out) out.textContent = report.outputPath ? `Wrote ${report.outputPath}` : (report.summaryLine || '');
+      loadCrashRopSidecars(detail.summary.id).catch(() => {});
+    } catch (err) {
+      if (status) status.textContent = 'Stack Lens failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-scream-walk-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    const goal = document.getElementById('crash-rop-goal')?.value || 'auto';
+    const badCharsHex = (document.getElementById('crash-rop-badchars')?.value || '').trim() || null;
+    try {
+      if (status) status.textContent = 'Walking scream…';
+      const report = await api.post('/api/scream/walk', {
+        crashId: detail.summary.id,
+        goal,
+        badCharsHex,
+      });
+      if (status) status.textContent = report.summaryLine || 'Scream walk';
+      if (body) {
+        const steps = report.steps || [];
+        body.innerHTML = `<p class="hint">Goal <code>${escapeAttr(report.goalResolved || goal)}</code>` +
+          (report.controlledOffset != null
+            ? ` · CONTROL ${escapeAttr(report.controlledRegister || 'IP')} @ ${report.controlledOffset}`
+            : '') +
+          (report.mitigationTier ? ` · ${escapeAttr(report.mitigationTier)}` : '') +
+          `</p><ol>${steps.map((s) =>
+            `<li><strong>${escapeAttr(s.status)}</strong> ${escapeAttr(s.title)}` +
+            (s.detail ? `<div class="hint">${escapeAttr(s.detail)}</div>` : '') +
+            (s.artifactPath ? `<div class="hint"><code>${escapeAttr(s.artifactPath)}</code></div>` : '') +
+            `</li>`).join('')}</ol>`;
+      }
+      if (out) out.textContent = report.playbookPath ? `Wrote ${report.playbookPath}` : (report.summaryLine || '');
+      loadCrashRopSidecars(detail.summary.id).catch(() => {});
+    } catch (err) {
+      if (status) status.textContent = 'Scream walk failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-gdb-walk-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    try {
+      if (status) status.textContent = 'Writing GDB walk…';
+      const walk = await api.post('/api/gdb/walk', detail.summary.id);
+      if (status) status.textContent = walk.summaryLine || 'GDB walk';
+      if (body) {
+        body.innerHTML = `<p>GDB walk: <code>${escapeAttr(walk.walkPath || '—')}</code></p>
+          <pre class="hint">${(walk.scriptLines || []).slice(0, 8).map(escapeAttr).join('\n')}</pre>`;
+      }
+      if (out) out.textContent = walk.walkPath ? `Wrote ${walk.walkPath}` : (walk.summaryLine || '');
+      loadCrashRopSidecars(detail.summary.id).catch(() => {});
+    } catch (err) {
+      if (status) status.textContent = 'GDB walk failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-ladder-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    try {
+      if (status) status.textContent = 'Comparing ladder…';
+      const report = await api.post('/api/ladder/diff', {
+        crashId: detail.summary.id,
+        project: detail.summary.project,
+      });
+      if (status) status.textContent = report.summaryLine || 'Ladder diff';
+      if (body) {
+        const tiers = report.tiers || [];
+        body.innerHTML = `<table class="hint"><thead><tr><th>tier</th><th>NX</th><th>canary</th><th>PIE</th><th>goal</th><th>gadgets</th></tr></thead><tbody>` +
+          tiers.map((t) => `<tr>
+            <td>${escapeAttr(t.tier)}</td>
+            <td>${t.exists ? (t.nx ? 'yes' : 'no') : '—'}</td>
+            <td>${t.exists ? (t.canary ? 'yes' : 'no') : '—'}</td>
+            <td>${t.exists ? (t.pie ? 'yes' : 'no') : '—'}</td>
+            <td>${escapeAttr(t.sketchGoalHint || '')}</td>
+            <td>${t.gadgetCount ?? (t.exists ? '?' : 'missing')}</td>
+          </tr>`).join('') + `</tbody></table>
+          <ul>${(report.findings || []).map((f) => `<li class="hint">${escapeAttr(f)}</li>`).join('')}</ul>`;
+      }
+      if (out) out.textContent = report.outputPath ? `Wrote ${report.outputPath}` : (report.summaryLine || '');
+      loadCrashRopSidecars(detail.summary.id).catch(() => {});
+    } catch (err) {
+      if (status) status.textContent = 'Ladder diff failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-rop-search-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    const need = (document.getElementById('crash-rop-need')?.value || 'ret').trim() || 'ret';
+    const badCharsHex = (document.getElementById('crash-rop-badchars')?.value || '').trim() || null;
+    try {
+      if (status) status.textContent = 'Searching…';
+      const report = await api.post('/api/rop/search', {
+        crashId: detail.summary.id,
+        need,
+        badCharsHex,
+        limit: 24,
+      });
+      if (status) status.textContent = report.summaryLine || 'ROP search';
+      if (body) {
+        const hits = report.hits || [];
+        body.innerHTML = hits.length
+          ? `<ol>${hits.map((g) =>
+              `<li><code>${escapeAttr(g.address || '')}</code> [${escapeAttr(g.kind || '')}] ${escapeAttr(g.instruction || '')}</li>`
+            ).join('')}</ol>`
+          : `<p class="empty">No hits for ${escapeAttr(need)}</p>`;
+      }
+      if (out) out.textContent = report.summaryLine || '';
+    } catch (err) {
+      if (status) status.textContent = 'ROP search failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-rop-badchars-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    const badInput = document.getElementById('crash-rop-badchars');
+    try {
+      if (status) status.textContent = 'Learning badchars…';
+      const report = await api.post('/api/rop/badchars', { crashId: detail.summary.id });
+      if (status) status.textContent = report.summaryLine || 'Badchars';
+      if (badInput && report.badCharsHex) badInput.value = report.badCharsHex;
+      if (body) {
+        const reasons = report.reasons || [];
+        body.innerHTML = `<p><code>${escapeAttr(report.badCharsHex || '')}</code></p>
+          <ul>${reasons.map((r) => `<li class="hint">${escapeAttr(r)}</li>`).join('')}</ul>`;
+      }
+      if (out) out.textContent = report.outputPath ? `Wrote ${report.outputPath}` : (report.summaryLine || '');
+    } catch (err) {
+      if (status) status.textContent = 'Badchar learn failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-windbg-walk-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    try {
+      if (status) status.textContent = 'Writing walk…';
+      const walk = await api.post('/api/windbg/walk', detail.summary.id);
+      if (status) status.textContent = walk.summaryLine || 'WinDbg walk';
+      if (body) {
+        body.innerHTML = `<p>Walk: <code>${escapeAttr(walk.walkPath || '—')}</code></p>
+          ${walk.exceptionHint ? `<p class="hint">Exception: ${escapeAttr(walk.exceptionHint)}</p>` : ''}
+          <pre class="hint">${(walk.scriptLines || []).slice(0, 8).map(escapeAttr).join('\n')}</pre>`;
+      }
+      if (out) out.textContent = walk.walkPath ? `Wrote ${walk.walkPath}` : (walk.summaryLine || '');
+      loadCrashRopSidecars(detail.summary.id).catch(() => {});
+    } catch (err) {
+      if (status) status.textContent = 'Walk failed';
+      if (out) out.textContent = err.message;
+    }
+  });
 
   document.getElementById('crash-filter-cluster-btn')?.addEventListener('click', () => {
     const key = t?.clusterKey || crashClusterKey(detail.summary) || cluster?.clusterId;

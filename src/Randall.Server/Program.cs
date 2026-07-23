@@ -1,6 +1,7 @@
 using Randall.Contracts;
 using Randall.Infrastructure;
 using Randall.Infrastructure.ExploitSurface;
+using Randall.Infrastructure.Rop;
 using Randall.Server;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -897,6 +898,91 @@ app.MapPost("/api/stalking/export", (StalkExportRequest request) =>
 app.MapGet("/api/stalking/tools", () => StalkCampaignStore.ProbeTools());
 
 app.MapGet("/api/debug/tools", () => DebuggerTools.Probe());
+
+app.MapGet("/api/rop/scan", (string exe, string? arch) =>
+{
+    if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+        return Results.BadRequest(new { error = "exe required and must exist" });
+    return Results.Ok(RopGadgetScanner.Scan(exe, arch));
+});
+
+app.MapPost("/api/rop/search", (RopSearchRequest body) =>
+{
+    if (body.CrashId is { } crashId)
+        return Results.Ok(RopStudio.SearchFromCrash(crashId, body.Need ?? "ret", body.BadCharsHex, body.Limit));
+    if (string.IsNullOrWhiteSpace(body.Exe) || !File.Exists(body.Exe))
+        return Results.BadRequest(new { error = "exe or crashId required" });
+    return Results.Ok(RopStudio.Search(body.Exe, body.Need ?? "ret", body.BadCharsHex, body.Limit));
+});
+
+app.MapPost("/api/rop/sketch", (RopSketchRequest body) =>
+{
+    if (string.IsNullOrWhiteSpace(body.Exe) || !File.Exists(body.Exe))
+        return Results.BadRequest(new { error = "exe required and must exist" });
+    return Results.Ok(RopStudio.Sketch(body.Exe, body.Goal, body.BadCharsHex, body.MaxSteps));
+});
+
+app.MapPost("/api/rop/from-crash", (RopFromCrashRequest body) =>
+{
+    return Results.Ok(RopStudio.FromCrash(
+        body.CrashId, body.Goal, body.BadCharsHex,
+        exeOverride: body.Exe, maxModules: body.MaxModules <= 0 ? 3 : body.MaxModules));
+});
+
+app.MapPost("/api/scream/walk", (ScreamWalkRequest body) =>
+{
+    var report = ScreamWalk.Run(
+        body.CrashId, body.Goal, body.BadCharsHex, body.Exe,
+        body.MaxModules <= 0 ? 3 : body.MaxModules);
+    return report.Error is null ? Results.Ok(report) : Results.BadRequest(report);
+});
+
+app.MapPost("/api/stack/lens", (StackLensRequest body) =>
+{
+    var report = StackLens.AnalyzeCrash(
+        body.CrashId,
+        body.WindowBytes <= 0 ? 128 : body.WindowBytes,
+        body.Exe);
+    return report.Error is "crash not found" ? Results.NotFound(report)
+        : report.Error is null ? Results.Ok(report)
+        : Results.BadRequest(report);
+});
+
+app.MapPost("/api/ladder/diff", (LadderDiffRequest body) =>
+{
+    var report = MitigationLadder.Diff(body.CrashId, body.Project);
+    return report.Error is null ? Results.Ok(report) : Results.BadRequest(report);
+});
+
+app.MapGet("/api/gdb/scripts", () =>
+    Results.Ok(new { help = RandfuzzGdbWalk.FormatScriptHelp(), scriptsDir = RandfuzzGdbWalk.ScriptsDir() }));
+
+app.MapPost("/api/gdb/walk", (Guid crashId) =>
+{
+    var walk = RandfuzzGdbWalk.BuildForCrash(crashId);
+    return walk.Error is null ? Results.Ok(walk) : Results.BadRequest(walk);
+});
+
+app.MapGet("/api/crashes/{id:guid}/rop-sidecars", (Guid id) =>
+{
+    var sidecars = RopStudio.LoadSidecars(id);
+    return sidecars is null ? Results.NotFound() : Results.Ok(sidecars);
+});
+
+app.MapPost("/api/rop/badchars", (RopBadCharRequest body) =>
+{
+    var report = RopBadCharLearner.LearnFromCrash(body.CrashId);
+    return report.Error is null ? Results.Ok(report) : Results.BadRequest(report);
+});
+
+app.MapGet("/api/windbg/scripts", () =>
+    Results.Ok(new { help = RandfuzzDbgWalk.FormatScriptHelp(), scriptsDir = RandfuzzDbgWalk.ScriptsDir() }));
+
+app.MapPost("/api/windbg/walk", (Guid crashId) =>
+{
+    var walk = RandfuzzDbgWalk.BuildForCrash(crashId);
+    return walk.Error is null ? Results.Ok(walk) : Results.BadRequest(walk);
+});
 
 app.MapPost("/api/debug/open", (DebuggerOpenRequest request) =>
 {

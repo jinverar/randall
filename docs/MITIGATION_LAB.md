@@ -68,7 +68,27 @@ VulnLab with `scripts/build-mitigation-lab.sh`.
 > DVWA / OWASP Juice Shop / a `vulnweb`-style stack) are best run as separate Docker services and
 > pointed at via a TCP/HTTP profile — a `docker-compose` lab bundle is planned.
 
+
+## Scream Walk + ladder diff
+
+```bash
+randall scream walk -i <crash-guid> --goal auto   # CONTROL → sketch → WinDbg/GDB walks
+randall ladder diff                               # compare vulnlab-{basic,nx,aslr,modern}
+randall ladder diff -i <crash-guid>               # attach CONTROL context from a scream
+randall gdb walk -i <crash-guid>                  # Linux core twin of windbg walk
+```
+
+Adaptive sketch goals follow the tier: `control` → `pivot` → `leak` → `canary`.
+Details: [WINDBG_FUZZ_PKG.md](WINDBG_FUZZ_PKG.md).
+
 ## Exploit-dev workflow (Immunity / mona style)
+
+1. Cyclic pattern → CONTROL @ offset (`randall pattern` / `exploitdev` / `exploit guide`)
+2. **ROP Studio** — gadget scan / search / constrained chain **sketches** (`randall rop …`)
+3. **RandfuzzDbg** — WinDbg Preview walk (`randall windbg walk` · `tools/randfuzzdbg/scripts`)
+
+No shellcode / weaponized payloads. Details: [EXPLOIT_GUIDE.md](EXPLOIT_GUIDE.md) ·
+[WINDBG_FUZZ_PKG.md](WINDBG_FUZZ_PKG.md).
 
 Turn a fuzzer crash into a precise offset — the classic `pattern_create` / `pattern_offset` /
 `findmsp` flow, on Linux via gdb:
@@ -90,6 +110,15 @@ dotnet run --project src/Randall.Cli -- pattern offset -q 0x6341326141... -l 200
 
 `exploitdev` scans RIP/RBP/RSP/… so it reports control even when a frame-pointer smash faults in the
 epilogue. Pair it with `checksec` (mitigations) + `heaptriage` (heap primitive) for a full triage.
+
+```bash
+# 5) ROP Studio — gadget catalog + constrained sketch (no payloads)
+dotnet run --project src/Randall.Cli -- rop scan --exe targets/vulnlab/vulnlab-basic
+dotnet run --project src/Randall.Cli -- rop sketch --exe targets/vulnlab/vulnlab-basic --goal auto
+
+# 6) WinDbg Preview walk (Windows lab dumps)
+dotnet run --project src/Randall.Cli -- windbg walk -i <crash-guid>
+```
 
 ## Reverse-engineering exports (IDA / Ghidra)
 
