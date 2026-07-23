@@ -165,11 +165,25 @@ public static class CrashStalker
         }
         catch { /* optional */ }
 
-        var ropSrc = Path.Combine(crashesDir, $"{crashId:N}_rop.json");
-        if (File.Exists(ropSrc))
+        try
         {
-            ropCopy = Path.Combine(exportDir, "rop_sketch.json");
-            File.Copy(ropSrc, ropCopy, overwrite: true);
+            var sketch = RopStudio.FromCrash(crashId, "pivot", repoRoot: repoRoot);
+            if (sketch.OutputPath is not null && File.Exists(sketch.OutputPath))
+            {
+                ropCopy = Path.Combine(exportDir, "rop_sketch.json");
+                File.Copy(sketch.OutputPath, ropCopy, overwrite: true);
+            }
+        }
+        catch { /* optional */ }
+
+        if (ropCopy is null)
+        {
+            var ropSrc = Path.Combine(crashesDir, $"{crashId:N}_rop.json");
+            if (File.Exists(ropSrc))
+            {
+                ropCopy = Path.Combine(exportDir, "rop_sketch.json");
+                File.Copy(ropSrc, ropCopy, overwrite: true);
+            }
         }
 
         var readmeExtra = $"""

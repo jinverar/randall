@@ -28,7 +28,8 @@ public sealed record RopSearchRequest(
     string? Exe = null,
     string? Need = null,          // pop-rcx | ret | pivot | …
     string? BadCharsHex = null,   // "00 0a 0d" or "\x00\x0a"
-    int Limit = 40);
+    int Limit = 40,
+    Guid? CrashId = null);
 
 public sealed record RopSearchReportDto(
     string ModulePath,

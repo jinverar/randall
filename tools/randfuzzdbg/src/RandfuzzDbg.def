@@ -18,5 +18,7 @@ EXPORTS
     modules=rf_modules
     rf_rop
     rop=rf_rop
+    rf_badchars
+    badchars=rf_badchars
     rf_export
     export=rf_export

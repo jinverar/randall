@@ -2337,7 +2337,14 @@ function renderCrashDetail(detail, title) {
             <option value="write">write</option>
           </select>
         </label>
+        <label class="hint" for="crash-rop-need">Need
+          <input type="text" id="crash-rop-need" value="ret" size="10" placeholder="pop-rdi / pivot" />
+        </label>
+        <label class="hint" for="crash-rop-badchars">Badchars
+          <input type="text" id="crash-rop-badchars" size="16" placeholder="\x00\x0a (auto)" />
+        </label>
         <button type="button" class="btn" id="crash-rop-sketch-btn">ROP sketch</button>
+        <button type="button" class="btn" id="crash-rop-search-btn">Search gadgets</button>
         <button type="button" class="btn" id="crash-rop-badchars-btn">Learn badchars</button>
         <button type="button" class="btn" id="crash-windbg-walk-btn">WinDbg walk JSON</button>
       </div>
@@ -2360,11 +2367,13 @@ function renderCrashDetail(detail, title) {
     const body = document.getElementById('crash-rop-body');
     const out = document.getElementById('export-result');
     const goal = document.getElementById('crash-rop-goal')?.value || 'pivot';
+    const badCharsHex = (document.getElementById('crash-rop-badchars')?.value || '').trim() || null;
     try {
       if (status) status.textContent = 'Sketching…';
       const sketch = await api.post('/api/rop/from-crash', {
         crashId: detail.summary.id,
         goal,
+        badCharsHex,
       });
       if (status) status.textContent = sketch.summaryLine || 'ROP sketch';
       if (body) {
@@ -2384,14 +2393,46 @@ function renderCrashDetail(detail, title) {
     }
   });
 
+  document.getElementById('crash-rop-search-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    const need = (document.getElementById('crash-rop-need')?.value || 'ret').trim() || 'ret';
+    const badCharsHex = (document.getElementById('crash-rop-badchars')?.value || '').trim() || null;
+    try {
+      if (status) status.textContent = 'Searching…';
+      const report = await api.post('/api/rop/search', {
+        crashId: detail.summary.id,
+        need,
+        badCharsHex,
+        limit: 24,
+      });
+      if (status) status.textContent = report.summaryLine || 'ROP search';
+      if (body) {
+        const hits = report.hits || [];
+        body.innerHTML = hits.length
+          ? `<ol>${hits.map((g) =>
+              `<li><code>${escapeAttr(g.address || '')}</code> [${escapeAttr(g.kind || '')}] ${escapeAttr(g.instruction || '')}</li>`
+            ).join('')}</ol>`
+          : `<p class="empty">No hits for ${escapeAttr(need)}</p>`;
+      }
+      if (out) out.textContent = report.summaryLine || '';
+    } catch (err) {
+      if (status) status.textContent = 'ROP search failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
   document.getElementById('crash-rop-badchars-btn')?.addEventListener('click', async () => {
     const status = document.getElementById('crash-rop-status');
     const body = document.getElementById('crash-rop-body');
     const out = document.getElementById('export-result');
+    const badInput = document.getElementById('crash-rop-badchars');
     try {
       if (status) status.textContent = 'Learning badchars…';
       const report = await api.post('/api/rop/badchars', { crashId: detail.summary.id });
       if (status) status.textContent = report.summaryLine || 'Badchars';
+      if (badInput && report.badCharsHex) badInput.value = report.badCharsHex;
       if (body) {
         const reasons = report.reasons || [];
         body.innerHTML = `<p><code>${escapeAttr(report.badCharsHex || '')}</code></p>

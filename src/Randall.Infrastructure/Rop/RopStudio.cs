@@ -32,10 +32,10 @@ public static class RopStudio
         var bad = ParseBadChars(badCharsHex);
         var rejected = new List<string>();
         var hits = new List<RopGadgetDto>();
-        foreach (var g in scan.Gadgets)
+        foreach (var g in scan.Gadgets.OrderBy(g => g.Size).ThenBy(g => g.Address, StringComparer.OrdinalIgnoreCase))
         {
             if (!MatchesNeed(g, need)) continue;
-            if (ContainsBadChar(g.BytesHex, bad))
+            if (GadgetHitsBadChars(g, bad))
             {
                 rejected.Add($"{g.Address} hits badchar");
                 continue;
@@ -52,6 +52,32 @@ public static class RopStudio
             $"rop-search: {hits.Count} hit(s) for '{need}'" +
             (bad.Count > 0 ? $" · badchars filtered" : ""),
             rejected.Take(8).ToList());
+    }
+
+    public static RopSearchReportDto SearchFromCrash(
+        Guid crashId,
+        string need = "ret",
+        string? badCharsHex = null,
+        int limit = 40,
+        string? repoRoot = null)
+    {
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var detail = CrashCatalog.GetDetail(crashId, repoRoot);
+        if (detail is null)
+            return new RopSearchReportDto("", need, [], "crash not found", ["crash not found"]);
+
+        var exe = ResolveCrashModule(detail, repoRoot);
+        if (exe is null)
+            return new RopSearchReportDto("", need, [], "no module path on crash", ["no module"]);
+
+        if (string.IsNullOrWhiteSpace(badCharsHex))
+        {
+            var learned = RopBadCharLearner.LearnFromCrash(crashId, repoRoot);
+            if (learned.Error is null && !string.IsNullOrWhiteSpace(learned.BadCharsHex))
+                badCharsHex = learned.BadCharsHex;
+        }
+
+        return Search(exe, need, badCharsHex, limit, repoRoot: repoRoot);
     }
 
     public static RopSketchReportDto Sketch(
@@ -71,7 +97,7 @@ public static class RopStudio
                 "rop-sketch failed: " + scan.Error, [], Error: scan.Error);
 
         var bad = ParseBadChars(badCharsHex);
-        var clean = scan.Gadgets.Where(g => !ContainsBadChar(g.BytesHex, bad)).ToList();
+        var clean = scan.Gadgets.Where(g => !GadgetHitsBadChars(g, bad)).ToList();
         var steps = new List<RopSketchStepDto>();
         var constraints = new List<string>
         {
@@ -79,7 +105,23 @@ public static class RopStudio
             "authorized lab binaries",
         };
         if (bad.Count > 0)
-            constraints.Add("badchars: " + string.Join(" ", bad.Select(b => $"\\x{b:x2}")));
+            constraints.Add("badchars: " + string.Join(" ", bad.Select(b => $"\\x{b:x2}")) +
+                            " (insn + address bytes)");
+
+        try
+        {
+            var mit = MitigationInspector.Inspect(modulePath);
+            constraints.Add(
+                $"mitigations: tier={mit.Tier} NX={YesNo(mit.Nx)} canary={YesNo(mit.Canary)} PIE={YesNo(mit.Pie)} RELRO={mit.Relro}");
+            if (mit.Nx)
+                constraints.Add("NX on — prefer ROP/JOP sketches over shellcode (out of scope anyway)");
+            if (mit.Pie)
+                constraints.Add("PIE/ASLR — gadget VAs need a leak / rebase in the live lab");
+        }
+        catch
+        {
+            /* optional */
+        }
 
         switch (goal)
         {
@@ -101,6 +143,8 @@ public static class RopStudio
                     if (steps.Count >= maxSteps - 1) break;
                 }
 
+                Pick(steps, clean, g => g.Kind == "mov-rm" && g.Tags.Contains("write"),
+                    "store", "memory write gadget citation (arrange addr/value regs first)");
                 Pick(steps, clean, g => g.Kind == "ret", "ret", "return into next controlled dword/qword");
                 constraints.Add("write goal: arrange pops for address/value regs — you supply the memory write primitive separately");
                 break;
@@ -154,18 +198,8 @@ public static class RopStudio
             return new RopSketchReportDto("", goal, "unknown", [], "crash not found", [],
                 Error: "crash not found");
 
-        var exe = detail.Sidecar?.TargetDetail;
-        if (!string.IsNullOrWhiteSpace(exe) && !File.Exists(exe))
-            exe = null;
-        exe ??= TryResolveProjectExe(detail.Summary.Project, repoRoot);
-        if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
-        {
-            exe = detail.Analysis?.LoadedModules?
-                .Select(m => m.Split(' ', 2)[0].Trim())
-                .FirstOrDefault(p => p.Length > 2 && File.Exists(p));
-        }
-
-        if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+        var exe = ResolveCrashModule(detail, repoRoot);
+        if (exe is null)
             return new RopSketchReportDto("", goal, "unknown", [],
                 "no module path on crash — pass --exe or ensure sidecar TargetDetail / analysis modules",
                 [], Error: "no module");
@@ -188,6 +222,32 @@ public static class RopStudio
             SummaryLine = sketch.SummaryLine + $" · crash {crashId:N}" +
                           (string.IsNullOrWhiteSpace(bad) ? "" : " · badchars auto"),
         };
+    }
+
+    public static bool GadgetHitsBadChars(RopGadgetDto g, IReadOnlyCollection<byte> bad)
+    {
+        if (bad.Count == 0) return false;
+        if (ContainsBadChar(g.BytesHex, bad)) return true;
+        return AddressContainsBadChar(g.Address, bad);
+    }
+
+    public static bool AddressContainsBadChar(string address, IReadOnlyCollection<byte> bad)
+    {
+        if (bad.Count == 0 || string.IsNullOrWhiteSpace(address)) return false;
+        var hex = address.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? address[2..]
+            : address;
+        if (!ulong.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var va))
+            return false;
+        // Pointer width: 4 bytes for VA fitting in 32-bit space, else 8 (avoids false nulls on high half).
+        var width = va > uint.MaxValue ? 8 : 4;
+        for (var i = 0; i < width; i++)
+        {
+            var b = (byte)((va >> (8 * i)) & 0xff);
+            if (bad.Contains(b)) return true;
+        }
+
+        return false;
     }
 
     public static bool ContainsBadChar(string bytesHex, IReadOnlyCollection<byte> bad)
@@ -224,6 +284,10 @@ public static class RopStudio
             return g.Tags.Contains("pivot") || g.Kind is "xchg-sp" or "add-sp" or "leave-ret";
         if (need is "seh" or "pop-pop-ret")
             return g.Kind == "pop-pop-ret";
+        if (need is "plt")
+            return g.Tags.Contains("plt");
+        if (need is "write" or "mov-rm")
+            return g.Kind == "mov-rm";
         if (need.StartsWith("pop", StringComparison.Ordinal))
             return g.Kind.Equals(need, StringComparison.OrdinalIgnoreCase)
                    || g.Kind.StartsWith("pop-", StringComparison.OrdinalIgnoreCase)
@@ -241,9 +305,30 @@ public static class RopStudio
         string why)
     {
         if (steps.Any(s => s.Role == role)) return;
-        var hit = pool.FirstOrDefault(pred);
+        // Prefer shortest encodings, then stable address order.
+        var hit = pool.Where(pred).OrderBy(g => g.Size)
+            .ThenBy(g => g.Address, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
         if (hit is null) return;
         steps.Add(new RopSketchStepDto(steps.Count + 1, role, hit, why));
+    }
+
+    private static string YesNo(bool v) => v ? "yes" : "no";
+
+    private static string? ResolveCrashModule(CrashDetailDto detail, string repoRoot)
+    {
+        var exe = detail.Sidecar?.TargetDetail;
+        if (!string.IsNullOrWhiteSpace(exe) && !File.Exists(exe))
+            exe = null;
+        exe ??= TryResolveProjectExe(detail.Summary.Project, repoRoot);
+        if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+        {
+            exe = detail.Analysis?.LoadedModules?
+                .Select(m => m.Split(' ', 2)[0].Trim())
+                .FirstOrDefault(p => p.Length > 2 && File.Exists(p));
+        }
+
+        return string.IsNullOrWhiteSpace(exe) || !File.Exists(exe) ? null : exe;
     }
 
     private static string? TryResolveProjectExe(string? project, string repoRoot)

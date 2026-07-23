@@ -75,7 +75,8 @@ randall rop badchars -i <crash-guid>                    # write *_badchars.json
 Sketches are **ordered gadget citations** with why/constraints — not an exploit blob.
 
 **Badchar learning:** heuristics from the crashing input (null / CRLF / whitespace truncation
-signals). Feeds `--badchars` and auto-filters `from-crash` sketches. Not a live byte-campaign.
+signals). Feeds `--badchars` and auto-filters `from-crash` sketches. Filters both **instruction
+bytes** and **little-endian address bytes** (32-bit VAs as 4 bytes; larger as 8).
 
 On-disk:
 
@@ -83,11 +84,12 @@ On-disk:
 data/crashes/<project>/<guid>_rop.json          # from-crash / sketch
 data/crashes/<project>/<guid>_windbg_walk.json  # debugger walk export
 data/crashes/<project>/<guid>_badchars.json     # learned filter
-data/rop/<sha256-of-module>.gadgets.json        # reusable module cache
+data/crashes/<project>/<guid>_exploit_guide.json  # CONTROL (when present) → walk
+data/rop/<sha256-of-module>.gadgets.json        # reusable module cache (read+write)
 ```
 
-Triage export (`randall export` / Crashes UI) copies `rop_sketch.json`, `windbg_walk.json`,
-and `badchars.json` into `data/exports/<guid>/` when available.
+Triage export (`randall export` / Crashes UI) auto-runs badchar learn + walk + pivot sketch and
+copies `rop_sketch.json`, `windbg_walk.json`, and `badchars.json` into `data/exports/<guid>/`.
 ---
 
 ## RandfuzzDbg (WinDbg Preview)
@@ -133,6 +135,7 @@ Planned commands:
 | `!rf.stack` | Stack / saved RET walk (`k`) |
 | `!rf.modules` | Module list (`lm`) |
 | `!rf.rop [rop.json]` | Print top gadgets from sibling `*_rop.json` |
+| `!rf.badchars [json]` | Learned badchar filter |
 | `!rf.export` | Refresh walk JSON path hint |
 
 Build on a Windows lab with Debugging Tools SDK (see `tools/randfuzzdbg/README.md`).
@@ -168,11 +171,15 @@ Linux CI keeps host ROP Studio + scripts; DLL is Windows-only.
 - [x] Host ROP scan / search / sketch / from-crash
 - [x] WinDbg scripts + walk JSON export
 - [x] Extension stub + Windows build notes
-- [x] Crashes UI — ROP Studio panel (+ badchars / goal)
+- [x] Crashes UI — ROP Studio panel (+ badchars / goal / search)
 - [x] Badchar learning from crashing input
-- [x] Deeper gadget decode (retn / pop3 / mov-rr / sub-sp / …)
-- [x] Triage export packs ROP + walk + badchars sidecars
-- [x] dbgeng commands (`!rf.walk` / `!rf.crash` / `!rf.rop` / …) — file-backed + Execute
+- [x] Address-byte badchar filter + gadget cache read
+- [x] Deeper gadget decode (retn / pop3 / mov-rr / mov-rm / sub-sp / …)
+- [x] ELF section hints (`.text` / `.plt`) + PE fixture tests
+- [x] Triage export packs ROP + walk + badchars (auto-sketch)
+- [x] CONTROL from `*_exploit_guide.json` into walk JSON
+- [x] Mitigation annotations on sketches
+- [x] dbgeng commands (`!rf.walk` / `!rf.crash` / `!rf.rop` / `!rf.badchars` / …)
 - [ ] Richer DML / dump-native register parse (beyond `r`/`k` Execute)
 - [ ] Windows PDB-assisted naming
-- [ ] ELF depth (more reloc / plt awareness)
+- [ ] Multi-module from-crash harvest

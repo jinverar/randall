@@ -695,8 +695,10 @@ app.MapGet("/api/rop/scan", (string exe, string? arch) =>
 
 app.MapPost("/api/rop/search", (RopSearchRequest body) =>
 {
+    if (body.CrashId is { } crashId)
+        return Results.Ok(RopStudio.SearchFromCrash(crashId, body.Need ?? "ret", body.BadCharsHex, body.Limit));
     if (string.IsNullOrWhiteSpace(body.Exe) || !File.Exists(body.Exe))
-        return Results.BadRequest(new { error = "exe required and must exist" });
+        return Results.BadRequest(new { error = "exe or crashId required" });
     return Results.Ok(RopStudio.Search(body.Exe, body.Need ?? "ret", body.BadCharsHex, body.Limit));
 });
 

@@ -47,6 +47,7 @@ cmake --build build --config Release
 | `!rf.stack` | Stack walk (`k`) |
 | `!rf.modules` | Module list (`lm`) |
 | `!rf.rop [rop.json]` | Top gadgets from sibling `*_rop.json` |
+| `!rf.badchars [json]` | Learned badchar filter from `*_badchars.json` |
 | `!rf.export` | Host refresh hint (`randall windbg walk`) |
 
 Typical flow after opening a dump:
@@ -56,6 +57,7 @@ Typical flow after opening a dump:
 !rf.walk
 !rf.control
 !rf.rop
+!rf.badchars
 ```
 
 ## Boundary

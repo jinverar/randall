@@ -19,6 +19,7 @@ static IDebugClient* g_Client = nullptr;
 static IDebugControl* g_Control = nullptr;
 static char g_WalkPath[MAX_PATH] = {0};
 static char g_RopPath[MAX_PATH] = {0};
+static char g_BadPath[MAX_PATH] = {0};
 
 static HRESULT Out(PCSTR msg)
 {
@@ -115,6 +116,7 @@ extern "C" HRESULT CALLBACK rf_help(PDEBUG_CLIENT /*client*/, PCSTR /*args*/)
     Out("  !rf.stack                stack / saved RET walk (k)\n");
     Out("  !rf.modules              module list (lm)\n");
     Out("  !rf.rop [rop.json]       print sibling *_rop.json sketch\n");
+    Out("  !rf.badchars [json]      print sibling *_badchars.json\n");
     Out("  !rf.export               host refresh hint (randall windbg walk)\n");
     Out("Set walk path: !rf.crash C:\\path\\to\\<guid>_windbg_walk.json\n");
     Out("Host: randall rop … · randall windbg walk · docs/WINDBG_FUZZ_PKG.md\n");
@@ -194,6 +196,9 @@ extern "C" HRESULT CALLBACK rf_crash(PDEBUG_CLIENT /*client*/, PCSTR args)
     ExtractJsonString(json, "summaryLine", summary, sizeof(summary));
     ExtractJsonString(json, "ropPath", rop, sizeof(rop));
     if (rop[0]) strncpy_s(g_RopPath, rop, _TRUNCATE);
+    char badp[512] = {0};
+    ExtractJsonString(json, "badCharsPath", badp, sizeof(badp));
+    if (badp[0]) strncpy_s(g_BadPath, badp, _TRUNCATE);
 
     Out("=== RANDFUZZ CRASH WALK ===\n");
     Outf("file:    %s\n", path);
@@ -204,7 +209,8 @@ extern "C" HRESULT CALLBACK rf_crash(PDEBUG_CLIENT /*client*/, PCSTR args)
         Outf("control: %s @ %s\n", ctrlReg[0] ? ctrlReg : "(reg?)", ctrlOff[0] ? ctrlOff : "?");
     if (summary[0]) Outf("summary: %s\n", summary);
     if (g_RopPath[0]) Outf("rop:     %s\n", g_RopPath);
-    Out("Tip: !rf.walk · !rf.control · !rf.rop\n");
+    if (g_BadPath[0]) Outf("badchars:%s\n", g_BadPath);
+    Out("Tip: !rf.walk · !rf.control · !rf.rop · !rf.badchars\n");
     return S_OK;
 }
 
@@ -307,14 +313,63 @@ extern "C" HRESULT CALLBACK rf_rop(PDEBUG_CLIENT /*client*/, PCSTR args)
     return S_OK;
 }
 
+extern "C" HRESULT CALLBACK rf_badchars(PDEBUG_CLIENT /*client*/, PCSTR args)
+{
+    char path[MAX_PATH] = {0};
+    if (args)
+    {
+        while (*args == ' ' || *args == '\t') args++;
+        if (*args) strncpy_s(path, args, _TRUNCATE);
+    }
+    if (!path[0] && g_BadPath[0]) strncpy_s(path, g_BadPath, _TRUNCATE);
+    // Derive sibling path from walk when possible: *_windbg_walk.json → *_badchars.json
+    if (!path[0] && g_WalkPath[0])
+    {
+        strncpy_s(path, g_WalkPath, _TRUNCATE);
+        char* p = strstr(path, "_windbg_walk.json");
+        if (p)
+        {
+            size_t remain = (size_t)(MAX_PATH - (p - path));
+            if (strcpy_s(p, remain, "_badchars.json") != 0)
+                path[0] = 0;
+        }
+        else path[0] = 0;
+    }
+    if (!path[0])
+    {
+        Out("Usage: !rf.badchars [*_badchars.json]  (or !rf.crash walk.json first)\n");
+        Out("Host: randall rop badchars -i <guid>\n");
+        return S_OK;
+    }
+
+    char json[16384];
+    if (!ReadFileText(path, json, sizeof(json)))
+    {
+        Outf("!rf.badchars: cannot read %s\n", path);
+        return E_FAIL;
+    }
+
+    char hex[256] = {0}, summary[256] = {0};
+    ExtractJsonString(json, "badCharsHex", hex, sizeof(hex));
+    ExtractJsonString(json, "summaryLine", summary, sizeof(summary));
+    Out("=== BADCHARS (learned filter) ===\n");
+    Outf("file: %s\n", path);
+    if (hex[0]) Outf("hex:  %s\n", hex);
+    if (summary[0]) Outf("%s\n", summary);
+    Out("Use with: randall rop sketch --badchars \"…\"\n");
+    return S_OK;
+}
+
 extern "C" HRESULT CALLBACK rf_export(PDEBUG_CLIENT /*client*/, PCSTR /*args*/)
 {
     Out("Refresh walk on host, then reload here:\n");
     Out("  randall windbg walk -i <crash-guid>\n");
     Out("  randall rop from-crash -i <crash-guid> --goal pivot\n");
+    Out("  randall rop badchars -i <crash-guid>\n");
     Out("  !rf.crash <repo>\\data\\crashes\\<project>\\<guid>_windbg_walk.json\n");
     if (g_WalkPath[0]) Outf("Current walk: %s\n", g_WalkPath);
     if (g_RopPath[0]) Outf("Current rop:  %s\n", g_RopPath);
+    if (g_BadPath[0]) Outf("Current bad:  %s\n", g_BadPath);
     return S_OK;
 }
 

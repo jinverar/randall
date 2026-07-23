@@ -49,6 +49,39 @@ public static class RandfuzzDbgWalk
         string? controlledReg = detail.Triage?.IpLooksControlled == true ? "IP/fault (triage)" : null;
         int? controlledOff = detail.Triage?.PatternDepthBytes;
 
+        // Prefer CONTROL from sibling exploit guide when present.
+        var crashesDir = Path.Combine(repoRoot, "data", "crashes", detail.Summary.Project);
+        var guidePath = Path.Combine(crashesDir, $"{crashId:N}_exploit_guide.json");
+        if (File.Exists(guidePath))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(guidePath));
+                var root = doc.RootElement;
+                if (root.TryGetProperty("controlledRegister", out var cr) && cr.ValueKind == JsonValueKind.String)
+                {
+                    var reg = cr.GetString();
+                    if (!string.IsNullOrWhiteSpace(reg))
+                        controlledReg = reg;
+                }
+                else if (root.TryGetProperty("ControlledRegister", out var cr2) && cr2.ValueKind == JsonValueKind.String)
+                {
+                    var reg = cr2.GetString();
+                    if (!string.IsNullOrWhiteSpace(reg))
+                        controlledReg = reg;
+                }
+
+                if (root.TryGetProperty("controlledOffset", out var co) && co.TryGetInt32(out var off))
+                    controlledOff = off;
+                else if (root.TryGetProperty("ControlledOffset", out var co2) && co2.TryGetInt32(out var off2))
+                    controlledOff = off2;
+            }
+            catch
+            {
+                /* ignore malformed guide */
+            }
+        }
+
         var scriptDir = ScriptsDir(repoRoot).Replace('\\', '/');
         var scriptLines = new List<string>
         {
@@ -57,21 +90,23 @@ public static class RandfuzzDbgWalk
             $"$$ Open dump: randall debug open -i {crashId:N} --kind windbg-preview",
             $"$$>a< {scriptDir}/rf_walk.txt",
             ".echo === RANDFUZZ WALK ===",
-            "r",
-            "k",
-            "!peb",
-            "lm",
         };
+        if (controlledOff is { } cOff)
+            scriptLines.Add($"$$ CONTROL {(controlledReg ?? "IP")} @ offset {cOff}");
+        scriptLines.AddRange(["r", "k", "!peb", "lm"]);
         if (!string.IsNullOrWhiteSpace(dump))
             scriptLines.Insert(1, $"$$ windbg -z \"{dump}\"");
 
-        var crashesDir = Path.Combine(repoRoot, "data", "crashes", detail.Summary.Project);
         Directory.CreateDirectory(crashesDir);
         var walkPath = Path.Combine(crashesDir, $"{crashId:N}_windbg_walk.json");
         var ropPath = Path.Combine(crashesDir, $"{crashId:N}_rop.json");
         if (!File.Exists(ropPath)) ropPath = null;
         var badPath = Path.Combine(crashesDir, $"{crashId:N}_badchars.json");
         if (!File.Exists(badPath)) badPath = null;
+
+        var summary = $"windbg-walk: crash {crashId:N}" + (dump is null ? " (no dump yet)" : "");
+        if (controlledOff is { } offSum)
+            summary += $" · CONTROL@ {offSum}";
 
         var report = new WindbgWalkReportDto(
             crashId,
@@ -82,7 +117,7 @@ public static class RandfuzzDbgWalk
             regs,
             modules,
             scriptLines,
-            $"windbg-walk: crash {crashId:N}" + (dump is null ? " (no dump yet)" : ""),
+            summary,
             walkPath.Replace('\\', '/'),
             ropPath?.Replace('\\', '/'),
             badPath?.Replace('\\', '/'),
