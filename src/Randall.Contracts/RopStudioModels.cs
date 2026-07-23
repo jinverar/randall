@@ -116,4 +116,6 @@ public sealed record RopSidecarsDto(
     string? GdbWalkPath = null,
     string? LadderPath = null,
     ScreamWalkReportDto? ScreamWalk = null,
-    GdbWalkReportDto? GdbWalk = null);
+    GdbWalkReportDto? GdbWalk = null,
+    string? StackLensPath = null,
+    StackLensReportDto? StackLens = null);

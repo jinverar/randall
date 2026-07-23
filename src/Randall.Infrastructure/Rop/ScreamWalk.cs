@@ -63,12 +63,36 @@ public static class ScreamWalk
             ctrlOff is not null ? "ok" : "info",
             ctrlOff is { } off
                 ? $"{ctrlReg ?? "IP"} @ {off}"
-                : "no CONTROL yet — run exploit guide / pattern offset",
+                : "no CONTROL yet — run stack lens / exploit guide / pattern offset",
             [
+                $"randall stack lens -i {crashId:N}",
                 $"randall exploit guide --exe <target> --core <core>",
                 $"randall pattern offset -q <faulting-value>",
             ],
             File.Exists(guidePath) ? guidePath.Replace('\\', '/') : null));
+
+        // 1b) Stack Lens — dump-native CONTROL map
+        string? stackLensPath = null;
+        try
+        {
+            var lens = StackLens.AnalyzeCrash(crashId, exeOverride: exeOverride, repoRoot: repoRoot);
+            stackLensPath = lens.OutputPath;
+            if (lens.PrimaryControl is { InputOffset: int po } pc)
+            {
+                ctrlOff ??= po;
+                ctrlReg ??= pc.Where;
+            }
+            steps.Add(Step("stack", "Stack Lens",
+                lens.Error is null && (lens.PrimaryControl is not null || lens.Words.Count > 0) ? "ok" :
+                lens.Error is null ? "info" : "fail",
+                lens.SummaryLine,
+                [$"randall stack lens -i {crashId:N}"],
+                stackLensPath));
+        }
+        catch (Exception ex)
+        {
+            steps.Add(Step("stack", "Stack Lens", "fail", ex.Message));
+        }
 
         // 2) Badchars
         string? badPath = null;
@@ -211,7 +235,8 @@ public static class ScreamWalk
             ropPath,
             windbgPath,
             gdbPath,
-            badPath);
+            badPath,
+            stackLensPath);
 
         try
         {

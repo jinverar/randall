@@ -20,6 +20,7 @@ public class CliHelpPolishTests
 
     [Theory]
     [InlineData("scream", "walk", "-h")]
+    [InlineData("stack", "lens", "-h")]
     [InlineData("windbg", "walk", "-h")]
     [InlineData("gdb", "walk", "-h")]
     [InlineData("ladder", "diff", "-h")]

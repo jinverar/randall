@@ -724,6 +724,17 @@ app.MapPost("/api/scream/walk", (ScreamWalkRequest body) =>
     return report.Error is null ? Results.Ok(report) : Results.BadRequest(report);
 });
 
+app.MapPost("/api/stack/lens", (StackLensRequest body) =>
+{
+    var report = StackLens.AnalyzeCrash(
+        body.CrashId,
+        body.WindowBytes <= 0 ? 128 : body.WindowBytes,
+        body.Exe);
+    return report.Error is "crash not found" ? Results.NotFound(report)
+        : report.Error is null ? Results.Ok(report)
+        : Results.BadRequest(report);
+});
+
 app.MapPost("/api/ladder/diff", (LadderDiffRequest body) =>
 {
     var report = MitigationLadder.Diff(body.CrashId, body.Project);

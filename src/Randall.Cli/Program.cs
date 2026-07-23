@@ -37,6 +37,7 @@ return args[0].ToLowerInvariant() switch
     "exploitdev" or "expdev" => RunExploitDev(args.Skip(1).ToArray()),
     "exploit" => RunExploit(args.Skip(1).ToArray()),
     "rop" => RunRop(args.Skip(1).ToArray()),
+    "stack" => RunStack(args.Skip(1).ToArray()),
     "windbg" or "randfuzzdbg" or "rfdbg" => RunWindbg(args.Skip(1).ToArray()),
     "memory" or "lens" => RunMemoryLens(args.Skip(1).ToArray()),
     "stalk" => RunStalk(args.Skip(1).ToArray()),
@@ -108,7 +109,8 @@ static void PrintHelp()
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall stalk from-crash -i <crash-guid> [--tag crash]
           randall scream watch -p <pid> [-o dumpsDir]   Built-in exception dump watcher
-          randall scream walk -i <crash-guid> [--goal auto]  CONTROL→badchars→sketch→walk playbook
+          randall scream walk -i <crash-guid> [--goal auto]  CONTROL→stack→badchars→sketch→walk
+          randall stack lens -i <crash-guid> [--window N]    Dump-native CONTROL map (stack slots)
           randall scream selftest          Lab AV target → attach → dump regression
           randall ladder diff [-i crash] [-p project]    Mitigation ladder compare (vulnlab tiers)
           randall gdb walk -i <crash-guid>               Linux GDB/GEF walk JSON (+ scripts)
@@ -2780,6 +2782,85 @@ static IReadOnlyList<string> PositionalIds(string[] args)
     return ids;
 }
 
+static int RunStack(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall stack lens -i <crash-guid> [--window 128] [--exe path] [--json]
+
+            Stack Lens — dump-native CONTROL map (stack slots × crashing input).
+            Writes *_stack_lens.json. Lab-only; no payloads. See docs/WINDBG_FUZZ_PKG.md.
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    if (sub is not ("lens" or "map" or "control"))
+        return Unknown($"stack {args[0]}");
+
+    Guid? crashId = null;
+    var window = 128;
+    string? exe = null;
+    var json = false;
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] is "-h" or "--help" or "help")
+        {
+            Console.WriteLine("Usage: randall stack lens -i <crash-guid> [--window 128]");
+            return 0;
+        }
+        if (args[i] is "-i" or "--id" or "--crash" && i + 1 < args.Length && Guid.TryParse(args[i + 1], out var g))
+        { crashId = g; i++; }
+        else if (args[i] is "--window" or "-w" && i + 1 < args.Length && int.TryParse(args[i + 1], out var w))
+        { window = w; i++; }
+        else if (args[i] is "--exe" or "-e" && i + 1 < args.Length) exe = args[++i];
+        else if (args[i] is "--json") json = true;
+    }
+
+    if (crashId is null)
+    {
+        Console.Error.WriteLine("Usage: randall stack lens -i <crash-guid> [--window 128]");
+        return 1;
+    }
+
+    var report = StackLens.AnalyzeCrash(crashId.Value, window, exe);
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        }));
+        return report.Error is null ? 0 : 2;
+    }
+
+    Console.WriteLine(report.SummaryLine);
+    if (report.SpValue is not null)
+        Console.WriteLine($"  {report.SpRegister ?? "SP"}={report.SpValue}  arch={report.Arch}  source={report.Source}");
+    if (report.PrimaryControl is { } pc)
+        Console.WriteLine($"  CONTROL: {pc.Where} = {pc.ValueHex}" +
+                          (pc.InputOffset is { } o ? $" @ input {o}" : "") +
+                          $" [{pc.Role}]");
+    foreach (var w in report.Words.Take(24))
+    {
+        var slot = w.OffsetFromSp >= 0
+            ? $"{report.SpRegister ?? "SP"}+0x{w.OffsetFromSp:X2}"
+            : w.AddressHex;
+        var off = w.InputOffset is { } io ? $" @ {io}" : "";
+        var sym = w.SymbolHint is null ? "" : $" ({w.SymbolHint})";
+        Console.WriteLine($"  {slot,-12} {w.ValueHex,-18} {w.Role,-14}{off}{sym}");
+        if (!string.IsNullOrWhiteSpace(w.Note))
+            Console.WriteLine($"               {w.Note}");
+    }
+    if (report.Words.Count > 24)
+        Console.WriteLine($"  … {report.Words.Count - 24} more (use --json)");
+    if (report.OutputPath is not null)
+        Console.WriteLine("Wrote: " + report.OutputPath);
+    return report.Error is null ? 0 : 2;
+}
+
 static async Task<int> RunScream(string[] args)
 {
     if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
@@ -3279,13 +3360,16 @@ static int RunRop(string[] args)
         case RopSidecarsDto side:
             Console.WriteLine(side.SummaryLine);
             if (side.ScreamWalkPath is not null) Console.WriteLine("  scream:   " + side.ScreamWalkPath);
+            if (side.StackLensPath is not null) Console.WriteLine("  stack:    " + side.StackLensPath);
             if (side.RopPath is not null) Console.WriteLine("  rop:      " + side.RopPath);
             if (side.WalkPath is not null) Console.WriteLine("  windbg:   " + side.WalkPath);
             if (side.GdbWalkPath is not null) Console.WriteLine("  gdb:      " + side.GdbWalkPath);
             if (side.BadCharsPath is not null) Console.WriteLine("  badchars: " + side.BadCharsPath);
             if (side.LadderPath is not null) Console.WriteLine("  ladder:   " + side.LadderPath);
             if (side.GuidePath is not null) Console.WriteLine("  guide:    " + side.GuidePath);
-            if (side.Walk?.ControlledOffset is { } off)
+            if (side.StackLens?.PrimaryControl is { } pc)
+                Console.WriteLine($"  CONTROL:  {pc.Where}" + (pc.InputOffset is { } po ? $" @ {po}" : ""));
+            else if (side.Walk?.ControlledOffset is { } off)
                 Console.WriteLine($"  CONTROL:  {side.Walk.ControlledRegister ?? "IP"} @ {off}");
             else if (side.ScreamWalk?.ControlledOffset is { } soff)
                 Console.WriteLine($"  CONTROL:  {side.ScreamWalk.ControlledRegister ?? "IP"} @ {soff}");
