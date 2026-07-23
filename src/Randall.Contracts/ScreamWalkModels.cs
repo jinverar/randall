@@ -6,7 +6,7 @@ namespace Randall.Contracts;
 /// </summary>
 public sealed record ScreamWalkStepDto(
     int Index,
-    string Id,          // badchars | sketch | windbg | gdb | guide | ladder
+    string Id,          // stack | badchars | sketch | windbg | gdb | guide | ladder
     string Title,
     string Status,      // ok | skip | fail | info
     string? Detail = null,
@@ -35,6 +35,7 @@ public sealed record ScreamWalkReportDto(
     string? WalkPath = null,
     string? GdbWalkPath = null,
     string? BadCharsPath = null,
+    string? StackLensPath = null,
     string? Error = null);
 
 public sealed record LadderTierRowDto(

@@ -2347,6 +2347,7 @@ function renderCrashDetail(detail, title) {
           <input type="text" id="crash-rop-badchars" size="16" placeholder="\x00\x0a (auto)" />
         </label>
         <button type="button" class="btn primary" id="crash-scream-walk-btn">Walk this scream</button>
+        <button type="button" class="btn" id="crash-stack-lens-btn">Stack Lens</button>
         <button type="button" class="btn" id="crash-rop-sketch-btn">ROP sketch</button>
         <button type="button" class="btn" id="crash-rop-search-btn">Search gadgets</button>
         <button type="button" class="btn" id="crash-rop-badchars-btn">Learn badchars</button>
@@ -2396,7 +2397,27 @@ function renderCrashDetail(detail, title) {
             `</li>`).join('')}</ol>`);
         }
       }
-      if (side.walk?.controlledOffset != null && !side.screamWalk?.controlledOffset) {
+      if (side.stackLens) {
+        const lens = side.stackLens;
+        const pc = lens.primaryControl;
+        parts.push(`<p class="hint">Stack Lens · <code>${escapeAttr(lens.source || '')}</code>` +
+          (pc
+            ? ` · CONTROL <code>${escapeAttr(pc.where || '')}</code>` +
+              (pc.inputOffset != null ? ` @ ${pc.inputOffset}` : '')
+            : '') +
+          `</p>`);
+        const words = (lens.words || []).slice(0, 12);
+        if (words.length) {
+          parts.push(`<pre class="hint">${words.map((w) => {
+            const slot = w.offsetFromSp >= 0
+              ? `${escapeAttr(lens.spRegister || 'SP')}+0x${Number(w.offsetFromSp).toString(16)}`
+              : escapeAttr(w.addressHex || '');
+            return `${slot}  ${escapeAttr(w.valueHex || '')}  ${escapeAttr(w.role || '')}` +
+              (w.inputOffset != null ? ` @ ${w.inputOffset}` : '');
+          }).join('\n')}</pre>`);
+        }
+      }
+      if (side.walk?.controlledOffset != null && !side.screamWalk?.controlledOffset && !side.stackLens?.primaryControl) {
         parts.push(`<p class="hint">CONTROL <code>${escapeAttr(side.walk.controlledRegister || 'IP')}</code> @ ${side.walk.controlledOffset}</p>`);
       }
       if (side.badChars?.badCharsHex) {
@@ -2456,6 +2477,41 @@ function renderCrashDetail(detail, title) {
       if (out) out.textContent = sketch.outputPath ? `Wrote ${sketch.outputPath}` : (sketch.summaryLine || '');
     } catch (err) {
       if (status) status.textContent = 'ROP sketch failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-stack-lens-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    try {
+      if (status) status.textContent = 'Stack Lens…';
+      const report = await api.post('/api/stack/lens', {
+        crashId: detail.summary.id,
+        windowBytes: 128,
+      });
+      if (status) status.textContent = report.summaryLine || 'Stack Lens';
+      if (body) {
+        const pc = report.primaryControl;
+        const words = report.words || [];
+        body.innerHTML = `<p class="hint">Source <code>${escapeAttr(report.source || '')}</code>` +
+          (pc
+            ? ` · CONTROL <code>${escapeAttr(pc.where || '')}</code>` +
+              (pc.inputOffset != null ? ` @ ${pc.inputOffset}` : '')
+            : '') +
+          `</p><pre class="hint">${words.slice(0, 16).map((w) => {
+            const slot = w.offsetFromSp >= 0
+              ? `${escapeAttr(report.spRegister || 'SP')}+0x${Number(w.offsetFromSp).toString(16)}`
+              : escapeAttr(w.addressHex || '');
+            return `${slot}  ${escapeAttr(w.valueHex || '')}  ${escapeAttr(w.role || '')}` +
+              (w.inputOffset != null ? ` @ ${w.inputOffset}` : '');
+          }).join('\n')}</pre>`;
+      }
+      if (out) out.textContent = report.outputPath ? `Wrote ${report.outputPath}` : (report.summaryLine || '');
+      loadCrashRopSidecars(detail.summary.id).catch(() => {});
+    } catch (err) {
+      if (status) status.textContent = 'Stack Lens failed';
       if (out) out.textContent = err.message;
     }
   });

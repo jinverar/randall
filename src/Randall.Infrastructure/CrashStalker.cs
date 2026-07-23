@@ -144,6 +144,7 @@ public static class CrashStalker
         string? badCopy = null;
         string? gdbCopy = null;
         string? screamCopy = null;
+        string? stackCopy = null;
 
         try
         {
@@ -158,11 +159,27 @@ public static class CrashStalker
 
         try
         {
+            var lens = StackLens.AnalyzeCrash(crashId, repoRoot: repoRoot);
+            if (lens.OutputPath is not null && File.Exists(lens.OutputPath))
+            {
+                stackCopy = Path.Combine(exportDir, "stack_lens.json");
+                File.Copy(lens.OutputPath, stackCopy, overwrite: true);
+            }
+        }
+        catch { /* optional */ }
+
+        try
+        {
             var walk = ScreamWalk.Run(crashId, "auto", repoRoot: repoRoot);
             if (walk.PlaybookPath is not null && File.Exists(walk.PlaybookPath))
             {
                 screamCopy = Path.Combine(exportDir, "scream_walk.json");
                 File.Copy(walk.PlaybookPath, screamCopy, overwrite: true);
+            }
+            if (walk.StackLensPath is not null && File.Exists(walk.StackLensPath) && stackCopy is null)
+            {
+                stackCopy = Path.Combine(exportDir, "stack_lens.json");
+                File.Copy(walk.StackLensPath, stackCopy, overwrite: true);
             }
             if (walk.RopPath is not null && File.Exists(walk.RopPath))
             {
@@ -231,8 +248,9 @@ public static class CrashStalker
 
         var readmeExtra = $"""
 
-            Scream Walk / ROP Studio / RandfuzzDbg+Gdb
+            Scream Walk / Stack Lens / ROP Studio / RandfuzzDbg+Gdb
             Playbook: {(screamCopy is null ? "(none)" : "scream_walk.json")} (randall scream walk -i {crashId:N})
+            Stack Lens: {(stackCopy is null ? "(none)" : "stack_lens.json")} (randall stack lens -i {crashId:N})
             ROP sketch: {(ropCopy is null ? "(none)" : "rop_sketch.json")}
             WinDbg walk: {(walkCopy is null ? "(none)" : "windbg_walk.json")}
             GDB walk: {(gdbCopy is null ? "(none)" : "gdb_walk.json")}

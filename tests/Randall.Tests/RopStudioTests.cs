@@ -333,6 +333,31 @@ public class RopStudioTests
     }
 
     [Fact]
+    public void LoadSidecars_SurfacesStackLensPath()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"randall_stack_side_{Guid.NewGuid():N}");
+        var project = "stack-side-lab";
+        var crashDir = Path.Combine(root, "data", "crashes", project);
+        Directory.CreateDirectory(crashDir);
+        try
+        {
+            var store = new CrashStore(crashDir);
+            var saved = store.Save(project, 1, "test", "AAAA"u8.ToArray(), exitCode: -11);
+            var id = saved.Id;
+            File.WriteAllText(Path.Combine(crashDir, $"{id:N}_stack_lens.json"),
+                $$"""{"crashId":"{{id:D}}","project":"stack-side-lab","arch":"x64","windowBytes":128,"wordSize":8,"words":[],"hints":[],"summaryLine":"ok","source":"registers-only"}""");
+            var side = RopStudio.LoadSidecars(id, root);
+            Assert.NotNull(side);
+            Assert.NotNull(side!.StackLensPath);
+            Assert.Contains("stack-lens", side.SummaryLine, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public void Docs_WinDbgPkg_DocumentsAutoGoalAndScreamArtifacts()
     {
         var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();

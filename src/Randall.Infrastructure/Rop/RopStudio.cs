@@ -373,12 +373,14 @@ public static class RopStudio
         var screamPath = Path.Combine(dir, $"{crashId:N}_scream_walk.json");
         var gdbPath = Path.Combine(dir, $"{crashId:N}_gdb_walk.json");
         var ladderPath = Path.Combine(dir, $"{crashId:N}_ladder.json");
+        var stackPath = Path.Combine(dir, $"{crashId:N}_stack_lens.json");
 
         RopSketchReportDto? sketch = null;
         WindbgWalkReportDto? walk = null;
         RopBadCharReportDto? bad = null;
         ScreamWalkReportDto? scream = null;
         GdbWalkReportDto? gdb = null;
+        StackLensReportDto? stack = null;
 
         try
         {
@@ -415,8 +417,16 @@ public static class RopStudio
         }
         catch { /* ignore */ }
 
+        try
+        {
+            if (File.Exists(stackPath))
+                stack = JsonSerializer.Deserialize<StackLensReportDto>(File.ReadAllText(stackPath), JsonOpts);
+        }
+        catch { /* ignore */ }
+
         var parts = new List<string>();
         if (scream is not null) parts.Add("scream-walk");
+        if (stack is not null) parts.Add("stack-lens");
         if (sketch?.Steps.Count > 0) parts.Add($"sketch {sketch.Steps.Count} step(s)");
         if (walk is not null) parts.Add("windbg");
         if (gdb is not null) parts.Add("gdb");
@@ -441,7 +451,9 @@ public static class RopStudio
             File.Exists(gdbPath) ? gdbPath.Replace('\\', '/') : null,
             File.Exists(ladderPath) ? ladderPath.Replace('\\', '/') : null,
             scream,
-            gdb);
+            gdb,
+            File.Exists(stackPath) ? stackPath.Replace('\\', '/') : null,
+            stack);
     }
 
     public static IReadOnlyList<string> ResolveCrashModules(

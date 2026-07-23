@@ -43,11 +43,12 @@ minidump + input + guide  →   ROP Studio scan/search/sketch → !rf.* extensio
 | Piece | Location | Role |
 |-------|----------|------|
 | ROP Studio | `src/Randall.Infrastructure/Rop/` | PE/ELF gadget harvest, search, sketch |
-| Scream Walk | `ScreamWalk` | CONTROL → badchars → sketch → WinDbg/GDB playbook |
+| Stack Lens | `StackLens` | Dump-native CONTROL map (stack slots × input) |
+| Scream Walk | `ScreamWalk` | CONTROL → stack → badchars → sketch → WinDbg/GDB playbook |
 | Walk export | `RandfuzzDbgWalk` / `RandfuzzGdbWalk` | `*_windbg_walk.json` / `*_gdb_walk.json` |
 | Extension | `tools/randfuzzdbg/` · `tools/randfuzzgdb/` | dbgeng DLL + GDB scripts |
-| CLI | `randall scream|rop|windbg|gdb|ladder …` | Playbook / scan / walk / ladder |
-| API | `/api/scream/*` · `/api/rop/*` · `/api/windbg/*` · `/api/gdb/*` | UI + lab agent |
+| CLI | `randall scream|stack|rop|windbg|gdb|ladder …` | Playbook / lens / scan / walk / ladder |
+| API | `/api/scream/*` · `/api/stack/*` · `/api/rop/*` · `/api/windbg/*` · `/api/gdb/*` | UI + lab agent |
 
 ---
 
@@ -61,13 +62,35 @@ randall scream walk -i <crash-guid> --goal auto
 # UI: Crashes → Walk this scream
 ```
 
-Order: CONTROL (guide/triage) → badchars → tier-aware sketch goal → ROP sketch →
+Order: CONTROL (guide/triage) → **Stack Lens** → badchars → tier-aware sketch goal → ROP sketch →
 WinDbg walk JSON → GDB walk JSON → ladder hint. Writes `*_scream_walk.json`.
 
 **Adaptive goals (`--goal auto`):** basic→`control` · NX→`pivot` · PIE→`leak` · canary→`canary`.
 
-Also: `randall ladder diff` · `randall gdb walk -i <guid>` · `tools/randfuzzgdb/`.
+Also: `randall stack lens -i <guid>` · `randall ladder diff` · `randall gdb walk -i <guid>` · `tools/randfuzzgdb/`.
 
+---
+
+## Stack Lens (CONTROL map)
+
+```bash
+randall stack lens -i <crash-guid> [--window 128] [--json]
+# API: POST /api/stack/lens
+# UI: Crashes → Stack Lens
+```
+
+Reads a stack window from the dump (gdb core / minidump Memory64) or falls back to registers +
+exploit-guide CONTROL. Labels each word:
+
+| Role | Meaning |
+|------|---------|
+| `controlled` | Value matches crashing input / cyclic pattern |
+| `return-slot` | Near-SP (or controlled) value looks like a code pointer |
+| `frame-ptr` | Matches RBP/EBP |
+| `canary-suspect` | High-entropy / truncated cookie-shaped word |
+| `unknown` | No match |
+
+Writes `*_stack_lens.json`. Primary CONTROL feeds Scream Walk and `rop show`.
 ---
 
 ## ROP Studio (host)
@@ -109,6 +132,7 @@ On-disk:
 
 ```
 data/crashes/<project>/<guid>_scream_walk.json  # Scream Walk playbook
+data/crashes/<project>/<guid>_stack_lens.json   # Stack Lens CONTROL map
 data/crashes/<project>/<guid>_rop.json          # from-crash / sketch
 data/crashes/<project>/<guid>_windbg_walk.json  # WinDbg walk export
 data/crashes/<project>/<guid>_gdb_walk.json     # GDB/GEF walk export
@@ -118,8 +142,8 @@ data/crashes/<project>/<guid>_exploit_guide.json  # CONTROL (when present)
 data/rop/<sha256-of-module>.gadgets.json        # reusable module cache (read+write)
 ```
 
-Triage export (`randall export` / Crashes UI) auto-runs Scream Walk (badchars + sketch + walks)
-and copies `scream_walk.json`, `rop_sketch.json`, `windbg_walk.json`, `gdb_walk.json`, and
+Triage export (`randall export` / Crashes UI) auto-runs Scream Walk (stack lens + badchars + sketch + walks)
+and copies `scream_walk.json`, `stack_lens.json`, `rop_sketch.json`, `windbg_walk.json`, `gdb_walk.json`, and
 `badchars.json` into `data/exports/<guid>/` when present.---
 
 ## RandfuzzDbg (WinDbg Preview)
@@ -178,9 +202,10 @@ Linux CI keeps host ROP Studio + scripts; DLL is Windows-only.
 
 1. Fuzz until scream → minidump bottled  
 2. `randall analyze -i <guid>` · Memory lens · `exploit guide` / CONTROL offset  
-3. `randall scream walk -i <guid> --goal auto` → playbook (badchars → sketch → WinDbg/GDB)  
-4. Open WinDbg Preview / GDB · run `rf_walk.txt` / `rf_gdb.txt`  
-5. `randall ladder diff` — climb `vulnlab` → `vulnlab-nx` → … — sketches change with NX/ASLR  
+3. `randall stack lens -i <guid>` → CONTROL map (stack slots × input)  
+4. `randall scream walk -i <guid> --goal auto` → playbook (lens → badchars → sketch → WinDbg/GDB)  
+5. Open WinDbg Preview / GDB · run `rf_walk.txt` / `rf_gdb.txt`  
+6. `randall ladder diff` — climb `vulnlab` → `vulnlab-nx` → … — sketches change with NX/ASLR  
 
 ---
 
@@ -218,5 +243,6 @@ Linux CI keeps host ROP Studio + scripts; DLL is Windows-only.
 - [x] Tier-adaptive goals (`auto` / `leak` / `canary`)
 - [x] Mitigation ladder diff (`randall ladder diff`)
 - [x] Linux GDB walk twin (`randall gdb walk` / `tools/randfuzzgdb`)
+- [x] Stack Lens — dump-native CONTROL map (`randall stack lens` / Scream Walk step)
 - [ ] Full Windows PDB/DIA naming (beyond export table)
-- [ ] Deeper dump-native stack parse (beyond Execute `k`)
+- [ ] Richer dump Memory64 stack parse when light dumps omit RSP ranges
