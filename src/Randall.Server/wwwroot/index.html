@@ -544,11 +544,10 @@
 
       <div id="fuzz-tab-labs" class="fuzz-tab-panel hidden">
         <div class="panel">
-          <h2>Lab servers <span id="labs-scope-label" class="hint-inline">— this machine</span></h2>
+          <h2>Lab library <span id="labs-scope-label" class="hint-inline">— this machine</span></h2>
           <p class="hint">
-            Status shows which <code>randall-vuln*</code> processes are running (PID + port).
-            New starts bind <strong>127.0.0.1</strong> on the target machine.
-            Remote control uses <code>randall agent</code> on the fuzz box — not a kernel driver.
+            Curated startable labs (network · drone · exploit-dev). New starts bind <strong>127.0.0.1</strong>.
+            Remote control uses <code>randall agent</code> on the fuzz box — see docs/LAB_LIBRARY.md · docs/DRONE_LAB.md.
           </p>
           <div class="labs-agent-row">
             <label class="case-grow">Remote agent URL
@@ -561,9 +560,17 @@
             <button type="button" class="btn" id="labs-agent-clear">Use local</button>
           </div>
           <p id="labs-agent-hint" class="hint">On the VM: <code>randall agent --port 5000 --token SECRET</code> then paste host URL + token here. See docs/LAB_AGENT.md · docs/MATURITY.md.</p>
-          <div class="btn-row wrap">
+          <div class="btn-row wrap labs-filter-row">
+            <label>Category
+              <select id="labs-category-filter" title="Filter lab library by category">
+                <option value="all">All</option>
+                <option value="network">Network</option>
+                <option value="drone">Drone</option>
+                <option value="exploit-dev">Exploit-dev</option>
+              </select>
+            </label>
             <button type="button" class="btn primary" id="labs-refresh">Refresh</button>
-            <button type="button" class="btn" id="labs-stop-all" title="Kill every randall-vuln* lab process on the selected host">Stop all labs</button>
+            <button type="button" class="btn" id="labs-stop-all" title="Kill every catalog lab process on the selected host">Stop all labs</button>
           </div>
           <p id="labs-status" class="hint"></p>
           <div class="labs-table-wrap">
@@ -571,6 +578,7 @@
               <thead>
                 <tr>
                   <th>Lab</th>
+                  <th>Category</th>
                   <th>Port</th>
                   <th>Status</th>
                   <th>PID</th>
@@ -578,7 +586,7 @@
                 </tr>
               </thead>
               <tbody id="labs-tbody">
-                <tr><td colspan="5" class="hint">Loading…</td></tr>
+                <tr><td colspan="6" class="hint">Loading…</td></tr>
               </tbody>
             </table>
           </div>

@@ -28,6 +28,7 @@ TARGETS=(
   "vulnssh:Randall.VulnSsh"
   "vulnrpc:Randall.VulnRpc"
   "vulnsmb:Randall.VulnSmb"
+  "vulndrone:Randall.VulnDrone"
   "screamcrash:Randall.ScreamCrash"
 )
 
@@ -53,7 +54,7 @@ for entry in "${TARGETS[@]}"; do
 done
 
 if [ "$built" -eq 0 ]; then
-  echo "No targets matched '$want'. Known: vulnserver vulnhttp vulnftp vulntftp vulnssh vulnrpc vulnsmb screamcrash (+ reeldeck via build-reeldeck.sh)" >&2
+  echo "No targets matched '$want'. Known: vulnserver vulnhttp vulnftp vulntftp vulnssh vulnrpc vulnsmb vulndrone screamcrash (+ reeldeck via build-reeldeck.sh)" >&2
   exit 1
 fi
 

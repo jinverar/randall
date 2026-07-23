@@ -6,9 +6,13 @@ Build all lab servers:
 .\scripts\build-all-lab-targets.ps1
 ```
 
+```bash
+scripts/build-lab-targets.sh
+```
+
 **Bind address:** Labs listen on **127.0.0.1** by default (safe on public Wi‑Fi). Pass `--host 0.0.0.0` only on a private lab network.
 
-**UI:** Fuzz → **Lab servers** — see running PIDs, Start / Stop / Stop all (no Process Explorer required).
+**UI:** Fuzz → **Lab servers** (lab library) — category filter, PIDs, Start / Stop / Stop all. See [LAB_LIBRARY.md](../docs/LAB_LIBRARY.md).
 
 ## Randfuzz lab servers
 
@@ -21,8 +25,10 @@ Build all lab servers:
 | **VulnTftp** | 6969 | `projects/vulntftp.yaml` | [Randall.VulnTftp](Randall.VulnTftp/) |
 | **VulnRpc** | 1355 | `projects/vulnrpc.yaml` | [Randall.VulnRpc](Randall.VulnRpc/) (DCE-shaped lab) |
 | **VulnSmb** | 4455 | `projects/vulnsmb.yaml` | [Randall.VulnSmb](Randall.VulnSmb/) (NBSS+SMB2-shaped lab) |
+| **VulnDrone UDP** | 15550/udp | `projects/vulndrone-udp.yaml` | [Randall.VulnDrone](Randall.VulnDrone/) (fictional RDL1) |
+| **VulnDrone TCP** | 15551/tcp | `projects/vulndrone-tcp.yaml` | same binary, `--mode tcp` |
 
-Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md). Labs: [RPC_LAB.md](../docs/RPC_LAB.md) · [SMB_LAB.md](../docs/SMB_LAB.md).
+Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md). Labs: [RPC_LAB.md](../docs/RPC_LAB.md) · [SMB_LAB.md](../docs/SMB_LAB.md) · [DRONE_LAB.md](../docs/DRONE_LAB.md) · [LAB_LIBRARY.md](../docs/LAB_LIBRARY.md).
 
 ## Randfuzz Vulnserver (included)
 
