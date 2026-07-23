@@ -33,6 +33,7 @@ public static class DocsCatalog
         ("REELDECK.md", "ReelDeck media file lab", "Fuzzing"),
         ("MATURITY.md", "Product maturity map", "Project"),
         ("RELEASE.md", "Release packaging cadence", "Project"),
+        ("UPDATES.md", "Secure updates (check / apply)", "Project"),
         ("STALK_LOOP.md", "Stalk loop (baseline → fuzz → learn)", "Stalk & scream"),
         ("STALKING.md", "Stalking bugs reference", "Stalk & scream"),
         ("RECORDING.md", "Recording — observation stack & bookends", "Stalk & scream"),

@@ -73,3 +73,7 @@ targets/file-framed/app
 targets/file-framed/app.exe
 data/bench/
 data/rop/
+
+# Update signing secrets (never commit private keys)
+*.pem
+!docs/**/*.pem

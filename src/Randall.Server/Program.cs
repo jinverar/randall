@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Randall.Contracts;
 using Randall.Infrastructure;
 using Randall.Infrastructure.Rop;
@@ -68,7 +69,56 @@ app.MapGet("/img/canisters/{file}", (string file) =>
         Path.Combine("src/Randall.Server/wwwroot/img/canisters", safe));
 });
 
-app.MapGet("/api/health", () => new HealthDto("Randfuzz by Randall", "0.16.0-alpha", "phase16-analyze", LabAccess.IsConfigured));
+app.MapGet("/api/health", () =>
+    new HealthDto(AppVersion.ProductName, AppVersion.Version, AppVersion.Status, LabAccess.IsConfigured));
+
+app.MapGet("/api/update/status", () => Results.Ok(UpdateService.Status()));
+app.MapPost("/api/update/check", async (CancellationToken ct) =>
+{
+    try
+    {
+        var r = await UpdateService.CheckAsync(ct: ct);
+        return Results.Ok(r);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapPost("/api/update/apply", async (HttpRequest http, CancellationToken ct) =>
+{
+    try
+    {
+        var confirm = false;
+        if (http.Query.TryGetValue("confirm", out var q) &&
+            bool.TryParse(q.ToString(), out var qConfirm))
+            confirm = qConfirm;
+        else
+        {
+            try
+            {
+                var body = await http.ReadFromJsonAsync<Dictionary<string, JsonElement>>(ct);
+                if (body is not null && body.TryGetValue("confirm", out var el))
+                    confirm = el.ValueKind == JsonValueKind.True
+                              || (el.ValueKind == JsonValueKind.String
+                                  && bool.TryParse(el.GetString(), out var b) && b);
+            }
+            catch
+            {
+                /* empty body */
+            }
+        }
+
+        var r = await UpdateService.ApplyAsync(confirm, ct: ct);
+        return r.Ok ? Results.Ok(r) : Results.BadRequest(r);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapPost("/api/update/dismiss", (UpdateDismissRequest? request) =>
+    Results.Ok(UpdateService.Dismiss(request?.Version)));
 
 app.MapGet("/api/ui/prefs", () => Results.Ok(UiPrefsStore.Get()));
 app.MapPut("/api/ui/prefs", (UiPrefsUpdateRequest request) =>
