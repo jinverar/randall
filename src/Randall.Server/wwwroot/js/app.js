@@ -2361,6 +2361,42 @@ function renderCrashDetail(detail, title) {
     <p id="export-result" class="empty"></p>`;
 
   loadCrashMemoryLens(detail.summary.id).catch(() => {});
+  loadCrashRopSidecars(detail.summary.id).catch(() => {});
+
+  async function loadCrashRopSidecars(id) {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const badInput = document.getElementById('crash-rop-badchars');
+    try {
+      const side = await api.get(`/api/crashes/${id}/rop-sidecars`);
+      if (!side) return;
+      if (status) status.textContent = side.summaryLine || 'ROP sidecars';
+      if (badInput && side.badChars?.badCharsHex) badInput.value = side.badChars.badCharsHex;
+      if (!body) return;
+      const parts = [];
+      if (side.walk?.controlledOffset != null) {
+        parts.push(`<p class="hint">CONTROL <code>${escapeAttr(side.walk.controlledRegister || 'IP')}</code> @ ${side.walk.controlledOffset}</p>`);
+      }
+      if (side.badChars?.badCharsHex) {
+        parts.push(`<p>Badchars: <code>${escapeAttr(side.badChars.badCharsHex)}</code></p>`);
+      }
+      const steps = side.sketch?.steps || [];
+      if (steps.length) {
+        parts.push(`<ol>${steps.map((s) =>
+          `<li><code>${escapeAttr(s.gadget?.address || '')}</code>${s.gadget?.symbol ? ' @' + escapeAttr(s.gadget.symbol) : ''}
+           ${escapeAttr(s.gadget?.instruction || s.role)}
+           <div class="hint">${escapeAttr(s.why || '')}</div></li>`).join('')}</ol>`);
+      } else if (side.walkPath || side.ropPath) {
+        parts.push(`<p class="hint">Walk: <code>${escapeAttr(side.walkPath || '—')}</code></p>`);
+      }
+      if (side.walk?.moduleCandidates?.length) {
+        parts.push(`<p class="hint">Modules: ${side.walk.moduleCandidates.map((m) => escapeAttr(m.split(/[\\\\/]/).pop())).join(', ')}</p>`);
+      }
+      if (parts.length) body.innerHTML = parts.join('');
+    } catch {
+      /* no sidecars yet */
+    }
+  }
 
   document.getElementById('crash-rop-sketch-btn')?.addEventListener('click', async () => {
     const status = document.getElementById('crash-rop-status');

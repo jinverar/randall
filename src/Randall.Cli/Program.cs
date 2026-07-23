@@ -88,7 +88,8 @@ static void PrintHelp()
           randall rop scan --exe <path> [--arch x64|x86]
           randall rop search --exe <path> --need pop-rdi [--badchars "00 0a"]
           randall rop sketch --exe <path> --goal pivot|write|control
-          randall rop from-crash -i <crash-guid> [--goal pivot]
+          randall rop from-crash -i <crash-guid> [--goal pivot] [--exe path] [--modules N]
+          randall rop show -i <crash-guid>       Existing ROP/walk/badchars sidecars
           randall rop badchars -i <crash-guid>   Learn badchars from crashing input
           randall windbg scripts            RandfuzzDbg script paths
           randall windbg walk -i <crash-guid>   Write *_windbg_walk.json + script hints
@@ -2893,7 +2894,9 @@ static int RunRop(string[] args)
               randall rop scan --exe <path> [--arch x64|x86] [--json]
               randall rop search --exe <path> --need <kind> [--badchars "00 0a"] [--json]
               randall rop sketch --exe <path> --goal pivot|write|control [--badchars …] [--json]
-              randall rop from-crash -i <crash-guid> [--goal pivot] [--json]
+              randall rop from-crash -i <crash-guid> [--goal pivot] [--exe path] [--modules N] [--json]
+              randall rop search -i <crash-guid> --need <kind> [--badchars …] [--json]
+              randall rop show -i <crash-guid> [--json]
               randall rop badchars -i <crash-guid> [--json]
 
             ROP Studio — gadget catalog + constrained chain sketches for lab binaries.
@@ -2910,6 +2913,7 @@ static int RunRop(string[] args)
     string? bad = null;
     Guid? crashId = null;
     var json = false;
+    var maxModules = 3;
     for (var i = 1; i < args.Length; i++)
     {
         if (args[i] is "--exe" or "-e" && i + 1 < args.Length) exe = args[++i];
@@ -2917,6 +2921,11 @@ static int RunRop(string[] args)
         else if (args[i] is "--goal" or "-g" && i + 1 < args.Length) goal = args[++i];
         else if (args[i] is "--arch" && i + 1 < args.Length) arch = args[++i];
         else if (args[i] is "--badchars" or "--bad" && i + 1 < args.Length) bad = args[++i];
+        else if (args[i] is "--modules" && i + 1 < args.Length && int.TryParse(args[i + 1], out var mm))
+        {
+            maxModules = mm;
+            i++;
+        }
         else if (args[i] is "-i" or "--id" or "--crash" && i + 1 < args.Length
                  && Guid.TryParse(args[i + 1], out var g))
         {
@@ -2931,11 +2940,21 @@ static int RunRop(string[] args)
     {
         if (crashId is null)
         {
-            Console.Error.WriteLine("Usage: randall rop from-crash -i <crash-guid> [--goal pivot]");
+            Console.Error.WriteLine("Usage: randall rop from-crash -i <crash-guid> [--goal pivot] [--exe path] [--modules N]");
             return 1;
         }
 
-        report = RopStudio.FromCrash(crashId.Value, goal ?? "pivot", bad);
+        report = RopStudio.FromCrash(crashId.Value, goal ?? "pivot", bad, exeOverride: exe, maxModules: maxModules);
+    }
+    else if (sub is "show" or "status" or "sidecars")
+    {
+        if (crashId is null)
+        {
+            Console.Error.WriteLine("Usage: randall rop show -i <crash-guid>");
+            return 1;
+        }
+
+        report = RopStudio.LoadSidecars(crashId.Value) ?? (object)new { error = "crash not found" };
     }
     else if (sub is "badchars" or "badchar" or "learn-badchars")
     {
@@ -2947,11 +2966,15 @@ static int RunRop(string[] args)
 
         report = RopBadCharLearner.LearnFromCrash(crashId.Value);
     }
+    else if (sub is "search" && crashId is not null)
+    {
+        report = RopStudio.SearchFromCrash(crashId.Value, need ?? "ret", bad);
+    }
     else
     {
         if (string.IsNullOrWhiteSpace(exe))
         {
-            Console.Error.WriteLine("Usage: randall rop scan|search|sketch|badchars …");
+            Console.Error.WriteLine("Usage: randall rop scan|search|sketch|from-crash|show|badchars …");
             return 1;
         }
 
@@ -3008,7 +3031,12 @@ static int RunRop(string[] args)
             foreach (var c in sketch.Constraints)
                 Console.WriteLine($"  constraint: {c}");
             foreach (var s in sketch.Steps)
-                Console.WriteLine($"  [{s.Index}] {s.Role}: {s.Gadget.Address}  {s.Gadget.Instruction} — {s.Why}");
+            {
+                var sym = s.Gadget.Symbol is null ? "" : $" @{s.Gadget.Symbol}";
+                Console.WriteLine($"  [{s.Index}] {s.Role}: {s.Gadget.Address}{sym}  {s.Gadget.Instruction} — {s.Why}");
+            }
+            if (sketch.ModulesScanned is { Count: > 0 })
+                Console.WriteLine("  modules: " + string.Join(", ", sketch.ModulesScanned.Select(Path.GetFileName)));
             if (sketch.OutputPath is not null)
                 Console.WriteLine($"  wrote: {sketch.OutputPath}");
             return sketch.Error is null && sketch.Steps.Count > 0 ? 0 : 2;
@@ -3021,6 +3049,17 @@ static int RunRop(string[] args)
             if (badchars.OutputPath is not null)
                 Console.WriteLine($"  wrote: {badchars.OutputPath}");
             return badchars.Error is null ? 0 : 2;
+        case RopSidecarsDto side:
+            Console.WriteLine(side.SummaryLine);
+            if (side.RopPath is not null) Console.WriteLine("  rop:      " + side.RopPath);
+            if (side.WalkPath is not null) Console.WriteLine("  walk:     " + side.WalkPath);
+            if (side.BadCharsPath is not null) Console.WriteLine("  badchars: " + side.BadCharsPath);
+            if (side.GuidePath is not null) Console.WriteLine("  guide:    " + side.GuidePath);
+            if (side.Walk?.ControlledOffset is { } off)
+                Console.WriteLine($"  CONTROL:  {side.Walk.ControlledRegister ?? "IP"} @ {off}");
+            if (side.Sketch?.Steps.Count > 0)
+                Console.WriteLine($"  sketch:   {side.Sketch.Steps.Count} step(s) · {side.Sketch.Goal}");
+            return 0;
         default:
             return 1;
     }

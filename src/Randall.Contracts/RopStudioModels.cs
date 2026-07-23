@@ -11,7 +11,8 @@ public sealed record RopGadgetDto(
     string Instruction,
     string Module,
     int Size,
-    IReadOnlyList<string> Tags);
+    IReadOnlyList<string> Tags,
+    string? Symbol = null); // nearest PE export / ELF hint
 
 public sealed record RopScanReportDto(
     string ModulePath,
@@ -58,12 +59,15 @@ public sealed record RopSketchReportDto(
     string SummaryLine,
     IReadOnlyList<string> Constraints,
     string? OutputPath = null,
-    string? Error = null);
+    string? Error = null,
+    IReadOnlyList<string>? ModulesScanned = null);
 
 public sealed record RopFromCrashRequest(
     Guid CrashId,
     string Goal = "pivot",
-    string? BadCharsHex = null);
+    string? BadCharsHex = null,
+    string? Exe = null,
+    int MaxModules = 3);
 
 public sealed record WindbgWalkReportDto(
     Guid? CrashId,
@@ -79,7 +83,8 @@ public sealed record WindbgWalkReportDto(
     string? RopPath = null,
     string? BadCharsPath = null,
     string? Error = null,
-    string? ExceptionHint = null);
+    string? ExceptionHint = null,
+    IReadOnlyList<string>? ModuleCandidates = null);
 
 public sealed record RopBadCharReportDto(
     Guid? CrashId,
@@ -94,3 +99,16 @@ public sealed record RopBadCharReportDto(
     string? Error = null);
 
 public sealed record RopBadCharRequest(Guid CrashId);
+
+/// <summary>Existing ROP Studio / RandfuzzDbg sidecars beside a scream canister.</summary>
+public sealed record RopSidecarsDto(
+    Guid CrashId,
+    string Project,
+    string? RopPath,
+    string? WalkPath,
+    string? BadCharsPath,
+    string? GuidePath,
+    RopSketchReportDto? Sketch,
+    WindbgWalkReportDto? Walk,
+    RopBadCharReportDto? BadChars,
+    string SummaryLine);

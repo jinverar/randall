@@ -69,12 +69,14 @@ public static class RopGadgetScanner
             if (regions.Count == 0)
                 return Fail(modulePath, "no executable sections found (need PE/ELF)");
 
+            var exports = PeExportTable.TryParse(bytes);
+            var imageBase = PeExportTable.TryImageBase(bytes) ?? 0UL;
             var gadgets = new List<RopGadgetDto>();
             var exeBytes = 0;
             foreach (var region in regions)
             {
                 exeBytes += region.Data.Length;
-                ScanRegion(modulePath, arch, region, gadgets, maxGadgets);
+                ScanRegion(modulePath, arch, region, gadgets, maxGadgets, exports, imageBase);
                 if (gadgets.Count >= maxGadgets) break;
             }
 
@@ -116,7 +118,9 @@ public static class RopGadgetScanner
         string arch,
         BinaryImage.ExecRegion region,
         List<RopGadgetDto> gadgets,
-        int maxGadgets)
+        int maxGadgets,
+        IReadOnlyList<PeExportTable.Export> exports,
+        ulong imageBase)
     {
         var data = region.Data;
         var baseVa = region.VirtualAddress;
@@ -130,7 +134,7 @@ public static class RopGadgetScanner
         {
             if (data[i] == 0xC3)
             {
-                AddNear(gadgets, arch, mod, baseVa, data, i, maxGadgets, regionTags);
+                AddNear(gadgets, arch, mod, baseVa, data, i, maxGadgets, regionTags, exports, imageBase);
             }
             else if (data[i] == 0xC2 && i + 2 < data.Length)
             {
@@ -140,7 +144,7 @@ public static class RopGadgetScanner
                 {
                     var tags = decoded.Value.Tags.Concat(regionTags).Distinct().ToList();
                     Add(gadgets, baseVa + (ulong)i, decoded.Value.Kind, span,
-                        decoded.Value.Insn, mod, tags);
+                        decoded.Value.Insn, mod, tags, exports, imageBase);
                 }
             }
         }
@@ -155,7 +159,7 @@ public static class RopGadgetScanner
                 var tags = new List<string> { "jmp", "reg", "pivot-ish" };
                 tags.AddRange(regionTags);
                 Add(gadgets, baseVa + (ulong)i, $"jmp-{reg}", data.AsSpan(i, 2),
-                    $"jmp {reg}", mod, tags);
+                    $"jmp {reg}", mod, tags, exports, imageBase);
             }
             else if (data[i] == 0xFF && data[i + 1] is >= 0xD0 and <= 0xD7)
             {
@@ -163,7 +167,7 @@ public static class RopGadgetScanner
                 var tags = new List<string> { "call", "reg" };
                 tags.AddRange(regionTags);
                 Add(gadgets, baseVa + (ulong)i, $"call-{reg}", data.AsSpan(i, 2),
-                    $"call {reg}", mod, tags);
+                    $"call {reg}", mod, tags, exports, imageBase);
             }
         }
     }
@@ -176,12 +180,15 @@ public static class RopGadgetScanner
         byte[] data,
         int retIndex,
         int maxGadgets,
-        IReadOnlyList<string> regionTags)
+        IReadOnlyList<string> regionTags,
+        IReadOnlyList<PeExportTable.Export> exports,
+        ulong imageBase)
     {
         // ret alone
         var retTags = new List<string> { "ret" };
         retTags.AddRange(regionTags);
-        Add(gadgets, baseVa + (ulong)retIndex, "ret", data.AsSpan(retIndex, 1), "ret", mod, retTags);
+        Add(gadgets, baseVa + (ulong)retIndex, "ret", data.AsSpan(retIndex, 1), "ret", mod, retTags,
+            exports, imageBase);
 
         // Look back up to 12 bytes for short gadgets ending at this ret.
         for (var back = 1; back <= 12 && retIndex - back >= 0 && gadgets.Count < maxGadgets; back++)
@@ -192,7 +199,7 @@ public static class RopGadgetScanner
             if (decoded is null) continue;
             var tags = decoded.Value.Tags.Concat(regionTags).Distinct().ToList();
             Add(gadgets, baseVa + (ulong)start, decoded.Value.Kind, span,
-                decoded.Value.Insn, mod, tags);
+                decoded.Value.Insn, mod, tags, exports, imageBase);
         }
     }
 
@@ -350,8 +357,20 @@ public static class RopGadgetScanner
         ReadOnlySpan<byte> bytes,
         string insn,
         string mod,
-        IReadOnlyList<string> tags)
+        IReadOnlyList<string> tags,
+        IReadOnlyList<PeExportTable.Export>? exports = null,
+        ulong imageBase = 0)
     {
+        string? symbol = null;
+        var tagList = tags.ToList();
+        if (exports is { Count: > 0 } && imageBase != 0 && va >= imageBase)
+        {
+            var rva = (uint)(va - imageBase);
+            symbol = PeExportTable.Nearest(exports, rva);
+            if (symbol is not null)
+                tagList.Add("export:" + symbol);
+        }
+
         gadgets.Add(new RopGadgetDto(
             "0x" + va.ToString("x"),
             kind,
@@ -359,7 +378,8 @@ public static class RopGadgetScanner
             insn,
             mod,
             bytes.Length,
-            tags.ToList()));
+            tagList,
+            symbol));
     }
 
     private static List<RopGadgetDto> Dedup(List<RopGadgetDto> gadgets) =>

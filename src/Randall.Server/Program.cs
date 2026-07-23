@@ -711,7 +711,15 @@ app.MapPost("/api/rop/sketch", (RopSketchRequest body) =>
 
 app.MapPost("/api/rop/from-crash", (RopFromCrashRequest body) =>
 {
-    return Results.Ok(RopStudio.FromCrash(body.CrashId, body.Goal, body.BadCharsHex));
+    return Results.Ok(RopStudio.FromCrash(
+        body.CrashId, body.Goal, body.BadCharsHex,
+        exeOverride: body.Exe, maxModules: body.MaxModules <= 0 ? 3 : body.MaxModules));
+});
+
+app.MapGet("/api/crashes/{id:guid}/rop-sidecars", (Guid id) =>
+{
+    var sidecars = RopStudio.LoadSidecars(id);
+    return sidecars is null ? Results.NotFound() : Results.Ok(sidecars);
 });
 
 app.MapPost("/api/rop/badchars", (RopBadCharRequest body) =>

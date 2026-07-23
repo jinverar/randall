@@ -180,6 +180,9 @@ Linux CI keeps host ROP Studio + scripts; DLL is Windows-only.
 - [x] CONTROL from `*_exploit_guide.json` into walk JSON
 - [x] Mitigation annotations on sketches
 - [x] dbgeng commands (`!rf.walk` / `!rf.crash` / `!rf.rop` / `!rf.badchars` / …)
-- [ ] Richer DML / dump-native register parse (beyond `r`/`k` Execute)
-- [ ] Windows PDB-assisted naming
-- [ ] Multi-module from-crash harvest
+- [x] Multi-module from-crash harvest (+ `rop show` / sidecars API)
+- [x] PE export-table naming (nearest symbol tags)
+- [x] Richer `!rf.regs` / `!rf.control` (IDebugRegisters + DML)
+- [x] Crashes UI auto-load of existing ROP/walk/badchars sidecars
+- [ ] Full Windows PDB/DIA naming (beyond export table)
+- [ ] Deeper dump-native stack parse (beyond Execute `k`)

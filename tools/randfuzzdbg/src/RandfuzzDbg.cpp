@@ -17,6 +17,7 @@
 
 static IDebugClient* g_Client = nullptr;
 static IDebugControl* g_Control = nullptr;
+static IDebugRegisters* g_Registers = nullptr;
 static char g_WalkPath[MAX_PATH] = {0};
 static char g_RopPath[MAX_PATH] = {0};
 static char g_BadPath[MAX_PATH] = {0};
@@ -25,6 +26,14 @@ static HRESULT Out(PCSTR msg)
 {
     if (!g_Control) return E_FAIL;
     return g_Control->Output(DEBUG_OUTPUT_NORMAL, "%s", msg);
+}
+
+static HRESULT OutDml(PCSTR msg)
+{
+    if (!g_Control) return E_FAIL;
+    return g_Control->ControlledOutput(
+        DEBUG_OUTCTL_ALL_CLIENTS | DEBUG_OUTCTL_DML,
+        DEBUG_OUTPUT_NORMAL, "%s", msg);
 }
 
 static HRESULT Outf(PCSTR fmt, ...)
@@ -36,6 +45,17 @@ static HRESULT Outf(PCSTR fmt, ...)
     _vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, ap);
     va_end(ap);
     return g_Control->Output(DEBUG_OUTPUT_NORMAL, "%s", buf);
+}
+
+static HRESULT OutfDml(PCSTR fmt, ...)
+{
+    if (!g_Control) return E_FAIL;
+    char buf[2048];
+    va_list ap;
+    va_start(ap, fmt);
+    _vsnprintf_s(buf, sizeof(buf), _TRUNCATE, fmt, ap);
+    va_end(ap);
+    return OutDml(buf);
 }
 
 static void TrimArgs(PSTR args)
@@ -144,6 +164,30 @@ extern "C" HRESULT CALLBACK rf_walk(PDEBUG_CLIENT /*client*/, PCSTR /*args*/)
 
 extern "C" HRESULT CALLBACK rf_regs(PDEBUG_CLIENT /*client*/, PCSTR /*args*/)
 {
+    OutDml("<b>=== RANDFUZZ REGS ===</b>\n");
+    if (g_Registers)
+    {
+        static const char* names[] = {
+            "rax","rbx","rcx","rdx","rsi","rdi","rbp","rsp","rip",
+            "eax","ebx","ecx","edx","esi","edi","ebp","esp","eip", nullptr
+        };
+        for (int i = 0; names[i]; i++)
+        {
+            ULONG idx = 0;
+            if (FAILED(g_Registers->GetIndexByName(names[i], &idx)))
+                continue;
+            DEBUG_VALUE val = {};
+            if (FAILED(g_Registers->GetValue(idx, &val)))
+                continue;
+            if (val.Type == DEBUG_VALUE_INT64)
+                OutfDml("  <col fg=\"emphfg\">%s</col>=<link cmd=\"dq %s\">0x%I64x</link>\n",
+                        names[i], names[i], val.I64);
+            else if (val.Type == DEBUG_VALUE_INT32)
+                OutfDml("  <col fg=\"emphfg\">%s</col>=0x%x\n", names[i], val.I32);
+        }
+        Out("\n");
+    }
+    // Always also run classic r for full context.
     return Exec("r");
 }
 
@@ -239,12 +283,14 @@ extern "C" HRESULT CALLBACK rf_control(PDEBUG_CLIENT /*client*/, PCSTR args)
     char ctrlReg[64] = {0}, ctrlOff[32] = {0};
     ExtractJsonString(json, "controlledRegister", ctrlReg, sizeof(ctrlReg));
     ExtractJsonNumber(json, "controlledOffset", ctrlOff, sizeof(ctrlOff));
-    Out("=== CONTROL HINT ===\n");
+    OutDml("<b>=== CONTROL HINT ===</b>\n");
     if (!ctrlOff[0] && !ctrlReg[0])
         Out("(no controlledOffset in walk — run pattern/offset on host)\n");
     else
-        Outf("CONTROL @ %s (%s)\n", ctrlOff[0] ? ctrlOff : "?", ctrlReg[0] ? ctrlReg : "IP");
+        OutfDml("CONTROL <col fg=\"emphfg\">%s</col> @ offset <b>%s</b>\n",
+                ctrlReg[0] ? ctrlReg : "IP", ctrlOff[0] ? ctrlOff : "?");
     Out("Host: randall pattern offset · randall exploitdev · randall exploit guide\n");
+    OutDml("Next: <link cmd=\"!rf.walk\">!rf.walk</link> · <link cmd=\"!rf.rop\">!rf.rop</link>\n");
     return S_OK;
 }
 
@@ -381,11 +427,14 @@ extern "C" HRESULT CALLBACK DebugExtensionInitialize(PULONG version, PULONG flag
         return E_FAIL;
     if (FAILED(g_Client->QueryInterface(__uuidof(IDebugControl), (void**)&g_Control)))
         return E_FAIL;
+    // Optional — dump-native register parse for !rf.regs
+    g_Client->QueryInterface(__uuidof(IDebugRegisters), (void**)&g_Registers);
     return S_OK;
 }
 
 extern "C" void CALLBACK DebugExtensionUninitialize()
 {
+    if (g_Registers) { g_Registers->Release(); g_Registers = nullptr; }
     if (g_Control) { g_Control->Release(); g_Control = nullptr; }
     if (g_Client) { g_Client->Release(); g_Client = nullptr; }
 }

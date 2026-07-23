@@ -108,6 +108,11 @@ public static class RandfuzzDbgWalk
         if (controlledOff is { } offSum)
             summary += $" · CONTROL@ {offSum}";
 
+        // Ranked existing module paths for multi-module ROP harvest.
+        var candidates = RopStudio.ResolveCrashModules(detail, repoRoot, maxModules: 6)
+            .Select(p => p.Replace('\\', '/'))
+            .ToList();
+
         var report = new WindbgWalkReportDto(
             crashId,
             dump?.Replace('\\', '/'),
@@ -121,7 +126,8 @@ public static class RandfuzzDbgWalk
             walkPath.Replace('\\', '/'),
             ropPath?.Replace('\\', '/'),
             badPath?.Replace('\\', '/'),
-            ExceptionHint: detail.Analysis?.ExceptionHint ?? detail.Summary.ExceptionHint);
+            ExceptionHint: detail.Analysis?.ExceptionHint ?? detail.Summary.ExceptionHint,
+            ModuleCandidates: candidates);
 
         try
         {

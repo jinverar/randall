@@ -195,6 +195,48 @@ public class RopStudioTests
     }
 
     [Fact]
+    public void PeExportNearest_PicksClosestLowerRva()
+    {
+        var exports = new List<PeExportTable.Export>
+        {
+            new(0x1000, "Foo"),
+            new(0x2000, "Bar"),
+            new(0x3000, "Baz"),
+        };
+        Assert.Equal("Foo", PeExportTable.Nearest(exports, 0x1008));
+        Assert.Equal("Bar", PeExportTable.Nearest(exports, 0x2100));
+        Assert.Null(PeExportTable.Nearest(exports, 0x0800));
+    }
+
+    [Fact]
+    public void ResolveCrashModules_RanksOverrideFirst()
+    {
+        var pe = BuildMinimalPe32([0xC3, 0x58, 0xC3]);
+        var dir = Path.Combine(Path.GetTempPath(), $"randall_rop_mods_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var a = Path.Combine(dir, "target.dll");
+        var b = Path.Combine(dir, "other.dll");
+        try
+        {
+            File.WriteAllBytes(a, pe);
+            File.WriteAllBytes(b, pe);
+            var detail = new CrashDetailDto(
+                new CrashSummaryDto(
+                    Guid.NewGuid(), "proj", 1, "mut", "hash", a, null, null, null, null, null,
+                    DateTimeOffset.UtcNow),
+                0, "", "", null, null, null);
+            // Use reflection-free path: public ResolveCrashModules with override
+            var mods = RopStudio.ResolveCrashModules(detail, dir, exeOverride: b, maxModules: 2);
+            Assert.NotEmpty(mods);
+            Assert.Equal(Path.GetFullPath(b), mods[0]);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public void ExploitGuide_MentionsRopStudio()
     {
         var exe = FirstExisting("/bin/true", "/usr/bin/true", "/bin/ls", "/usr/bin/ls");
@@ -229,8 +271,7 @@ public class RopStudioTests
         BitConverter.GetBytes((ushort)0x10B).CopyTo(file, opt); // PE32
         BitConverter.GetBytes((uint)0x00001000).CopyTo(file, opt + 16); // SectionAlignment
         BitConverter.GetBytes((uint)0x00000200).CopyTo(file, opt + 20); // FileAlignment
-        BitConverter.GetBytes((ushort)0x04).CopyTo(file, opt + 40); // Subsystem Windows GUI? use CUI=3
-        BitConverter.GetBytes((ushort)3).CopyTo(file, opt + 40);
+        BitConverter.GetBytes((ushort)3).CopyTo(file, opt + 40); // Subsystem CUI
         BitConverter.GetBytes((uint)0x00400000).CopyTo(file, opt + 28); // ImageBase
         BitConverter.GetBytes((uint)0x2000).CopyTo(file, opt + 56); // SizeOfImage
         BitConverter.GetBytes((uint)0x200).CopyTo(file, opt + 60); // SizeOfHeaders

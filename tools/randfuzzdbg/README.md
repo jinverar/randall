@@ -42,8 +42,8 @@ cmake --build build --config Release
 | `!rf.help` | Catalog |
 | `!rf.walk` | Registers / stack / PEB / modules / exception |
 | `!rf.crash [walk.json]` | Linked walk JSON / crash guid (sets path for later cmds) |
-| `!rf.regs` | Fault context (`r`) |
-| `!rf.control` | CONTROL offset hint from walk file |
+| `!rf.regs` | Dump-native registers (IDebugRegisters) + classic `r` |
+| `!rf.control` | CONTROL offset (DML) from walk file |
 | `!rf.stack` | Stack walk (`k`) |
 | `!rf.modules` | Module list (`lm`) |
 | `!rf.rop [rop.json]` | Top gadgets from sibling `*_rop.json` |
