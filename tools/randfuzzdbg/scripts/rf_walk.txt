@@ -1,0 +1,21 @@
+$$ RandfuzzDbg walk — open a Randfuzz minidump first
+$$   randall debug open -i <crash-guid> --kind windbg-preview
+$$   randall windbg walk -i <crash-guid>
+$$   Then: !rf.crash <guid>_windbg_walk.json   (if rf.dll loaded)
+$$
+.echo === RANDFUZZDBG WALK BEGIN ===
+.echo --- CONTROL hint (from host walk JSON / exploit guide) ---
+.echo $$ See walk JSON controlledOffset / !rf.control
+.echo --- registers ---
+r
+.echo --- stack ---
+k
+.echo --- PEB ---
+!peb
+.echo --- modules ---
+lm
+.echo --- exception ---
+.exr -1
+.echo === RANDFUZZDBG WALK END ===
+.echo Next: !rf.rop · !rf.badchars · randall rop from-crash -i <guid> --goal pivot
+.echo Docs: docs/WINDBG_FUZZ_PKG.md

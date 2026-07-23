@@ -1,4 +1,5 @@
 using Randall.Contracts;
+using Randall.Infrastructure.Rop;
 
 namespace Randall.Infrastructure;
 
@@ -135,6 +136,129 @@ public static class CrashStalker
             exportDir);
 
         GhidraExporter.WriteArtifacts(exportDir, bundle, edges, baselineEdges, goToRva, divergeEdge);
+
+        // ROP Studio / RandfuzzDbg sidecars (lab exploit-dev walks — no payloads).
+        var crashesDir = Path.Combine(repoRoot, "data", "crashes", detail.Summary.Project);
+        string? ropCopy = null;
+        string? walkCopy = null;
+        string? badCopy = null;
+        string? gdbCopy = null;
+        string? screamCopy = null;
+        string? stackCopy = null;
+
+        try
+        {
+            var learned = RopBadCharLearner.LearnFromCrash(crashId, repoRoot);
+            if (learned.OutputPath is not null && File.Exists(learned.OutputPath))
+            {
+                badCopy = Path.Combine(exportDir, "badchars.json");
+                File.Copy(learned.OutputPath, badCopy, overwrite: true);
+            }
+        }
+        catch { /* optional */ }
+
+        try
+        {
+            var lens = StackLens.AnalyzeCrash(crashId, repoRoot: repoRoot);
+            if (lens.OutputPath is not null && File.Exists(lens.OutputPath))
+            {
+                stackCopy = Path.Combine(exportDir, "stack_lens.json");
+                File.Copy(lens.OutputPath, stackCopy, overwrite: true);
+            }
+        }
+        catch { /* optional */ }
+
+        try
+        {
+            var walk = ScreamWalk.Run(crashId, "auto", repoRoot: repoRoot);
+            if (walk.PlaybookPath is not null && File.Exists(walk.PlaybookPath))
+            {
+                screamCopy = Path.Combine(exportDir, "scream_walk.json");
+                File.Copy(walk.PlaybookPath, screamCopy, overwrite: true);
+            }
+            if (walk.StackLensPath is not null && File.Exists(walk.StackLensPath) && stackCopy is null)
+            {
+                stackCopy = Path.Combine(exportDir, "stack_lens.json");
+                File.Copy(walk.StackLensPath, stackCopy, overwrite: true);
+            }
+            if (walk.RopPath is not null && File.Exists(walk.RopPath))
+            {
+                ropCopy = Path.Combine(exportDir, "rop_sketch.json");
+                File.Copy(walk.RopPath, ropCopy, overwrite: true);
+            }
+            if (walk.WalkPath is not null && File.Exists(walk.WalkPath))
+            {
+                walkCopy = Path.Combine(exportDir, "windbg_walk.json");
+                File.Copy(walk.WalkPath, walkCopy, overwrite: true);
+            }
+            if (walk.GdbWalkPath is not null && File.Exists(walk.GdbWalkPath))
+            {
+                gdbCopy = Path.Combine(exportDir, "gdb_walk.json");
+                File.Copy(walk.GdbWalkPath, gdbCopy, overwrite: true);
+            }
+            if (walk.BadCharsPath is not null && File.Exists(walk.BadCharsPath))
+            {
+                badCopy = Path.Combine(exportDir, "badchars.json");
+                File.Copy(walk.BadCharsPath, badCopy, overwrite: true);
+            }
+        }
+        catch { /* optional */ }
+
+        if (ropCopy is null)
+        {
+            try
+            {
+                var sketch = RopStudio.FromCrash(crashId, "auto", repoRoot: repoRoot);
+                if (sketch.OutputPath is not null && File.Exists(sketch.OutputPath))
+                {
+                    ropCopy = Path.Combine(exportDir, "rop_sketch.json");
+                    File.Copy(sketch.OutputPath, ropCopy, overwrite: true);
+                }
+            }
+            catch { /* optional */ }
+        }
+
+        if (walkCopy is null)
+        {
+            try
+            {
+                var w = RandfuzzDbgWalk.BuildForCrash(crashId, repoRoot);
+                if (w.WalkPath is not null && File.Exists(w.WalkPath))
+                {
+                    walkCopy = Path.Combine(exportDir, "windbg_walk.json");
+                    File.Copy(w.WalkPath, walkCopy, overwrite: true);
+                }
+            }
+            catch { /* optional */ }
+        }
+
+        if (gdbCopy is null)
+        {
+            try
+            {
+                var g = RandfuzzGdbWalk.BuildForCrash(crashId, repoRoot);
+                if (g.WalkPath is not null && File.Exists(g.WalkPath))
+                {
+                    gdbCopy = Path.Combine(exportDir, "gdb_walk.json");
+                    File.Copy(g.WalkPath, gdbCopy, overwrite: true);
+                }
+            }
+            catch { /* optional */ }
+        }
+
+        var readmeExtra = $"""
+
+            Scream Walk / Stack Lens / ROP Studio / RandfuzzDbg+Gdb
+            Playbook: {(screamCopy is null ? "(none)" : "scream_walk.json")} (randall scream walk -i {crashId:N})
+            Stack Lens: {(stackCopy is null ? "(none)" : "stack_lens.json")} (randall stack lens -i {crashId:N})
+            ROP sketch: {(ropCopy is null ? "(none)" : "rop_sketch.json")}
+            WinDbg walk: {(walkCopy is null ? "(none)" : "windbg_walk.json")}
+            GDB walk: {(gdbCopy is null ? "(none)" : "gdb_walk.json")}
+            Badchars: {(badCopy is null ? "(none)" : "badchars.json")}
+            Docs: docs/WINDBG_FUZZ_PKG.md · docs/MITIGATION_LAB.md
+            """;
+        File.AppendAllText(Path.Combine(exportDir, "README.txt"), readmeExtra);
+
         return bundle with { FirstDivergeIndex = divergeIndex };
     }
 

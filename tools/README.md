@@ -233,3 +233,12 @@ dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml --pla
 Web UI **Dashboard** should show **DynamoRIO: Ready** (not Missing).
 
 See also [README.md](../README.md#optional--dynamorio-coverage-guided-stalking), [docs/INSTALL_LINUX.md](../docs/INSTALL_LINUX.md), and [docs/FUZZING.md](../docs/FUZZING.md).
+
+## RandfuzzDbg (WinDbg Preview)
+
+Fuzz-dump walk scripts + extension stub for exploit-dev lab analysis (no payloads):
+
+- [randfuzzdbg/README.md](randfuzzdbg/README.md) — WinDbg Preview extension + scripts
+- [randfuzzgdb/README.md](randfuzzgdb/README.md) — Linux GDB/GEF walk twin
+- Docs: [WINDBG_FUZZ_PKG.md](../docs/WINDBG_FUZZ_PKG.md)
+- Host CLI: `randall scream walk` · `randall stack lens` · `randall rop …` · `randall windbg|gdb walk|scripts` · `randall ladder diff`
