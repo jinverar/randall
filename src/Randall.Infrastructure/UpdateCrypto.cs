@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Randall.Infrastructure;
@@ -9,10 +8,14 @@ namespace Randall.Infrastructure;
 /// ECDSA P-256 (SHA-256) verification for update manifests.
 /// Public key is embedded; override with env <c>RANDALL_UPDATE_PUBKEY_PEM</c> for lab/testing.
 /// </summary>
-public static class UpdateCrypto
+public static partial class UpdateCrypto
 {
     public const string PubKeyEnv = "RANDALL_UPDATE_PUBKEY_PEM";
     public const string SignKeyEnv = "RANDALL_UPDATE_SIGNING_KEY_PEM";
+
+    public const int MaxManifestBytes = 256 * 1024;
+    public const int MaxSignatureBytes = 8 * 1024;
+    public const long MaxAssetBytes = 512L * 1024 * 1024; // 512 MiB
 
     /// <summary>Official Randfuzz update-manifest verify key (SPKI PEM).</summary>
     public const string EmbeddedPublicKeyPem =
@@ -23,13 +26,6 @@ public static class UpdateCrypto
         -----END PUBLIC KEY-----
         """;
 
-    private static readonly JsonSerializerOptions CanonicalJson = new()
-    {
-        WriteIndented = false,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-    };
-
     public static string ResolvePublicKeyPem()
     {
         var env = Environment.GetEnvironmentVariable(PubKeyEnv);
@@ -38,7 +34,6 @@ public static class UpdateCrypto
             var t = env.Trim();
             if (t.Contains("BEGIN", StringComparison.Ordinal))
                 return NormalizePem(t);
-            // Allow base64 SPKI without PEM headers.
             return NormalizePem(
                 "-----BEGIN PUBLIC KEY-----\n" + t + "\n-----END PUBLIC KEY-----");
         }
@@ -50,9 +45,13 @@ public static class UpdateCrypto
     {
         try
         {
+            var sig = DecodeSignature(signature);
+            if (sig.Length is < 64 or > 256)
+                return false;
+
             using var ecdsa = LoadPublicKey(ResolvePublicKeyPem());
             var data = Encoding.UTF8.GetBytes(NormalizeManifestBytes(manifestJson));
-            return ecdsa.VerifyData(data, signature, HashAlgorithmName.SHA256);
+            return ecdsa.VerifyData(data, sig, HashAlgorithmName.SHA256);
         }
         catch
         {
@@ -67,9 +66,40 @@ public static class UpdateCrypto
         return ecdsa.SignData(data, HashAlgorithmName.SHA256);
     }
 
+    /// <summary>Accept raw DER/IEEE-P1363 signatures or base64 / base64url text.</summary>
+    public static byte[] DecodeSignature(byte[] raw)
+    {
+        if (raw.Length == 0)
+            return raw;
+
+        // Already binary DER / P1363-looking
+        if (raw[0] == 0x30 || raw.Length is 64 or 96)
+            return raw;
+
+        // Try UTF-8 base64 / base64url
+        try
+        {
+            var text = Encoding.UTF8.GetString(raw).Trim();
+            if (text.Length == 0)
+                return raw;
+            text = text.Replace('-', '+').Replace('_', '/');
+            switch (text.Length % 4)
+            {
+                case 2: text += "=="; break;
+                case 3: text += "="; break;
+            }
+            return Convert.FromBase64String(text);
+        }
+        catch
+        {
+            return raw;
+        }
+    }
+
     public static string Sha256Hex(Stream stream)
     {
-        stream.Position = 0;
+        if (stream.CanSeek)
+            stream.Position = 0;
         var hash = SHA256.HashData(stream);
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
@@ -79,11 +109,61 @@ public static class UpdateCrypto
 
     public static bool FixedHexEquals(string? a, string? b)
     {
-        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b))
+        if (!IsSha256Hex(a) || !IsSha256Hex(b))
             return false;
-        var aa = Convert.FromHexString(a.Trim());
-        var bb = Convert.FromHexString(b.Trim());
+        var aa = Convert.FromHexString(a!.Trim());
+        var bb = Convert.FromHexString(b!.Trim());
         return CryptographicOperations.FixedTimeEquals(aa, bb);
+    }
+
+    public static bool IsSha256Hex(string? value) =>
+        !string.IsNullOrWhiteSpace(value) && Sha256HexRegex().IsMatch(value.Trim());
+
+    /// <summary>Basename only — no separators, no traversal.</summary>
+    public static bool IsSafeAssetFileName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+        var n = name.Trim();
+        if (n.Length is < 1 or > 180)
+            return false;
+        if (n is "." or ".." || n.Contains('/') || n.Contains('\\') || n.Contains(':'))
+            return false;
+        return AssetNameRegex().IsMatch(n);
+    }
+
+    public static bool IsSafeVersion(string? version)
+    {
+        if (string.IsNullOrWhiteSpace(version))
+            return false;
+        var v = version.Trim().TrimStart('v', 'V');
+        return SafeVersionRegex().IsMatch(v);
+    }
+
+    public static bool IsAllowedNotesUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return false;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
+            return false;
+        if (uri.Scheme != Uri.UriSchemeHttps)
+            return false;
+        var host = uri.Host.ToLowerInvariant();
+        return host is "github.com" or "www.github.com";
+    }
+
+    public static bool IsAllowedDiscordWebhook(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return false;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
+            return false;
+        if (uri.Scheme != Uri.UriSchemeHttps)
+            return false;
+        var host = uri.Host.ToLowerInvariant();
+        return host is "discord.com" or "discordapp.com"
+               || host.EndsWith(".discord.com", StringComparison.Ordinal)
+               || host.EndsWith(".discordapp.com", StringComparison.Ordinal);
     }
 
     /// <summary>Strip BOM / normalize newlines so signed bytes are stable.</summary>
@@ -114,6 +194,15 @@ public static class UpdateCrypto
         ecdsa.ImportFromPem(pem);
         return ecdsa;
     }
+
+    [GeneratedRegex(@"^[0-9a-fA-F]{64}$")]
+    private static partial Regex Sha256HexRegex();
+
+    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._+-]*\.(zip|json)$")]
+    private static partial Regex AssetNameRegex();
+
+    [GeneratedRegex(@"^\d+\.\d+(\.\d+)?([.-][A-Za-z0-9.-]+)?$")]
+    private static partial Regex SafeVersionRegex();
 }
 
 /// <summary>Parse / compare SemVer-ish product versions (suffixes ignored for ordering).</summary>
@@ -155,18 +244,17 @@ public static partial class UpdateVersion
 
     /// <summary>
     /// Major notification: SemVer major bump, or releaser severity=major.
-    /// On 0.x, a minor bump with severity=major also counts (common pre-1.0 practice).
     /// </summary>
     public static bool IsMajorUpdate(string? current, string? latest, string? severity)
     {
+        if (!IsNewer(latest, current))
+            return false;
         if (string.Equals(severity, "major", StringComparison.OrdinalIgnoreCase))
-            return IsNewer(latest, current);
+            return true;
 
         var c = Parse(current);
         var l = Parse(latest);
-        if (l.Major > c.Major)
-            return true;
-        return false;
+        return l.Major > c.Major;
     }
 
     [GeneratedRegex(@"^(\d+)\.(\d+)(?:\.(\d+))?$")]

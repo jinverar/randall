@@ -591,6 +591,15 @@ async function loadHealth() {
 
 let updateBannerState = null;
 
+function isSafeNotesUrl(url) {
+  try {
+    const u = new URL(String(url || ''));
+    return u.protocol === 'https:' && (u.hostname === 'github.com' || u.hostname === 'www.github.com');
+  } catch {
+    return false;
+  }
+}
+
 function renderUpdateBanner(st) {
   const ban = document.getElementById('update-banner');
   const text = document.getElementById('update-banner-text');
@@ -604,10 +613,11 @@ function renderUpdateBanner(st) {
   text.textContent = st.message
     || `Major update available: ${st.currentVersion} → ${st.lastCheckedVersion}`;
   if (notes) {
-    if (st.notesUrl) {
+    if (st.notesUrl && isSafeNotesUrl(st.notesUrl)) {
       notes.href = st.notesUrl;
       notes.classList.remove('hidden');
     } else {
+      notes.removeAttribute('href');
       notes.classList.add('hidden');
     }
   }
@@ -617,9 +627,8 @@ function renderUpdateBanner(st) {
 async function refreshUpdateBanner(doCheck) {
   try {
     const st = doCheck
-      ? await api.post('/api/update/check', {})
+      ? await api.post('/api/update/check?force=1', {})
       : await api.get('/api/update/status');
-    // check returns UpdateCheckResultDto; status returns UpdateStatusDto — normalize
     const normalized = st.currentVersion != null && st.bannerSuppressed !== undefined
       ? st
       : {
@@ -629,11 +638,10 @@ async function refreshUpdateBanner(doCheck) {
           majorUpdate: st.majorUpdate,
           signatureValid: st.signatureValid,
           notesUrl: st.notesUrl,
-          bannerSuppressed: false,
+          bannerSuppressed: !(st.updateAvailable && st.majorUpdate && st.signatureValid),
           message: st.message,
         };
-    if (doCheck && st.updateAvailable != null) {
-      // Re-read status so dismiss/suppress flags apply
+    if (doCheck) {
       const status = await api.get('/api/update/status');
       renderUpdateBanner(status);
       return status;

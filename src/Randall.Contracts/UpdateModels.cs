@@ -38,6 +38,7 @@ public sealed record UpdateCheckResultDto(
     string InstallMode,          // portable | source | unknown
     string? MatchedAssetFile,
     string? MatchedAssetSha256,
+    long? MatchedAssetSize,
     DateTimeOffset CheckedAt,
     IReadOnlyList<string>? Findings = null);
 

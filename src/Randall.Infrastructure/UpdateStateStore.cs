@@ -27,6 +27,8 @@ public static class UpdateStateStore
         public string? DismissedVersion { get; set; }
         public string? MatchedAssetFile { get; set; }
         public string? MatchedAssetSha256 { get; set; }
+        public long? MatchedAssetSize { get; set; }
+        public string? ReleaseTag { get; set; }
         public string? LastMajorNotifiedVersion { get; set; }
     }
 
@@ -56,7 +58,8 @@ public static class UpdateStateStore
     {
         var dismissed = !string.IsNullOrWhiteSpace(s.DismissedVersion)
                         && string.Equals(s.DismissedVersion, s.LastCheckedVersion, StringComparison.OrdinalIgnoreCase);
-        var banner = s.UpdateAvailable && s.MajorUpdate && !dismissed;
+        // Only raise the banner for signature-valid major updates.
+        var banner = s.UpdateAvailable && s.MajorUpdate && s.SignatureValid && !dismissed;
         return new UpdateStatusDto(
             AppVersion.Version,
             installMode,

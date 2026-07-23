@@ -75,7 +75,7 @@ static void PrintHelp()
           randall proxy [--listen N] [--target host:port]
           randall campaign -c campaigns/lab-smoke.yaml
           randall pack -o publish/standalone [--rid win-x64|linux-x64|…]
-          randall update check [--json]     Secure update check (signed GitHub manifest)
+          randall update check [--json] [--force]  Secure update check (signed GitHub manifest)
           randall update apply --yes        Apply verified update when you are ready
           randall update status             Show last check / dismiss banner
           randall update dismiss [version]  Hide major-update banner for a version
@@ -1007,14 +1007,15 @@ static async Task<int> RunUpdateAsync(string[] args)
         Console.WriteLine("""
             Secure updates (signed update-manifest.json + SHA-256 assets)
 
-              randall update check [--json]
+              randall update check [--json] [--force]
               randall update status [--json]
               randall update apply --yes [--json]
               randall update dismiss [version]
               randall update sign-manifest -i update-manifest.json -k private.pem [-o update-manifest.json.sig]
 
-            Major updates notify in the UI and (if RANDALL_DISCORD_WEBHOOK is set) Discord.
-            Apply never runs without --yes. See docs/UPDATES.md.
+            Checks use a signed update-manifest.json (ECDSA P-256) + SHA-256 assets.
+            Results cache for 1 hour unless --force. Apply never runs without --yes.
+            See docs/UPDATES.md.
             """);
         return 0;
     }
@@ -1035,7 +1036,8 @@ static async Task<int> RunUpdateAsync(string[] args)
 static async Task<int> UpdateCheck(string[] args)
 {
     var json = args.Any(a => a is "--json");
-    var result = await UpdateService.CheckAsync();
+    var force = args.Any(a => a is "--force" or "-f");
+    var result = await UpdateService.CheckAsync(force: force);
     if (json)
     {
         Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions
@@ -1052,7 +1054,7 @@ static async Task<int> UpdateCheck(string[] args)
             foreach (var f in result.Findings)
                 Console.WriteLine("  · " + f);
         }
-        if (result.UpdateAvailable)
+        if (result.UpdateAvailable && result.SignatureValid)
         {
             Console.WriteLine(result.MajorUpdate
                 ? "Major update — apply when ready: randall update apply --yes"
@@ -1060,8 +1062,13 @@ static async Task<int> UpdateCheck(string[] args)
             if (!string.IsNullOrWhiteSpace(result.NotesUrl))
                 Console.WriteLine("Notes: " + result.NotesUrl);
         }
+        else if (!result.SignatureValid && !result.Ok)
+        {
+            Console.WriteLine("Signature/trust checks failed — nothing will be applied.");
+        }
     }
 
+    // Soft "no release yet" stays exit 0; hard trust failures exit 1.
     return result.Ok ? 0 : 1;
 }
 

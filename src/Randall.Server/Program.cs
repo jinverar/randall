@@ -73,11 +73,13 @@ app.MapGet("/api/health", () =>
     new HealthDto(AppVersion.ProductName, AppVersion.Version, AppVersion.Status, LabAccess.IsConfigured));
 
 app.MapGet("/api/update/status", () => Results.Ok(UpdateService.Status()));
-app.MapPost("/api/update/check", async (CancellationToken ct) =>
+app.MapPost("/api/update/check", async (HttpRequest http, CancellationToken ct) =>
 {
     try
     {
-        var r = await UpdateService.CheckAsync(ct: ct);
+        var force = http.Query.TryGetValue("force", out var fq)
+                    && (fq.ToString() is "1" or "true" or "yes");
+        var r = await UpdateService.CheckAsync(force: force, ct: ct);
         return Results.Ok(r);
     }
     catch (Exception ex)

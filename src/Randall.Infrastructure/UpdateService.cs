@@ -12,7 +12,7 @@ namespace Randall.Infrastructure;
 /// <summary>
 /// Secure update check + opt-in apply.
 /// Portable packs require a signed <c>update-manifest.json</c> + matching asset SHA-256.
-/// Source checkouts can fast-forward to the release tag after the same signature check.
+/// Source checkouts fast-forward to the release tag only after signature check + origin pin.
 /// </summary>
 public static class UpdateService
 {
@@ -22,6 +22,7 @@ public static class UpdateService
     public const string ManifestSigName = "update-manifest.json.sig";
     public const string OwnerRepoEnv = "RANDALL_UPDATE_REPO"; // owner/repo
     public const string ManifestUrlEnv = "RANDALL_UPDATE_MANIFEST_URL";
+    public static readonly TimeSpan DefaultCacheTtl = TimeSpan.FromHours(1);
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -45,12 +46,9 @@ public static class UpdateService
             || File.Exists(Path.Combine(root, "src", "Randall.Cli", "Randall.Cli.csproj")))
             return InstallMode.Source;
 
-        var cliDir = Path.Combine(root, "cli");
-        var serverDir = Path.Combine(root, "server");
-        if (Directory.Exists(cliDir) && Directory.Exists(serverDir))
+        if (Directory.Exists(Path.Combine(root, "cli")) && Directory.Exists(Path.Combine(root, "server")))
             return InstallMode.Portable;
 
-        // Running from packed cli/ — install root is parent.
         var parent = Directory.GetParent(root)?.FullName;
         if (parent is not null
             && Directory.Exists(Path.Combine(parent, "cli"))
@@ -92,12 +90,20 @@ public static class UpdateService
     public static async Task<UpdateCheckResultDto> CheckAsync(
         string? installRoot = null,
         HttpMessageHandler? handler = null,
+        bool force = false,
         CancellationToken ct = default)
     {
         var root = ResolveInstallRoot(installRoot);
         var mode = DetectInstallMode(root);
         var findings = new List<string>();
         var checkedAt = DateTimeOffset.UtcNow;
+
+        if (!force)
+        {
+            var cached = TryCachedCheck(root, mode, findings);
+            if (cached is not null)
+                return cached;
+        }
 
         try
         {
@@ -110,39 +116,38 @@ public static class UpdateService
                     findings.Count > 0
                         ? string.Join(" ", findings)
                         : "No signed update manifest published yet.",
-                    AppVersion.Version, null, false, false, false, notesUrlHint, null, null,
-                    mode.ToString().ToLowerInvariant(), null, null, checkedAt, findings);
+                    AppVersion.Version, null, false, false, false, SanitizeNotesUrl(notesUrlHint), null, null,
+                    mode.ToString().ToLowerInvariant(), null, null, null, checkedAt, findings);
                 PersistCheck(root, fail);
                 return fail;
+            }
+
+            if (Encoding.UTF8.GetByteCount(manifestJson) > UpdateCrypto.MaxManifestBytes)
+            {
+                findings.Add("Manifest exceeds size limit — refusing.");
+                return FailClosed(root, mode, checkedAt, findings, "Update manifest too large.", notesUrlHint);
+            }
+
+            if (signature.Length > UpdateCrypto.MaxSignatureBytes)
+            {
+                findings.Add("Signature exceeds size limit — refusing.");
+                return FailClosed(root, mode, checkedAt, findings, "Update signature too large.", notesUrlHint);
             }
 
             var sigOk = UpdateCrypto.VerifyManifest(manifestJson, signature);
             if (!sigOk)
             {
                 findings.Add("Manifest signature verification failed — refusing to trust this release.");
-                var fail = new UpdateCheckResultDto(
-                    false, "Update manifest signature invalid.", AppVersion.Version, null,
-                    false, false, false, notesUrlHint, null, null,
-                    mode.ToString().ToLowerInvariant(), null, null, checkedAt, findings);
-                PersistCheck(root, fail);
-                return fail;
+                return FailClosed(root, mode, checkedAt, findings, "Update manifest signature invalid.", notesUrlHint);
             }
 
             findings.Add("Manifest signature OK (ECDSA P-256).");
             var manifest = JsonSerializer.Deserialize<UpdateManifestDto>(manifestJson, JsonOpts)
                            ?? throw new InvalidOperationException("Manifest JSON deserialize failed.");
 
-            if (!string.Equals(manifest.Product, "randfuzz", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(manifest.Product, "randall", StringComparison.OrdinalIgnoreCase))
-            {
-                findings.Add($"Unexpected product id '{manifest.Product}'.");
-                var fail = new UpdateCheckResultDto(
-                    false, "Manifest product mismatch.", AppVersion.Version, manifest.Version,
-                    false, false, true, manifest.NotesUrl ?? notesUrlHint, manifest.Channel, manifest.Severity,
-                    mode.ToString().ToLowerInvariant(), null, null, checkedAt, findings);
-                PersistCheck(root, fail);
-                return fail;
-            }
+            var validationError = ValidateManifest(manifest, findings);
+            if (validationError is not null)
+                return FailClosed(root, mode, checkedAt, findings, validationError, manifest.NotesUrl ?? notesUrlHint);
 
             var available = UpdateVersion.IsNewer(manifest.Version, AppVersion.Version);
             var major = available && UpdateVersion.IsMajorUpdate(AppVersion.Version, manifest.Version, manifest.Severity);
@@ -151,6 +156,10 @@ public static class UpdateService
             if (available && asset is null)
                 findings.Add($"No asset for RID '{rid}' in signed manifest.");
 
+            if (asset is not null && !ValidateAsset(asset, findings))
+                asset = null;
+
+            var notes = SanitizeNotesUrl(manifest.NotesUrl) ?? SanitizeNotesUrl(notesUrlHint);
             var msg = !available
                 ? $"Up to date ({AppVersion.Version})."
                 : major
@@ -159,23 +168,19 @@ public static class UpdateService
 
             var result = new UpdateCheckResultDto(
                 true, msg, AppVersion.Version, manifest.Version, available, major, true,
-                manifest.NotesUrl ?? notesUrlHint, manifest.Channel, manifest.Severity,
+                notes, manifest.Channel, manifest.Severity,
                 mode.ToString().ToLowerInvariant(),
-                asset?.File, asset?.Sha256, checkedAt, findings);
+                asset?.File, asset?.Sha256, asset?.Size > 0 ? asset.Size : null,
+                checkedAt, findings);
 
-            PersistCheck(root, result);
+            PersistCheck(root, result, manifest.ReleaseTag);
             MaybeNotifyMajor(root, result);
             return result;
         }
         catch (Exception ex)
         {
             findings.Add(ex.Message);
-            var fail = new UpdateCheckResultDto(
-                false, $"Update check failed: {ex.Message}", AppVersion.Version, null,
-                false, false, false, null, null, null,
-                mode.ToString().ToLowerInvariant(), null, null, checkedAt, findings);
-            PersistCheck(root, fail);
-            return fail;
+            return FailClosed(root, mode, checkedAt, findings, $"Update check failed: {ex.Message}", null);
         }
     }
 
@@ -194,7 +199,11 @@ public static class UpdateService
                 "Refusing to apply without confirmation. Re-run with --yes (CLI) or confirm=true (API).",
                 Steps: steps);
 
-        var check = await CheckAsync(root, handler, ct);
+        using var applyLock = TryAcquireApplyLock(root, out var lockError);
+        if (applyLock is null)
+            return new UpdateApplyResultDto(false, lockError ?? "Another update apply is already running.", Steps: steps);
+
+        var check = await CheckAsync(root, handler, force: true, ct);
         if (!check.Ok || !check.UpdateAvailable)
             return new UpdateApplyResultDto(false, check.Message, Steps: check.Findings?.ToList() ?? steps);
 
@@ -203,8 +212,8 @@ public static class UpdateService
                 "Cannot apply: update manifest signature was not verified.",
                 Steps: check.Findings?.ToList() ?? steps);
 
-        if (check.MajorUpdate && !confirm)
-            return new UpdateApplyResultDto(false, "Major update requires explicit confirmation.", Steps: steps);
+        if (string.IsNullOrWhiteSpace(check.LatestVersion) || !UpdateCrypto.IsSafeVersion(check.LatestVersion))
+            return new UpdateApplyResultDto(false, "Cannot apply: release version failed validation.", Steps: steps);
 
         steps.AddRange(check.Findings ?? []);
 
@@ -222,9 +231,10 @@ public static class UpdateService
     {
         var root = ResolveInstallRoot(installRoot);
         var state = UpdateStateStore.Load(root);
-        state.DismissedVersion = string.IsNullOrWhiteSpace(version)
-            ? state.LastCheckedVersion
-            : version.Trim();
+        var target = string.IsNullOrWhiteSpace(version) ? state.LastCheckedVersion : version.Trim();
+        if (!string.IsNullOrWhiteSpace(target) && !UpdateCrypto.IsSafeVersion(target))
+            return Status(root);
+        state.DismissedVersion = target;
         UpdateStateStore.Save(state, root);
         return Status(root);
     }
@@ -232,23 +242,173 @@ public static class UpdateService
     public static string BuildManifestJson(UpdateManifestDto manifest) =>
         UpdateCrypto.NormalizeManifestBytes(JsonSerializer.Serialize(manifest, JsonOpts));
 
-    public static (string ManifestJson, byte[] Signature) SignManifestFile(string manifestJson, string privateKeyPem) =>
-        (UpdateCrypto.NormalizeManifestBytes(manifestJson), UpdateCrypto.SignManifest(manifestJson, privateKeyPem));
+    public static (string ManifestJson, byte[] Signature) SignManifestFile(string manifestJson, string privateKeyPem)
+    {
+        var normalized = UpdateCrypto.NormalizeManifestBytes(manifestJson);
+        return (normalized, UpdateCrypto.SignManifest(normalized, privateKeyPem));
+    }
+
+    public static string CurrentRid()
+    {
+        if (OperatingSystem.IsWindows())
+            return RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
+        if (OperatingSystem.IsMacOS())
+            return RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+        return RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
+    }
 
     // —— internals ——
+
+    private static UpdateCheckResultDto? TryCachedCheck(string root, InstallMode mode, List<string> findings)
+    {
+        var state = UpdateStateStore.Load(root);
+        if (state.LastCheckedAt is null)
+            return null;
+        if (DateTimeOffset.UtcNow - state.LastCheckedAt.Value > DefaultCacheTtl)
+            return null;
+        // Only reuse successful signature-valid results (or clean "no update / no manifest").
+        if (state.UpdateAvailable && !state.SignatureValid)
+            return null;
+
+        findings.Add($"Using cached check from {state.LastCheckedAt:u} (pass --force to refresh).");
+        return new UpdateCheckResultDto(
+            true,
+            state.Message ?? "Cached update status.",
+            AppVersion.Version,
+            state.LastCheckedVersion,
+            state.UpdateAvailable,
+            state.MajorUpdate,
+            state.SignatureValid,
+            SanitizeNotesUrl(state.NotesUrl),
+            state.Channel,
+            state.Severity,
+            mode.ToString().ToLowerInvariant(),
+            state.MatchedAssetFile,
+            state.MatchedAssetSha256,
+            state.MatchedAssetSize,
+            state.LastCheckedAt.Value,
+            findings);
+    }
+
+    private static UpdateCheckResultDto FailClosed(
+        string root,
+        InstallMode mode,
+        DateTimeOffset checkedAt,
+        List<string> findings,
+        string message,
+        string? notesUrl)
+    {
+        var fail = new UpdateCheckResultDto(
+            false, message, AppVersion.Version, null,
+            false, false, false, SanitizeNotesUrl(notesUrl), null, null,
+            mode.ToString().ToLowerInvariant(), null, null, null, checkedAt, findings);
+        PersistCheck(root, fail);
+        return fail;
+    }
+
+    private static string? ValidateManifest(UpdateManifestDto manifest, List<string> findings)
+    {
+        if (manifest.SchemaVersion is < 1 or > 1)
+        {
+            findings.Add($"Unsupported manifest schemaVersion {manifest.SchemaVersion}.");
+            return "Unsupported update manifest schema.";
+        }
+
+        if (!string.Equals(manifest.Product, "randfuzz", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(manifest.Product, "randall", StringComparison.OrdinalIgnoreCase))
+        {
+            findings.Add($"Unexpected product id '{manifest.Product}'.");
+            return "Manifest product mismatch.";
+        }
+
+        if (!UpdateCrypto.IsSafeVersion(manifest.Version))
+        {
+            findings.Add("Manifest version failed format checks.");
+            return "Manifest version invalid.";
+        }
+
+        var channel = (manifest.Channel ?? "stable").Trim().ToLowerInvariant();
+        if (channel is not ("stable" or "beta" or "rc"))
+        {
+            findings.Add($"Refusing channel '{manifest.Channel}'.");
+            return "Manifest channel not allowed.";
+        }
+
+        var severity = (manifest.Severity ?? "minor").Trim().ToLowerInvariant();
+        if (severity is not ("major" or "minor" or "patch"))
+        {
+            findings.Add($"Refusing severity '{manifest.Severity}'.");
+            return "Manifest severity not allowed.";
+        }
+
+        if (!string.IsNullOrWhiteSpace(manifest.NotesUrl) && !UpdateCrypto.IsAllowedNotesUrl(manifest.NotesUrl))
+        {
+            findings.Add("Manifest notesUrl is not an https://github.com/… URL — ignoring link.");
+            manifest.NotesUrl = null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(manifest.ReleaseTag))
+        {
+            var tag = manifest.ReleaseTag.Trim();
+            var expected = manifest.Version.StartsWith('v') ? manifest.Version : "v" + manifest.Version.TrimStart('v', 'V');
+            var alt = expected.StartsWith('v') ? expected[1..] : expected;
+            if (!tag.Equals(expected, StringComparison.OrdinalIgnoreCase)
+                && !tag.Equals(alt, StringComparison.OrdinalIgnoreCase)
+                && !tag.Equals("v" + alt, StringComparison.OrdinalIgnoreCase))
+            {
+                findings.Add($"ReleaseTag '{tag}' does not match version '{manifest.Version}'.");
+                return "Manifest releaseTag mismatch.";
+            }
+        }
+
+        if (manifest.Assets.Count == 0)
+        {
+            findings.Add("Manifest has no assets.");
+            return "Manifest has no assets.";
+        }
+
+        return null;
+    }
+
+    private static bool ValidateAsset(UpdateAssetDto asset, List<string> findings)
+    {
+        if (!UpdateCrypto.IsSafeAssetFileName(asset.File))
+        {
+            findings.Add($"Asset file name rejected: '{asset.File}'.");
+            return false;
+        }
+
+        if (!UpdateCrypto.IsSha256Hex(asset.Sha256))
+        {
+            findings.Add($"Asset SHA-256 rejected for '{asset.File}'.");
+            return false;
+        }
+
+        if (asset.Size < 0 || asset.Size > UpdateCrypto.MaxAssetBytes)
+        {
+            findings.Add($"Asset size out of bounds for '{asset.File}'.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private static string? SanitizeNotesUrl(string? url) =>
+        UpdateCrypto.IsAllowedNotesUrl(url) ? url!.Trim() : null;
 
     private static HttpClient CreateHttp(HttpMessageHandler? handler)
     {
         var http = handler is null
             ? new HttpClient(new HttpClientHandler
             {
-                AllowAutoRedirect = false, // pin redirects ourselves
+                AllowAutoRedirect = false,
                 AutomaticDecompression = DecompressionMethods.All,
             })
             : new HttpClient(handler, disposeHandler: false);
 
-        http.Timeout = TimeSpan.FromSeconds(60);
-        http.DefaultRequestHeaders.UserAgent.ParseAdd($"Randfuzz/{AppVersion.Version} (+https://github.com/{DefaultOwner}/{DefaultRepo})");
+        http.Timeout = TimeSpan.FromSeconds(90);
+        http.DefaultRequestHeaders.UserAgent.ParseAdd(
+            $"Randfuzz/{AppVersion.Version} (+https://github.com/{DefaultOwner}/{DefaultRepo})");
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return http;
     }
@@ -260,11 +420,13 @@ public static class UpdateService
         if (!string.IsNullOrWhiteSpace(direct))
         {
             findings.Add($"Fetching manifest from {ManifestUrlEnv}.");
-            var directJson = await GetTextPinnedAsync(http, direct.Trim(), ct);
+            EnsureAllowedUrl(direct.Trim());
+            var directJson = await GetTextPinnedAsync(http, direct.Trim(), UpdateCrypto.MaxManifestBytes, ct);
             var directSigUrl = direct.Trim().EndsWith(".sig", StringComparison.OrdinalIgnoreCase)
                 ? direct.Trim()
                 : direct.Trim() + ".sig";
-            var directSig = await GetBytesPinnedAsync(http, directSigUrl, ct);
+            EnsureAllowedUrl(directSigUrl);
+            var directSig = await GetBytesPinnedAsync(http, directSigUrl, UpdateCrypto.MaxSignatureBytes, ct);
             return (directJson, directSig, null);
         }
 
@@ -279,8 +441,8 @@ public static class UpdateService
         }
 
         resp.EnsureSuccessStatusCode();
-        await using var stream = await resp.Content.ReadAsStreamAsync(ct);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+        var releaseBody = await ReadCappedStringAsync(resp, UpdateCrypto.MaxManifestBytes, ct);
+        using var doc = JsonDocument.Parse(releaseBody);
         var root = doc.RootElement;
         var tag = root.TryGetProperty("tag_name", out var tagEl) ? tagEl.GetString() : null;
         var htmlUrl = root.TryGetProperty("html_url", out var htmlEl) ? htmlEl.GetString() : null;
@@ -310,8 +472,8 @@ public static class UpdateService
             return (null, null, htmlUrl);
         }
 
-        var json = await GetTextPinnedAsync(http, manifestUrl, ct);
-        var sig = await GetBytesPinnedAsync(http, sigUrl, ct);
+        var json = await GetTextPinnedAsync(http, manifestUrl, UpdateCrypto.MaxManifestBytes, ct);
+        var sig = await GetBytesPinnedAsync(http, sigUrl, UpdateCrypto.MaxSignatureBytes, ct);
         return (json, sig, htmlUrl);
     }
 
@@ -321,16 +483,21 @@ public static class UpdateService
         if (!string.IsNullOrWhiteSpace(env))
         {
             var parts = env.Trim().Split('/', 2, StringSplitOptions.TrimEntries);
-            if (parts.Length == 2 && parts[0].Length > 0 && parts[1].Length > 0)
+            if (parts.Length == 2
+                && IsSafeRepoToken(parts[0])
+                && IsSafeRepoToken(parts[1]))
                 return (parts[0], parts[1]);
         }
 
         return (DefaultOwner, DefaultRepo);
     }
 
+    private static bool IsSafeRepoToken(string value) =>
+        value.Length is >= 1 and <= 100
+        && value.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_' or '.');
+
     private static async Task<HttpResponseMessage> SendPinnedAsync(HttpClient http, string url, CancellationToken ct)
     {
-        // Follow a small number of redirects, but only to allowlisted hosts.
         var current = url;
         for (var hop = 0; hop < 5; hop++)
         {
@@ -353,18 +520,47 @@ public static class UpdateService
         throw new InvalidOperationException("Too many redirects while fetching update assets.");
     }
 
-    private static async Task<string> GetTextPinnedAsync(HttpClient http, string url, CancellationToken ct)
+    private static async Task<string> GetTextPinnedAsync(HttpClient http, string url, int maxBytes, CancellationToken ct)
     {
         using var resp = await SendPinnedAsync(http, url, ct);
         resp.EnsureSuccessStatusCode();
-        return await resp.Content.ReadAsStringAsync(ct);
+        return await ReadCappedStringAsync(resp, maxBytes, ct);
     }
 
-    private static async Task<byte[]> GetBytesPinnedAsync(HttpClient http, string url, CancellationToken ct)
+    private static async Task<byte[]> GetBytesPinnedAsync(HttpClient http, string url, int maxBytes, CancellationToken ct)
     {
         using var resp = await SendPinnedAsync(http, url, ct);
         resp.EnsureSuccessStatusCode();
-        return await resp.Content.ReadAsByteArrayAsync(ct);
+        return await ReadCappedBytesAsync(resp, maxBytes, ct);
+    }
+
+    private static async Task<string> ReadCappedStringAsync(HttpResponseMessage resp, int maxBytes, CancellationToken ct)
+    {
+        var bytes = await ReadCappedBytesAsync(resp, maxBytes, ct);
+        return Encoding.UTF8.GetString(bytes);
+    }
+
+    private static async Task<byte[]> ReadCappedBytesAsync(HttpResponseMessage resp, int maxBytes, CancellationToken ct)
+    {
+        if (resp.Content.Headers.ContentLength is long cl && cl > maxBytes)
+            throw new InvalidOperationException($"Remote content length {cl} exceeds limit {maxBytes}.");
+
+        await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+        using var ms = new MemoryStream();
+        var buffer = new byte[81920];
+        long total = 0;
+        while (true)
+        {
+            var n = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+            if (n <= 0)
+                break;
+            total += n;
+            if (total > maxBytes)
+                throw new InvalidOperationException($"Remote content exceeded size limit ({maxBytes} bytes).");
+            ms.Write(buffer, 0, n);
+        }
+
+        return ms.ToArray();
     }
 
     private static void EnsureAllowedUrl(string url)
@@ -372,6 +568,9 @@ public static class UpdateService
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
             || uri.Scheme != Uri.UriSchemeHttps)
             throw new InvalidOperationException($"Refusing non-HTTPS update URL: {url}");
+
+        if (!string.IsNullOrEmpty(uri.UserInfo))
+            throw new InvalidOperationException("Refusing update URL with embedded credentials.");
 
         var host = uri.Host.ToLowerInvariant();
         var allowed =
@@ -386,19 +585,11 @@ public static class UpdateService
         return manifest.Assets.FirstOrDefault(a =>
                    a.Rid.Equals(rid, StringComparison.OrdinalIgnoreCase))
                ?? manifest.Assets.FirstOrDefault(a =>
-                   a.File.Contains(rid, StringComparison.OrdinalIgnoreCase));
+                   !string.IsNullOrWhiteSpace(a.File)
+                   && a.File.Contains(rid, StringComparison.OrdinalIgnoreCase));
     }
 
-    public static string CurrentRid()
-    {
-        if (OperatingSystem.IsWindows())
-            return RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
-        if (OperatingSystem.IsMacOS())
-            return RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
-        return RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "linux-arm64" : "linux-x64";
-    }
-
-    private static void PersistCheck(string root, UpdateCheckResultDto result)
+    private static void PersistCheck(string root, UpdateCheckResultDto result, string? releaseTag = null)
     {
         var state = UpdateStateStore.Load(root);
         state.LastCheckedAt = result.CheckedAt;
@@ -412,38 +603,35 @@ public static class UpdateService
         state.Message = result.Message;
         state.MatchedAssetFile = result.MatchedAssetFile;
         state.MatchedAssetSha256 = result.MatchedAssetSha256;
+        state.MatchedAssetSize = result.MatchedAssetSize;
+        state.ReleaseTag = releaseTag;
         UpdateStateStore.Save(state, root);
     }
 
     private static void MaybeNotifyMajor(string root, UpdateCheckResultDto result)
     {
-        if (!result.MajorUpdate || string.IsNullOrWhiteSpace(result.LatestVersion))
+        if (!result.MajorUpdate || !result.SignatureValid || string.IsNullOrWhiteSpace(result.LatestVersion))
             return;
 
         var state = UpdateStateStore.Load(root);
         if (string.Equals(state.LastMajorNotifiedVersion, result.LatestVersion, StringComparison.OrdinalIgnoreCase))
             return;
 
-        // Best-effort Discord webhook if configured globally (no project yaml required).
         try
         {
             var webhook = NotificationSettings.ResolveDiscordWebhook(null);
-            if (string.IsNullOrWhiteSpace(webhook))
+            if (!string.IsNullOrWhiteSpace(webhook) && UpdateCrypto.IsAllowedDiscordWebhook(webhook))
             {
-                state.LastMajorNotifiedVersion = result.LatestVersion;
-                UpdateStateStore.Save(state, root);
-                return;
+                var body = new
+                {
+                    content = $"**Randfuzz major update** `{result.CurrentVersion}` → `{result.LatestVersion}`\n" +
+                              $"{result.NotesUrl}\n" +
+                              "Apply when ready: `randall update apply --yes`",
+                };
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+                using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                http.PostAsync(webhook, content).GetAwaiter().GetResult();
             }
-
-            var body = new
-            {
-                content = $"**Randfuzz major update** `{result.CurrentVersion}` → `{result.LatestVersion}`\n" +
-                          $"{result.NotesUrl}\n" +
-                          "Apply when ready: `randall update apply --yes`",
-            };
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-            using var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            http.PostAsync(webhook, content).GetAwaiter().GetResult();
         }
         catch
         {
@@ -458,38 +646,82 @@ public static class UpdateService
     private static async Task<UpdateApplyResultDto> ApplySourceAsync(
         string root, UpdateCheckResultDto check, List<string> steps, CancellationToken ct)
     {
-        var tag = check.LatestVersion!.StartsWith('v') ? check.LatestVersion : "v" + check.LatestVersion;
-        // Prefer exact release tag; fall back to normalized.
+        var remoteCheck = await EnsureTrustedGitOriginAsync(root, steps, ct);
+        if (remoteCheck is not null)
+            return remoteCheck;
+
+        var tag = PreferReleaseTag(root, check.LatestVersion!);
         steps.Add($"Source install: fetching tags and fast-forwarding to {tag}.");
 
-        var fetch = await RunGitAsync(root, ["fetch", "--tags", "--force", "origin"], ct);
-        steps.Add(fetch.Output.Trim());
+        var fetch = await RunGitAsync(root, ["fetch", "--tags", "origin"], ct);
+        steps.Add(TrimOutput(fetch.Output));
         if (fetch.ExitCode != 0)
             return new UpdateApplyResultDto(false, "git fetch failed — update aborted.", check.LatestVersion, Steps: steps);
 
         var merge = await RunGitAsync(root, ["merge", "--ff-only", tag], ct);
         if (merge.ExitCode != 0)
         {
-            // Try without v prefix mismatch
             var alt = tag.StartsWith('v') ? tag[1..] : "v" + tag;
             merge = await RunGitAsync(root, ["merge", "--ff-only", alt], ct);
         }
 
-        steps.Add(merge.Output.Trim());
+        steps.Add(TrimOutput(merge.Output));
         if (merge.ExitCode != 0)
             return new UpdateApplyResultDto(false,
-                $"git merge --ff-only failed (dirty tree or non-ff?). Resolve manually, then retry.\n{merge.Output}",
+                $"git merge --ff-only failed (dirty tree or non-ff?). Resolve manually, then retry.\n{TrimOutput(merge.Output)}",
                 check.LatestVersion, Steps: steps);
 
         steps.Add("Building solution…");
         var build = await RunProcessAsync("dotnet", ["build", Path.Combine(root, "Randall.sln"), "-c", "Release"], root, ct);
-        steps.Add(build.Output.Trim());
+        steps.Add(TrimOutput(build.Output));
         if (build.ExitCode != 0)
             return new UpdateApplyResultDto(false, "dotnet build failed after git update.", check.LatestVersion, Steps: steps);
 
         return new UpdateApplyResultDto(true,
             $"Updated source tree to {check.LatestVersion} and built Release.",
             check.LatestVersion, RestartRequired: true, Steps: steps);
+    }
+
+    private static string PreferReleaseTag(string root, string version)
+    {
+        var state = UpdateStateStore.Load(root);
+        if (!string.IsNullOrWhiteSpace(state.ReleaseTag) && UpdateCrypto.IsSafeVersion(state.ReleaseTag.TrimStart('v', 'V')))
+            return state.ReleaseTag!.StartsWith('v') ? state.ReleaseTag : "v" + state.ReleaseTag;
+        return version.StartsWith('v') ? version : "v" + version;
+    }
+
+    private static async Task<UpdateApplyResultDto?> EnsureTrustedGitOriginAsync(
+        string root, List<string> steps, CancellationToken ct)
+    {
+        var (owner, repo) = ResolveOwnerRepo();
+        var remote = await RunGitAsync(root, ["remote", "get-url", "origin"], ct);
+        if (remote.ExitCode != 0 || string.IsNullOrWhiteSpace(remote.Output))
+            return new UpdateApplyResultDto(false, "Cannot read git remote 'origin' — aborting source update.", Steps: steps);
+
+        var url = remote.Output.Trim();
+        steps.Add($"origin = {url}");
+        if (!IsTrustedGitHubRemote(url, owner, repo))
+            return new UpdateApplyResultDto(false,
+                $"Refusing source update: origin is not https://github.com/{owner}/{repo} (or matching SSH). Got: {url}",
+                Steps: steps);
+        return null;
+    }
+
+    public static bool IsTrustedGitHubRemote(string url, string owner, string repo)
+    {
+        var u = url.Trim();
+        var https = $"https://github.com/{owner}/{repo}";
+        var httpsGit = https + ".git";
+        var ssh = $"git@github.com:{owner}/{repo}";
+        var sshGit = ssh + ".git";
+        var sshAlt = $"ssh://git@github.com/{owner}/{repo}";
+        var sshAltGit = sshAlt + ".git";
+        return u.Equals(https, StringComparison.OrdinalIgnoreCase)
+               || u.Equals(httpsGit, StringComparison.OrdinalIgnoreCase)
+               || u.Equals(ssh, StringComparison.OrdinalIgnoreCase)
+               || u.Equals(sshGit, StringComparison.OrdinalIgnoreCase)
+               || u.Equals(sshAlt, StringComparison.OrdinalIgnoreCase)
+               || u.Equals(sshAltGit, StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<UpdateApplyResultDto> ApplyPortableAsync(
@@ -499,9 +731,10 @@ public static class UpdateService
         HttpMessageHandler? handler,
         CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(check.MatchedAssetFile) || string.IsNullOrWhiteSpace(check.MatchedAssetSha256))
+        if (!UpdateCrypto.IsSafeAssetFileName(check.MatchedAssetFile)
+            || !UpdateCrypto.IsSha256Hex(check.MatchedAssetSha256))
             return new UpdateApplyResultDto(false,
-                "Signed manifest has no asset for this RID — cannot apply portable update.",
+                "Signed manifest has no valid asset for this RID — cannot apply portable update.",
                 check.LatestVersion, Steps: steps);
 
         using var http = CreateHttp(handler);
@@ -509,8 +742,8 @@ public static class UpdateService
         var api = $"https://api.github.com/repos/{owner}/{repo}/releases/latest";
         using var rel = await SendPinnedAsync(http, api, ct);
         rel.EnsureSuccessStatusCode();
-        await using var stream = await rel.Content.ReadAsStreamAsync(ct);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+        var releaseBody = await ReadCappedStringAsync(rel, UpdateCrypto.MaxManifestBytes, ct);
+        using var doc = JsonDocument.Parse(releaseBody);
         string? assetUrl = null;
         foreach (var a in doc.RootElement.GetProperty("assets").EnumerateArray())
         {
@@ -532,15 +765,21 @@ public static class UpdateService
         var zipPath = Path.Combine(updatesDir, check.MatchedAssetFile!);
         steps.Add($"Downloading {check.MatchedAssetFile}…");
 
+        var maxBytes = check.MatchedAssetSize is > 0 and <= UpdateCrypto.MaxAssetBytes
+            ? check.MatchedAssetSize.Value
+            : UpdateCrypto.MaxAssetBytes;
+
         using (var dl = await SendPinnedAsync(http, assetUrl, ct))
         {
             dl.EnsureSuccessStatusCode();
             await using var fs = File.Create(zipPath);
-            await dl.Content.CopyToAsync(fs, ct);
+            await CopyCappedAsync(dl.Content, fs, maxBytes, ct);
         }
 
+        long actualSize;
         await using (var fs = File.OpenRead(zipPath))
         {
+            actualSize = fs.Length;
             var hex = UpdateCrypto.Sha256Hex(fs);
             if (!UpdateCrypto.FixedHexEquals(hex, check.MatchedAssetSha256))
             {
@@ -551,15 +790,32 @@ public static class UpdateService
             }
         }
 
+        if (check.MatchedAssetSize is > 0 && check.MatchedAssetSize != actualSize)
+        {
+            try { File.Delete(zipPath); } catch { /* ignore */ }
+            return new UpdateApplyResultDto(false,
+                $"Size mismatch for {check.MatchedAssetFile} (got {actualSize}, expected {check.MatchedAssetSize}).",
+                check.LatestVersion, Steps: steps);
+        }
+
         steps.Add("SHA-256 verified.");
         var staging = Path.Combine(updatesDir, "staging-" + Sanitize(check.LatestVersion!));
         if (Directory.Exists(staging))
             Directory.Delete(staging, recursive: true);
         Directory.CreateDirectory(staging);
-        ZipFile.ExtractToDirectory(zipPath, staging);
+
+        try
+        {
+            SafeExtractZip(zipPath, staging, steps);
+        }
+        catch (Exception ex)
+        {
+            try { Directory.Delete(staging, true); } catch { /* ignore */ }
+            return new UpdateApplyResultDto(false, $"Zip extract refused: {ex.Message}", check.LatestVersion, Steps: steps);
+        }
+
         steps.Add($"Extracted to {staging}");
 
-        // If the zip contains a single top-level folder, descend into it.
         var payload = staging;
         var top = Directory.GetDirectories(staging);
         var topFiles = Directory.GetFiles(staging);
@@ -571,15 +827,15 @@ public static class UpdateService
                 "Portable zip layout unexpected — need cli/ and server/ after extract.",
                 check.LatestVersion, StagingPath: staging, Steps: steps);
 
-        // Preserve local state: do not overwrite data/ or targets/ from the pack.
-        CopyTreeReplace(Path.Combine(payload, "projects"), Path.Combine(root, "projects"), steps);
+        // Preserve local state: never touch data/, targets/, or projects/local/.
+        CopyTreeReplace(Path.Combine(payload, "projects"), Path.Combine(root, "projects"), steps, skipLocal: true);
         CopyTreeReplace(Path.Combine(payload, "docs"), Path.Combine(root, "docs"), steps, optional: true);
         CopyTreeReplace(Path.Combine(payload, "campaigns"), Path.Combine(root, "campaigns"), steps, optional: true);
         CopyTreeReplace(Path.Combine(payload, "plugins"), Path.Combine(root, "plugins"), steps, optional: true);
 
         var finishScript = WriteFinishScript(root, payload, check.LatestVersion!);
         steps.Add($"Wrote finish script: {finishScript}");
-        steps.Add("Launching finish script (replaces cli/ + server/ after this process exits)…");
+        steps.Add("Launching finish script (replaces cli/ + server/ after a short delay)…");
 
         LaunchFinishScript(finishScript);
         return new UpdateApplyResultDto(true,
@@ -587,7 +843,53 @@ public static class UpdateService
             check.LatestVersion, staging, finishScript, RestartRequired: true, steps);
     }
 
-    private static void CopyTreeReplace(string src, string dest, List<string> steps, bool optional = false)
+    /// <summary>Zip-slip safe extract: every entry must stay under <paramref name="destDir"/>.</summary>
+    public static void SafeExtractZip(string zipPath, string destDir, List<string>? steps = null)
+    {
+        destDir = Path.GetFullPath(destDir);
+        Directory.CreateDirectory(destDir);
+        using var archive = ZipFile.OpenRead(zipPath);
+        long totalUncompressed = 0;
+        const long maxTotalUncompressed = UpdateCrypto.MaxAssetBytes * 2;
+
+        foreach (var entry in archive.Entries)
+        {
+            if (string.IsNullOrEmpty(entry.Name) && (entry.FullName.EndsWith('/') || entry.FullName.EndsWith('\\')))
+                continue; // directory marker
+
+            if (entry.FullName.Contains("..", StringComparison.Ordinal)
+                || Path.IsPathRooted(entry.FullName)
+                || entry.FullName.Contains(':', StringComparison.Ordinal))
+                throw new InvalidOperationException($"Zip entry path rejected: {entry.FullName}");
+
+            totalUncompressed += entry.Length;
+            if (totalUncompressed > maxTotalUncompressed)
+                throw new InvalidOperationException("Zip uncompressed size exceeds limit.");
+
+            var target = Path.GetFullPath(Path.Combine(destDir, entry.FullName));
+            if (!target.StartsWith(destDir + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                && !target.Equals(destDir, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Zip-slip blocked: {entry.FullName}");
+
+            var dir = Path.GetDirectoryName(target);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            if (string.IsNullOrEmpty(entry.Name))
+                continue;
+
+            entry.ExtractToFile(target, overwrite: true);
+        }
+
+        steps?.Add($"Safe-extracted {archive.Entries.Count} zip entries.");
+    }
+
+    private static void CopyTreeReplace(
+        string src,
+        string dest,
+        List<string> steps,
+        bool optional = false,
+        bool skipLocal = false)
     {
         if (!Directory.Exists(src))
         {
@@ -596,37 +898,57 @@ public static class UpdateService
             return;
         }
 
+        dest = Path.GetFullPath(dest);
         Directory.CreateDirectory(dest);
         foreach (var file in Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories))
         {
             var rel = Path.GetRelativePath(src, file);
-            var target = Path.Combine(dest, rel);
+            if (skipLocal && (rel.StartsWith("local" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                              || rel.StartsWith("local/", StringComparison.OrdinalIgnoreCase)
+                              || rel.Equals("local", StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            if (rel.Contains("..", StringComparison.Ordinal))
+                throw new InvalidOperationException($"Refusing path traversal in pack file: {rel}");
+
+            var target = Path.GetFullPath(Path.Combine(dest, rel));
+            if (!target.StartsWith(dest + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                && !target.Equals(dest, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Refusing copy outside destination: {rel}");
+
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target, overwrite: true);
         }
 
-        steps.Add($"Updated {Path.GetFileName(dest)}/");
+        steps.Add($"Updated {Path.GetFileName(dest)}/" + (skipLocal ? " (preserved projects/local)" : ""));
     }
 
     private static string WriteFinishScript(string root, string payload, string version)
     {
         var updatesDir = Path.Combine(root, "data", "updates");
         Directory.CreateDirectory(updatesDir);
-        var cliSrc = Path.Combine(payload, "cli");
-        var serverSrc = Path.Combine(payload, "server");
-        var cliDst = Path.Combine(root, "cli");
-        var serverDst = Path.Combine(root, "server");
+        var safeVersion = Sanitize(version);
+        var cliSrc = Path.GetFullPath(Path.Combine(payload, "cli"));
+        var serverSrc = Path.GetFullPath(Path.Combine(payload, "server"));
+        var cliDst = Path.GetFullPath(Path.Combine(root, "cli"));
+        var serverDst = Path.GetFullPath(Path.Combine(root, "server"));
+
+        // Ensure sources stay under the install tree's updates staging area.
+        var stagingRoot = Path.GetFullPath(updatesDir);
+        if (!cliSrc.StartsWith(stagingRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || !serverSrc.StartsWith(stagingRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidOperationException("Finish script sources must stay under data/updates staging.");
 
         if (OperatingSystem.IsWindows())
         {
             var path = Path.Combine(updatesDir, "finish-update.cmd");
             var body = $"""
                 @echo off
-                rem Randfuzz portable finish-update for {version}
+                rem Randfuzz portable finish-update for {safeVersion}
                 timeout /t 2 /nobreak >nul
-                robocopy "{cliSrc}" "{cliDst}" /MIR /NFL /NDL /NJH /NJS /nc /ns /np >nul
-                robocopy "{serverSrc}" "{serverDst}" /MIR /NFL /NDL /NJH /NJS /nc /ns /np >nul
-                echo Randfuzz update {version} applied.
+                robocopy "{cliSrc}" "{cliDst}" /E /NFL /NDL /NJH /NJS /nc /ns /np >nul
+                robocopy "{serverSrc}" "{serverDst}" /E /NFL /NDL /NJH /NJS /nc /ns /np >nul
+                echo Randfuzz update {safeVersion} applied.
                 """;
             File.WriteAllText(path, body);
             return path;
@@ -637,19 +959,19 @@ public static class UpdateService
             var body =
                 "#!/usr/bin/env bash\n" +
                 "set -euo pipefail\n" +
-                $"# Randfuzz portable finish-update for {version}\n" +
+                $"# Randfuzz portable finish-update for {safeVersion}\n" +
                 "sleep 2\n" +
-                $"rsync -a --delete \"{cliSrc}/\" \"{cliDst}/\" 2>/dev/null || cp -a \"{cliSrc}/.\" \"{cliDst}/\"\n" +
-                $"rsync -a --delete \"{serverSrc}/\" \"{serverDst}/\" 2>/dev/null || cp -a \"{serverSrc}/.\" \"{serverDst}/\"\n" +
-                $"echo \"Randfuzz update {version} applied.\"\n";
+                $"mkdir -p \"{cliDst}\" \"{serverDst}\"\n" +
+                $"cp -a \"{cliSrc}/.\" \"{cliDst}/\"\n" +
+                $"cp -a \"{serverSrc}/.\" \"{serverDst}/\"\n" +
+                $"echo \"Randfuzz update {safeVersion} applied.\"\n";
             File.WriteAllText(path, body);
             try
             {
 #pragma warning disable CA1416
                 File.SetUnixFileMode(path,
                     UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
-                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-                    UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute);
 #pragma warning restore CA1416
             }
             catch { /* best-effort */ }
@@ -664,7 +986,7 @@ public static class UpdateService
             Process.Start(new ProcessStartInfo
             {
                 FileName = "cmd.exe",
-                Arguments = $"/C \"{scriptPath}\"",
+                ArgumentList = { "/C", scriptPath },
                 UseShellExecute = false,
                 CreateNoWindow = true,
             });
@@ -674,10 +996,52 @@ public static class UpdateService
             Process.Start(new ProcessStartInfo
             {
                 FileName = "/bin/bash",
-                Arguments = $"\"{scriptPath}\"",
+                ArgumentList = { scriptPath },
                 UseShellExecute = false,
                 CreateNoWindow = true,
             });
+        }
+    }
+
+    private static FileStream? TryAcquireApplyLock(string root, out string? error)
+    {
+        error = null;
+        try
+        {
+            var dir = Path.Combine(root, "data", "updates");
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, ".apply.lock");
+            return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (IOException)
+        {
+            error = "Another update apply is already in progress (lock busy).";
+            return null;
+        }
+        catch (Exception ex)
+        {
+            error = "Could not acquire update apply lock: " + ex.Message;
+            return null;
+        }
+    }
+
+    private static async Task CopyCappedAsync(HttpContent content, Stream dest, long maxBytes, CancellationToken ct)
+    {
+        if (content.Headers.ContentLength is long cl && cl > maxBytes)
+            throw new InvalidOperationException($"Download Content-Length {cl} exceeds limit {maxBytes}.");
+
+        await using var src = await content.ReadAsStreamAsync(ct);
+        var buffer = new byte[81920];
+        long total = 0;
+        while (true)
+        {
+            var n = await src.ReadAsync(buffer.AsMemory(0, buffer.Length), ct);
+            if (n <= 0)
+                break;
+            total += n;
+            if (total > maxBytes)
+                throw new InvalidOperationException($"Download exceeded size limit ({maxBytes} bytes).");
+            await dest.WriteAsync(buffer.AsMemory(0, n), ct);
         }
     }
 
@@ -687,6 +1051,14 @@ public static class UpdateService
         foreach (var ch in version)
             sb.Append(char.IsLetterOrDigit(ch) || ch is '.' or '-' or '_' ? ch : '_');
         return sb.ToString();
+    }
+
+    private static string TrimOutput(string output)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+            return "";
+        var t = output.Trim();
+        return t.Length <= 2000 ? t : t[..2000] + "…";
     }
 
     private static Task<(int ExitCode, string Output)> RunGitAsync(string cwd, string[] args, CancellationToken ct) =>
@@ -710,7 +1082,6 @@ public static class UpdateService
         var stdout = await p.StandardOutput.ReadToEndAsync(ct);
         var stderr = await p.StandardError.ReadToEndAsync(ct);
         await p.WaitForExitAsync(ct);
-        var combined = (stdout + "\n" + stderr).Trim();
-        return (p.ExitCode, combined);
+        return (p.ExitCode, (stdout + "\n" + stderr).Trim());
     }
 }

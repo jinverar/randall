@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
@@ -19,6 +20,55 @@ public class UpdateServiceTests
         Assert.True(UpdateVersion.IsMajorUpdate("0.17.0", "1.0.0", "minor"));
         Assert.True(UpdateVersion.IsMajorUpdate("0.17.0", "0.18.0", "major"));
         Assert.False(UpdateVersion.IsMajorUpdate("0.17.0", "0.17.1", "patch"));
+    }
+
+    [Fact]
+    public void Crypto_Rejects_UnsafeNames_And_Notes()
+    {
+        Assert.True(UpdateCrypto.IsSafeAssetFileName("randfuzz-linux-x64.zip"));
+        Assert.False(UpdateCrypto.IsSafeAssetFileName("../evil.zip"));
+        Assert.False(UpdateCrypto.IsSafeAssetFileName("evil.exe"));
+        Assert.True(UpdateCrypto.IsSha256Hex(new string('a', 64)));
+        Assert.False(UpdateCrypto.IsSha256Hex("deadbeef"));
+        Assert.True(UpdateCrypto.IsAllowedNotesUrl("https://github.com/jinverar/randall/releases/tag/v1.0.0"));
+        Assert.False(UpdateCrypto.IsAllowedNotesUrl("https://evil.example/notes"));
+        Assert.False(UpdateCrypto.IsAllowedNotesUrl("javascript:alert(1)"));
+        Assert.True(UpdateCrypto.IsAllowedDiscordWebhook("https://discord.com/api/webhooks/1/abc"));
+        Assert.False(UpdateCrypto.IsAllowedDiscordWebhook("https://evil.example/hooks"));
+    }
+
+    [Fact]
+    public void TrustedGitRemote_Pins_Expected_Repo()
+    {
+        Assert.True(UpdateService.IsTrustedGitHubRemote("https://github.com/jinverar/randall.git", "jinverar", "randall"));
+        Assert.True(UpdateService.IsTrustedGitHubRemote("git@github.com:jinverar/randall.git", "jinverar", "randall"));
+        Assert.False(UpdateService.IsTrustedGitHubRemote("https://github.com/evil/randall.git", "jinverar", "randall"));
+    }
+
+    [Fact]
+    public void SafeExtractZip_Blocks_ZipSlip()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "rf-zip-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var zipPath = Path.Combine(dir, "slip.zip");
+        var staging = Path.Combine(dir, "out");
+        Directory.CreateDirectory(staging);
+        try
+        {
+            using (var zs = ZipFile.Open(zipPath, ZipArchiveMode.Create))
+            {
+                var e = zs.CreateEntry("../escape.txt");
+                using var w = new StreamWriter(e.Open());
+                w.Write("nope");
+            }
+
+            Assert.Throws<InvalidOperationException>(() => UpdateService.SafeExtractZip(zipPath, staging));
+            Assert.False(File.Exists(Path.Combine(dir, "escape.txt")));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* ignore */ }
+        }
     }
 
     [Fact]
@@ -51,6 +101,10 @@ public class UpdateServiceTests
             Assert.True(UpdateCrypto.VerifyManifest(json, sig));
             Assert.False(UpdateCrypto.VerifyManifest(json.Replace("9.9.9", "9.9.8"), sig));
             Assert.False(UpdateCrypto.VerifyManifest(json, sig.AsSpan(0, sig.Length - 1).ToArray()));
+
+            // base64 signature form also verifies
+            var b64 = Encoding.UTF8.GetBytes(Convert.ToBase64String(sig));
+            Assert.True(UpdateCrypto.VerifyManifest(json, b64));
         }
         finally
         {
@@ -72,6 +126,7 @@ public class UpdateServiceTests
             Version = "9.9.9",
             Severity = "major",
             Channel = "stable",
+            ReleaseTag = "v9.9.9",
             NotesUrl = "https://github.com/jinverar/randall/releases/tag/v9.9.9",
             Assets =
             [
@@ -120,15 +175,15 @@ public class UpdateServiceTests
 
         var root = Path.Combine(Path.GetTempPath(), "randfuzz-update-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        // Force portable-ish unknown mode without sln — still fine for check.
         try
         {
-            var result = await UpdateService.CheckAsync(root, handler);
+            var result = await UpdateService.CheckAsync(root, handler, force: true);
             Assert.True(result.Ok);
             Assert.True(result.SignatureValid);
             Assert.True(result.UpdateAvailable);
             Assert.True(result.MajorUpdate);
             Assert.Equal("9.9.9", result.LatestVersion);
+            Assert.Equal(1, result.MatchedAssetSize);
 
             var applyNo = await UpdateService.ApplyAsync(confirm: false, root, handler);
             Assert.False(applyNo.Ok);
@@ -136,8 +191,66 @@ public class UpdateServiceTests
             var status = UpdateService.Status(root);
             Assert.True(status.UpdateAvailable);
             Assert.True(status.MajorUpdate);
+            Assert.False(status.BannerSuppressed);
             var dismissed = UpdateService.Dismiss("9.9.9", root);
             Assert.True(dismissed.BannerSuppressed);
+
+            // Cache hit without network when force=false
+            var cached = await UpdateService.CheckAsync(root, new StubHandler(_ =>
+                new HttpResponseMessage(HttpStatusCode.InternalServerError)), force: false);
+            Assert.True(cached.Ok);
+            Assert.Contains(cached.Findings ?? [], f => f.Contains("cached", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(UpdateCrypto.PubKeyEnv, null);
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public async Task CheckAsync_Rejects_BadSignature()
+    {
+        using var ecdsa = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        Environment.SetEnvironmentVariable(UpdateCrypto.PubKeyEnv, ecdsa.ExportSubjectPublicKeyInfoPem());
+        var rid = UpdateService.CurrentRid();
+        var manifest = new UpdateManifestDto
+        {
+            Version = "9.9.9",
+            Severity = "major",
+            Assets = [new UpdateAssetDto { Rid = rid, File = $"randfuzz-{rid}.zip", Sha256 = new string('b', 64), Size = 1 }],
+        };
+        var json = UpdateService.BuildManifestJson(manifest);
+        var badSig = Encoding.UTF8.GetBytes(new string('x', 128));
+
+        var releaseJson = JsonSerializer.Serialize(new
+        {
+            tag_name = "v9.9.9",
+            html_url = "https://github.com/jinverar/randall/releases/tag/v9.9.9",
+            assets = new object[]
+            {
+                new { name = UpdateService.ManifestName, browser_download_url = "https://github.com/jinverar/randall/releases/download/v9.9.9/update-manifest.json" },
+                new { name = UpdateService.ManifestSigName, browser_download_url = "https://github.com/jinverar/randall/releases/download/v9.9.9/update-manifest.json.sig" },
+            },
+        });
+
+        var handler = new StubHandler(req =>
+        {
+            var url = req.RequestUri!.ToString();
+            if (url.Contains("/releases/latest", StringComparison.Ordinal)) return Json(releaseJson);
+            if (url.EndsWith(".json", StringComparison.Ordinal)) return Text(json);
+            if (url.EndsWith(".sig", StringComparison.Ordinal)) return Bytes(badSig);
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var root = Path.Combine(Path.GetTempPath(), "randfuzz-update-bad-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var result = await UpdateService.CheckAsync(root, handler, force: true);
+            Assert.False(result.Ok);
+            Assert.False(result.SignatureValid);
+            Assert.False(result.UpdateAvailable);
         }
         finally
         {
@@ -150,7 +263,7 @@ public class UpdateServiceTests
     public void DocsCatalog_IncludesUpdates()
     {
         Assert.Contains(DocsCatalog.Index, i => i.Path == "UPDATES.md");
-        Assert.Equal(AppVersion.Version, "0.17.0-alpha");
+        Assert.Equal("0.17.0-alpha", AppVersion.Version);
     }
 
     [Fact]
