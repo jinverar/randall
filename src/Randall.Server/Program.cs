@@ -1,5 +1,6 @@
 using Randall.Contracts;
 using Randall.Infrastructure;
+using Randall.Infrastructure.Rop;
 using Randall.Server;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -684,6 +685,41 @@ app.MapPost("/api/stalking/export", (StalkExportRequest request) =>
 app.MapGet("/api/stalking/tools", () => StalkCampaignStore.ProbeTools());
 
 app.MapGet("/api/debug/tools", () => DebuggerTools.Probe());
+
+app.MapGet("/api/rop/scan", (string exe, string? arch) =>
+{
+    if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+        return Results.BadRequest(new { error = "exe required and must exist" });
+    return Results.Ok(RopGadgetScanner.Scan(exe, arch));
+});
+
+app.MapPost("/api/rop/search", (RopSearchRequest body) =>
+{
+    if (string.IsNullOrWhiteSpace(body.Exe) || !File.Exists(body.Exe))
+        return Results.BadRequest(new { error = "exe required and must exist" });
+    return Results.Ok(RopStudio.Search(body.Exe, body.Need ?? "ret", body.BadCharsHex, body.Limit));
+});
+
+app.MapPost("/api/rop/sketch", (RopSketchRequest body) =>
+{
+    if (string.IsNullOrWhiteSpace(body.Exe) || !File.Exists(body.Exe))
+        return Results.BadRequest(new { error = "exe required and must exist" });
+    return Results.Ok(RopStudio.Sketch(body.Exe, body.Goal, body.BadCharsHex, body.MaxSteps));
+});
+
+app.MapPost("/api/rop/from-crash", (RopFromCrashRequest body) =>
+{
+    return Results.Ok(RopStudio.FromCrash(body.CrashId, body.Goal, body.BadCharsHex));
+});
+
+app.MapGet("/api/windbg/scripts", () =>
+    Results.Ok(new { help = RandfuzzDbgWalk.FormatScriptHelp(), scriptsDir = RandfuzzDbgWalk.ScriptsDir() }));
+
+app.MapPost("/api/windbg/walk", (Guid crashId) =>
+{
+    var walk = RandfuzzDbgWalk.BuildForCrash(crashId);
+    return walk.Error is null ? Results.Ok(walk) : Results.BadRequest(walk);
+});
 
 app.MapPost("/api/debug/open", (DebuggerOpenRequest request) =>
 {

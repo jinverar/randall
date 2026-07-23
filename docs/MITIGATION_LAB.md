@@ -70,6 +70,13 @@ VulnLab with `scripts/build-mitigation-lab.sh`.
 
 ## Exploit-dev workflow (Immunity / mona style)
 
+1. Cyclic pattern → CONTROL @ offset (`randall pattern` / `exploitdev` / `exploit guide`)
+2. **ROP Studio** — gadget scan / search / constrained chain **sketches** (`randall rop …`)
+3. **RandfuzzDbg** — WinDbg Preview walk (`randall windbg walk` · `tools/randfuzzdbg/scripts`)
+
+No shellcode / weaponized payloads. Details: [EXPLOIT_GUIDE.md](EXPLOIT_GUIDE.md) ·
+[WINDBG_FUZZ_PKG.md](WINDBG_FUZZ_PKG.md).
+
 Turn a fuzzer crash into a precise offset — the classic `pattern_create` / `pattern_offset` /
 `findmsp` flow, on Linux via gdb:
 
@@ -90,6 +97,15 @@ dotnet run --project src/Randall.Cli -- pattern offset -q 0x6341326141... -l 200
 
 `exploitdev` scans RIP/RBP/RSP/… so it reports control even when a frame-pointer smash faults in the
 epilogue. Pair it with `checksec` (mitigations) + `heaptriage` (heap primitive) for a full triage.
+
+```bash
+# 5) ROP Studio — gadget catalog + constrained sketch (no payloads)
+dotnet run --project src/Randall.Cli -- rop scan --exe targets/vulnlab/vulnlab-basic
+dotnet run --project src/Randall.Cli -- rop sketch --exe targets/vulnlab/vulnlab-basic --goal pivot
+
+# 6) WinDbg Preview walk (Windows lab dumps)
+dotnet run --project src/Randall.Cli -- windbg walk -i <crash-guid>
+```
 
 ## Reverse-engineering exports (IDA / Ghidra)
 

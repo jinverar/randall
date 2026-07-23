@@ -1,0 +1,8 @@
+$$ RandfuzzDbg load hints
+$$ After building RandfuzzDbg.dll (see tools/randfuzzdbg/README.md):
+$$   .load C:\path\to\RandfuzzDbg.dll
+$$   !rf.help
+$$
+.echo RandfuzzDbg extension not required for rf_walk.txt
+.echo Host ROP Studio: randall rop scan|search|sketch|from-crash
+.echo Walk export:     randall windbg walk -i <crash-guid>

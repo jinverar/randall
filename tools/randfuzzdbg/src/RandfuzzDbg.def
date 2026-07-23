@@ -1,0 +1,6 @@
+LIBRARY RandfuzzDbg
+EXPORTS
+    DebugExtensionInitialize
+    DebugExtensionUninitialize
+    rf_help
+    help=rf_help

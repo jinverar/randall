@@ -4,6 +4,7 @@ using Randall.Infrastructure;
 using Randall.Infrastructure.BugHunt;
 using Randall.Infrastructure.Magician;
 using Randall.Infrastructure.Oracles;
+using Randall.Infrastructure.Rop;
 
 if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
 {
@@ -35,6 +36,8 @@ return args[0].ToLowerInvariant() switch
     "pattern" => RunPattern(args.Skip(1).ToArray()),
     "exploitdev" or "expdev" => RunExploitDev(args.Skip(1).ToArray()),
     "exploit" => RunExploit(args.Skip(1).ToArray()),
+    "rop" => RunRop(args.Skip(1).ToArray()),
+    "windbg" or "randfuzzdbg" or "rfdbg" => RunWindbg(args.Skip(1).ToArray()),
     "memory" or "lens" => RunMemoryLens(args.Skip(1).ToArray()),
     "stalk" => RunStalk(args.Skip(1).ToArray()),
     "debug" => RunDebug(args.Skip(1).ToArray()),
@@ -81,7 +84,13 @@ static void PrintHelp()
           randall pattern offset -q <val> [-l N]   Find offset of a value/register in the pattern
           randall exploitdev --exe <p> --core <c> [--pattern-len N]   Faulting registers + RIP offset
           randall exploit guide --exe <p> [--core c] [--pattern-len N]
-                                            Triage playbook: register control + offset counting (no payloads)
+                                            Triage playbook → offset, then ROP Studio / WinDbg walk
+          randall rop scan --exe <path> [--arch x64|x86]
+          randall rop search --exe <path> --need pop-rdi [--badchars "00 0a"]
+          randall rop sketch --exe <path> --goal pivot|write|control
+          randall rop from-crash -i <crash-guid> [--goal pivot]
+          randall windbg scripts            RandfuzzDbg script paths
+          randall windbg walk -i <crash-guid>   Write *_windbg_walk.json + script hints
           randall memory -i <crash-guid>    Memory lens (UAF fill, regions, neighborhood)
           randall memory --pid N            Live VirtualQueryEx sample
           randall stalk layers -p <project>              List stalk layers
@@ -1542,11 +1551,11 @@ static int RunExploit(string[] args)
 static int RefuseExploitTemplate()
 {
     Console.Error.WriteLine(
-        "exploit template is disabled — Randfuzz stops at register control + offset counting.");
+        "exploit template is disabled — no shellcode / payload skeletons.");
     Console.Error.WriteLine(
-        "Use: randall exploit guide --exe <path> [--core <core>] [--pattern-len N]");
+        "Use: randall exploit guide · randall rop sketch · randall windbg walk");
     Console.Error.WriteLine(
-        "  or: randall exploitdev / randall pattern offset   (no shellcode, no payloads)");
+        "  (gadget catalogs + chain sketches for lab targets — docs/WINDBG_FUZZ_PKG.md)");
     return 2;
 }
 
@@ -2872,6 +2881,195 @@ static async Task<int> RunScreamSelftestAsync()
     if (result.Events.Count > 0)
         Console.WriteLine("Events: " + string.Join(" | ", result.Events.Take(12)));
     return result.Ok ? 0 : 2;
+}
+
+static int RunRop(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall rop scan --exe <path> [--arch x64|x86] [--json]
+              randall rop search --exe <path> --need <kind> [--badchars "00 0a"] [--json]
+              randall rop sketch --exe <path> --goal pivot|write|control [--badchars …] [--json]
+              randall rop from-crash -i <crash-guid> [--goal pivot] [--json]
+
+            ROP Studio — gadget catalog + constrained chain sketches for lab binaries.
+            No shellcode / payloads. See docs/WINDBG_FUZZ_PKG.md.
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    string? exe = null;
+    string? need = null;
+    string? goal = "pivot";
+    string? arch = null;
+    string? bad = null;
+    Guid? crashId = null;
+    var json = false;
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] is "--exe" or "-e" && i + 1 < args.Length) exe = args[++i];
+        else if (args[i] is "--need" or "-n" && i + 1 < args.Length) need = args[++i];
+        else if (args[i] is "--goal" or "-g" && i + 1 < args.Length) goal = args[++i];
+        else if (args[i] is "--arch" && i + 1 < args.Length) arch = args[++i];
+        else if (args[i] is "--badchars" or "--bad" && i + 1 < args.Length) bad = args[++i];
+        else if (args[i] is "-i" or "--id" or "--crash" && i + 1 < args.Length
+                 && Guid.TryParse(args[i + 1], out var g))
+        {
+            crashId = g;
+            i++;
+        }
+        else if (args[i] is "--json") json = true;
+    }
+
+    object report;
+    if (sub is "from-crash" or "crash")
+    {
+        if (crashId is null)
+        {
+            Console.Error.WriteLine("Usage: randall rop from-crash -i <crash-guid> [--goal pivot]");
+            return 1;
+        }
+
+        report = RopStudio.FromCrash(crashId.Value, goal ?? "pivot", bad);
+    }
+    else
+    {
+        if (string.IsNullOrWhiteSpace(exe))
+        {
+            Console.Error.WriteLine("Usage: randall rop scan|search|sketch --exe <path> …");
+            return 1;
+        }
+
+        exe = ExecutableResolver.FindExisting(Path.GetFullPath(exe)) ?? Path.GetFullPath(exe);
+        if (!File.Exists(exe))
+        {
+            Console.Error.WriteLine($"exe not found: {exe}");
+            return 1;
+        }
+
+        report = sub switch
+        {
+            "scan" => RopGadgetScanner.Scan(exe, arch),
+            "search" => RopStudio.Search(exe, need ?? "ret", bad, archHint: arch),
+            "sketch" or "chain" => RopStudio.Sketch(exe, goal ?? "control", bad, archHint: arch),
+            _ => null!,
+        };
+        if (report is null)
+        {
+            Console.Error.WriteLine($"Unknown rop subcommand: {sub}");
+            return 1;
+        }
+    }
+
+    if (json)
+    {
+        Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+        }));
+        return 0;
+    }
+
+    switch (report)
+    {
+        case RopScanReportDto scan:
+            Console.WriteLine(scan.SummaryLine);
+            if (scan.Error is not null) Console.Error.WriteLine("  error: " + scan.Error);
+            foreach (var g in scan.Gadgets.Take(24))
+                Console.WriteLine($"  {g.Address}  [{g.Kind}]  {g.Instruction}  ({g.BytesHex})");
+            if (scan.GadgetCount > 24)
+                Console.WriteLine($"  … {scan.GadgetCount - 24} more (use --json)");
+            if (scan.CachePath is not null)
+                Console.WriteLine($"  cache: {scan.CachePath}");
+            return scan.Error is null && scan.GadgetCount > 0 ? 0 : 2;
+        case RopSearchReportDto search:
+            Console.WriteLine(search.SummaryLine);
+            foreach (var g in search.Hits)
+                Console.WriteLine($"  {g.Address}  [{g.Kind}]  {g.Instruction}");
+            return search.Hits.Count > 0 ? 0 : 2;
+        case RopSketchReportDto sketch:
+            Console.WriteLine(sketch.SummaryLine);
+            foreach (var c in sketch.Constraints)
+                Console.WriteLine($"  constraint: {c}");
+            foreach (var s in sketch.Steps)
+                Console.WriteLine($"  [{s.Index}] {s.Role}: {s.Gadget.Address}  {s.Gadget.Instruction} — {s.Why}");
+            if (sketch.OutputPath is not null)
+                Console.WriteLine($"  wrote: {sketch.OutputPath}");
+            return sketch.Error is null && sketch.Steps.Count > 0 ? 0 : 2;
+        default:
+            return 1;
+    }
+}
+
+static int RunWindbg(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall windbg scripts
+              randall windbg walk -i <crash-guid> [--json]
+
+            RandfuzzDbg — WinDbg Preview walk scripts + JSON export (docs/WINDBG_FUZZ_PKG.md).
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    if (sub is "scripts" or "script" or "help-scripts")
+    {
+        Console.Write(RandfuzzDbgWalk.FormatScriptHelp());
+        return 0;
+    }
+
+    if (sub is "walk" or "export")
+    {
+        Guid? id = null;
+        var json = false;
+        for (var i = 1; i < args.Length; i++)
+        {
+            if (args[i] is "-i" or "--id" or "--crash" && i + 1 < args.Length
+                && Guid.TryParse(args[i + 1], out var g))
+            {
+                id = g;
+                i++;
+            }
+            else if (args[i] is "--json") json = true;
+        }
+
+        if (id is null)
+        {
+            Console.Error.WriteLine("Usage: randall windbg walk -i <crash-guid>");
+            return 1;
+        }
+
+        var walk = RandfuzzDbgWalk.BuildForCrash(id.Value);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(walk, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            }));
+            return walk.Error is null ? 0 : 2;
+        }
+
+        Console.WriteLine(walk.SummaryLine);
+        if (walk.WalkPath is not null) Console.WriteLine($"  walk: {walk.WalkPath}");
+        if (walk.RopPath is not null) Console.WriteLine($"  rop:  {walk.RopPath}");
+        if (walk.DumpPath is not null) Console.WriteLine($"  dump: {walk.DumpPath}");
+        Console.WriteLine("  script:");
+        foreach (var line in walk.ScriptLines.Take(12))
+            Console.WriteLine("    " + line);
+        return walk.Error is null ? 0 : 2;
+    }
+
+    Console.Error.WriteLine("Usage: randall windbg scripts|walk …");
+    return 1;
 }
 
 static int RunDebug(string[] args)
