@@ -1926,7 +1926,7 @@ async function refreshStalkingSurface(project) {
           <td>${escapeAttr(f.title)}<div class="hint">${escapeAttr(f.detail || '')}</div></td>
           <td class="hint">${escapeAttr(f.evidenceSnippet || '—')}</td>
         </tr>`).join('')}</tbody></table>`
-      : `<p class="empty">${escapeAttr(report.error || 'No heuristic hits yet — enable Procmon + snapshots on baseline, then Assess.')}</p>`;
+      : `<p class="empty">${escapeAttr(report.error || 'No heuristic hits yet — run a baseline session (Windows: Procmon · Linux: ss/maps), then Assess.')}</p>`;
     const recs = report.recommendations || [];
     if (recsEl) {
       recsEl.innerHTML = recs.length
@@ -1935,7 +1935,7 @@ async function refreshStalkingSurface(project) {
     }
   } catch {
     if (meta) meta.textContent = '';
-    findingsEl.innerHTML = '<p class="empty">No surface report yet — record a baseline (auto) or click Assess latest.</p>';
+    findingsEl.innerHTML = '<p class="empty">No surface report yet — start a baseline session or click Assess latest.</p>';
     if (recsEl) recsEl.innerHTML = '';
   }
 
@@ -1953,9 +1953,9 @@ async function refreshStalkingSurface(project) {
           ${pairs.flatMap((d) => (d.sampleOnlyInTo || []).slice(0, 3).map((s) =>
             `<div class="hint">+ [${escapeAttr(d.toTag)}] ${escapeAttr(s)}</div>`)).join('')}`
         : '<p class="empty">Need 2+ assessed layers to compare surface findings.</p>';
-    } catch {
+    } catch (err) {
       if (cmpMeta) cmpMeta.textContent = '';
-      cmpEl.innerHTML = '';
+      cmpEl.innerHTML = `<p class="empty">Surface compare unavailable${err?.message ? ' — ' + escapeAttr(err.message) : ''}.</p>`;
     }
   }
 
@@ -1967,9 +1967,9 @@ async function refreshStalkingSurface(project) {
         ? `<ul class="hint-list">${list.slice(0, 10).map((i) =>
             `<li><strong>[${escapeAttr(i.priority)}]</strong> ${escapeAttr(i.title)}
              <div class="hint">${escapeAttr(i.detail || '')}${i.cliHint ? ` · <code>${escapeAttr(i.cliHint)}</code>` : ''}</div></li>`).join('')}</ul>`
-        : '<p class="empty">No surface ideas yet — run a baseline session.</p>';
-    } catch {
-      ideasEl.innerHTML = '';
+        : '<p class="empty">No surface ideas yet — run a baseline session, then Assess.</p>';
+    } catch (err) {
+      ideasEl.innerHTML = `<p class="empty">Surface ideas unavailable${err?.message ? ' — ' + escapeAttr(err.message) : ''}.</p>`;
     }
   }
 }
@@ -1979,7 +1979,7 @@ document.getElementById('stalking-surface-assess')?.addEventListener('click', as
   const out = document.getElementById('stalking-export-result');
   if (!project) return;
   try {
-    const report = await api.post(`/api/stalking/${encodeURIComponent(project)}/surface/assess`, { project, baselineOnly: true });
+    const report = await api.post(`/api/stalking/${encodeURIComponent(project)}/surface/assess`, { project });
     if (out) out.textContent = report.summaryLine || 'Surface assessed';
     await refreshStalkingSurface(project);
   } catch (err) {

@@ -45,7 +45,7 @@ exploitSurface:
   persist: true
   writeHints: true         # → data/stalk/<p>/surface/hints.md
   armDictionary: true      # → dictionary-tokens.txt (auto-merged into fuzz dictionary)
-  softSummonMagician: true # map findings → Magician needs + optional cast
+  softSummonMagician: true # persist surface_needs.jsonl + optional Magician cast
 ```
 
 CLI:
@@ -129,7 +129,7 @@ vs the previous phase (same idea as host timeline compare).
 The next fuzz campaign auto-loads `dictionary-tokens.txt` into the dictionary mutator.
 With `softSummonMagician`, findings also emit Magician needs (`surface_needs.jsonl`) and
 may cast dictionary/army/knight/bots when Magician is enabled — post-assess only, never on
-the fuzz hot path.
+the fuzz hot path. When `softSummonMagician: false`, neither needs nor cast run.
 
 ---
 

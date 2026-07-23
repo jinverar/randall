@@ -126,8 +126,10 @@ static void PrintHelp()
                                             Rebuild graph.json + merged.csv from timeline CSVs
           randall surface assess -p <project> [--layer id] [--baseline]
                                             Exploit Surface — sideload/injection/listen suggestions
-          randall surface baseline start|stop -p <project>
-                                            Natural-use baseline session (Procmon + snapshots)
+          randall surface baseline start|stop|status -p <project>
+                                            Natural-use baseline (Windows Procmon · Linux ss/proc)
+          randall surface compare -p <project>   Novel findings baseline → fuzzed
+          randall surface ideas -p <project>     Surface → fuzz ideas
           randall surface list -p <project>  List persisted surface findings
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
@@ -2720,7 +2722,8 @@ static int RunSurface(string[] args)
               randall surface compare -p <project> [layerId…] [--json]
               randall surface ideas  -p <project> [--json]
 
-            Exploit Surface — host assessor + baseline session (natural use under Procmon).
+            Exploit Surface — host assessor + baseline session (natural use under
+            Windows Procmon/Sysinternals or Linux ss+/proc/maps/ldd).
             Suggests fuzz next steps + hints.md / dictionary tokens / Magician soft needs.
             Not Oracle judgment. See docs/SURFACE.md.
             """);
@@ -2799,7 +2802,7 @@ static int RunSurface(string[] args)
 
     if (sub is "ideas")
     {
-        var ideas = ExploitSurfaceIdeas.FromLatest(project);
+        var ideas = ExploitSurfaceIdeas.FromLatestOrHint(project);
         if (json)
         {
             Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(ideas, new System.Text.Json.JsonSerializerOptions
@@ -2810,9 +2813,14 @@ static int RunSurface(string[] args)
             return 0;
         }
 
-        if (ideas.Count == 0)
+        if (ideas.Count == 0 || (ideas.Count == 1 && ideas[0].Id == "surface-baseline"))
         {
-            Console.WriteLine($"{project}: no surface ideas — run a baseline session / assess first");
+            Console.WriteLine($"{project}: no assessed surface yet — run a baseline session / assess first");
+            if (ideas.Count == 1)
+            {
+                Console.WriteLine($"[{ideas[0].Priority}] {ideas[0].Title}");
+                Console.WriteLine($"         {ideas[0].Detail}");
+            }
             return 2;
         }
 
@@ -2893,8 +2901,9 @@ static int RunSurfaceBaseline(string[] args)
               randall surface baseline stop   -p <project> [--no-layer] [--label text] [--pid N]
               randall surface baseline status -p <project>
 
-            Start Procmon + Sysinternals snapshots, use the app naturally, then stop to
-            record a baseline stalk layer + Exploit Surface assess.
+            Start host recorders (Windows: Procmon + Sysinternals · Linux: ss + /proc maps + ldd),
+            use the app naturally, then stop to record a baseline stalk layer + Exploit Surface assess.
+            Auto-attaches Target Runtime PID when a matching slot is already running.
             """);
         return 0;
     }
@@ -2942,8 +2951,13 @@ static int RunSurfaceBaseline(string[] args)
     {
         var s = BaselineSession.Status(project);
         Console.WriteLine($"[{s.Status}] {s.Message ?? s.RunId}");
+        if (s.Pid is int pid)
+            Console.WriteLine($"  pid: {pid}");
+        if (!string.IsNullOrWhiteSpace(s.TargetExe))
+            Console.WriteLine($"  exe: {s.TargetExe}");
         if (!string.IsNullOrWhiteSpace(s.RunDir))
             Console.WriteLine($"  run: {s.RunDir}");
+        Console.WriteLine($"  probes: procmon={(s.ProcmonArmed ? "yes" : "no")} host={(s.HostProbesArmed ? "yes" : "no")}");
         return 0;
     }
 

@@ -187,8 +187,11 @@ That brings dumps + lens + crash index. Stalk layer zips are still under `data/s
 | Start/stop target | **Fuzz → Lab servers / Target Runtime** |
 | Build smarter cases | **Fuzz → Scare Floor** |
 | Run a campaign | **Fuzz → Campaign** (on the lab host) |
+| Natural-use baseline session | **Stalking bugs → Start baseline session** / Stop + record |
 | Record baseline / fuzzed / fuzzier | **Stalking bugs → Add layer** |
-| See what changed | **Stalking bugs → Compare / Block map** |
+| Host surface (sideload / listen) | **Stalking bugs → Exploit Surface** (+ Surface fuzz ideas) |
+| See what changed (coverage) | **Stalking bugs → Compare / Block map** |
+| See what changed (host) | **Stalking bugs → Host timeline compare / Surface compare** |
 | Why still dark + how to fuzz | **Stalking bugs → Missed blocks** (`randall stalk missed`) |
 | Study a crash | **Crashes** (+ Memory lens) |
 | Color IDA / Ghidra | **Stalking bugs → Export** |
@@ -215,8 +218,8 @@ Help tab also serves this doc and [STALKING.md](STALKING.md) (API/CLI reference)
 
 - [ ] Snapshot lab  
 - [ ] Work in lab console (`serve` local or `agent` Remote lab)  
-- [ ] Baseline: normal use → record **baseline**  
-- [ ] Basic campaign → record **fuzzed** → compare novel blocks  
+- [ ] Baseline session (or normal use → record **baseline**) → review Exploit Surface  
+- [ ] Basic campaign → record **fuzzed** → compare novel blocks + surface  
 - [ ] Improve cases → campaign → record **fuzzier** → compare (repeat)  
 - [ ] On crash: lens + debugger + learn → feed next round  
 - [ ] Optional: pull crash pack to laptop when done  

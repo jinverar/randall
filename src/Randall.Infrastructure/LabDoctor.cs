@@ -129,13 +129,42 @@ public static class LabDoctor
             var scope = surface.AssessAllLayers
                 ? "all stalk layers"
                 : surface.AssessBaseline ? "baseline layers" : "manual assess only";
+            var soft = surface.SoftSummonMagician ? "soft Magician" : "no Magician soft-summon";
             Add("exploitSurface", "ok",
-                $"enabled · {scope} — host sideload/injection/listen suggestions (docs/SURFACE.md)");
+                $"enabled · {scope} · {soft} — host sideload/injection/listen (docs/SURFACE.md)");
         }
         else
         {
             Add("exploitSurface", "warn",
                 "exploitSurface disabled — set exploitSurface.enabled: true after baseline (docs/SURFACE.md)");
+        }
+
+        // Baseline session host probes (Windows Sysinternals / Linux ss+proc).
+        if (OperatingSystem.IsWindows())
+        {
+            var procmon = ProcmonCapture.DiscoverExecutable();
+            var listDlls = SysinternalsToolPaths.FindListDlls();
+            var core = (procmon is not null ? 1 : 0) + (listDlls is not null ? 1 : 0);
+            Add("baselineSession", core == 2 ? "ok" : "warn",
+                core == 2
+                    ? $"Baseline session ready — Procmon + ListDLLs (docs/SURFACE.md)"
+                    : $"Baseline session partial ({core}/2) — need Procmon + ListDLLs for rich surface (docs/SURFACE.md)");
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            var ssOk = File.Exists("/bin/ss") || File.Exists("/usr/bin/ss");
+            var procOk = Directory.Exists("/proc");
+            var lddOk = File.Exists("/usr/bin/ldd") || File.Exists("/bin/ldd");
+            var score = (ssOk ? 1 : 0) + (procOk ? 1 : 0) + (lddOk ? 1 : 0);
+            Add("baselineSession", score >= 2 ? "ok" : "warn",
+                score >= 2
+                    ? $"Baseline session ready — Linux ss+/proc/ldd probes (docs/SURFACE.md)"
+                    : $"Baseline session weak ({score}/3) — need ss, /proc, ldd for Linux surface twin (docs/SURFACE.md)");
+        }
+        else
+        {
+            Add("baselineSession", "warn",
+                "Baseline session host probes need Windows or Linux (docs/SURFACE.md)");
         }
 
         // Optional external engines (AFL++ / honggfuzz) — fail preflight when selected but missing.

@@ -802,7 +802,8 @@ app.MapPost("/api/stalking/{project}/baseline/start", (string project, BaselineS
         return Results.BadRequest(new { error = "project not allowed" });
     try
     {
-        return Results.Ok(BaselineSession.Start(project, body?.Pid, body?.Executable));
+        return Results.Ok(BaselineSession.Start(
+            project, body?.Pid, body?.Executable ?? body?.TargetExe));
     }
     catch (Exception ex)
     {
