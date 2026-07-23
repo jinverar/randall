@@ -2712,10 +2712,12 @@ static int RunSurface(string[] args)
             Usage:
               randall surface assess -p <project> [--layer <id>] [--baseline] [--json]
               randall surface list   -p <project> [--json]
+              randall surface compare -p <project> [layerId…] [--json]
 
             Exploit Surface — host assessor (DLL sideload, injection, child process,
-            network listen, unusual modules) from stalk/recording artifacts.
-            Suggests fuzz next steps. Not Oracle judgment. See docs/SURFACE.md.
+            network listen, unusual modules, SigCheck) from stalk/recording artifacts.
+            Suggests fuzz next steps + hints.md / dictionary tokens. Not Oracle judgment.
+            See docs/SURFACE.md.
             """);
         return 0;
     }
@@ -2725,7 +2727,7 @@ static int RunSurface(string[] args)
     string? layerId = null;
     var baselineOnly = false;
     var json = false;
-    var start = sub is "assess" or "list" or "findings" or "run" or "report" ? 1 : 0;
+    var start = sub is "assess" or "list" or "findings" or "run" or "report" or "compare" ? 1 : 0;
     if (start == 0)
         sub = "assess";
 
@@ -2743,8 +2745,48 @@ static int RunSurface(string[] args)
 
     if (string.IsNullOrWhiteSpace(project))
     {
-        Console.Error.WriteLine("Usage: randall surface assess|list -p <project>");
+        Console.Error.WriteLine("Usage: randall surface assess|list|compare -p <project>");
         return 1;
+    }
+
+    if (sub is "compare")
+    {
+        var layerIds = new List<string>();
+        for (var i = start; i < args.Length; i++)
+        {
+            if (args[i].StartsWith('-'))
+            {
+                if (i + 1 < args.Length && args[i] is "-p" or "--project" or "--layer" or "-l")
+                    i++;
+                continue;
+            }
+
+            if (!args[i].Equals(project, StringComparison.OrdinalIgnoreCase))
+                layerIds.Add(args[i]);
+        }
+
+        var cmp = ExploitSurfaceCompare.Compare(project, layerIds);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(cmp, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            }));
+            return 0;
+        }
+
+        Console.WriteLine($"{cmp.Project}: {cmp.SummaryLine}");
+        foreach (var s in cmp.Layers)
+            Console.WriteLine($"  [{s.Tag}] findings={s.FindingCount}  {s.SummaryLine}");
+        foreach (var d in cmp.Pairwise)
+        {
+            Console.WriteLine($"  {d.FromTag} → {d.ToTag}: shared={d.Shared} onlyPrev={d.OnlyInFrom} novel={d.OnlyInTo}");
+            foreach (var sample in d.SampleOnlyInTo.Take(6))
+                Console.WriteLine($"    + {sample}");
+        }
+
+        return cmp.Layers.Any(l => l.HasReport) ? 0 : 2;
     }
 
     if (sub is "list" or "findings")

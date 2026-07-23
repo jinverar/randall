@@ -34,10 +34,12 @@ Related: [STALK_LOOP.md](STALK_LOOP.md) · [MINI_TIMELINE.md](MINI_TIMELINE.md) 
 
 ```yaml
 exploitSurface:
-  enabled: true            # default when key omitted: treat as enabled for auto baseline
-  assessBaseline: true     # auto after baseline layer record
-  assessAllLayers: false   # also assess fuzzed / fuzzier / custom
+  enabled: true
+  assessBaseline: true
+  assessAllLayers: false   # also assess fuzzed / fuzzier
   persist: true
+  writeHints: true         # → data/stalk/<p>/surface/hints.md
+  armDictionary: true      # → dictionary-tokens.txt (auto-merged into fuzz dictionary)
 
 fuzz:
   procmonCapture: true
@@ -50,6 +52,7 @@ CLI:
 ```bash
 randall surface assess -p <project> [--layer <id>] [--baseline] [--json]
 randall surface list   -p <project>
+randall surface compare -p <project> [layerId…]
 randall stalk surface-assess -p <project>
 ```
 
@@ -58,6 +61,7 @@ API:
 - `GET /api/stalking/{project}/surface`
 - `GET /api/stalking/{project}/layers/{layerId}/surface`
 - `POST /api/stalking/{project}/surface/assess`
+- `GET /api/stalking/{project}/surface/compare`
 
 ---
 
@@ -65,8 +69,10 @@ API:
 
 ```
 data/stalk/<project>/surface/
-  layer-<id>.json       # full report
-  findings.jsonl        # append-only findings
+  layer-<id>.json            # full report
+  findings.jsonl             # append-only findings
+  hints.md                   # ranked recommendations for analysts
+  dictionary-tokens.txt      # auto-merged into fuzz dictionary mutator
 ```
 
 Inputs (best-effort):
@@ -91,6 +97,14 @@ Soft-fail when artifacts are missing — layer record never fails.
 | `childProcess` | Process Create | Child cmdline fuzz; separate project |
 | `networkListen` | TCP Listen / netstat LISTENING | TCP/UDP project + session graph |
 | `unusualModule` | ListDLLs paths outside System32/Program Files | SigCheck; sideload if writable |
+| `unsignedBinary` | SigCheck `Verified: Unsigned` (or Signed as info) | Lab tamper / sideload policy |
+
+**Compare phases:** after assessing baseline + fuzzed (+ fuzzier), use
+`randall surface compare` or the Stalking bugs **Surface compare** panel — novel findings
+vs the previous phase (same idea as host timeline compare).
+
+**Arming:** high/medium findings mint dictionary tokens (DLL basenames, ports, API names).
+The next fuzz campaign auto-loads `dictionary-tokens.txt` into the dictionary mutator.
 
 ---
 
@@ -108,7 +122,6 @@ Soft-fail when artifacts are missing — layer record never fails.
 
 ## Future
 
-- Wire high findings → Magician summons / dictionary inject
-- Diff surface reports between baseline and fuzzed (like host timeline compare)
-- Signed vs unsigned module scoring via SigCheck parse
+- Magician auto-summon from high surface needs (optional)
 - Linux twin (ldd /ss /proc maps)
+- Richer Authenticode / catalog parsing beyond SigCheck text

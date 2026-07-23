@@ -1860,6 +1860,8 @@ async function refreshStalkingSurface(project) {
   const meta = document.getElementById('stalking-surface-meta');
   const findingsEl = document.getElementById('stalking-surface-findings');
   const recsEl = document.getElementById('stalking-surface-recs');
+  const cmpMeta = document.getElementById('stalking-surface-compare-meta');
+  const cmpEl = document.getElementById('stalking-surface-compare');
   if (!findingsEl) return;
   try {
     const report = await api.get(`/api/stalking/${encodeURIComponent(project)}/surface`);
@@ -1884,6 +1886,26 @@ async function refreshStalkingSurface(project) {
     if (meta) meta.textContent = '';
     findingsEl.innerHTML = '<p class="empty">No surface report yet — record a baseline (auto) or click Assess latest.</p>';
     if (recsEl) recsEl.innerHTML = '';
+  }
+
+  if (cmpEl) {
+    try {
+      const cmp = await api.get(`/api/stalking/${encodeURIComponent(project)}/surface/compare`);
+      if (cmpMeta) cmpMeta.textContent = cmp.summaryLine || '';
+      const pairs = cmp.pairwise || [];
+      cmpEl.innerHTML = pairs.length
+        ? `<table><thead><tr><th>From → To</th><th>Shared</th><th>Only prev</th><th>Novel</th></tr></thead>
+          <tbody>${pairs.map((d) => `<tr>
+            <td><code>${escapeAttr(d.fromTag)}</code> → <code>${escapeAttr(d.toTag)}</code></td>
+            <td>${d.shared}</td><td>${d.onlyInFrom}</td><td class="diff">+${d.onlyInTo}</td>
+          </tr>`).join('')}</tbody></table>
+          ${pairs.flatMap((d) => (d.sampleOnlyInTo || []).slice(0, 3).map((s) =>
+            `<div class="hint">+ [${escapeAttr(d.toTag)}] ${escapeAttr(s)}</div>`)).join('')}`
+        : '<p class="empty">Need 2+ assessed layers to compare surface findings.</p>';
+    } catch {
+      if (cmpMeta) cmpMeta.textContent = '';
+      cmpEl.innerHTML = '';
+    }
   }
 }
 

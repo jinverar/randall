@@ -772,6 +772,16 @@ app.MapPost("/api/stalking/{project}/surface/assess", (string project, ExploitSu
     }
 });
 
+app.MapGet("/api/stalking/{project}/surface/compare", (string project, string? layers) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    var ids = string.IsNullOrWhiteSpace(layers)
+        ? Array.Empty<string>()
+        : layers.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    return Results.Ok(ExploitSurfaceCompare.Compare(project, ids));
+});
+
 app.MapGet("/api/stalking/{project}/layers/{layerId}/surface", (string project, string layerId) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

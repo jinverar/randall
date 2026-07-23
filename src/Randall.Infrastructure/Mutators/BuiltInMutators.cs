@@ -74,6 +74,29 @@ public static class BuiltInMutators
             }
         }
 
+        // Exploit Surface sidecar — auto-merge after baseline assess (docs/SURFACE.md).
+        try
+        {
+            var repo = CrashCatalog.FindRepoRoot() ?? Path.GetDirectoryName(Path.GetFullPath(yamlPath));
+            if (repo is not null && !string.IsNullOrWhiteSpace(project.Name))
+            {
+                var surfaceDict = Path.Combine(repo, "data", "stalk", project.Name, "surface", "dictionary-tokens.txt");
+                if (File.Exists(surfaceDict))
+                {
+                    foreach (var line in File.ReadLines(surfaceDict))
+                    {
+                        if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#'))
+                            continue;
+                        tokens.Add(DecodeDictionaryEntry(line));
+                    }
+                }
+            }
+        }
+        catch
+        {
+            /* soft */
+        }
+
         return tokens;
     }
 
