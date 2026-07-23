@@ -14,7 +14,7 @@ mini-timeline is post-crash enrichment next to `autoAnalyzeCrash` and recorders.
 (EZ) tools and Procmon are missing.
 
 Related: [RECORDING.md](RECORDING.md) · [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md) ·
-[CRASH_LOGGING.md](CRASH_LOGGING.md) · [STALKING.md](STALKING.md)
+[CRASH_LOGGING.md](CRASH_LOGGING.md) · [STALKING.md](STALKING.md) · [SURFACE.md](SURFACE.md)
 
 ---
 
