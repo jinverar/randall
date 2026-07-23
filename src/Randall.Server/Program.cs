@@ -712,6 +712,12 @@ app.MapPost("/api/rop/from-crash", (RopFromCrashRequest body) =>
     return Results.Ok(RopStudio.FromCrash(body.CrashId, body.Goal, body.BadCharsHex));
 });
 
+app.MapPost("/api/rop/badchars", (RopBadCharRequest body) =>
+{
+    var report = RopBadCharLearner.LearnFromCrash(body.CrashId);
+    return report.Error is null ? Results.Ok(report) : Results.BadRequest(report);
+});
+
 app.MapGet("/api/windbg/scripts", () =>
     Results.Ok(new { help = RandfuzzDbgWalk.FormatScriptHelp(), scriptsDir = RandfuzzDbgWalk.ScriptsDir() }));
 

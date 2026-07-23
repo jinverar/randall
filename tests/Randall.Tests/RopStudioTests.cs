@@ -81,6 +81,41 @@ public class RopStudioTests
     }
 
     [Fact]
+    public void BadCharLearner_FindsNullAndNewline()
+    {
+        var input = "AAAA"u8.ToArray().Concat(new byte[] { 0x00 }).Concat("BBBB\nCCCC"u8.ToArray()).ToArray();
+        var report = RopBadCharLearner.LearnFromBytes(input, controlOffset: 8);
+        Assert.Contains((byte)0x00, report.Suggested);
+        Assert.Contains((byte)0x0a, report.Suggested);
+        Assert.Contains("\\x00", report.BadCharsHex);
+        Assert.True(report.Reasons!.Count > 0);
+    }
+
+    [Fact]
+    public void BadCharLearner_DefaultsNullWhenCleanBinary()
+    {
+        // Avoid classic breakers (NUL/LF/CR/SUB/space/tab/0xff)
+        var input = Enumerable.Range(0x41, 40).Select(i => (byte)i).ToArray();
+        var report = RopBadCharLearner.LearnFromBytes(input);
+        Assert.Contains((byte)0x00, report.Suggested);
+        Assert.Contains(report.Reasons!, r => r.Contains("defaulting", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Scanner_FindsCommonGadgetKinds()
+    {
+        var exe = FirstExisting("/bin/true", "/usr/bin/true", "/bin/ls", "/usr/bin/ls");
+        if (exe is null) return;
+        var report = RopGadgetScanner.Scan(exe, writeCache: false, maxGadgets: 2000);
+        Assert.Null(report.Error);
+        Assert.Contains(report.Gadgets, g =>
+            g.Kind is "ret" or "nop-ret" or "leave-ret" or "add-sp"
+            || g.Kind.StartsWith("pop-", StringComparison.Ordinal)
+            || g.Kind.StartsWith("jmp-", StringComparison.Ordinal)
+            || g.Kind.StartsWith("call-", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ExploitGuide_MentionsRopStudio()
     {
         var exe = FirstExisting("/bin/true", "/usr/bin/true", "/bin/ls", "/usr/bin/ls");

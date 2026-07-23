@@ -56,11 +56,13 @@ minidump + input + guide  →   ROP Studio scan/search/sketch → !rf.* extensio
 randall rop scan --exe <path> [--out gadgets.json] [--arch x64|x86|auto]
 randall rop search --exe <path> --need pop-rcx [--badchars "\x00\x0a"]
 randall rop sketch --exe <path> --goal pivot|write|control [--badchars …]
-randall rop from-crash -i <crash-guid> [--goal pivot]
+randall rop from-crash -i <crash-guid> [--goal pivot]   # auto-learns badchars when omitted
+randall rop badchars -i <crash-guid>                    # write *_badchars.json
 ```
 
-**Gadget kinds (v1):** `ret`, `pop-<reg>`, `add-sp`, `xchg-sp`, `jmp-reg`, `call-reg`,
-`leave-ret`, `pop-pop-ret` (SEH-ish), `mov-rm`, `pushad-ret` (x86).
+**Gadget kinds (v1+):** `ret`, `retn`, `pop-<reg>`, `pop3-ret`, `add-sp`, `sub-sp`, `xchg-sp`,
+`jmp-reg`, `call-reg`, `leave-ret`, `pop-pop-ret`, `mov-rm` / `mov-rr`, `pushad-ret` / `popad-ret` (x86),
+`nop-ret`.
 
 **Sketch goals (v1):**
 
@@ -72,14 +74,20 @@ randall rop from-crash -i <crash-guid> [--goal pivot]
 
 Sketches are **ordered gadget citations** with why/constraints — not an exploit blob.
 
+**Badchar learning:** heuristics from the crashing input (null / CRLF / whitespace truncation
+signals). Feeds `--badchars` and auto-filters `from-crash` sketches. Not a live byte-campaign.
+
 On-disk:
 
 ```
 data/crashes/<project>/<guid>_rop.json          # from-crash / sketch
 data/crashes/<project>/<guid>_windbg_walk.json  # debugger walk export
+data/crashes/<project>/<guid>_badchars.json     # learned filter
 data/rop/<sha256-of-module>.gadgets.json        # reusable module cache
 ```
 
+Triage export (`randall export` / Crashes UI) copies `rop_sketch.json`, `windbg_walk.json`,
+and `badchars.json` into `data/exports/<guid>/` when available.
 ---
 
 ## RandfuzzDbg (WinDbg Preview)
@@ -118,15 +126,17 @@ Planned commands:
 | Command | Job |
 |---------|-----|
 | `!rf.help` | Catalog |
-| `!rf.crash` | Show linked Randfuzz walk JSON / crash guid if set |
-| `!rf.regs` | Faulting context summary |
+| `!rf.walk` | Registers / stack / PEB / modules / exception |
+| `!rf.crash [walk.json]` | Show linked Randfuzz walk JSON / crash guid |
+| `!rf.regs` | Faulting context (`r`) |
 | `!rf.control` | Pattern / CONTROL hint from walk file |
-| `!rf.stack` | Stack / saved RET walk |
-| `!rf.modules` | Module list + rebase notes |
-| `!rf.rop` | Print top gadgets from sibling `*_rop.json` |
+| `!rf.stack` | Stack / saved RET walk (`k`) |
+| `!rf.modules` | Module list (`lm`) |
+| `!rf.rop [rop.json]` | Print top gadgets from sibling `*_rop.json` |
 | `!rf.export` | Refresh walk JSON path hint |
 
 Build on a Windows lab with Debugging Tools SDK (see `tools/randfuzzdbg/README.md`).
+Copy/rename the DLL to `rf.dll` (or use `!RandfuzzDbg.*`) so `!rf.walk` resolves.
 Linux CI keeps host ROP Studio + scripts; DLL is Windows-only.
 
 ---
@@ -158,7 +168,11 @@ Linux CI keeps host ROP Studio + scripts; DLL is Windows-only.
 - [x] Host ROP scan / search / sketch / from-crash
 - [x] WinDbg scripts + walk JSON export
 - [x] Extension stub + Windows build notes
-- [ ] Full dbgeng DML commands (`!rf.*`)
-- [ ] Crashes UI — ROP Studio panel
-- [ ] ELF depth + Windows PDB-assisted naming
-- [ ] Badchar learning from crashing input
+- [x] Crashes UI — ROP Studio panel (+ badchars / goal)
+- [x] Badchar learning from crashing input
+- [x] Deeper gadget decode (retn / pop3 / mov-rr / sub-sp / …)
+- [x] Triage export packs ROP + walk + badchars sidecars
+- [x] dbgeng commands (`!rf.walk` / `!rf.crash` / `!rf.rop` / …) — file-backed + Execute
+- [ ] Richer DML / dump-native register parse (beyond `r`/`k` Execute)
+- [ ] Windows PDB-assisted naming
+- [ ] ELF depth (more reloc / plt awareness)

@@ -21,33 +21,42 @@ $$>a< <repo>\tools\randfuzzdbg\scripts\rf_walk.txt
 | Script | Purpose |
 |--------|---------|
 | `scripts/rf_walk.txt` | Registers, stack, modules, PEB — standard walk |
-| `scripts/rf_load.txt` | Path / load notes for the future `!rf.*` extension |
+| `scripts/rf_load.txt` | Path / load notes for the `!rf.*` extension |
 
 ## Extension DLL (Windows lab)
 
-`src/` contains a **dbgeng stub** for `RandfuzzDbg.dll`. Build on Windows with
+`src/` contains a **dbgeng extension** for `RandfuzzDbg.dll` / `rf.dll`. Build on Windows with
 Debugging Tools for Windows / Windows SDK:
 
 ```powershell
 cd tools\randfuzzdbg
 cmake -B build -A x64
 cmake --build build --config Release
-# copy build\Release\RandfuzzDbg.dll next to WinDbg or:
-#   .load C:\path\to\RandfuzzDbg.dll
+# Prefer copying as rf.dll so !rf.* resolves:
+#   copy build\Release\RandfuzzDbg.dll <WinDbg>\winext\rf.dll
+#   .load rf
 ```
-
-Planned commands (stub prints help until implemented):
 
 | Command | Job |
 |---------|-----|
 | `!rf.help` | Catalog |
-| `!rf.crash` | Linked walk JSON / crash guid |
-| `!rf.regs` | Fault context |
+| `!rf.walk` | Registers / stack / PEB / modules / exception |
+| `!rf.crash [walk.json]` | Linked walk JSON / crash guid (sets path for later cmds) |
+| `!rf.regs` | Fault context (`r`) |
 | `!rf.control` | CONTROL offset hint from walk file |
-| `!rf.stack` | Stack walk |
-| `!rf.modules` | Module list |
-| `!rf.rop` | Top gadgets from sibling `*_rop.json` |
-| `!rf.export` | Refresh walk path hint |
+| `!rf.stack` | Stack walk (`k`) |
+| `!rf.modules` | Module list (`lm`) |
+| `!rf.rop [rop.json]` | Top gadgets from sibling `*_rop.json` |
+| `!rf.export` | Host refresh hint (`randall windbg walk`) |
+
+Typical flow after opening a dump:
+
+```
+!rf.crash C:\lab\data\crashes\vulnlab\<guid>_windbg_walk.json
+!rf.walk
+!rf.control
+!rf.rop
+```
 
 ## Boundary
 

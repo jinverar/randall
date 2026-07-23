@@ -1,4 +1,5 @@
 using Randall.Contracts;
+using Randall.Infrastructure.Rop;
 
 namespace Randall.Infrastructure;
 
@@ -135,6 +136,53 @@ public static class CrashStalker
             exportDir);
 
         GhidraExporter.WriteArtifacts(exportDir, bundle, edges, baselineEdges, goToRva, divergeEdge);
+
+        // ROP Studio / RandfuzzDbg sidecars (lab exploit-dev walks — no payloads).
+        var crashesDir = Path.Combine(repoRoot, "data", "crashes", detail.Summary.Project);
+        string? ropCopy = null;
+        string? walkCopy = null;
+        string? badCopy = null;
+
+        try
+        {
+            var learned = RopBadCharLearner.LearnFromCrash(crashId, repoRoot);
+            if (learned.OutputPath is not null && File.Exists(learned.OutputPath))
+            {
+                badCopy = Path.Combine(exportDir, "badchars.json");
+                File.Copy(learned.OutputPath, badCopy, overwrite: true);
+            }
+        }
+        catch { /* optional */ }
+
+        try
+        {
+            var walk = RandfuzzDbgWalk.BuildForCrash(crashId, repoRoot);
+            if (walk.WalkPath is not null && File.Exists(walk.WalkPath))
+            {
+                walkCopy = Path.Combine(exportDir, "windbg_walk.json");
+                File.Copy(walk.WalkPath, walkCopy, overwrite: true);
+            }
+        }
+        catch { /* optional */ }
+
+        var ropSrc = Path.Combine(crashesDir, $"{crashId:N}_rop.json");
+        if (File.Exists(ropSrc))
+        {
+            ropCopy = Path.Combine(exportDir, "rop_sketch.json");
+            File.Copy(ropSrc, ropCopy, overwrite: true);
+        }
+
+        var readmeExtra = $"""
+
+            ROP Studio / RandfuzzDbg
+            ROP sketch: {(ropCopy is null ? "(none — randall rop from-crash -i " + crashId.ToString("N") + ")" : "rop_sketch.json")}
+            WinDbg walk: {(walkCopy is null ? "(none)" : "windbg_walk.json")}
+            Badchars: {(badCopy is null ? "(none)" : "badchars.json")}
+            Scripts: tools/randfuzzdbg/scripts/rf_walk.txt
+            Docs: docs/WINDBG_FUZZ_PKG.md
+            """;
+        File.AppendAllText(Path.Combine(exportDir, "README.txt"), readmeExtra);
+
         return bundle with { FirstDivergeIndex = divergeIndex };
     }
 

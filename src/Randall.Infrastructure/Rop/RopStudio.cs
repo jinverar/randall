@@ -170,13 +170,23 @@ public static class RopStudio
                 "no module path on crash — pass --exe or ensure sidecar TargetDetail / analysis modules",
                 [], Error: "no module");
 
+        // Auto-learn badchars from crashing input when caller did not pass a filter.
+        var bad = badCharsHex;
+        if (string.IsNullOrWhiteSpace(bad))
+        {
+            var learned = RopBadCharLearner.LearnFromCrash(crashId, repoRoot);
+            if (learned.Error is null && !string.IsNullOrWhiteSpace(learned.BadCharsHex))
+                bad = learned.BadCharsHex;
+        }
+
         var crashesDir = Path.Combine(repoRoot, "data", "crashes", detail.Summary.Project);
         Directory.CreateDirectory(crashesDir);
         var outPath = Path.Combine(crashesDir, $"{crashId:N}_rop.json");
-        var sketch = Sketch(exe, goal, badCharsHex, repoRoot: repoRoot, outputPath: outPath);
+        var sketch = Sketch(exe, goal, bad, repoRoot: repoRoot, outputPath: outPath);
         return sketch with
         {
-            SummaryLine = sketch.SummaryLine + $" · crash {crashId:N}",
+            SummaryLine = sketch.SummaryLine + $" · crash {crashId:N}" +
+                          (string.IsNullOrWhiteSpace(bad) ? "" : " · badchars auto"),
         };
     }
 

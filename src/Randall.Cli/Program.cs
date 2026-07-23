@@ -89,6 +89,7 @@ static void PrintHelp()
           randall rop search --exe <path> --need pop-rdi [--badchars "00 0a"]
           randall rop sketch --exe <path> --goal pivot|write|control
           randall rop from-crash -i <crash-guid> [--goal pivot]
+          randall rop badchars -i <crash-guid>   Learn badchars from crashing input
           randall windbg scripts            RandfuzzDbg script paths
           randall windbg walk -i <crash-guid>   Write *_windbg_walk.json + script hints
           randall memory -i <crash-guid>    Memory lens (UAF fill, regions, neighborhood)
@@ -2893,6 +2894,7 @@ static int RunRop(string[] args)
               randall rop search --exe <path> --need <kind> [--badchars "00 0a"] [--json]
               randall rop sketch --exe <path> --goal pivot|write|control [--badchars …] [--json]
               randall rop from-crash -i <crash-guid> [--goal pivot] [--json]
+              randall rop badchars -i <crash-guid> [--json]
 
             ROP Studio — gadget catalog + constrained chain sketches for lab binaries.
             No shellcode / payloads. See docs/WINDBG_FUZZ_PKG.md.
@@ -2935,11 +2937,21 @@ static int RunRop(string[] args)
 
         report = RopStudio.FromCrash(crashId.Value, goal ?? "pivot", bad);
     }
+    else if (sub is "badchars" or "badchar" or "learn-badchars")
+    {
+        if (crashId is null)
+        {
+            Console.Error.WriteLine("Usage: randall rop badchars -i <crash-guid>");
+            return 1;
+        }
+
+        report = RopBadCharLearner.LearnFromCrash(crashId.Value);
+    }
     else
     {
         if (string.IsNullOrWhiteSpace(exe))
         {
-            Console.Error.WriteLine("Usage: randall rop scan|search|sketch --exe <path> …");
+            Console.Error.WriteLine("Usage: randall rop scan|search|sketch|badchars …");
             return 1;
         }
 
@@ -3000,6 +3012,15 @@ static int RunRop(string[] args)
             if (sketch.OutputPath is not null)
                 Console.WriteLine($"  wrote: {sketch.OutputPath}");
             return sketch.Error is null && sketch.Steps.Count > 0 ? 0 : 2;
+        case RopBadCharReportDto badchars:
+            Console.WriteLine(badchars.SummaryLine);
+            foreach (var r in badchars.Reasons ?? [])
+                Console.WriteLine($"  · {r}");
+            if (!string.IsNullOrWhiteSpace(badchars.BadCharsHex))
+                Console.WriteLine($"  --badchars \"{badchars.BadCharsHex}\"");
+            if (badchars.OutputPath is not null)
+                Console.WriteLine($"  wrote: {badchars.OutputPath}");
+            return badchars.Error is null ? 0 : 2;
         default:
             return 1;
     }

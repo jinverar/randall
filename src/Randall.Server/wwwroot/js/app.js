@@ -2325,6 +2325,23 @@ function renderCrashDetail(detail, title) {
       <p class="hint" id="crash-memory-status">Loading…</p>
       <div id="crash-memory-body"></div>
     </div>
+    <div class="triage-box" id="crash-rop-box">
+      <h4>ROP Studio / RandfuzzDbg <span class="hint-inline">lab sketches — no payloads</span></h4>
+      <p class="hint" id="crash-rop-status">Gadget catalog + WinDbg walk for this scream.</p>
+      <div id="crash-rop-body" class="hint"></div>
+      <div class="btn-row wrap" style="margin-top:0.5rem; align-items:center; gap:0.5rem">
+        <label class="hint" for="crash-rop-goal">Goal
+          <select id="crash-rop-goal">
+            <option value="pivot" selected>pivot</option>
+            <option value="control">control</option>
+            <option value="write">write</option>
+          </select>
+        </label>
+        <button type="button" class="btn" id="crash-rop-sketch-btn">ROP sketch</button>
+        <button type="button" class="btn" id="crash-rop-badchars-btn">Learn badchars</button>
+        <button type="button" class="btn" id="crash-windbg-walk-btn">WinDbg walk JSON</button>
+      </div>
+    </div>
     <p class="hint crash-path"><code>${escapeAttr(detail.summary.inputPath)}</code></p>
     <div class="btn-row tool-cmds wrap">
       <button type="button" class="btn primary" id="export-crash-btn">Export triage</button>
@@ -2337,6 +2354,75 @@ function renderCrashDetail(detail, title) {
     <p id="export-result" class="empty"></p>`;
 
   loadCrashMemoryLens(detail.summary.id).catch(() => {});
+
+  document.getElementById('crash-rop-sketch-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    const goal = document.getElementById('crash-rop-goal')?.value || 'pivot';
+    try {
+      if (status) status.textContent = 'Sketching…';
+      const sketch = await api.post('/api/rop/from-crash', {
+        crashId: detail.summary.id,
+        goal,
+      });
+      if (status) status.textContent = sketch.summaryLine || 'ROP sketch';
+      if (body) {
+        const steps = sketch.steps || [];
+        const constraints = (sketch.constraints || []).map((c) =>
+          `<li class="hint">${escapeAttr(c)}</li>`).join('');
+        body.innerHTML = (constraints ? `<ul>${constraints}</ul>` : '') + (steps.length
+          ? `<ol>${steps.map((s) =>
+              `<li><code>${escapeAttr(s.gadget?.address || '')}</code> ${escapeAttr(s.gadget?.instruction || s.role)}
+               <div class="hint">${escapeAttr(s.why || '')}</div></li>`).join('')}</ol>`
+          : `<p class="empty">${escapeAttr(sketch.error || 'No gadgets — ensure TargetDetail / module path exists')}</p>`);
+      }
+      if (out) out.textContent = sketch.outputPath ? `Wrote ${sketch.outputPath}` : (sketch.summaryLine || '');
+    } catch (err) {
+      if (status) status.textContent = 'ROP sketch failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-rop-badchars-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    try {
+      if (status) status.textContent = 'Learning badchars…';
+      const report = await api.post('/api/rop/badchars', { crashId: detail.summary.id });
+      if (status) status.textContent = report.summaryLine || 'Badchars';
+      if (body) {
+        const reasons = report.reasons || [];
+        body.innerHTML = `<p><code>${escapeAttr(report.badCharsHex || '')}</code></p>
+          <ul>${reasons.map((r) => `<li class="hint">${escapeAttr(r)}</li>`).join('')}</ul>`;
+      }
+      if (out) out.textContent = report.outputPath ? `Wrote ${report.outputPath}` : (report.summaryLine || '');
+    } catch (err) {
+      if (status) status.textContent = 'Badchar learn failed';
+      if (out) out.textContent = err.message;
+    }
+  });
+
+  document.getElementById('crash-windbg-walk-btn')?.addEventListener('click', async () => {
+    const status = document.getElementById('crash-rop-status');
+    const body = document.getElementById('crash-rop-body');
+    const out = document.getElementById('export-result');
+    try {
+      if (status) status.textContent = 'Writing walk…';
+      const walk = await api.post('/api/windbg/walk', detail.summary.id);
+      if (status) status.textContent = walk.summaryLine || 'WinDbg walk';
+      if (body) {
+        body.innerHTML = `<p>Walk: <code>${escapeAttr(walk.walkPath || '—')}</code></p>
+          ${walk.exceptionHint ? `<p class="hint">Exception: ${escapeAttr(walk.exceptionHint)}</p>` : ''}
+          <pre class="hint">${(walk.scriptLines || []).slice(0, 8).map(escapeAttr).join('\n')}</pre>`;
+      }
+      if (out) out.textContent = walk.walkPath ? `Wrote ${walk.walkPath}` : (walk.summaryLine || '');
+    } catch (err) {
+      if (status) status.textContent = 'Walk failed';
+      if (out) out.textContent = err.message;
+    }
+  });
 
   document.getElementById('crash-filter-cluster-btn')?.addEventListener('click', () => {
     const key = t?.clusterKey || crashClusterKey(detail.summary) || cluster?.clusterId;

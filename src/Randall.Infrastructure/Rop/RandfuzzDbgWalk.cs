@@ -70,6 +70,8 @@ public static class RandfuzzDbgWalk
         var walkPath = Path.Combine(crashesDir, $"{crashId:N}_windbg_walk.json");
         var ropPath = Path.Combine(crashesDir, $"{crashId:N}_rop.json");
         if (!File.Exists(ropPath)) ropPath = null;
+        var badPath = Path.Combine(crashesDir, $"{crashId:N}_badchars.json");
+        if (!File.Exists(badPath)) badPath = null;
 
         var report = new WindbgWalkReportDto(
             crashId,
@@ -82,7 +84,9 @@ public static class RandfuzzDbgWalk
             scriptLines,
             $"windbg-walk: crash {crashId:N}" + (dump is null ? " (no dump yet)" : ""),
             walkPath.Replace('\\', '/'),
-            ropPath?.Replace('\\', '/'));
+            ropPath?.Replace('\\', '/'),
+            badPath?.Replace('\\', '/'),
+            ExceptionHint: detail.Analysis?.ExceptionHint ?? detail.Summary.ExceptionHint);
 
         try
         {

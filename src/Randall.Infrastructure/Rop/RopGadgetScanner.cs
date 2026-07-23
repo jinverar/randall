@@ -123,8 +123,8 @@ public static class RopGadgetScanner
         // ret alone
         Add(gadgets, baseVa + (ulong)retIndex, "ret", data.AsSpan(retIndex, 1), "ret", mod, ["ret"]);
 
-        // Look back up to 8 bytes for short gadgets ending at this ret.
-        for (var back = 1; back <= 8 && retIndex - back >= 0 && gadgets.Count < maxGadgets; back++)
+        // Look back up to 12 bytes for short gadgets ending at this ret.
+        for (var back = 1; back <= 12 && retIndex - back >= 0 && gadgets.Count < maxGadgets; back++)
         {
             var start = retIndex - back;
             var span = data.AsSpan(start, back + 1);
@@ -137,11 +137,30 @@ public static class RopGadgetScanner
 
     private static (string Kind, string Insn, string[] Tags)? TryDecode(string arch, ReadOnlySpan<byte> bytes)
     {
-        if (bytes.Length < 2 || bytes[^1] != 0xC3) return null;
+        if (bytes.Length < 2) return null;
+
+        // retn imm16 — C2 iw (still a return gadget)
+        if (bytes.Length == 3 && bytes[0] == 0xC2)
+        {
+            var imm = bytes[1] | (bytes[2] << 8);
+            return ("retn", $"retn 0x{imm:x}", ["ret", "retn"]);
+        }
+
+        if (bytes[^1] != 0xC3) return null;
 
         // leave; ret
         if (bytes.Length == 2 && bytes[0] == 0xC9)
             return ("leave-ret", "leave; ret", ["leave", "ret", "pivot"]);
+
+        // nop; ret
+        if (bytes.Length == 2 && bytes[0] == 0x90)
+            return ("nop-ret", "nop; ret", ["nop", "ret"]);
+
+        // pushad / popad ; ret (x86)
+        if (arch == "x86" && bytes.Length == 2 && bytes[0] == 0x60)
+            return ("pushad-ret", "pushad; ret", ["pushad", "ret"]);
+        if (arch == "x86" && bytes.Length == 2 && bytes[0] == 0x61)
+            return ("popad-ret", "popad; ret", ["popad", "ret"]);
 
         // pop r32/r64; ret  (58..5F) — on x64 without REX these are still the classic encodings
         if (bytes.Length == 2 && bytes[0] is >= 0x58 and <= 0x5F)
@@ -165,6 +184,18 @@ public static class RopGadgetScanner
             return ("pop-pop-ret", $"pop {a}; pop {b}; ret", ["pop", "seh", "ret"]);
         }
 
+        // pop; pop; pop; ret (common SEH / adjust)
+        if (bytes.Length == 4
+            && bytes[0] is >= 0x58 and <= 0x5F
+            && bytes[1] is >= 0x58 and <= 0x5F
+            && bytes[2] is >= 0x58 and <= 0x5F)
+        {
+            var a = RegName(arch, bytes[0] - 0x58);
+            var b = RegName(arch, bytes[1] - 0x58);
+            var c = RegName(arch, bytes[2] - 0x58);
+            return ("pop3-ret", $"pop {a}; pop {b}; pop {c}; ret", ["pop", "seh", "ret"]);
+        }
+
         // xchg esp/rsp, eax/rax ; ret — 94 C3 or 48 94 C3
         if (bytes.Length == 2 && bytes[0] == 0x94)
             return ("xchg-sp", arch == "x86" ? "xchg eax, esp; ret" : "xchg eax, esp; ret",
@@ -184,6 +215,30 @@ public static class RopGadgetScanner
         {
             var imm = bytes[3];
             return ("add-sp", $"add rsp, 0x{imm:x2}; ret", ["add", "sp", "pivot", "ret"]);
+        }
+
+        // sub esp/rsp, imm8; ret — 83 EC ib C3
+        if (bytes.Length == 4 && bytes[0] == 0x83 && bytes[1] == 0xEC)
+        {
+            var imm = bytes[2];
+            return ("sub-sp", $"sub {(arch == "x86" ? "esp" : "esp")}, 0x{imm:x2}; ret",
+                ["sub", "sp", "ret"]);
+        }
+
+        if (arch == "x64" && bytes.Length == 5 && bytes[0] == 0x48 && bytes[1] == 0x83 && bytes[2] == 0xEC)
+        {
+            var imm = bytes[3];
+            return ("sub-sp", $"sub rsp, 0x{imm:x2}; ret", ["sub", "sp", "ret"]);
+        }
+
+        // mov reg, reg ; ret — 89 / 8B with ModRM reg-reg (short forms)
+        if (bytes.Length == 3 && bytes[0] is 0x89 or 0x8B
+            && (bytes[1] & 0xC0) == 0xC0) // Mod=11 register
+        {
+            var src = RegName(arch, bytes[1] & 7);
+            var dst = RegName(arch, (bytes[1] >> 3) & 7);
+            var insn = bytes[0] == 0x89 ? $"mov {src}, {dst}; ret" : $"mov {dst}, {src}; ret";
+            return ("mov-rr", insn, ["mov", "reg", "ret"]);
         }
 
         return null;

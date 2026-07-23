@@ -76,4 +76,20 @@ public sealed record WindbgWalkReportDto(
     string SummaryLine,
     string? WalkPath = null,
     string? RopPath = null,
+    string? BadCharsPath = null,
+    string? Error = null,
+    string? ExceptionHint = null);
+
+public sealed record RopBadCharReportDto(
+    Guid? CrashId,
+    string? Project,
+    IReadOnlyList<byte> Suggested,
+    string BadCharsHex,           // \x00\x0a form for --badchars
+    string SummaryLine,
+    IReadOnlyList<string>? Reasons = null,
+    int? ControlOffset = null,
+    int? InputLength = null,
+    string? OutputPath = null,
     string? Error = null);
+
+public sealed record RopBadCharRequest(Guid CrashId);
