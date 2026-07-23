@@ -81,9 +81,9 @@ If a campaign trashes the box, roll back — don’t fight a dirty lab.
 4. Stop when done. Capture a drcov log if you ran under DynamoRIO manually, **or** let a short coverage-guided run with “normal” seeds create corpus edges.
 5. Open **Stalking bugs**:
    - Project = your target  
-   - **Start baseline session** (Procmon + snapshots) → use the app naturally → **Stop + record**  
+   - **Start baseline session** (Windows: Procmon + Sysinternals · Linux: `ss` + `/proc` maps) → use the app naturally → **Stop + record** (auto-attaches Target Runtime PID when available)  
    - Or: Tag = **baseline**, leave **Mini-timeline each layer** checked, **Record layer** / **From corpus edges**  
-   - Review **Exploit Surface** findings
+   - Review **Exploit Surface** findings and **Surface fuzz ideas**
 
 That layer is your “green” / normal map — code you already know how to reach — plus host
 mini-timeline and Exploit Surface suggestions (see [MINI_TIMELINE.md](MINI_TIMELINE.md) ·
