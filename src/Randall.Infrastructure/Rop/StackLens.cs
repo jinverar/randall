@@ -211,9 +211,10 @@ public static class StackLens
         CrashDetailDto? detail = null,
         int? guideOffset = null)
     {
+        // Only label controlled when the word's bytes appear in the crashing input
+        // (or a detected cyclic run). Never invent CONTROL from guide alone on SP+0.
+        _ = guideOffset;
         var inputOff = MatchInput(valueHex, input);
-        if (inputOff is null && guideOffset is int g && offsetFromSp == 0)
-            inputOff = g;
 
         var role = inputOff is not null ? "controlled" : "unknown";
         string? note = null;
@@ -250,23 +251,28 @@ public static class StackLens
         return new StackLensWordDto(offsetFromSp, addressHex, valueHex, role, inputOff, sym, note);
     }
 
-    internal static int? MatchInput(string valueHex, byte[]? input)
+    /// <summary>
+    /// Match a register/stack word against the crashing input.
+    /// Prefer exact bytes in the input; only use cyclic Offset when the input itself
+    /// looks like a Metasploit-style pattern (avoids false CONTROL on random printable qwords).
+    /// </summary>
+    public static int? MatchInput(string valueHex, byte[]? input)
     {
         if (string.IsNullOrWhiteSpace(valueHex))
             return null;
-        if (input is { Length: > 0 })
+        if (input is not { Length: > 0 })
+            return null;
+
+        var inBuf = PatternTools.OffsetInBuffer(valueHex, input);
+        if (inBuf >= 0) return inBuf;
+
+        var inferred = PatternTools.TryInferPatternLength(input);
+        if (inferred is int pl)
         {
-            var inBuf = PatternTools.OffsetInBuffer(valueHex, input);
-            if (inBuf >= 0) return inBuf;
-            var inferred = PatternTools.TryInferPatternLength(input) ?? input.Length;
-            var cyclic = PatternTools.Offset(valueHex, Math.Max(inferred, 8));
+            var cyclic = PatternTools.Offset(valueHex, Math.Max(pl, 8));
             if (cyclic >= 0) return cyclic;
         }
-        else
-        {
-            var cyclic = PatternTools.Offset(valueHex, PatternTools.MaxUnique);
-            if (cyclic >= 0) return cyclic;
-        }
+
         return null;
     }
 
@@ -400,15 +406,18 @@ public static class StackLens
 
     private static bool LooksLikeElfCore(string dump, string exe)
     {
+        _ = exe;
         var ext = Path.GetExtension(dump);
         if (ext.Equals(".dmp", StringComparison.OrdinalIgnoreCase)) return false;
         if (ext.Equals(".core", StringComparison.OrdinalIgnoreCase)) return true;
         if (Path.GetFileName(dump).Contains("core", StringComparison.OrdinalIgnoreCase)) return true;
+        // Inspect the dump itself — ELF cores start with 0x7F ELF (do not infer from exe alone).
         try
         {
             Span<byte> hdr = stackalloc byte[4];
-            using var fs = File.OpenRead(exe);
-            if (fs.Read(hdr) >= 4 && hdr[0] == 0x7F && hdr[1] == (byte)'E')
+            using var fs = File.OpenRead(dump);
+            if (fs.Read(hdr) >= 4 &&
+                hdr[0] == 0x7F && hdr[1] == (byte)'E' && hdr[2] == (byte)'L' && hdr[3] == (byte)'F')
                 return true;
         }
         catch { /* ignore */ }

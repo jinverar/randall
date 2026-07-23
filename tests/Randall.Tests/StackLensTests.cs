@@ -9,6 +9,31 @@ namespace Randall.Tests;
 public class StackLensTests
 {
     [Fact]
+    public void MatchInput_RequiresActualInputOrDetectedCyclic()
+    {
+        // Non-cyclic binary garbage must not match via synthetic cyclic Offset
+        var junk = Enumerable.Range(0, 64).Select(i => (byte)(i * 17 + 3)).ToArray();
+        Assert.Null(StackLens.MatchInput("0x4141414141414141", junk));
+        Assert.Null(StackLens.MatchInput("0x4141414141414141", null));
+
+        var pattern = Encoding.ASCII.GetBytes(PatternTools.Create(120));
+        var slice = pattern.AsSpan(40, 8).ToArray();
+        var le = (byte[])slice.Clone();
+        Array.Reverse(le);
+        var hex = "0x" + Convert.ToHexString(le);
+        Assert.Equal(40, StackLens.MatchInput(hex, pattern));
+    }
+
+    [Fact]
+    public void ClassifyWord_DoesNotApplyGuideOffsetBlindlyToSp0()
+    {
+        // Unrelated SP+0 value must stay unknown even if guide says offset 72
+        var word = StackLens.ClassifyWord(0, "RSP+0", "0x7ffdabcdef00", 8, input: null, guideOffset: 72);
+        Assert.Null(word.InputOffset);
+        Assert.NotEqual("controlled", word.Role);
+    }
+
+    [Fact]
     public void ClassifyWord_MarksCyclicControlledSlot()
     {
         var pattern = Encoding.ASCII.GetBytes(PatternTools.Create(200));
