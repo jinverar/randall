@@ -189,7 +189,7 @@ That brings dumps + lens + crash index. Stalk layer zips are still under `data/s
 | Run a campaign | **Fuzz → Campaign** (on the lab host) |
 | Natural-use baseline session | **Stalking bugs → Start baseline session** / Stop + record |
 | Record baseline / fuzzed / fuzzier | **Stalking bugs → Add layer** |
-| Host surface (sideload / listen) | **Stalking bugs → Exploit Surface** (+ Surface fuzz ideas) |
+| Host surface (sideload / listen) | **Stalking bugs → Exploit Surface** (+ Surface fuzz ideas → **Apply**) |
 | See what changed (coverage) | **Stalking bugs → Compare / Block map** |
 | See what changed (host) | **Stalking bugs → Host timeline compare / Surface compare** |
 | Why still dark + how to fuzz | **Stalking bugs → Missed blocks** (`randall stalk missed`) |
