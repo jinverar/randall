@@ -18,7 +18,9 @@ public class LabCatalogTests
         Assert.Contains(lib.Categories, c => c == "drone");
         Assert.Contains(lib.Categories, c => c == "network");
         Assert.Contains(lib.Categories, c => c == "file");
+        Assert.Contains(lib.Categories, c => c == "iot");
         Assert.Contains(LabCatalog.Categories(), c => c == "exploit-dev");
+        Assert.Contains(lib.Labs, l => l.Id == "vulnmqtt" && l.Category == "iot");
     }
 
     [Fact]
@@ -73,7 +75,27 @@ public class LabCatalogTests
     {
         Assert.Contains(DocsCatalog.Index, i => i.Path == "LAB_LIBRARY.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "DRONE_LAB.md");
+        Assert.Contains(DocsCatalog.Index, i => i.Path == "MQTT_LAB.md");
         Assert.Contains(DocsCatalog.Index, i => i.Path == "RPC_LAB.md");
+    }
+
+    [Fact]
+    public void MqttLab_IsCataloguedUnderIot()
+    {
+        var labs = LabServerManager.List(category: "iot");
+        Assert.Contains(labs, l => l.Id == "vulnmqtt");
+        var mqtt = labs.First(l => l.Id == "vulnmqtt");
+        Assert.Equal(18883, mqtt.Port);
+        Assert.Equal("tcp", mqtt.Protocol);
+        Assert.True(mqtt.Startable);
+        Assert.Equal("MQTT_LAB.md", mqtt.DocsPath);
+        Assert.Contains("mqtt-shaped", mqtt.Tags!);
+
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        Assert.True(File.Exists(Path.Combine(root, "projects", "vulnmqtt.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "protocols", "vulnmqtt_connect.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnMqtt", "Program.cs")));
+        Assert.True(File.Exists(Path.Combine(root, "docs", "MQTT_LAB.md")));
     }
 
     [Fact]

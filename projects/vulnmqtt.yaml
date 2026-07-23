@@ -1,0 +1,47 @@
+name: vulnmqtt
+description: "Fictional RMQ1 MQTT-shaped IoT broker (TCP) — lab only, not real MQTT. Build scripts/build-vulnmqtt.ps1"
+kind: tcp
+target:
+  executable: ../targets/vulnmqtt/randall-vulnmqtt.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 18883
+  receiveTimeoutMs: 800
+sessionCommands:
+  - name: CONNECT
+    model: protocols/vulnmqtt_connect.yaml
+  - name: PUBLISH
+    model: protocols/vulnmqtt_publish.yaml
+  - name: SUBSCRIBE
+    model: protocols/vulnmqtt_subscribe.yaml
+sessionFlows:
+  - name: connect_publish
+    steps: [CONNECT, PUBLISH]
+    mutateStep: last
+  - name: connect_subscribe
+    steps: [CONNECT, SUBSCRIBE]
+    mutateStep: last
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  sessionFlowBias: 0.45
+  corpusDir: ../data/corpus/vulnmqtt
+  crashesDir: ../data/crashes/vulnmqtt
+seeds:
+  - seeds/vulnmqtt_connect.bin
+  - seeds/vulnmqtt_publish.bin
+  - seeds/vulnmqtt_subscribe.bin
+  - seeds/vulnmqtt_connect_boom.bin
+  - seeds/vulnmqtt_publish_boom.bin
+  - seeds/vulnmqtt_subscribe_boom.bin
+mutators:
+  - boundary
+  - interesting
+  - expand
+  - havoc
+  - bitflip
+  - splice

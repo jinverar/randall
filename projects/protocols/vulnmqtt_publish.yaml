@@ -1,0 +1,33 @@
+name: vulnmqtt-publish
+description: RMQ1 PUBLISH — type 0x30 + BE rem_len + topic + payload
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnmqtt_type_publish.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: sized
+          lengthName: topic_len
+          lengthBytes: 2
+          littleEndian: false
+          child:
+            type: string
+            name: topic
+            mutable: true
+            value: "lab/sensors/temp"
+            minSize: 1
+            maxSize: 512
+        - type: bytes
+          name: payload
+          mutable: true
+          minSize: 0
+          maxSize: 1024
+          seedFile: seeds/vulnmqtt_payload.bin

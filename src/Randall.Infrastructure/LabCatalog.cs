@@ -78,6 +78,13 @@ public static class LabCatalog
             BuildHint: "scripts/build-vulndrone.ps1 · scripts/build-lab-targets.sh",
             ExtraArgs: ["--mode", "tcp"]),
 
+        // —— IoT / MQTT-shaped labs (fictional RMQ1 — not real MQTT wire) ——
+        new("vulnmqtt", "VulnMqtt", "Fictional MQTT-shaped IoT broker (RMQ1) — CONNECT / PUBLISH / SUBSCRIBE length crashes",
+            "iot", "intermediate", 18883, "tcp", "randall-vulnmqtt",
+            "targets/vulnmqtt/randall-vulnmqtt.exe", "projects/vulnmqtt.yaml",
+            ["mqtt-shaped", "iot", "tcp", "length-field"], DocsPath: "MQTT_LAB.md",
+            BuildHint: "scripts/build-vulnmqtt.ps1 · scripts/build-lab-targets.sh"),
+
         // —— Exploit-dev / mitigation (native; start when built) ——
         // Port 9998 for UI start so it does not fight Vulnserver on 9999; fuzz YAML still defaults to 9999.
         new("vulnlab", "VulnLab (basic)", "Native mitigation-ladder TCP ECHO service (Linux/gcc). UI start uses :9998.",

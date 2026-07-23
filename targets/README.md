@@ -27,8 +27,9 @@ scripts/build-lab-targets.sh
 | **VulnSmb** | 4455 | `projects/vulnsmb.yaml` | [Randall.VulnSmb](Randall.VulnSmb/) (NBSS+SMB2-shaped lab) |
 | **VulnDrone UDP** | 15550/udp | `projects/vulndrone-udp.yaml` | [Randall.VulnDrone](Randall.VulnDrone/) (fictional RDL1) |
 | **VulnDrone TCP** | 15551/tcp | `projects/vulndrone-tcp.yaml` | same binary, `--mode tcp` |
+| **VulnMqtt** | 18883/tcp | `projects/vulnmqtt.yaml` | [Randall.VulnMqtt](Randall.VulnMqtt/) (fictional RMQ1 MQTT-shaped) |
 
-Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md). Labs: [RPC_LAB.md](../docs/RPC_LAB.md) · [SMB_LAB.md](../docs/SMB_LAB.md) · [DRONE_LAB.md](../docs/DRONE_LAB.md) · [LAB_LIBRARY.md](../docs/LAB_LIBRARY.md).
+Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md). Labs: [RPC_LAB.md](../docs/RPC_LAB.md) · [SMB_LAB.md](../docs/SMB_LAB.md) · [DRONE_LAB.md](../docs/DRONE_LAB.md) · [MQTT_LAB.md](../docs/MQTT_LAB.md) · [LAB_LIBRARY.md](../docs/LAB_LIBRARY.md).
 
 ## Randfuzz Vulnserver (included)
 
