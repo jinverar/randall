@@ -92,6 +92,33 @@ public static class PortablePacker
         var size = Directory.EnumerateFiles(outputDir, "*", SearchOption.AllDirectories)
             .Sum(f => new FileInfo(f).Length);
 
+        // Unsigned draft manifest for the releaser to hash/sign (see docs/UPDATES.md).
+        var draft = new UpdateManifestDto
+        {
+            SchemaVersion = 1,
+            Product = "randfuzz",
+            Version = AppVersion.Version.TrimStart('v'),
+            Channel = "stable",
+            Severity = "minor",
+            PublishedAt = DateTimeOffset.UtcNow.ToString("O"),
+            NotesUrl = $"https://github.com/jinverar/randall/releases/tag/v{AppVersion.Version.TrimStart('v')}",
+            ReleaseTag = "v" + AppVersion.Version.TrimStart('v'),
+            Assets =
+            [
+                new UpdateAssetDto
+                {
+                    Rid = rid,
+                    File = $"randfuzz-{rid}.zip",
+                    Sha256 = "REPLACE_AFTER_ZIPPING",
+                    Size = size,
+                    ContentType = "application/zip",
+                },
+            ],
+        };
+        var draftJson = UpdateService.BuildManifestJson(draft);
+        await File.WriteAllTextAsync(Path.Combine(outputDir, "update-manifest.DRAFT.json"), draftJson, cancellationToken);
+        included.Add("update-manifest.DRAFT.json");
+
         return new PackResultDto(outputDir, size, included.ToArray());
     }
 
