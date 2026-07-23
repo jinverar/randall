@@ -17,22 +17,30 @@ public static class MiniTimelineGraphBuilder
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    public static string GraphPath(string crashesDir, Guid crashId) =>
-        Path.Combine(MiniTimelineCapture.TimelineDir(crashesDir, crashId), "graph.json");
+    public static string GraphPath(string rootDir, Guid crashId) =>
+        GraphPath(rootDir, crashId.ToString("N"));
 
-    public static string MergedCsvPath(string crashesDir, Guid crashId) =>
-        Path.Combine(MiniTimelineCapture.TimelineDir(crashesDir, crashId), "merged.csv");
+    public static string GraphPath(string rootDir, string timelineKey) =>
+        Path.Combine(MiniTimelineCapture.TimelineDir(rootDir, timelineKey), "graph.json");
+
+    public static string MergedCsvPath(string rootDir, Guid crashId) =>
+        MergedCsvPath(rootDir, crashId.ToString("N"));
+
+    public static string MergedCsvPath(string rootDir, string timelineKey) =>
+        Path.Combine(MiniTimelineCapture.TimelineDir(rootDir, timelineKey), "merged.csv");
 
     public static MiniTimelineGraphDto Build(
-        string crashesDir,
+        string rootDir,
         Guid crashId,
         MiniTimelineSummaryDto summary,
         string? inputPath = null,
-        int maxNodesPerSource = 40)
+        int maxNodesPerSource = 40,
+        string? timelineKey = null)
     {
         var nodes = new List<MiniTimelineGraphNodeDto>();
         var edges = new List<MiniTimelineGraphEdgeDto>();
-        var dir = MiniTimelineCapture.TimelineDir(crashesDir, crashId);
+        var key = string.IsNullOrWhiteSpace(timelineKey) ? crashId.ToString("N") : timelineKey!;
+        var dir = MiniTimelineCapture.TimelineDir(rootDir, key);
 
         void AddNode(string id, string kind, string label, params (string k, string v)[] props)
         {
@@ -112,21 +120,26 @@ public static class MiniTimelineGraphBuilder
     }
 
     public static string Write(
-        string crashesDir,
+        string rootDir,
         Guid crashId,
         MiniTimelineSummaryDto summary,
-        string? inputPath = null)
+        string? inputPath = null,
+        string? timelineKey = null)
     {
-        var graph = Build(crashesDir, crashId, summary, inputPath);
-        var path = GraphPath(crashesDir, crashId);
+        var key = string.IsNullOrWhiteSpace(timelineKey) ? crashId.ToString("N") : timelineKey!;
+        var graph = Build(rootDir, crashId, summary, inputPath, timelineKey: key);
+        var path = GraphPath(rootDir, key);
         File.WriteAllText(path, JsonSerializer.Serialize(graph, JsonOpts));
-        TryWriteMergedCsv(crashesDir, crashId);
+        TryWriteMergedCsv(rootDir, key);
         return path;
     }
 
-    public static MiniTimelineGraphDto? TryRead(string crashesDir, Guid crashId)
+    public static MiniTimelineGraphDto? TryRead(string rootDir, Guid crashId) =>
+        TryRead(rootDir, crashId.ToString("N"));
+
+    public static MiniTimelineGraphDto? TryRead(string rootDir, string timelineKey)
     {
-        var path = GraphPath(crashesDir, crashId);
+        var path = GraphPath(rootDir, timelineKey);
         if (!File.Exists(path)) return null;
         try
         {
@@ -138,10 +151,10 @@ public static class MiniTimelineGraphBuilder
         }
     }
 
-    private static void TryWriteMergedCsv(string crashesDir, Guid crashId)
+    private static void TryWriteMergedCsv(string rootDir, string timelineKey)
     {
-        var dir = MiniTimelineCapture.TimelineDir(crashesDir, crashId);
-        var dest = MergedCsvPath(crashesDir, crashId);
+        var dir = MiniTimelineCapture.TimelineDir(rootDir, timelineKey);
+        var dest = MergedCsvPath(rootDir, timelineKey);
         var sources = new (string Name, string File)[]
         {
             ("evtx", "evtx.csv"),

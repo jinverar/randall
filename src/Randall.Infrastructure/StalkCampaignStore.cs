@@ -113,8 +113,113 @@ public static class StalkCampaignStore
             request.CrashId,
             request.Notes);
 
+        layer = MaybeCaptureBaselineMiniTimeline(layer, request, repoRoot, dir);
+
         File.WriteAllText(Path.Combine(dir, $"layer-{id}.json"), JsonSerializer.Serialize(layer, JsonOptions));
         return layer;
+    }
+
+    /// <summary>Tag contains "base" (baseline, base, …) — same rule as MissedBlockAnalyzer / CrashStalker.</summary>
+    public static bool IsBaselineTag(string? tag) =>
+        !string.IsNullOrWhiteSpace(tag) &&
+        tag.Contains("base", StringComparison.OrdinalIgnoreCase);
+
+    private static StalkLayerDto MaybeCaptureBaselineMiniTimeline(
+        StalkLayerDto layer,
+        StalkLayerCreateRequest request,
+        string repoRoot,
+        string stalkProjectDir)
+    {
+        var (want, window, exe) = ResolveBaselineMiniTimeline(request, repoRoot);
+        if (!want)
+            return layer;
+
+        try
+        {
+            var key = $"layer-{layer.Id}";
+            var anchorId = Guid.NewGuid();
+            var summary = MiniTimelineCapture.TryCapture(
+                stalkProjectDir,
+                anchorId,
+                layer.CreatedAt,
+                window,
+                targetExe: exe,
+                repoRoot: repoRoot,
+                projectName: layer.Project,
+                timelineKey: key);
+            var rel = Path.Combine("timeline", key).Replace('\\', '/');
+            var note = string.IsNullOrWhiteSpace(layer.Notes)
+                ? summary.SummaryLine
+                : layer.Notes + " · " + summary.SummaryLine;
+            return layer with
+            {
+                MiniTimelineDir = rel,
+                MiniTimelineSummary = summary.SummaryLine,
+                Notes = note,
+            };
+        }
+        catch (Exception ex)
+        {
+            return layer with
+            {
+                MiniTimelineSummary = "mini-timeline soft-fail: " + ex.Message,
+            };
+        }
+    }
+
+    private static (bool Want, int Window, string? Exe) ResolveBaselineMiniTimeline(
+        StalkLayerCreateRequest request,
+        string repoRoot)
+    {
+        var isBaseline = IsBaselineTag(request.Tag);
+        var window = request.MiniTimelineWindowSeconds is int w && w > 0 ? w : 60;
+        string? exe = null;
+        var yamlWant = false;
+        var yamlPath = Path.Combine(repoRoot, "projects", request.Project + ".yaml");
+        if (!File.Exists(yamlPath))
+        {
+            // also try .yml / nested discovery
+            foreach (var candidate in new[]
+                     {
+                         Path.Combine(repoRoot, "projects", request.Project + ".yml"),
+                         Path.Combine(repoRoot, "projects", request.Project, "project.yaml"),
+                     })
+            {
+                if (File.Exists(candidate))
+                {
+                    yamlPath = candidate;
+                    break;
+                }
+            }
+        }
+
+        if (File.Exists(yamlPath))
+        {
+            try
+            {
+                var proj = ProjectLoader.Load(yamlPath);
+                window = request.MiniTimelineWindowSeconds is int rw && rw > 0
+                    ? rw
+                    : proj.Fuzz.MiniTimelineWindowSeconds;
+                yamlWant = proj.Fuzz.MiniTimelineOnBaseline || proj.Fuzz.MiniTimeline;
+                if (!string.IsNullOrWhiteSpace(proj.Target.Executable))
+                {
+                    var declared = ProjectLoader.ResolvePath(yamlPath, proj.Target.Executable);
+                    exe = ExecutableResolver.FindExisting(declared) ?? declared;
+                }
+            }
+            catch
+            {
+                // ignore — optional enrichment
+            }
+        }
+
+        // Explicit request wins; otherwise auto on baseline when project enables mini-timeline.
+        if (request.MiniTimeline == true)
+            return (true, window, exe);
+        if (request.MiniTimeline == false)
+            return (false, window, exe);
+        return (isBaseline && yamlWant, window, exe);
     }
 
     public static bool DeleteLayer(string project, string layerId, string? repoRoot = null)
@@ -129,6 +234,12 @@ public static class StalkCampaignStore
             var p = Path.Combine(dir, pattern);
             if (File.Exists(p))
                 File.Delete(p);
+        }
+
+        var tlDir = MiniTimelineCapture.TimelineDir(dir, $"layer-{layerId}");
+        if (Directory.Exists(tlDir))
+        {
+            try { Directory.Delete(tlDir, true); } catch { /* soft */ }
         }
 
         return true;

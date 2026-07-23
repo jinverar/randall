@@ -11,7 +11,9 @@ public sealed record StalkLayerDto(
     int BlockCount,
     string? SourcePath,
     string? CrashId,
-    string? Notes);
+    string? Notes,
+    string? MiniTimelineDir = null,
+    string? MiniTimelineSummary = null);
 
 public sealed record StalkBlockHitDto(
     string Address,
@@ -48,7 +50,10 @@ public sealed record StalkLayerCreateRequest(
     string? DrcovPath,
     string? EdgesPath,
     string? CrashId,
-    string? Notes);
+    string? Notes,
+    /// <summary>When true, capture mini-timeline for this layer. When null, auto for baseline if project enables it.</summary>
+    bool? MiniTimeline = null,
+    int? MiniTimelineWindowSeconds = null);
 
 public sealed record StalkLayerFromCrashRequest(
     string CrashId,
@@ -58,7 +63,8 @@ public sealed record StalkLayerFromCrashRequest(
 public sealed record StalkLayerFromCorpusRequest(
     string Project,
     string? Tag = null,
-    string? Label = null);
+    string? Label = null,
+    bool? MiniTimeline = null);
 
 public sealed record StalkExportRequest(
     string Project,

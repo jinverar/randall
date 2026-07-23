@@ -2632,6 +2632,8 @@ static int StalkLayers(string[] args)
             $"{l.Id}  [{l.Tag}] blocks={l.BlockCount}  {l.Label}  {l.CreatedAt:u}");
         if (!string.IsNullOrWhiteSpace(l.CrashId))
             Console.WriteLine($"             crash={l.CrashId}");
+        if (!string.IsNullOrWhiteSpace(l.MiniTimelineDir))
+            Console.WriteLine($"             mini-timeline={l.MiniTimelineDir}  {l.MiniTimelineSummary}");
     }
     return 0;
 }

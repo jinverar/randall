@@ -71,6 +71,7 @@ public class MiniTimelineTests
     {
         var fuzz = new FuzzConfig();
         Assert.False(fuzz.MiniTimeline);
+        Assert.False(fuzz.MiniTimelineOnBaseline);
         Assert.Equal(60, fuzz.MiniTimelineWindowSeconds);
     }
 
@@ -78,6 +79,74 @@ public class MiniTimelineTests
     public void DocsCatalog_IncludesMiniTimeline()
     {
         Assert.Contains(DocsCatalog.Index, i => i.Path == "MINI_TIMELINE.md");
+    }
+
+    [Fact]
+    public void IsBaselineTag_RecognizesBaseSubstring()
+    {
+        Assert.True(StalkCampaignStore.IsBaselineTag("baseline"));
+        Assert.True(StalkCampaignStore.IsBaselineTag("BASE"));
+        Assert.False(StalkCampaignStore.IsBaselineTag("fuzzed"));
+        Assert.False(StalkCampaignStore.IsBaselineTag(null));
+    }
+
+    [Fact]
+    public void AddLayer_Baseline_WithMiniTimelineRequest_WritesTimelineFolder()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "randall-stalk-tl-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "data", "corpus", "demo"));
+            File.WriteAllText(Path.Combine(root, "data", "corpus", "demo", "edges.txt"), "0:0x1000:16\n");
+
+            var layer = StalkCampaignStore.AddLayer(new StalkLayerCreateRequest(
+                "demo",
+                "baseline",
+                "quiet host",
+                null,
+                null,
+                null,
+                null,
+                null,
+                MiniTimeline: true,
+                MiniTimelineWindowSeconds: 30), root);
+
+            Assert.False(string.IsNullOrWhiteSpace(layer.MiniTimelineDir));
+            Assert.Contains("layer-", layer.MiniTimelineDir!, StringComparison.Ordinal);
+            Assert.False(string.IsNullOrWhiteSpace(layer.MiniTimelineSummary));
+            var tlDir = MiniTimelineCapture.TimelineDir(
+                StalkCampaignStore.ProjectDir("demo", root),
+                $"layer-{layer.Id}");
+            Assert.True(File.Exists(Path.Combine(tlDir, "summary.json")));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* */ }
+        }
+    }
+
+    [Fact]
+    public void AddLayer_Fuzzed_DoesNotAutoTimeline_WithoutRequest()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "randall-stalk-tl2-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(Path.Combine(root, "data", "corpus", "demo"));
+            File.WriteAllText(Path.Combine(root, "data", "corpus", "demo", "edges.txt"), "0:0x1000:16\n");
+
+            var layer = StalkCampaignStore.AddLayer(new StalkLayerCreateRequest(
+                "demo",
+                "fuzzed",
+                "no tl",
+                null, null, null, null, null), root);
+
+            Assert.Null(layer.MiniTimelineDir);
+            Assert.Null(layer.MiniTimelineSummary);
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* */ }
+        }
     }
 
     [Fact]

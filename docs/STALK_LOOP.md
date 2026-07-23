@@ -84,9 +84,11 @@ If a campaign trashes the box, roll back — don’t fight a dirty lab.
    - Tag = **baseline (normal use)**  
    - Label e.g. `browser happy path`  
    - Paste **drcov log path** if you have one, **or** leave empty / click **From corpus edges**  
+   - Leave **Mini-timeline on baseline** checked (quiet-host EVTX/MFT/WER snapshot for contrast with later crashes)  
    - **Record layer**
 
-That layer is your “green” / normal map — code you already know how to reach.
+That layer is your “green” / normal map — code you already know how to reach — plus an optional
+host mini-timeline under `data/stalk/<project>/timeline/layer-…/` (see [MINI_TIMELINE.md](MINI_TIMELINE.md)).
 
 ### Option B — File-format target
 

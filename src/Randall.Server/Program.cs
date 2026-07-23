@@ -642,7 +642,8 @@ app.MapPost("/api/stalking/layers/from-corpus", (StalkLayerFromCorpusRequest req
             null,
             null,
             null,
-            "Imported from data/corpus/<project>/edges.txt"));
+            "Imported from data/corpus/<project>/edges.txt",
+            request.MiniTimeline));
         return Results.Ok(layer);
     }
     catch (Exception ex)
@@ -656,6 +657,27 @@ app.MapDelete("/api/stalking/{project}/layers/{layerId}", (string project, strin
     if (WebTargetFilter.IsHiddenProject(project))
         return Results.NotFound();
     return StalkCampaignStore.DeleteLayer(project, layerId) ? Results.NoContent() : Results.NotFound();
+});
+
+app.MapGet("/api/stalking/{project}/layers/{layerId}/timeline", (string project, string layerId) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    var layers = StalkCampaignStore.ListLayers(project);
+    var layer = layers.FirstOrDefault(l => l.Id.Equals(layerId, StringComparison.OrdinalIgnoreCase));
+    if (layer is null)
+        return Results.NotFound(new { error = "layer not found" });
+
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var stalkDir = StalkCampaignStore.ProjectDir(project, repo);
+    var key = $"layer-{layer.Id}";
+    var existing = MiniTimelineCapture.TryRead(stalkDir, key);
+    return existing is not null
+        ? Results.Ok(existing)
+        : Results.NotFound(new
+        {
+            error = "No mini-timeline for this layer. Enable fuzz.miniTimelineOnBaseline / miniTimeline, or record with miniTimeline: true.",
+        });
 });
 
 app.MapGet("/api/stalking/{project}/compare", (string project, string? layers) =>

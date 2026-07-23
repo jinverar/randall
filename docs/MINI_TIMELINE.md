@@ -44,9 +44,10 @@ on the hot path.
 
 ```yaml
 fuzz:
-  miniTimeline: true           # default false
-  miniTimelineWindowSeconds: 60  # ± around crash At (UTC); clamp 5–3600
-  procmonCapture: true         # optional; enables PML bookend for Procmon slice
+  miniTimeline: true              # unique screams + (with OnBaseline) quiet-host on stalk baseline
+  miniTimelineOnBaseline: true    # stalk baseline layer only (also implied by miniTimeline)
+  miniTimelineWindowSeconds: 60   # ± around crash At / baseline CreatedAt (UTC); clamp 5–3600
+  procmonCapture: true            # optional; enables PML bookend for Procmon slice
 ```
 
 CLI re-run / backfill:
@@ -57,12 +58,23 @@ randall timeline graph -p <project> -i <crash-guid>   # rebuild graph.json + mer
 randall timeline tools                                 # discover EZ + Procmon
 ```
 
+**Stalk baseline:** recording a layer tagged `baseline` (UI checkbox *Mini-timeline on baseline*,
+or `miniTimeline: true` on `POST /api/stalking/layers`) writes the same tool suite under:
+
+```
+data/stalk/<project>/timeline/layer-<layerId>/
+```
+
+That is the quiet-host contrast for later crash windows. Soft-fails if tools are missing;
+layer creation never fails because of mini-timeline.
+
 Doctor shows `miniTimeline` ready|warn when the flag is on or tools are present.
 
 API:
 
-- `GET /api/crashes/{id}/timeline` — `summary.json` DTO  
-- `GET /api/crashes/{id}/timeline/graph` — `graph.json` (rebuilds from CSVs if missing)
+- `GET /api/crashes/{id}/timeline` — crash `summary.json` DTO  
+- `GET /api/crashes/{id}/timeline/graph` — crash `graph.json`  
+- `GET /api/stalking/{project}/layers/{layerId}/timeline` — baseline (or opted-in) layer timeline  
 
 ---
 
@@ -71,9 +83,10 @@ API:
 | Trigger | Behavior |
 |---------|----------|
 | Unique scream (`IsNew`) + `fuzz.miniTimeline: true` | Capture under the crash |
+| Stalk **baseline** layer + (`miniTimeline` / `miniTimelineOnBaseline` / request `miniTimeline: true`) | Quiet-host capture under stalk project |
 | Dedup crash | **Skipped** (no extra cost) |
 | Linux | Soft-skip (journalctl twin is future work) |
-| Tools missing | Warn once; fuzz continues |
+| Tools missing | Warn once; fuzz / layer record continues |
 
 Hot path stays clean: no per-iteration EZ/Procmon convert work.
 
@@ -100,6 +113,14 @@ data/crashes/<project>/
 
 `summary.json` is the stable join point for UI / API. `graph.json` is post-process
 only and can be rebuilt with `randall timeline graph`.
+
+**Stalk baseline layout** (quiet-host contrast):
+
+```
+data/stalk/<project>/
+  layer-<id>.json          # includes miniTimelineDir / miniTimelineSummary
+  timeline/layer-<id>/     # same artifact set as crash timelines
+```
 
 Procmon PML source (first hit wins):
 

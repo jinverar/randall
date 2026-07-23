@@ -1782,12 +1782,15 @@ async function refreshStalkingWorkspace() {
     layersEl.innerHTML = '<p class="empty">No layers yet — record a <strong>baseline</strong> after normal use under drcov (or import corpus edges).</p>';
   } else {
     layersEl.innerHTML = `<table><thead><tr>
-      <th>Tag</th><th>Label</th><th>Blocks</th><th>When</th><th>Color</th><th></th>
+      <th>Tag</th><th>Label</th><th>Blocks</th><th>Host TL</th><th>When</th><th>Color</th><th></th>
     </tr></thead><tbody>
       ${layers.map((l) => `<tr>
         <td><code>${l.tag}</code></td>
         <td>${l.label}</td>
         <td><strong>${l.blockCount}</strong></td>
+        <td class="hint">${l.miniTimelineDir
+          ? `<code title="${escapeAttr(l.miniTimelineSummary || '')}">${escapeAttr(l.miniTimelineDir)}</code>`
+          : '—'}</td>
         <td>${new Date(l.createdAt).toLocaleString()}</td>
         <td><code>${l.colorHex}</code></td>
         <td><button type="button" class="btn" data-del-layer="${l.id}">Delete</button></td>
@@ -2017,19 +2020,27 @@ document.getElementById('stalking-refresh')?.addEventListener('click', () => ref
 
 document.getElementById('stalking-add')?.addEventListener('click', async () => {
   const project = document.getElementById('stalking-project').value;
+  const tag = document.getElementById('stalking-tag').value;
+  const wantTl = !!document.getElementById('stalking-mini-timeline')?.checked;
   const body = {
     project,
-    tag: document.getElementById('stalking-tag').value,
+    tag,
     label: document.getElementById('stalking-label').value.trim() || null,
     drcovPath: document.getElementById('stalking-drcov').value.trim() || null,
     crashId: document.getElementById('stalking-crash').value.trim() || null,
+    // Always honor checkbox; for non-baseline tags only fires when checked.
+    miniTimeline: wantTl ? true : (tag && tag.toLowerCase().includes('base') ? false : null),
   };
   try {
-    await api.post('/api/stalking/layers', body);
+    const layer = await api.post('/api/stalking/layers', body);
     document.getElementById('stalking-label').value = '';
     document.getElementById('stalking-drcov').value = '';
     document.getElementById('stalking-crash').value = '';
-    document.getElementById('stalking-export-result').textContent = `Layer recorded for ${project}`;
+    const tl = layer.miniTimelineSummary
+      ? ` · ${layer.miniTimelineSummary}`
+      : '';
+    document.getElementById('stalking-export-result').textContent =
+      `Layer recorded for ${project}${tl}`;
     await refreshStalkingWorkspace();
   } catch (err) {
     document.getElementById('stalking-export-result').textContent = err.message;
@@ -2039,10 +2050,16 @@ document.getElementById('stalking-add')?.addEventListener('click', async () => {
 document.getElementById('stalking-from-corpus')?.addEventListener('click', async () => {
   const project = document.getElementById('stalking-project').value;
   const tag = document.getElementById('stalking-tag').value || 'fuzzed';
+  const wantTl = !!document.getElementById('stalking-mini-timeline')?.checked;
   try {
-    const layer = await api.post('/api/stalking/layers/from-corpus', { project, tag });
+    const layer = await api.post('/api/stalking/layers/from-corpus', {
+      project,
+      tag,
+      miniTimeline: wantTl ? true : (tag.toLowerCase().includes('base') ? false : null),
+    });
+    const tl = layer.miniTimelineSummary ? ` · ${layer.miniTimelineSummary}` : '';
     document.getElementById('stalking-export-result').textContent =
-      `Corpus layer: ${layer.tag} · ${layer.blockCount} blocks`;
+      `Corpus layer: ${layer.tag} · ${layer.blockCount} blocks${tl}`;
     await refreshStalkingWorkspace();
   } catch (err) {
     document.getElementById('stalking-export-result').textContent = err.message;

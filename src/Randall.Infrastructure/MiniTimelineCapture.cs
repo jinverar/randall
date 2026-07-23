@@ -7,8 +7,9 @@ using Randall.Contracts;
 namespace Randall.Infrastructure;
 
 /// <summary>
-/// Crash-scoped Windows mini-timeline using Eric Zimmerman CLIs (EvtxECmd, MFTECmd, …).
-/// Soft-fails when tools are missing. Intended for <b>unique</b> screams only — see docs/MINI_TIMELINE.md.
+/// Windows mini-timeline using Eric Zimmerman CLIs (EvtxECmd, MFTECmd, …) + optional Procmon slice.
+/// Soft-fails when tools are missing. Used for unique screams and stalk <b>baseline</b> layers —
+/// see docs/MINI_TIMELINE.md.
 /// </summary>
 public static class MiniTimelineCapture
 {
@@ -18,15 +19,24 @@ public static class MiniTimelineCapture
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    public static string TimelineDir(string crashesDir, Guid crashId) =>
-        Path.Combine(crashesDir, "timeline", crashId.ToString("N"));
+    public static string TimelineDir(string rootDir, Guid id) =>
+        TimelineDir(rootDir, id.ToString("N"));
 
-    public static string SummaryPath(string crashesDir, Guid crashId) =>
-        Path.Combine(TimelineDir(crashesDir, crashId), "summary.json");
+    public static string TimelineDir(string rootDir, string key) =>
+        Path.Combine(rootDir, "timeline", SanitizeKey(key));
 
-    public static MiniTimelineSummaryDto? TryRead(string crashesDir, Guid crashId)
+    public static string SummaryPath(string rootDir, Guid id) =>
+        Path.Combine(TimelineDir(rootDir, id), "summary.json");
+
+    public static string SummaryPath(string rootDir, string key) =>
+        Path.Combine(TimelineDir(rootDir, key), "summary.json");
+
+    public static MiniTimelineSummaryDto? TryRead(string rootDir, Guid id) =>
+        TryRead(rootDir, id.ToString("N"));
+
+    public static MiniTimelineSummaryDto? TryRead(string rootDir, string key)
     {
-        var path = SummaryPath(crashesDir, crashId);
+        var path = SummaryPath(rootDir, key);
         if (!File.Exists(path))
             return null;
         try
@@ -39,13 +49,25 @@ public static class MiniTimelineCapture
         }
     }
 
+    private static string SanitizeKey(string key)
+    {
+        var s = key.Trim();
+        foreach (var c in Path.GetInvalidFileNameChars())
+            s = s.Replace(c, '_');
+        return string.IsNullOrWhiteSpace(s) ? "timeline" : s;
+    }
+
     /// <summary>
     /// Capture a mini-timeline around <paramref name="anchorUtc"/>. Returns a summary even on soft-fail
     /// (Ok=false) so callers can log a single line.
     /// </summary>
+    /// <param name="timelineKey">
+    /// Subfolder under <c>rootDir/timeline/</c>. Defaults to <paramref name="id"/> as <c>N</c> format
+    /// (crash). Stalk baselines use <c>layer-{id}</c>.
+    /// </param>
     public static MiniTimelineSummaryDto TryCapture(
-        string crashesDir,
-        Guid crashId,
+        string rootDir,
+        Guid id,
         DateTimeOffset anchorUtc,
         int windowSeconds = 60,
         string? targetExe = null,
@@ -54,7 +76,8 @@ public static class MiniTimelineCapture
         string? miniDumpPath = null,
         string? inputPath = null,
         string? runId = null,
-        string? procmonPmlPath = null)
+        string? procmonPmlPath = null,
+        string? timelineKey = null)
     {
         windowSeconds = Math.Clamp(windowSeconds <= 0 ? 60 : windowSeconds, 5, 3600);
         var windowStart = anchorUtc - TimeSpan.FromSeconds(windowSeconds);
@@ -63,29 +86,30 @@ public static class MiniTimelineCapture
         var used = new List<string>();
         var artifacts = new List<string>();
         var notes = new List<string>();
-        var timelineRel = Path.Combine("timeline", crashId.ToString("N")).Replace('\\', '/');
+        var key = SanitizeKey(string.IsNullOrWhiteSpace(timelineKey) ? id.ToString("N") : timelineKey!);
+        var timelineRel = Path.Combine("timeline", key).Replace('\\', '/');
         repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
 
         if (!OperatingSystem.IsWindows())
         {
-            var skip = Fail(crashId, windowStart, windowEnd, windowSeconds, projectName, targetExe, anchorUtc,
+            var skip = Fail(id, windowStart, windowEnd, windowSeconds, projectName, targetExe, anchorUtc,
                 "mini-timeline is Windows-only for now (journalctl twin later)", timelineRel);
-            WriteSummary(crashesDir, crashId, skip);
+            WriteSummary(rootDir, key, skip);
             return skip;
         }
 
         if (!tools.HasCore && ProcmonCapture.DiscoverExecutable(repoRoot) is null)
         {
-            var skip = Fail(crashId, windowStart, windowEnd, windowSeconds, projectName, targetExe, anchorUtc,
+            var skip = Fail(id, windowStart, windowEnd, windowSeconds, projectName, targetExe, anchorUtc,
                 "EvtxECmd/MFTECmd/Procmon not found — install EZ tools under tools/ez/ and/or Procmon (docs/MINI_TIMELINE.md)", timelineRel);
-            WriteSummary(crashesDir, crashId, skip);
+            WriteSummary(rootDir, key, skip);
             return skip;
         }
 
         if (!tools.HasCore)
             notes.Add("EZ core missing — Procmon/WER/bstrings-only mini-timeline");
 
-        var outDir = TimelineDir(crashesDir, crashId);
+        var outDir = TimelineDir(rootDir, key);
         var rawDir = Path.Combine(outDir, "raw");
         Directory.CreateDirectory(rawDir);
         Directory.CreateDirectory(Path.Combine(outDir, "wer"));
@@ -273,7 +297,7 @@ public static class MiniTimelineCapture
         var dto = new MiniTimelineSummaryDto(
             Ok: ok || used.Count > 0,
             Error: ok ? null : (notes.Count > 0 ? string.Join("; ", notes.Take(3)) : "no matching rows"),
-            CrashId: crashId,
+            CrashId: id,
             Project: projectName,
             TargetExe: targetExe,
             AnchorUtc: anchorUtc,
@@ -296,29 +320,29 @@ public static class MiniTimelineCapture
             ProcmonRows: procmonRows,
             ProcmonPml: pmlUsed?.Replace('\\', '/'));
 
-        WriteSummary(crashesDir, crashId, dto);
+        WriteSummary(rootDir, key, dto);
 
         try
         {
-            var graphPath = MiniTimelineGraphBuilder.Write(crashesDir, crashId, dto, inputPath);
+            var graphPath = MiniTimelineGraphBuilder.Write(rootDir, id, dto, inputPath, timelineKey: key);
             dto = dto with { GraphPath = graphPath.Replace('\\', '/') };
-            WriteSummary(crashesDir, crashId, dto);
+            WriteSummary(rootDir, key, dto);
         }
         catch (Exception ex)
         {
             notes.Add($"graph: {ex.Message}");
             dto = dto with { Notes = notes };
-            WriteSummary(crashesDir, crashId, dto);
+            WriteSummary(rootDir, key, dto);
         }
 
         return dto;
     }
 
-    private static void WriteSummary(string crashesDir, Guid crashId, MiniTimelineSummaryDto dto)
+    private static void WriteSummary(string rootDir, string key, MiniTimelineSummaryDto dto)
     {
-        var dir = TimelineDir(crashesDir, crashId);
+        var dir = TimelineDir(rootDir, key);
         Directory.CreateDirectory(dir);
-        File.WriteAllText(SummaryPath(crashesDir, crashId), JsonSerializer.Serialize(dto, JsonOpts));
+        File.WriteAllText(SummaryPath(rootDir, key), JsonSerializer.Serialize(dto, JsonOpts));
     }
 
     private static MiniTimelineSummaryDto Fail(

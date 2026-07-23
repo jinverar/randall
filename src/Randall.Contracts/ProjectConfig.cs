@@ -317,6 +317,12 @@ public sealed class FuzzConfig
     /// via Eric Zimmerman CLIs. Default off — soft-fails if tools missing. See docs/MINI_TIMELINE.md.
     /// </summary>
     public bool MiniTimeline { get; set; }
+    /// <summary>
+    /// When recording a stalk <b>baseline</b> layer, also capture a quiet-host mini-timeline
+    /// (same tools/window as crash). Default off; also runs when the layer request sets
+    /// <c>miniTimeline: true</c>. Soft-fails if tools missing.
+    /// </summary>
+    public bool MiniTimelineOnBaseline { get; set; }
     /// <summary>Seconds before/after crash <c>At</c> (UTC) for mini-timeline filter. Default 60; clamped 5–3600.</summary>
     public int MiniTimelineWindowSeconds { get; set; } = 60;
 }

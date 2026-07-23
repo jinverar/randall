@@ -268,6 +268,10 @@
             Crash id (optional — import crash trace)
             <input type="text" id="stalking-crash" placeholder="guid" />
           </label>
+          <label class="check-row" title="EVTX/MFT/WER/Procmon quiet-host snapshot (±window). Soft-fails if tools missing.">
+            <input type="checkbox" id="stalking-mini-timeline" checked />
+            Mini-timeline on baseline (host context)
+          </label>
           <p class="hex">Leave paths empty to import current corpus edges.txt for this project.</p>
           <div class="btn-row">
             <button type="button" class="btn primary" id="stalking-add">Record layer</button>
@@ -1366,6 +1370,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=mini-timeline-3"></script>
+  <script type="module" src="/js/app.js?v=mini-timeline-4"></script>
 </body>
 </html>

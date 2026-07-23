@@ -420,18 +420,23 @@ public static class LabDoctor
         var tlWindow = Math.Clamp(
             project.Fuzz.MiniTimelineWindowSeconds <= 0 ? 60 : project.Fuzz.MiniTimelineWindowSeconds,
             5, 3600);
-        if (project.Fuzz.MiniTimeline)
+        if (project.Fuzz.MiniTimeline || project.Fuzz.MiniTimelineOnBaseline)
         {
+            var scope = project.Fuzz.MiniTimeline && project.Fuzz.MiniTimelineOnBaseline
+                ? "unique screams + stalk baseline"
+                : project.Fuzz.MiniTimeline
+                    ? "unique screams (+ stalk baseline when miniTimeline on)"
+                    : "stalk baseline layers";
             Add("miniTimeline", ez.HasCore ? "ok" : "warn",
                 ez.HasCore
-                    ? $"MiniTimeline enabled (±{tlWindow}s) → {string.Join(", ", ez.FoundLines().Take(3))}"
+                    ? $"MiniTimeline ({scope}, ±{tlWindow}s) → {string.Join(", ", ez.FoundLines().Take(3))}"
                     : "MiniTimeline enabled but EvtxECmd/MFTECmd not found — install under tools/ez/ (docs/MINI_TIMELINE.md)");
         }
         else
         {
             Add("miniTimeline", ez.HasCore ? "ok" : "warn",
                 ez.HasCore
-                    ? $"EZ tools ready (set fuzz.miniTimeline: true for unique-scream EVTX/MFT window) — {string.Join(", ", ez.FoundLines().Take(2))}"
+                    ? $"EZ tools ready (set fuzz.miniTimeline / miniTimelineOnBaseline, or UI checkbox on baseline) — {string.Join(", ", ez.FoundLines().Take(2))}"
                     : "EZ mini-timeline optional — EvtxECmd/MFTECmd not found (docs/MINI_TIMELINE.md)");
         }
 
