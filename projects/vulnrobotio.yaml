@@ -1,0 +1,51 @@
+name: vulnrobotio
+description: "Fictional RMB1 robot-cell I/O bus (TCP) — lab only, not Modbus. Build scripts/build-vulnrobotio.ps1"
+kind: tcp
+target:
+  executable: ../targets/vulnrobotio/randall-vulnrobotio.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 15502
+  receiveTimeoutMs: 800
+sessionCommands:
+  - name: READ
+    model: protocols/vulnrobotio_read.yaml
+  - name: WRITE
+    model: protocols/vulnrobotio_write.yaml
+  - name: DIAG
+    model: protocols/vulnrobotio_diag.yaml
+sessionFlows:
+  - name: read_only
+    steps: [READ]
+    mutateStep: last
+  - name: write_only
+    steps: [WRITE]
+    mutateStep: last
+  - name: diag_only
+    steps: [DIAG]
+    mutateStep: last
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  sessionFlowBias: 0.4
+  corpusDir: ../data/corpus/vulnrobotio
+  crashesDir: ../data/crashes/vulnrobotio
+seeds:
+  - seeds/vulnrobotio_read.bin
+  - seeds/vulnrobotio_write.bin
+  - seeds/vulnrobotio_diag.bin
+  - seeds/vulnrobotio_read_boom.bin
+  - seeds/vulnrobotio_write_boom.bin
+  - seeds/vulnrobotio_diag_boom.bin
+  - seeds/vulnrobotio_len_boom.bin
+mutators:
+  - boundary
+  - interesting
+  - expand
+  - havoc
+  - bitflip
+  - splice

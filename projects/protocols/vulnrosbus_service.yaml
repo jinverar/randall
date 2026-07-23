@@ -1,0 +1,35 @@
+name: vulnrosbus-service
+description: RRBS SERVICE — magic/ver/type + topic + request payload (not ROS/DDS)
+blocks:
+  - type: static
+    value: "\x52\x52"
+  - type: static
+    value: "\x01"
+  - type: bytes
+    name: msg_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnrosbus_type_service.bin
+  - type: sized
+    lengthName: topic_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: string
+      name: service
+      mutable: true
+      value: "/trigger/arm"
+      minSize: 1
+      maxSize: 96
+  - type: sized
+    lengthName: payload_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: bytes
+      name: request
+      mutable: true
+      minSize: 4
+      maxSize: 400
+      seedFile: seeds/vulnrosbus_payload_deadbeef.bin

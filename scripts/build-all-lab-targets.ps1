@@ -36,7 +36,9 @@ $Required = @(
     "build-vulnsmb.ps1",
     "build-vulndrone.ps1",
     "build-vulnmqtt.ps1",
-    "build-vulnrobot.ps1"
+    "build-vulnrobot.ps1",
+    "build-vulnrosbus.ps1",
+    "build-vulnrobotio.ps1"
 )
 
 # Optional labs - warn and continue on skip/failure.

@@ -3,6 +3,7 @@ description: "Fictional RBT1 robot-arm motion controller (TCP) — lab only, not
 kind: tcp
 target:
   executable: ../targets/vulnrobot/randall-vulnrobot.exe
+  args: ["--mode", "tcp"]
   longLived: true
   timeoutMs: 5000
 transport:

@@ -6,13 +6,12 @@ using System.Text;
 namespace Randall.VulnRobot;
 
 /// <summary>
-/// Fictional RBT1 robot-arm / motion-controller lab (not ROS, UR, Fanuc, ABB, or any real robot stack).
-/// HELLO / JOINT / TRAJ / TOOL parsers with intentional length bugs.
+/// Fictional RBT1 robot-arm lab (not ROS, UR, Fanuc, ABB, or any real robot stack).
+/// TCP motion (HELLO/JOINT/TRAJ/TOOL) + UDP telemetry parsers with intentional length bugs.
 /// LAB USE ONLY — loopback by default; no motors, pendant, safety PLC, or fieldbus.
 /// </summary>
 internal static class Program
 {
-    /// <summary>Shell-style SIGSEGV status (128+11) for triage / IsCrashExitCode.</summary>
     private const int CrashExit = 139;
 
     private const byte TypeHello = 0x01;
@@ -20,10 +19,16 @@ internal static class Program
     private const byte TypeTraj = 0x03;
     private const byte TypeTool = 0x04;
 
+    // UDP telemetry msg ids
+    private const byte TelemPose = 0x10;
+    private const byte TelemForce = 0x11;
+    private const byte TelemDiag = 0x1F;
+
     public static int Main(string[] args)
     {
         var port = 15560;
         var host = IPAddress.Loopback;
+        var mode = "tcp";
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -40,9 +45,29 @@ internal static class Program
                 else if (!IPAddress.TryParse(h, out host!))
                     host = IPAddress.Loopback;
             }
+            else if ((args[i] is "-m" or "--mode") && i + 1 < args.Length)
+            {
+                mode = args[++i].Trim().ToLowerInvariant();
+            }
         }
 
-        Console.WriteLine($"Randall VulnRobot RBT1 motion lab on {host}:{port} (lab only; --host 0.0.0.0 to expose)");
+        if (mode is "udp" or "telem" or "telemetry")
+        {
+            if (port == 15560)
+                port = 15561;
+            RunUdp(host, port);
+        }
+        else
+        {
+            RunTcp(host, port);
+        }
+
+        return 0;
+    }
+
+    private static void RunTcp(IPAddress host, int port)
+    {
+        Console.WriteLine($"Randall VulnRobot RBT1 motion TCP on {host}:{port} (lab only; --host 0.0.0.0 to expose)");
         using var listener = new TcpListener(host, port);
         listener.Start();
 
@@ -54,7 +79,7 @@ internal static class Program
                 using var stream = client.GetStream();
                 stream.ReadTimeout = 5000;
                 WriteAscii(stream, "RBT1 ROBOT READY\r\n");
-                HandleSession(stream);
+                HandleTcpSession(stream);
             }
             catch (Exception ex)
             {
@@ -63,7 +88,30 @@ internal static class Program
         }
     }
 
-    private static void HandleSession(NetworkStream stream)
+    private static void RunUdp(IPAddress host, int port)
+    {
+        Console.WriteLine($"Randall VulnRobot RBT1 telemetry UDP on {host}:{port} (lab only; --host 0.0.0.0 to expose)");
+        using var client = host.Equals(IPAddress.Any)
+            ? new UdpClient(port)
+            : new UdpClient(new IPEndPoint(host, port));
+
+        while (true)
+        {
+            try
+            {
+                var remote = new IPEndPoint(IPAddress.Any, 0);
+                var data = client.Receive(ref remote);
+                if (data.Length > 0)
+                    HandleUdp(data);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"udp: {ex.Message}");
+            }
+        }
+    }
+
+    private static void HandleTcpSession(NetworkStream stream)
     {
         while (true)
         {
@@ -95,7 +143,35 @@ internal static class Program
         }
     }
 
-    /// <summary>Frame: type_u8 | rem_len_u16_BE | body[rem_len]</summary>
+    /// <summary>UDP: magic "RBT1" | msgId u8 | len u16 BE | payload[len]</summary>
+    private static void HandleUdp(byte[] data)
+    {
+        if (data.Length < 7)
+            return;
+        if (data[0] != (byte)'R' || data[1] != (byte)'B' || data[2] != (byte)'T' || data[3] != (byte)'1')
+            return;
+
+        var msgId = data[4];
+        var claimed = BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(5, 2));
+        var payload = data.AsSpan(7);
+
+        if (claimed > 256)
+            Environment.Exit(CrashExit);
+
+        var slot = msgId switch
+        {
+            TelemPose => 48,
+            TelemForce => 64,
+            TelemDiag => 32,
+            _ => 24
+        };
+
+        if (payload.Length > slot || claimed > slot)
+            Environment.Exit(CrashExit);
+
+        CopyOverflow(payload, stackSize: slot, take: Math.Min(claimed, payload.Length));
+    }
+
     private static bool TryReadPacket(NetworkStream stream, out byte type, out byte[] body)
     {
         type = 0;
@@ -126,7 +202,6 @@ internal static class Program
         return true;
     }
 
-    /// <summary>HELLO: name_len u16 BE + name — crash when name_len &gt; 64 or name bytes &gt; 64</summary>
     private static void HandleHello(ReadOnlySpan<byte> body)
     {
         if (body.Length < 2)
@@ -138,7 +213,6 @@ internal static class Program
         CopyOverflow(name, stackSize: 64, take: Math.Min(nameLen, name.Length));
     }
 
-    /// <summary>JOINT: joint_count u16 BE + angles (4 bytes each) — crash when count &gt; 8</summary>
     private static void HandleJoint(ReadOnlySpan<byte> body)
     {
         if (body.Length < 2)
@@ -153,7 +227,6 @@ internal static class Program
         CopyOverflow(body[2..], stackSize: 8 * angleSize, take: Math.Min(count * angleSize, body.Length - 2));
     }
 
-    /// <summary>TRAJ: waypoint_count u16 BE + waypoints (8 bytes) — crash when count &gt; 16</summary>
     private static void HandleTraj(ReadOnlySpan<byte> body)
     {
         if (body.Length < 2)
@@ -168,7 +241,6 @@ internal static class Program
         CopyOverflow(body[2..], stackSize: 16 * wpSize, take: Math.Min(count * wpSize, body.Length - 2));
     }
 
-    /// <summary>TOOL: path_len u16 BE + path bytes — crash when path_len &gt; 128 or path &gt; 128</summary>
     private static void HandleTool(ReadOnlySpan<byte> body)
     {
         if (body.Length < 2)
@@ -193,7 +265,4 @@ internal static class Program
         var bytes = Encoding.ASCII.GetBytes(s);
         stream.Write(bytes, 0, bytes.Length);
     }
-
-    private static void WriteBytes(NetworkStream stream, ReadOnlySpan<byte> bytes) =>
-        stream.Write(bytes);
 }

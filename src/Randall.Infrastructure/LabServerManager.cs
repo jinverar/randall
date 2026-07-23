@@ -227,7 +227,7 @@ public static class LabServerManager
         if (!def.Startable || string.IsNullOrWhiteSpace(def.ProcessName) || def.Port <= 0)
             return null;
 
-        // Prefer the PID we started for this catalog id (shared binaries like vulndrone udp/tcp).
+        // Prefer the PID we started for this catalog id (shared binaries like vulndrone/vulnrobot udp/tcp).
         if (PidsWeStarted.TryGetValue(def.Id, out var knownPid))
         {
             try

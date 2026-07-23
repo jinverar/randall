@@ -28,7 +28,10 @@ scripts/build-lab-targets.sh
 | **VulnDrone UDP** | 15550/udp | `projects/vulndrone-udp.yaml` | [Randall.VulnDrone](Randall.VulnDrone/) (fictional RDL1) |
 | **VulnDrone TCP** | 15551/tcp | `projects/vulndrone-tcp.yaml` | same binary, `--mode tcp` |
 | **VulnMqtt** | 18883/tcp | `projects/vulnmqtt.yaml` | [Randall.VulnMqtt](Randall.VulnMqtt/) (fictional RMQ1 MQTT-shaped) |
-| **VulnRobot** | 15560/tcp | `projects/vulnrobot.yaml` | [Randall.VulnRobot](Randall.VulnRobot/) (fictional RBT1 robot motion) |
+| **VulnRobot TCP** | 15560/tcp | `projects/vulnrobot.yaml` | [Randall.VulnRobot](Randall.VulnRobot/) (fictional RBT1 motion) |
+| **VulnRobot UDP** | 15561/udp | `projects/vulnrobot-udp.yaml` | same binary, `--mode udp` |
+| **VulnRosBus** | 15562/tcp | `projects/vulnrosbus.yaml` | [Randall.VulnRosBus](Randall.VulnRosBus/) (fictional RRBS bus) |
+| **VulnRobotIo** | 15502/tcp | `projects/vulnrobotio.yaml` | [Randall.VulnRobotIo](Randall.VulnRobotIo/) (fictional RMB1 I/O) |
 
 Examples ported from [boofuzz](https://github.com/jtpereyda/boofuzz): see [docs/EXAMPLES.md](../docs/EXAMPLES.md). Labs: [RPC_LAB.md](../docs/RPC_LAB.md) · [SMB_LAB.md](../docs/SMB_LAB.md) · [DRONE_LAB.md](../docs/DRONE_LAB.md) · [MQTT_LAB.md](../docs/MQTT_LAB.md) · [ROBOT_LAB.md](../docs/ROBOT_LAB.md) · [LAB_LIBRARY.md](../docs/LAB_LIBRARY.md).
 

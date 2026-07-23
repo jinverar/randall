@@ -1,0 +1,35 @@
+name: vulnrosbus-param
+description: RRBS PARAM — magic/ver/type + key + value blob (not ROS/DDS)
+blocks:
+  - type: static
+    value: "\x52\x52"
+  - type: static
+    value: "\x01"
+  - type: bytes
+    name: msg_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnrosbus_type_param.bin
+  - type: sized
+    lengthName: topic_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: string
+      name: key
+      mutable: true
+      value: "joint_limits"
+      minSize: 1
+      maxSize: 96
+  - type: sized
+    lengthName: payload_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: bytes
+      name: value
+      mutable: true
+      minSize: 0
+      maxSize: 400
+      seedFile: seeds/vulnrosbus_payload_small.bin

@@ -85,12 +85,29 @@ public static class LabCatalog
             ["mqtt-shaped", "iot", "tcp", "length-field"], DocsPath: "MQTT_LAB.md",
             BuildHint: "scripts/build-vulnmqtt.ps1 · scripts/build-lab-targets.sh"),
 
-        // —— Robot motion / arm controller labs (fictional RBT1 — not ROS / UR / Fanuc) ——
-        new("vulnrobot", "VulnRobot", "Fictional robot-arm motion controller (RBT1) — HELLO / JOINT / TRAJ / TOOL length crashes",
+        // —— Robot protocol labs (fictional RBT1 / RRBS / RMB1 — not ROS / UR / Modbus) ——
+        new("vulnrobot", "VulnRobot TCP", "Fictional robot-arm motion controller (RBT1) — HELLO / JOINT / TRAJ / TOOL length crashes",
             "robot", "intermediate", 15560, "tcp", "randall-vulnrobot",
             "targets/vulnrobot/randall-vulnrobot.exe", "projects/vulnrobot.yaml",
             ["robot", "motion", "tcp", "length-field", "trajectory"], DocsPath: "ROBOT_LAB.md",
-            BuildHint: "scripts/build-vulnrobot.ps1 · scripts/build-lab-targets.sh"),
+            BuildHint: "scripts/build-vulnrobot.ps1 · scripts/build-lab-targets.sh",
+            ExtraArgs: ["--mode", "tcp"]),
+        new("vulnrobot-udp", "VulnRobot UDP", "Fictional robot telemetry datagrams (RBT1) — pose / force / diag length crashes",
+            "robot", "intermediate", 15561, "udp", "randall-vulnrobot",
+            "targets/vulnrobot/randall-vulnrobot.exe", "projects/vulnrobot-udp.yaml",
+            ["robot", "udp", "telemetry", "length-field"], DocsPath: "ROBOT_LAB.md",
+            BuildHint: "scripts/build-vulnrobot.ps1 · scripts/build-lab-targets.sh",
+            ExtraArgs: ["--mode", "udp"]),
+        new("vulnrosbus", "VulnRosBus", "Fictional robot topic/service bus (RRBS) — TOPIC / SERVICE / PARAM length crashes",
+            "robot", "intermediate", 15562, "tcp", "randall-vulnrosbus",
+            "targets/vulnrosbus/randall-vulnrosbus.exe", "projects/vulnrosbus.yaml",
+            ["robot", "bus", "tcp", "topic", "length-field"], DocsPath: "ROBOT_LAB.md",
+            BuildHint: "scripts/build-vulnrosbus.ps1 · scripts/build-lab-targets.sh"),
+        new("vulnrobotio", "VulnRobotIo", "Fictional robot-cell I/O bus (RMB1) — READ / WRITE / DIAG length crashes",
+            "robot", "intermediate", 15502, "tcp", "randall-vulnrobotio",
+            "targets/vulnrobotio/randall-vulnrobotio.exe", "projects/vulnrobotio.yaml",
+            ["robot", "io", "tcp", "modbus-shaped", "length-field"], DocsPath: "ROBOT_LAB.md",
+            BuildHint: "scripts/build-vulnrobotio.ps1 · scripts/build-lab-targets.sh"),
 
         // —— Exploit-dev / mitigation (native; start when built) ——
         // Port 9998 for UI start so it does not fight Vulnserver on 9999; fuzz YAML still defaults to 9999.

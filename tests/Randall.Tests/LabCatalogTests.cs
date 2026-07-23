@@ -83,21 +83,47 @@ public class LabCatalogTests
     }
 
     [Fact]
-    public void RobotLab_IsCataloguedUnderRobot()
+    public void RobotLabs_AreCataloguedUnderRobot()
     {
         var labs = LabServerManager.List(category: "robot");
         Assert.Contains(labs, l => l.Id == "vulnrobot");
-        var robot = labs.First(l => l.Id == "vulnrobot");
-        Assert.Equal(15560, robot.Port);
-        Assert.Equal("tcp", robot.Protocol);
-        Assert.True(robot.Startable);
-        Assert.Equal("ROBOT_LAB.md", robot.DocsPath);
-        Assert.Contains("robot", robot.Tags!);
+        Assert.Contains(labs, l => l.Id == "vulnrobot-udp");
+        Assert.Contains(labs, l => l.Id == "vulnrosbus");
+        Assert.Contains(labs, l => l.Id == "vulnrobotio");
+
+        var tcp = labs.First(l => l.Id == "vulnrobot");
+        Assert.Equal(15560, tcp.Port);
+        Assert.Equal("tcp", tcp.Protocol);
+        Assert.True(tcp.Startable);
+        Assert.Equal("ROBOT_LAB.md", tcp.DocsPath);
+        Assert.Contains("robot", tcp.Tags!);
+
+        var udp = labs.First(l => l.Id == "vulnrobot-udp");
+        Assert.Equal(15561, udp.Port);
+        Assert.Equal("udp", udp.Protocol);
+        Assert.Equal(tcp.ProcessName, udp.ProcessName);
+
+        var bus = labs.First(l => l.Id == "vulnrosbus");
+        Assert.Equal(15562, bus.Port);
+        Assert.Equal("tcp", bus.Protocol);
+
+        var io = labs.First(l => l.Id == "vulnrobotio");
+        Assert.Equal(15502, io.Port);
+        Assert.Equal("tcp", io.Protocol);
+        Assert.Contains("modbus-shaped", io.Tags!);
 
         var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
         Assert.True(File.Exists(Path.Combine(root, "projects", "vulnrobot.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "vulnrobot-udp.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "vulnrosbus.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "vulnrobotio.yaml")));
         Assert.True(File.Exists(Path.Combine(root, "projects", "protocols", "vulnrobot_hello.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "protocols", "vulnrobot_udp.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "protocols", "vulnrosbus_topic.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "protocols", "vulnrobotio_read.yaml")));
         Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnRobot", "Program.cs")));
+        Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnRosBus", "Program.cs")));
+        Assert.True(File.Exists(Path.Combine(root, "targets", "Randall.VulnRobotIo", "Program.cs")));
         Assert.True(File.Exists(Path.Combine(root, "docs", "ROBOT_LAB.md")));
     }
 
