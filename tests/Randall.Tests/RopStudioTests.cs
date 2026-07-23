@@ -311,7 +311,7 @@ public class RopStudioTests
             var saved = store.Save(project, 1, "test", "AAAA"u8.ToArray(), exitCode: -11);
             var id = saved.Id;
             File.WriteAllText(Path.Combine(crashDir, $"{id:N}_scream_walk.json"),
-                """{"crashId":"00000000-0000-0000-0000-000000000000","project":"sidecars-lab","goalResolved":"control","steps":[],"summaryLine":"ok"}""");
+                $$"""{"crashId":"{{id:D}}","project":"sidecars-lab","goalResolved":"control","steps":[],"summaryLine":"ok"}""");
             File.WriteAllText(Path.Combine(crashDir, $"{id:N}_gdb_walk.json"),
                 """{"summaryLine":"gdb ok","registers":[],"modules":[],"scriptLines":[]}""");
             File.WriteAllText(Path.Combine(crashDir, $"{id:N}_ladder.json"),
