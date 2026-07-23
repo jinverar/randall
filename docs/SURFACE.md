@@ -22,11 +22,14 @@ Related: [STALK_LOOP.md](STALK_LOOP.md) · [MINI_TIMELINE.md](MINI_TIMELINE.md) 
 
 ## Session model
 
-1. Start the target; arm recorders (`procmonCapture`, `sysinternalsSnapshots`, mini-timeline).
-2. Use the program **naturally** — no crash required (baseline).
-3. Stop / quit; **Record layer** (tag `baseline`) in Stalking bugs.
-4. Exploit Surface auto-assesses (default) → ranked findings + recommendations.
-5. Repeat for fuzzed / fuzzier if you want phase-to-phase surface (optional).
+1. **Start baseline session** — Procmon + Sysinternals snapshots arm  
+   (`randall surface baseline start -p <project>` or Stalking bugs → **Start baseline session**)
+2. Use the program **naturally** — no crash required
+3. **Stop** — flush recorders, record stalk `baseline` layer, mini-timeline + Exploit Surface assess
+4. Review findings / surface compare; fuzz with armed dictionary tokens
+5. Repeat for fuzzed / fuzzier phases as needed
+
+Legacy: you can still **Record layer** manually after a short coverage run without a live session.
 
 ---
 
@@ -40,16 +43,15 @@ exploitSurface:
   persist: true
   writeHints: true         # → data/stalk/<p>/surface/hints.md
   armDictionary: true      # → dictionary-tokens.txt (auto-merged into fuzz dictionary)
-
-fuzz:
-  procmonCapture: true
-  sysinternalsSnapshots: true
-  miniTimelineOnStalk: true
+  softSummonMagician: true # map findings → Magician needs + optional cast
 ```
 
 CLI:
 
 ```bash
+randall surface baseline start -p <project> [--pid N] [--exe path]
+randall surface baseline stop  -p <project> [--no-layer]
+randall surface baseline status -p <project>
 randall surface assess -p <project> [--layer <id>] [--baseline] [--json]
 randall surface list   -p <project>
 randall surface compare -p <project> [layerId…]
@@ -58,6 +60,8 @@ randall stalk surface-assess -p <project>
 
 API:
 
+- `POST /api/stalking/{project}/baseline/start|stop`
+- `GET  /api/stalking/{project}/baseline`
 - `GET /api/stalking/{project}/surface`
 - `GET /api/stalking/{project}/layers/{layerId}/surface`
 - `POST /api/stalking/{project}/surface/assess`
@@ -68,11 +72,17 @@ API:
 ## On-disk layout
 
 ```
-data/stalk/<project>/surface/
-  layer-<id>.json            # full report
-  findings.jsonl             # append-only findings
-  hints.md                   # ranked recommendations for analysts
-  dictionary-tokens.txt      # auto-merged into fuzz dictionary mutator
+data/stalk/<project>/
+  baseline-session.json      # live start/stop state
+  surface/
+    layer-<id>.json            # full report
+    findings.jsonl             # append-only findings
+    surface_needs.jsonl        # Magician needs (soft)
+    hints.md                   # ranked recommendations for analysts
+    dictionary-tokens.txt      # auto-merged into fuzz dictionary mutator
+data/runs/<project>_baseline_<ts>/
+  fuzz.pml
+  sysinternals/…
 ```
 
 Inputs (best-effort):
@@ -105,6 +115,9 @@ vs the previous phase (same idea as host timeline compare).
 
 **Arming:** high/medium findings mint dictionary tokens (DLL basenames, ports, API names).
 The next fuzz campaign auto-loads `dictionary-tokens.txt` into the dictionary mutator.
+With `softSummonMagician`, findings also emit Magician needs (`surface_needs.jsonl`) and
+may cast dictionary/army/knight/bots when Magician is enabled — post-assess only, never on
+the fuzz hot path.
 
 ---
 
@@ -122,6 +135,6 @@ The next fuzz campaign auto-loads `dictionary-tokens.txt` into the dictionary mu
 
 ## Future
 
-- Magician auto-summon from high surface needs (optional)
 - Linux twin (ldd /ss /proc maps)
 - Richer Authenticode / catalog parsing beyond SigCheck text
+- Attach baseline session to Target Runtime PID automatically

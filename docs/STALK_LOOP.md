@@ -81,19 +81,15 @@ If a campaign trashes the box, roll back — don’t fight a dirty lab.
 4. Stop when done. Capture a drcov log if you ran under DynamoRIO manually, **or** let a short coverage-guided run with “normal” seeds create corpus edges.
 5. Open **Stalking bugs**:
    - Project = your target  
-   - Tag = **baseline (normal use)**  
-   - Label e.g. `browser happy path`  
-   - Paste **drcov log path** if you have one, **or** leave empty / click **From corpus edges**  
-   - Leave **Mini-timeline each layer** checked (host EVTX/MFT/WER/Procmon snapshot per phase — compare later)  
-   - **Record layer**
+   - **Start baseline session** (Procmon + snapshots) → use the app naturally → **Stop + record**  
+   - Or: Tag = **baseline**, leave **Mini-timeline each layer** checked, **Record layer** / **From corpus edges**  
+   - Review **Exploit Surface** findings
 
-That layer is your “green” / normal map — code you already know how to reach — plus an optional
-host mini-timeline under `data/stalk/<project>/timeline/layer-…/` (see [MINI_TIMELINE.md](MINI_TIMELINE.md)).
+That layer is your “green” / normal map — code you already know how to reach — plus host
+mini-timeline and Exploit Surface suggestions (see [MINI_TIMELINE.md](MINI_TIMELINE.md) ·
+[SURFACE.md](SURFACE.md)).
 Record the same way for **fuzzed** / **fuzzier** / custom tags; then open **Host timeline compare**
-to see what changed on the box between phases.
-
-After baseline, **Exploit Surface** auto-suggests sideload / injection / listen / unusual-module
-items (see [SURFACE.md](SURFACE.md)) — recommendations for what to fuzz next, not Oracle judgment.
+and **Surface compare** to see what changed between phases.
 
 ### Option B — File-format target
 

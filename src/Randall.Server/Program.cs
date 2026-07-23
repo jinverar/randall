@@ -782,6 +782,45 @@ app.MapGet("/api/stalking/{project}/surface/compare", (string project, string? l
     return Results.Ok(ExploitSurfaceCompare.Compare(project, ids));
 });
 
+app.MapGet("/api/stalking/{project}/baseline", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound();
+    return Results.Ok(BaselineSession.Status(project));
+});
+
+app.MapPost("/api/stalking/{project}/baseline/start", (string project, BaselineSessionStartRequest? body) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(BaselineSession.Start(project, body?.Pid, body?.Executable));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/stalking/{project}/baseline/stop", (string project, BaselineSessionStopRequest? body) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    try
+    {
+        return Results.Ok(BaselineSession.Stop(
+            project,
+            recordLayer: body?.RecordLayer ?? true,
+            label: body?.Label,
+            pid: body?.Pid));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/stalking/{project}/layers/{layerId}/surface", (string project, string layerId) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

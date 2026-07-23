@@ -1852,9 +1852,54 @@ async function refreshStalkingWorkspace() {
 
   await refreshStalkingTimelineCompare(project);
   await refreshStalkingSurface(project);
+  await refreshBaselineSessionStatus(project);
   await refreshStalkingMap(project);
   await refreshStalkingMissed(project);
 }
+
+async function refreshBaselineSessionStatus(project) {
+  const el = document.getElementById('stalking-baseline-status');
+  if (!el || !project) return;
+  try {
+    const s = await api.get(`/api/stalking/${encodeURIComponent(project)}/baseline`);
+    el.textContent = s.status === 'running'
+      ? `Baseline session: RUNNING · ${s.runId || ''} — use the app, then Stop + record`
+      : `Baseline session: ${s.status || 'stopped'}${s.message ? ' — ' + s.message : ''}`;
+  } catch {
+    el.textContent = 'Baseline session: —';
+  }
+}
+
+document.getElementById('stalking-baseline-start')?.addEventListener('click', async () => {
+  const project = document.getElementById('stalking-project')?.value;
+  const out = document.getElementById('stalking-export-result');
+  if (!project) return;
+  try {
+    const s = await api.post(`/api/stalking/${encodeURIComponent(project)}/baseline/start`, { project });
+    if (out) out.textContent = s.message || `Baseline started → ${s.runDir}`;
+    await refreshBaselineSessionStatus(project);
+  } catch (err) {
+    if (out) out.textContent = err.message;
+  }
+});
+
+document.getElementById('stalking-baseline-stop')?.addEventListener('click', async () => {
+  const project = document.getElementById('stalking-project')?.value;
+  const out = document.getElementById('stalking-export-result');
+  if (!project) return;
+  try {
+    const label = document.getElementById('stalking-label')?.value?.trim() || null;
+    const s = await api.post(`/api/stalking/${encodeURIComponent(project)}/baseline/stop`, {
+      project,
+      recordLayer: true,
+      label,
+    });
+    if (out) out.textContent = s.message || 'Baseline stopped';
+    await refreshStalkingWorkspace();
+  } catch (err) {
+    if (out) out.textContent = err.message;
+  }
+});
 
 async function refreshStalkingSurface(project) {
   const meta = document.getElementById('stalking-surface-meta');

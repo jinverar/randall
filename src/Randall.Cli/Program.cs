@@ -126,6 +126,8 @@ static void PrintHelp()
                                             Rebuild graph.json + merged.csv from timeline CSVs
           randall surface assess -p <project> [--layer id] [--baseline]
                                             Exploit Surface — sideload/injection/listen suggestions
+          randall surface baseline start|stop -p <project>
+                                            Natural-use baseline session (Procmon + snapshots)
           randall surface list -p <project>  List persisted surface findings
           randall harness-worker --dll <native.dll> [--export LLVMFuzzerTestOneInput]
           randall export -i <crash-guid>
@@ -2710,19 +2712,24 @@ static int RunSurface(string[] args)
     {
         Console.WriteLine("""
             Usage:
+              randall surface baseline start -p <project> [--pid N] [--exe path]
+              randall surface baseline stop  -p <project> [--no-layer] [--label text] [--pid N]
+              randall surface baseline status -p <project>
               randall surface assess -p <project> [--layer <id>] [--baseline] [--json]
               randall surface list   -p <project> [--json]
               randall surface compare -p <project> [layerId…] [--json]
 
-            Exploit Surface — host assessor (DLL sideload, injection, child process,
-            network listen, unusual modules, SigCheck) from stalk/recording artifacts.
-            Suggests fuzz next steps + hints.md / dictionary tokens. Not Oracle judgment.
-            See docs/SURFACE.md.
+            Exploit Surface — host assessor + baseline session (natural use under Procmon).
+            Suggests fuzz next steps + hints.md / dictionary tokens / Magician soft needs.
+            Not Oracle judgment. See docs/SURFACE.md.
             """);
         return 0;
     }
 
     var sub = args[0].ToLowerInvariant();
+    if (sub is "baseline" or "session")
+        return RunSurfaceBaseline(args.Skip(1).ToArray());
+
     string? project = null;
     string? layerId = null;
     var baselineOnly = false;
@@ -2843,6 +2850,83 @@ static int RunSurface(string[] args)
             Console.WriteLine($"  tip: {r}");
 
     return report.Ok || report.Findings.Count > 0 ? 0 : 2;
+}
+
+static int RunSurfaceBaseline(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Usage:
+              randall surface baseline start  -p <project> [--pid N] [--exe path]
+              randall surface baseline stop   -p <project> [--no-layer] [--label text] [--pid N]
+              randall surface baseline status -p <project>
+
+            Start Procmon + Sysinternals snapshots, use the app naturally, then stop to
+            record a baseline stalk layer + Exploit Surface assess.
+            """);
+        return 0;
+    }
+
+    var action = args[0].ToLowerInvariant();
+    string? project = null;
+    int? pid = null;
+    string? exe = null;
+    string? label = null;
+    var recordLayer = true;
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "--pid" && i + 1 < args.Length && int.TryParse(args[i + 1], out var p))
+        {
+            pid = p;
+            i++;
+        }
+        else if (args[i] is "--exe" or "-e" && i + 1 < args.Length)
+            exe = args[++i];
+        else if (args[i] is "--label" && i + 1 < args.Length)
+            label = args[++i];
+        else if (args[i] is "--no-layer")
+            recordLayer = false;
+    }
+
+    if (string.IsNullOrWhiteSpace(project))
+    {
+        Console.Error.WriteLine("Usage: randall surface baseline start|stop|status -p <project>");
+        return 1;
+    }
+
+    if (action is "start")
+    {
+        var s = BaselineSession.Start(project, pid, exe);
+        Console.WriteLine($"[{s.Status}] {s.Message}");
+        Console.WriteLine($"  run: {s.RunDir}");
+        if (!string.IsNullOrWhiteSpace(s.PmlPath))
+            Console.WriteLine($"  pml: {s.PmlPath}");
+        return s.Status == "running" ? 0 : 1;
+    }
+
+    if (action is "status")
+    {
+        var s = BaselineSession.Status(project);
+        Console.WriteLine($"[{s.Status}] {s.Message ?? s.RunId}");
+        if (!string.IsNullOrWhiteSpace(s.RunDir))
+            Console.WriteLine($"  run: {s.RunDir}");
+        return 0;
+    }
+
+    if (action is "stop")
+    {
+        var s = BaselineSession.Stop(project, recordLayer, label, pid);
+        Console.WriteLine($"[{s.Status}] {s.Message}");
+        if (!string.IsNullOrWhiteSpace(s.LayerId))
+            Console.WriteLine($"  layer: {s.LayerId}");
+        return 0;
+    }
+
+    Console.Error.WriteLine("Usage: randall surface baseline start|stop|status -p <project>");
+    return 1;
 }
 
 static int StalkExport(string[] args)
