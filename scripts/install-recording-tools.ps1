@@ -1,4 +1,4 @@
-# Download Sysinternals (+ optional Frida / API Monitor) into tools/ for Randfuzz recording bookends.
+﻿# Download Sysinternals (+ optional Frida / API Monitor) into tools/ for Randfuzz recording bookends.
 # Idempotent. Soft-fails per tool; prints a summary at the end.
 #
 # Examples:
@@ -12,7 +12,7 @@
 # Official Suite: https://download.sysinternals.com/files/SysinternalsSuite.zip
 # Docs: https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite
 # Built-in (no download): wpr.exe (ETW), pktmon.exe - already on Windows.
-# Optional (large): Wireshark/tshark — only with -IncludeWireshark (not default).
+# Optional (large): Wireshark/tshark - only with -IncludeWireshark (not default).
 [CmdletBinding()]
 param(
     [switch]$Force,
@@ -31,14 +31,26 @@ $Root = Split-Path $PSScriptRoot -Parent
 $ToolsDir = Join-Path $Root "tools"
 $script:Results = [System.Collections.Generic.List[object]]::new()
 
+function Get-RecTempDir {
+    foreach ($cand in @($env:TEMP, $env:TMP, $env:TMPDIR)) {
+        if (-not [string]::IsNullOrWhiteSpace($cand)) {
+            return $cand.TrimEnd('\', '/')
+        }
+    }
+    return ([System.IO.Path]::GetTempPath()).TrimEnd('\', '/')
+}
+
+$script:RecTempDir = Get-RecTempDir
+
 function Write-RecLog {
     param([string]$Message, [string]$Level = "Info")
     switch ($Level) {
-        "Warn"  { Write-Host $Message -ForegroundColor Yellow }
-        "Error" { Write-Host $Message -ForegroundColor Red }
-        "Ok"    { Write-Host $Message -ForegroundColor Green }
-        "Cyan"  { Write-Host $Message -ForegroundColor Cyan }
-        default { Write-Host $Message }
+        "Warn"   { Write-Host $Message -ForegroundColor Yellow }
+        "Yellow" { Write-Host $Message -ForegroundColor Yellow }
+        "Error"  { Write-Host $Message -ForegroundColor Red }
+        "Ok"     { Write-Host $Message -ForegroundColor Green }
+        "Cyan"   { Write-Host $Message -ForegroundColor Cyan }
+        default  { Write-Host $Message }
     }
 }
 
@@ -153,18 +165,18 @@ function Install-FromLiveSysinternals {
     $dest = Join-Path $ToolsDir $DestName
     foreach ($live in $LiveNames) {
         $uri = "https://live.sysinternals.com/$live"
-        $tmp = Join-Path $env:TEMP ("randall-live-" + $live)
+        $tmp = Join-Path $script:RecTempDir ("randall-live-" + $live)
         try {
             Write-Verbose "Live.sysinternals fallback: $uri"
             Download-WithProgress -Uri $uri -OutFile $tmp
-            if ((Test-Path $tmp) -and (Get-Item $tmp).Length -gt 1024) {
+            if ((Test-Path -LiteralPath $tmp) -and (Get-Item -LiteralPath $tmp).Length -gt 1024) {
                 Copy-Item -Force $tmp $dest
-                Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
                 return $true
             }
         } catch {
             Write-Verbose ("Live download failed for {0}: {1}" -f $live, $_.Exception.Message)
-            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
         }
     }
     return $false
@@ -192,10 +204,10 @@ function Install-SysinternalsSuite {
 
     $zip = $SuiteZipPath
     if (-not $zip) {
-        $zip = Join-Path $env:TEMP "SysinternalsSuite.zip"
+        $zip = Join-Path $script:RecTempDir "SysinternalsSuite.zip"
     }
 
-    $extract = Join-Path $env:TEMP "randall-sysinternals-extract"
+    $extract = Join-Path $script:RecTempDir "randall-sysinternals-extract"
     $haveZip = $false
 
     if ($SuiteZipPath -and (Test-Path $SuiteZipPath)) {
@@ -349,8 +361,8 @@ function Install-ApiMonitor {
     Write-Host "  Expected path: tools\API Monitor\apimonitor-x64.exe"
     Write-Host "  URL: $ApiMonitorZipUrl"
 
-    $zip = Join-Path $env:TEMP "api-monitor-v2r13-x86-x64.zip"
-    $extract = Join-Path $env:TEMP "randall-apimonitor-extract"
+    $zip = Join-Path $script:RecTempDir "api-monitor-v2r13-x86-x64.zip"
+    $extract = Join-Path $script:RecTempDir "randall-apimonitor-extract"
 
     try {
         if ($Force -and (Test-Path $zip)) {
@@ -419,7 +431,7 @@ function Show-BuiltinNotes {
     Add-Result "wpr/pktmon" "note" "built into Windows - no download"
 
     Write-Host ""
-    Write-RecLog "Optional Wireshark / tshark (fuzz.tsharkCapture → fuzz.pcapng):" "Cyan"
+    Write-RecLog "Optional Wireshark / tshark (fuzz.tsharkCapture -> fuzz.pcapng):" "Cyan"
     Write-Host "  Not installed by default (large). Manual:"
     Write-Host "    winget install WiresharkFoundation.Wireshark"
     Write-Host "    choco install wireshark"
@@ -451,7 +463,7 @@ function Install-WiresharkOptional {
         Write-Host "  winget not found. Install manually:"
         Write-Host "    https://www.wireshark.org/download.html"
         Write-Host "    or: choco install wireshark"
-        Add-Result "Wireshark" "failed" "winget missing — manual install"
+        Add-Result "Wireshark" "failed" "winget missing - manual install"
         return
     }
 
