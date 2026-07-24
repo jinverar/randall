@@ -15,11 +15,42 @@ sets up a Linux lab. For Windows, see [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md).
 
 ## 2. Clone + build
 
+Prefer **git clone** over downloading a GitHub source ZIP — `git pull` picks up install-script fixes without re-unpacking.
+
 ```bash
 git clone https://github.com/jinverar/randall.git
 cd randall
 dotnet build Randall.sln
 ```
+
+If you already unpacked a ZIP, migrate once: clone fresh, **copy** `tools/` from the old tree into the clone (DynamoRIO tarballs/extracts are gitignored), then use `scripts/update-lab.sh` from then on.
+
+---
+
+## Updating after first install
+
+Day-to-day updates: **pull source, rebuild** — no ZIP, no full apt reinstall.
+
+```bash
+cd ~/Projects/randall   # or wherever you cloned
+
+# Stop Randall.Server first if it is running (Ctrl+C) — avoids locked binaries during rebuild
+scripts/update-lab.sh
+# Re-install apt/GEF tools only when docs say so:  scripts/update-lab.sh --install-tools
+```
+
+| Step | Action |
+|------|--------|
+| `git pull` | Latest source (fails clearly if this folder is not a clone) |
+| `dotnet build` | Randall.Cli, Randall.Server, libraries |
+| `build-lab-targets.sh` | .NET lab apphosts + optional native file labs |
+| `tools/` / apt packages | **Not** touched unless you pass `--install-tools` |
+
+Useful flags: `--skip-pull`, `--skip-lab-targets`, `--install-tools`.
+
+**Gitignored (safe across pulls):** `tools/dynamorio/`, `data/`, `projects/local/` — see [.gitignore](../.gitignore).
+
+---
 
 ## 3. Install the Linux toolchain (optional but recommended)
 
@@ -151,6 +182,33 @@ With `fuzz.autoAnalyzeCrash` (default **on**), each captured core also gets:
 Skill practice: `projects/vulnlab-offset.yaml` (cyclic mutator on VulnLab basic).
 
 Manual: `randall heaptriage --exe <p> --core <core>` or `randall exploit guide --exe <p> --core <core>`.
+
+## Uninstall / clean up a lab machine
+
+Stops the server, fuzz/agent sessions, and vuln labs, then removes what the installers put under `tools/` and built binaries under `targets/`. Your git clone (`src/`, `docs/`, `projects/`) is never touched. System packages (gdb, .NET SDK, apt installs) are not removed.
+
+```bash
+# Preview only - stops nothing, deletes nothing
+scripts/uninstall-lab.sh --what-if
+
+# Stop + remove tools/ and targets/ (prompts for confirmation)
+scripts/uninstall-lab.sh
+
+# Same, no prompt
+scripts/uninstall-lab.sh --force
+
+# Just stop server/labs - keep every installed file
+scripts/uninstall-lab.sh --stop-only
+
+# Keep DynamoRIO tarballs/extracts or built lab binaries
+scripts/uninstall-lab.sh --force --keep-tools
+scripts/uninstall-lab.sh --force --keep-targets
+
+# Also wipe data/ (crash dumps, corpus, runtime-slots.json) - opt-in
+scripts/uninstall-lab.sh --force --remove-data
+```
+
+Reinstall: `scripts/install-linux-tools.sh` · Rebuild targets: `scripts/build-lab-targets.sh`
 
 ## What is Windows-only
 

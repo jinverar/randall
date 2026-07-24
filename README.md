@@ -50,6 +50,8 @@ Cross-platform (.NET 8). Pick your OS:
 | **Windows 10 / 11** | [INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md) (section below) |
 | **Linux** | [INSTALL_LINUX.md](docs/INSTALL_LINUX.md) |
 
+**Linux quick path:** clone, `dotnet build`, optional `scripts/install-linux-tools.sh`, `scripts/build-lab-targets.sh`, then `scripts/update-lab.sh` for day-to-day pulls. Uninstall: `scripts/uninstall-lab.sh` (see Linux install guide).
+
 ### Windows 10 / 11 VM
 
 Fresh VM or bare metal. Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md).

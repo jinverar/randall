@@ -20,6 +20,13 @@ if [ "$(id -u)" -ne 0 ]; then
   command -v sudo >/dev/null 2>&1 && SUDO="sudo"
 fi
 
+if command -v apt-get >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1; then
+  if [ "$(id -u)" -ne 0 ] && [ -z "$SUDO" ]; then
+    echo "Need root or sudo to install packages. Re-run: sudo $0 ${1:-}" >&2
+    exit 1
+  fi
+fi
+
 if command -v apt-get >/dev/null 2>&1; then
   echo "==> apt-get: core Linux triage/observation toolchain"
   $SUDO apt-get update -y

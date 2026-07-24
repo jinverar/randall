@@ -182,7 +182,7 @@ pat = re.compile(r"^" + re.escape(prefix) + r"-.+\.tar\.gz$")
 for a in data.get("assets", []):
     name = a.get("name") or ""
     if pat.match(name):
-        print(f"{name}\t{a.get("browser_download_url", "")}\t{a.get("size") or 0}")
+        print(f"{name}\t{a.get('browser_download_url', '')}\t{a.get('size') or 0}")
         break
 ')"
 fi

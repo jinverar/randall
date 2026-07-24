@@ -25,7 +25,7 @@ Prefer the `.cmd` launchers on Windows. They call `powershell -File` so UTF-8 BO
 
 Idempotent — skips binaries already present unless `-Force`. Soft-fails per tool with a summary. See [docs/RECORDING.md](../docs/RECORDING.md).
 
-**Daily updates:** use [update-lab.ps1](../scripts/update-lab.ps1) (`git pull` + rebuild). Re-run installers here only for first setup or when adding tools (`update-lab.ps1 -InstallTools`).
+**Daily updates:** use [update-lab.ps1](../scripts/update-lab.ps1) on Windows or [update-lab.sh](../scripts/update-lab.sh) on Linux (`git pull` + rebuild). Re-run installers here only for first setup or when adding tools (`update-lab.ps1 -InstallTools` / `update-lab.sh --install-tools`).
 
 **Built-in (no download):** `wpr.exe` (ETW) and `pktmon.exe` ship with Windows.
 
