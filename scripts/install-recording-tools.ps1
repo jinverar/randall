@@ -320,18 +320,57 @@ function Update-RecSessionPath {
     }
 }
 
+function Test-PythonExeWorks {
+    param([string]$Exe)
+    if ([string]::IsNullOrWhiteSpace($Exe)) { return $false }
+    if (-not (Test-Path -LiteralPath $Exe)) { return $false }
+    # Windows Store / AppExecutionAlias stub - never use
+    if ($Exe -match '(?i)[\\/]WindowsApps[\\/]') { return $false }
+
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $out = & $Exe -c "import sys; print('%d.%d' % (sys.version_info[0], sys.version_info[1]))" 2>$null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $ver = (($out | Select-Object -Last 1).ToString().Trim())
+        return ($ver -match '^[23]\.\d+')
+    } catch {
+        return $false
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
+function Get-ToolsPythonDir {
+    return (Join-Path $ToolsDir "python")
+}
+
+function Get-ToolsPythonExe {
+    return (Join-Path (Get-ToolsPythonDir) "python.exe")
+}
+
 function Find-PythonExe {
-    # Returns a python executable path usable as: & $py -m pip ...
+    # Prefer Randfuzz-owned install under tools\python (avoids Windows Store stub on PATH).
     Update-RecSessionPath
+
+    $candidates = New-Object System.Collections.Generic.List[string]
+
+    $toolsPy = Get-ToolsPythonExe
+    if (Test-Path -LiteralPath $toolsPy) { [void]$candidates.Add($toolsPy) }
+
+    $localApp = $env:LocalAppData
+    if ($localApp) {
+        $progPy = Join-Path $localApp "Programs\Python"
+        if (Test-Path -LiteralPath $progPy) {
+            Get-ChildItem -Path $progPy -Filter "python.exe" -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -notmatch '(?i)[\\/]WindowsApps[\\/]' } |
+                ForEach-Object { [void]$candidates.Add($_.FullName) }
+        }
+    }
 
     foreach ($cand in @("python", "python3")) {
         $cmd = Get-Command $cand -ErrorAction SilentlyContinue
-        if ($cmd -and $cmd.Source) {
-            # Avoid the Windows Store alias stub that opens ms-windows-store
-            $src = $cmd.Source
-            if ($src -match 'WindowsApps\\python') { continue }
-            return $src
-        }
+        if ($cmd -and $cmd.Source) { [void]$candidates.Add($cmd.Source) }
     }
 
     $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
@@ -342,25 +381,15 @@ function Find-PythonExe {
         $ErrorActionPreference = $prev
         if ($LASTEXITCODE -eq 0 -and $probe) {
             $exe = ($probe | Select-Object -Last 1).ToString().Trim()
-            if ($exe -and (Test-Path -LiteralPath $exe)) { return $exe }
+            if ($exe) { [void]$candidates.Add($exe) }
         }
     }
 
-    $localApp = $env:LocalAppData
-    $roots = @(
-        (Join-Path $ToolsDir "python")
-    )
-    if ($localApp) {
-        $roots += (Join-Path $localApp "Programs\Python")
+    foreach ($exe in $candidates) {
+        if (Test-PythonExeWorks $exe) {
+            return $exe
+        }
     }
-    foreach ($root in $roots) {
-        if (-not $root -or -not (Test-Path -LiteralPath $root)) { continue }
-        $hit = Get-ChildItem -Path $root -Filter "python.exe" -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -notmatch '\\WindowsApps\\' } |
-            Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    }
-
     return $null
 }
 
@@ -376,38 +405,22 @@ function Install-PythonRuntime {
         return $false
     }
 
-    New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
-
-    # 1) winget (when available)
-    $winget = Get-Command winget -ErrorAction SilentlyContinue
-    if ($winget) {
-        Write-RecLog ("Trying winget install {0}..." -f $PythonWingetId) "Cyan"
-        try {
-            $prev = $ErrorActionPreference
-            $ErrorActionPreference = "Continue"
-            & winget install --id $PythonWingetId -e --accept-package-agreements --accept-source-agreements
-            $code = $LASTEXITCODE
-            $ErrorActionPreference = $prev
-            Update-RecSessionPath
-            if (Find-PythonExe) {
-                Write-RecLog "Python available via winget." "Ok"
-                Add-Result "Python" "installed" ("winget {0}" -f $PythonWingetId)
-                return $true
-            }
-            Write-RecLog ("winget exit {0}; falling back to python.org installer..." -f $code) "Warn"
-        } catch {
-            Write-RecLog ("winget Python failed ({0}); falling back to python.org installer..." -f $_.Exception.Message) "Warn"
-        }
-    } else {
-        Write-Host "  winget not found; using python.org installer."
+    $toolsPyDir = Get-ToolsPythonDir
+    $toolsPyExe = Get-ToolsPythonExe
+    if ((-not $Force) -and (Test-PythonExeWorks $toolsPyExe)) {
+        Write-RecLog ("Python already present: {0}" -f $toolsPyExe) "Ok"
+        Add-Result "Python" "skipped" "already present under tools\python"
+        return $true
     }
 
-    # 2) Official python.org installer (per-user, pip, add to PATH)
+    New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
+
+    # Primary: official installer into tools\python (no PATH / Store stub involvement).
     $setup = Join-Path $script:RecTempDir "python-randall-amd64.exe"
     try {
-        Write-RecLog "Downloading Python installer from python.org..." "Cyan"
+        Write-RecLog "Downloading Python installer from python.org -> tools\python ..." "Cyan"
         Write-Host "  URL: $PythonInstallerUrl"
-        Write-Host "  Cache: $setup"
+        Write-Host "  TargetDir: $toolsPyDir"
         if ($Force -and (Test-Path -LiteralPath $setup)) {
             Remove-Item -LiteralPath $setup -Force -ErrorAction SilentlyContinue
         }
@@ -415,37 +428,94 @@ function Install-PythonRuntime {
             Download-WithProgress -Uri $PythonInstallerUrl -OutFile $setup
         }
 
-        Write-Host "  Running silent per-user install (Include_pip=1, PrependPath=1)..."
+        if ($Force -and (Test-Path -LiteralPath $toolsPyDir)) {
+            Remove-Item -LiteralPath $toolsPyDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        New-Item -ItemType Directory -Force -Path $toolsPyDir | Out-Null
+
+        Write-Host "  Running silent install into tools\python (Include_pip=1, PrependPath=0)..."
         $prev = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         $p = Start-Process -FilePath $setup -ArgumentList @(
             "/quiet",
+            "TargetDir=$toolsPyDir",
             "InstallAllUsers=0",
-            "PrependPath=1",
+            "PrependPath=0",
             "Include_pip=1",
             "Include_test=0",
-            "Include_launcher=1",
+            "Include_launcher=0",
+            "Include_doc=0",
+            "Include_dev=0",
+            "AssociateFiles=0",
+            "Shortcuts=0",
             "SimpleInstall=1"
-        ) -Wait -PassThru
+        ) -Wait -PassThru -WindowStyle Hidden
         $ErrorActionPreference = $prev
-        Update-RecSessionPath
-
         Start-Sleep -Seconds 2
-        $py = Find-PythonExe
-        if ($py) {
-            Write-RecLog ("Python installed: {0}" -f $py) "Ok"
-            Add-Result "Python" "installed" "python.org silent installer"
+
+        if (Test-PythonExeWorks $toolsPyExe) {
+            Write-RecLog ("Python installed: {0}" -f $toolsPyExe) "Ok"
+            Add-Result "Python" "installed" "python.org -> tools\python"
             return $true
         }
 
-        throw ("installer exit {0}; python.exe still not found (open a new shell or check LocalAppData\Programs\Python)" -f $p.ExitCode)
+        Write-RecLog ("tools\python install incomplete (exit {0}); trying winget fallback..." -f $p.ExitCode) "Warn"
     } catch {
-        Write-RecLog ("[!] Python auto-install failed: {0}" -f $_.Exception.Message) "Warn"
-        Write-Host "  Manual: https://www.python.org/downloads/windows/ (enable Add python.exe to PATH)"
-        Write-Host "  Or: winget install -e --id $PythonWingetId --accept-package-agreements --accept-source-agreements"
-        Add-Result "Python" "failed" $_.Exception.Message
-        return $false
+        Write-RecLog ("python.org tools\python install failed: {0}" -f $_.Exception.Message) "Warn"
+        Write-Host "  Falling back to winget / default install..."
     }
+
+    # Fallback: winget into the usual per-user location
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-RecLog ("Trying winget install {0}..." -f $PythonWingetId) "Cyan"
+        try {
+            $prev = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            & winget install --id $PythonWingetId -e --accept-package-agreements --accept-source-agreements 2>&1 | Out-Host
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = $prev
+            Update-RecSessionPath
+            Start-Sleep -Seconds 2
+            if (Find-PythonExe) {
+                Write-RecLog "Python available via winget." "Ok"
+                Add-Result "Python" "installed" ("winget {0}" -f $PythonWingetId)
+                return $true
+            }
+            Write-RecLog ("winget exit {0}; Python still not usable." -f $code) "Warn"
+        } catch {
+            Write-RecLog ("winget Python failed: {0}" -f $_.Exception.Message) "Warn"
+        }
+    }
+
+    Write-RecLog "[!] Python auto-install failed." "Warn"
+    Write-Host "  Manual: https://www.python.org/downloads/windows/ (disable Store app alias for python.exe)"
+    Write-Host "  Settings -> Apps -> Advanced app settings -> App execution aliases -> turn OFF python.exe / python3.exe"
+    Write-Host "  Or: winget install -e --id $PythonWingetId --accept-package-agreements --accept-source-agreements"
+    Add-Result "Python" "failed" "auto-install failed (Store stub / installer)"
+    return $false
+}
+
+function Invoke-PythonModule {
+    param(
+        [Parameter(Mandatory = $true)][string]$PythonExe,
+        [Parameter(Mandatory = $true)][string[]]$ModuleArgs
+    )
+    # Run via Start-Process so the Windows Store stub stderr does not become a
+    # NativeCommandError / RemoteException under $ErrorActionPreference Stop.
+    $argList = @("-m") + $ModuleArgs
+    $p = Start-Process -FilePath $PythonExe -ArgumentList $argList -Wait -PassThru -NoNewWindow `
+        -RedirectStandardOutput (Join-Path $script:RecTempDir "randall-py-stdout.txt") `
+        -RedirectStandardError (Join-Path $script:RecTempDir "randall-py-stderr.txt")
+    $stdoutPath = Join-Path $script:RecTempDir "randall-py-stdout.txt"
+    $stderrPath = Join-Path $script:RecTempDir "randall-py-stderr.txt"
+    if (Test-Path -LiteralPath $stdoutPath) {
+        Get-Content -LiteralPath $stdoutPath -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+    }
+    if (Test-Path -LiteralPath $stderrPath) {
+        Get-Content -LiteralPath $stderrPath -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+    }
+    return $p.ExitCode
 }
 
 function Install-FridaTools {
@@ -465,12 +535,13 @@ function Install-FridaTools {
     $py = Find-PythonExe
     if (-not $py) {
         if ($SkipPython) {
-            Write-RecLog "[!] Python not found and -SkipPython set - cannot install frida-tools." "Warn"
+            Write-RecLog "[!] No working Python found and -SkipPython set - cannot install frida-tools." "Warn"
+            Write-Host "  Tip: turn OFF Windows 'App execution aliases' for python.exe (Store stub causes exit 9009)."
             Add-Result "frida-tools" "failed" "python missing (-SkipPython)"
             Add-Result "Python" "skipped" "-SkipPython"
             return
         }
-        Write-RecLog "Python not found - installing Python 3 for Frida..." "Cyan"
+        Write-RecLog "No working Python on PATH (Store stub ignored) - installing into tools\python ..." "Cyan"
         if (Install-PythonRuntime) {
             $py = Find-PythonExe
         }
@@ -478,8 +549,8 @@ function Install-FridaTools {
 
     if (-not $py) {
         Write-RecLog "[!] Python/pip still not available - skip Frida." "Warn"
-        Write-RecLog "    Manual: install Python 3 from https://www.python.org/downloads/windows/ (check Add python.exe to PATH)," "Warn"
-        Write-RecLog "    then: python -m pip install frida-tools" "Warn"
+        Write-RecLog "    Disable Store python aliases, then re-run, or install from python.org." "Warn"
+        Write-RecLog "    Manual: tools\python\python.exe -m pip install frida-tools" "Warn"
         Add-Result "frida-tools" "failed" "python/pip missing after install attempt"
         return
     }
@@ -487,24 +558,21 @@ function Install-FridaTools {
     Write-Host ("  Using Python: {0}" -f $py)
 
     try {
-        $prev = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        & $py -m pip --version 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        $pipVer = Invoke-PythonModule -PythonExe $py -ModuleArgs @("pip", "--version")
+        if ($pipVer -ne 0) {
             Write-Host "  Bootstrapping pip (ensurepip)..."
-            & $py -m ensurepip --upgrade 2>&1 | Out-Null
+            [void](Invoke-PythonModule -PythonExe $py -ModuleArgs @("ensurepip", "--upgrade"))
         }
-        & $py -m pip install --upgrade frida-tools
-        $code = $LASTEXITCODE
-        $ErrorActionPreference = $prev
+        $code = Invoke-PythonModule -PythonExe $py -ModuleArgs @("pip", "install", "--upgrade", "frida-tools")
         if ($code -ne 0) {
             throw "pip exit $code"
         }
-        Write-RecLog "Frida tools installed (frida / frida-ps on PATH if Scripts dir is on PATH)." "Ok"
+        Write-RecLog "Frida tools installed (frida / frida-ps under the Python Scripts dir)." "Ok"
         Add-Result "frida-tools" "installed" ("pip install frida-tools via {0}" -f $py)
     } catch {
         Write-RecLog ("[!] Frida install failed: {0}" -f $_.Exception.Message) "Warn"
         Write-RecLog ("    Manual: `"{0}`" -m pip install frida-tools" -f $py) "Warn"
+        Write-Host "  If you saw a Microsoft Store python message: Settings -> Apps -> App execution aliases -> OFF for python.exe"
         Add-Result "frida-tools" "failed" $_.Exception.Message
     }
 }

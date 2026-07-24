@@ -77,6 +77,7 @@ if (-not $SkipRecordingTools) {
     if ($IncludeFrida) { $recArgs += "-IncludeFrida" }
     if ($SkipFrida) { $recArgs += "-SkipFrida" }
     if ($SkipApiMonitor) { $recArgs += "-SkipApiMonitor" }
+    if ($SkipPython) { $recArgs += "-SkipPython" }
     Invoke-Step -Name "Recording tools" -ScriptPath (Join-Path $Scripts "install-recording-tools.ps1") -ScriptArgs $recArgs
 } else {
     Write-Host ""

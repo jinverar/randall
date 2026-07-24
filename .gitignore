@@ -89,3 +89,4 @@ targets/file-framed/app
 targets/file-framed/app.exe
 data/bench/
 data/rop/
+tools/python/
