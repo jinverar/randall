@@ -95,7 +95,7 @@ public static class LabDoctor
         {
             var bits = new List<string> { "enabled" };
             if (mag.AutoCastOnOracle) bits.Add("autoCast");
-            if (mag.BlessOnStart) bits.Add("blessOnStart");
+            if (mag.BlessOnStart) bits.Add("startAdjust");
             if (mag.AllowSummonHunter) bits.Add("hunter");
             if (mag.AllowSummonKnight) bits.Add("knight");
             if (mag.AllowSummonArmy) bits.Add("army");
@@ -120,7 +120,7 @@ public static class LabDoctor
         else
         {
             Add("joker", "warn",
-                "joker disabled — optional chaotic tricks; Magician can summonJoker (docs/MAGICIAN.md#joker)");
+                "joker disabled — optional high-entropy stacking; Magician can enableJoker (docs/MAGICIAN.md#joker)");
         }
 
         // Optional external engines (AFL++ / honggfuzz) — fail preflight when selected but missing.

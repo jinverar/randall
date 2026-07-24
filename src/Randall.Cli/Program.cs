@@ -123,7 +123,7 @@ static void PrintHelp()
           randall fuzz -c <project> --debugger wait|attach|both [--open-on-crash]
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
           randall oracles [-p name] [--json]   Oracle engine: list findings (judgment/report)
-          randall magician [spells|cast|log]   Magician: spells / summons for Oracle needs
+          randall magician [spells|cast|log]   Magician: campaign actions for Oracle needs
           randall hunt -d <src> [-c yaml --arm]  Bug Hunter: AI/human analysis + arm campaign
           randall hunt attribution|mistakes   Bug Hunter subcommands
           randall ai seed -c <project> […]    Optional AI seed recipe (docs/AI_SEED.md)
@@ -740,16 +740,16 @@ static int RunMagician(string[] args)
     if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
     {
         Console.WriteLine("""
-            Magician engine — spells & summons (docs/MAGICIAN.md)
+            Magician engine — campaign actions for Oracle needs (docs/MAGICIAN.md)
 
             The Oracle judges and can request help (knight / army / bots / hunter).
-            The Magician casts spells on the fuzz campaign and summons helpers.
+            Magician applies those requests: dictionary, mutators, energy, coverage, Joker.
 
             Usage:
               randall magician spells
               randall magician cast -c <project.yaml> --need knight|army|bots|hunter|dictionary|energy|rearm|joker
-              randall magician joker                 # Joker chaos help
-              randall magician [-p <project>] [--json]     # recent casts from spells.jsonl
+              randall magician joker                 # Joker engine help
+              randall magician [-p <project>] [--json]     # recent actions from spells.jsonl
 
             Path: data/crashes/<project>/_magician/spells.jsonl
             Joker watch: data/crashes/<project>/_magician/joker_watch.jsonl
@@ -809,7 +809,7 @@ static int RunMagician(string[] args)
             var cast = MagicianEngine.CastNeed(project, path, need, reason);
             Console.WriteLine($"Magician cast on {project.Name}: {cast.Summary}");
             foreach (var s in cast.Spells)
-                Console.WriteLine($"  • {s.Spell}" + (s.Summon is null ? "" : $" → summoned {s.Summon}") + $" — {s.Detail}");
+                Console.WriteLine($"  • {s.Spell}" + (s.Summon is null ? "" : $" → {s.Summon}") + $" — {s.Detail}");
             if (cast.DictionaryTokensAdded.Count > 0)
                 Console.WriteLine($"  tokens: {string.Join(", ", cast.DictionaryTokensAdded.Take(8))}");
             if (cast.MutatorsEnsured.Count > 0)
@@ -1083,7 +1083,7 @@ static async Task<int> RunFuzzAsync(string[] args)
     if (dryRun)
         Console.WriteLine("[dry-run mode]");
     if (verbose || project.Fuzz.Verbose)
-        Console.WriteLine("Verbose: Oracle findings · Magician spells · Joker tricks · coverage edges · INTEL on dedup");
+        Console.WriteLine("Verbose: Oracle findings · Magician actions · Joker strategy · coverage edges · INTEL on dedup");
     if (coverage || project.Fuzz.CoverageGuided)
     {
         var dr = DynamoRioRunner.Discover();

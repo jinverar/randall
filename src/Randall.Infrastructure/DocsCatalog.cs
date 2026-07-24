@@ -35,7 +35,7 @@ public static class DocsCatalog
         ("WEB_FUZZ.md", "Web application fuzzing (HTTP)", "Fuzzing"),
         ("ENGINE_ADAPTERS.md", "AFL++ / honggfuzz engine adapters", "Fuzzing"),
         ("BENCHMARKS.md", "Engine bake-off (honest)", "Fuzzing"),
-        ("MAGICIAN.md", "Magician spells & Joker", "Fuzzing"),
+        ("MAGICIAN.md", "Magician actions & Joker", "Fuzzing"),
         ("REELDECK.md", "ReelDeck media file lab", "Fuzzing"),
         ("MATURITY.md", "Product maturity map", "Project"),
         ("RELEASE.md", "Release packaging cadence", "Project"),

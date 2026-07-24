@@ -31,8 +31,8 @@ public static class OracleNeeds
             var sev = (f.Severity ?? "").ToLowerInvariant();
             var isHard = sev is "violation" or "runtime";
 
-            // Always ask for energy blessing on interesting findings so Magician can boost.
-            Add("energy", f, $"Oracle saw {f.RuleClass}/{f.RuleId} — bless this input");
+            // Always ask for energy boost on interesting findings so Magician can follow up.
+            Add("energy", f, $"Oracle saw {f.RuleClass}/{f.RuleId} — boost this input");
 
             switch (cls)
             {

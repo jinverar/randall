@@ -8,10 +8,9 @@ using Randall.Infrastructure.Oracles;
 namespace Randall.Infrastructure.Magician;
 
 /// <summary>
-/// Magician engine — intervention / summoning.
-/// Receives <see cref="OracleNeedDto"/> foresight from the Oracle, casts spells on the
-/// campaign (dictionary, mutators, energy), and can summon Bug Hunter, a coverage knight,
-/// a mutator army, or analyst bots (AI-seed hints). Does not judge runs.
+/// Magician engine — campaign adjustments driven by Oracle needs.
+/// Receives <see cref="OracleNeedDto"/> foresight from the Oracle, then applies actions
+/// (dictionary, mutators, energy, coverage, Bug Hunter, Joker enablement). Does not judge runs.
 /// </summary>
 public static class MagicianEngine
 {
@@ -35,7 +34,7 @@ public static class MagicianEngine
     public static MagicianConfig GetConfig(ProjectConfig project) =>
         project.Magician ?? new MagicianConfig { Enabled = false };
 
-    /// <summary>Campaign-start blessing (optional army + hunter arming).</summary>
+    /// <summary>Campaign-start adjustments (optional broad mutators + Bug Hunter arming).</summary>
     public static MagicianCastResult? PrepareForFuzz(
         ProjectConfig project,
         string yamlPath,
@@ -48,19 +47,19 @@ public static class MagicianEngine
         project.Magician ??= cfg;
         var needs = new List<OracleNeedDto>
         {
-            new("army", "Magician opening blessing — mutator army ready", null, null, "nearMiss"),
-            new("hunter", "Magician opening blessing — Bug Hunter on call for AI/robot code", null, null, "nearMiss"),
+            new("army", "Magician start — ensure broad mutator set", null, null, "nearMiss"),
+            new("hunter", "Magician start — arm Bug Hunter for AI/robot-shaped targets", null, null, "nearMiss"),
         };
         if (project.Joker is { Enabled: true } || cfg.AllowSummonJoker)
-            needs.Add(new("joker", "Magician invites the Joker for chaotic tricks", null, null, "nearMiss"));
+            needs.Add(new("joker", "Magician start — enable high-entropy Joker iterations", null, null, "nearMiss"));
         var cast = Cast(project, yamlPath, needs, iteration: 0, corpus: null, payload: null,
             mutators: null, progress: progress, force: true);
         if (!string.IsNullOrEmpty(cast.Summary))
-            FuzzAnalystLog.Info(progress, $"Magician bless: {cast.Summary}");
+            FuzzAnalystLog.Info(progress, $"Magician start: {cast.Summary}");
         return cast;
     }
 
-    /// <summary>React to an Oracle evaluation (findings → needs → spells).</summary>
+    /// <summary>React to an Oracle evaluation (findings → needs → actions).</summary>
     public static MagicianCastResult? OnOracleEval(
         ProjectConfig project,
         string yamlPath,
@@ -86,7 +85,7 @@ public static class MagicianEngine
         if (!string.IsNullOrEmpty(cast.Summary))
         {
             FuzzAnalystLog.Info(progress,
-                $"Magician [{cast.Spells.Count} spell(s)]: {cast.Summary}",
+                $"Magician [{cast.Spells.Count} action(s)]: {cast.Summary}",
                 eval.Findings.FirstOrDefault()?.Iteration ?? 0);
         }
 
@@ -121,16 +120,16 @@ public static class MagicianEngine
 
         if (crashed)
             FuzzAnalystLog.Warn(progress,
-                $"Magician watched Joker [{trick.TrickName}] CRASH — {trick.Detail}", iteration);
+                $"Joker crash strategy={trick.TrickName} — {trick.Detail}", iteration);
         else if (iteration % 25 == 0 || trick.ChaosLevel >= 3)
             FuzzAnalystLog.Info(progress,
-                $"Magician watched Joker [{trick.TrickName}] — {string.Join('→', trick.MutatorChain.Take(5))}",
+                $"Joker sample strategy={trick.TrickName} chain={string.Join('→', trick.MutatorChain.Take(5))}",
                 iteration);
     }
 
     /// <summary>
-    /// After the Joker's random funny tricks find a crash, Magician capitalizes:
-    /// corpus retain/energy, mutator army, dictionary pressure, punchline note.
+    /// After a Joker high-entropy iteration finds a crash, Magician follows up:
+    /// corpus retain/energy, broader mutators, dictionary pressure, crash note.
     /// </summary>
     public static MagicianCastResult? CapitalizeOnJokerCrash(
         ProjectConfig project,
@@ -158,20 +157,20 @@ public static class MagicianEngine
 
         var needs = new List<OracleNeedDto>
         {
-            new("army", $"Joker {trick.TrickName} crashed — muster army on the punchline", "joker", trick.TrickName, "violation"),
-            new("dictionary", $"Joker crash — dictionary pressure from chaos path", "joker", trick.TrickName, "violation"),
-            new("energy", $"Joker crash energy bless", "joker", trick.TrickName, "violation"),
+            new("army", $"Joker crash strategy={trick.TrickName} — broaden mutators", "joker", trick.TrickName, "violation"),
+            new("dictionary", $"Joker crash strategy={trick.TrickName} — add dictionary pressure", "joker", trick.TrickName, "violation"),
+            new("energy", $"Joker crash strategy={trick.TrickName} — boost corpus energy", "joker", trick.TrickName, "violation"),
         };
 
         var cast = Cast(project, yamlPath, needs, iteration, corpus, payload, mutators, progress, force: true);
 
-        // Explicit capitalize spell record
+        // Explicit follow-up action record
         var spell = new MagicianSpellDto(
             Guid.NewGuid().ToString("N")[..12],
             project.Name,
             "capitalizeJoker",
             "joker",
-            $"Capitalize on Joker {trick.TrickName} crash",
+            $"Follow up on Joker crash strategy={trick.TrickName}",
             "joker",
             trick.TrickName,
             iteration,
@@ -183,12 +182,12 @@ public static class MagicianEngine
                 ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir),
                 "_magician");
             new MagicianSpellStore(dir).Append(spell);
-            WriteJokerPunchline(dir, project, trick, cast);
+            WriteJokerFollowUp(dir, project, trick, cast);
         }
 
         WatchJoker(project, yamlPath, trick, iteration, crashed: true, capitalized: true, progress);
         FuzzAnalystLog.Warn(progress,
-            $"Magician capitalized on Joker [{trick.TrickName}]: {cast.Summary}", iteration);
+            $"Joker crash follow-up strategy={trick.TrickName}: {cast.Summary}", iteration);
 
         return cast with
         {
@@ -213,7 +212,7 @@ public static class MagicianEngine
         project.Magician.Enabled = true;
         var need = new OracleNeedDto(
             request.Trim().ToLowerInvariant(),
-            reason ?? $"Manual Magician cast: {request}",
+            reason ?? $"Manual Magician action: {request}",
             null, null, "nearMiss");
         return Cast(project, yamlPath, [need], 0, null, null, mutators, progress, force: true);
     }
@@ -300,10 +299,10 @@ public static class MagicianEngine
     public static string DescribeCatalog()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Magician spell catalog (docs/MAGICIAN.md)");
+        sb.AppendLine("Magician action catalog (docs/MAGICIAN.md)");
         sb.AppendLine();
-        sb.AppendLine("| Spell | Summon | Effect |");
-        sb.AppendLine("|-------|--------|--------|");
+        sb.AppendLine("| Action | Helper | Effect |");
+        sb.AppendLine("|--------|--------|--------|");
         sb.AppendLine("| dictionaryBoost | — | Inject framing / AI-mistake tokens into the campaign dictionary |");
         sb.AppendLine("| havocSurge | — | Ensure havoc mutator is live |");
         sb.AppendLine("| energyBless | — | Extra corpus energy on the offending input |");
@@ -312,10 +311,10 @@ public static class MagicianEngine
         sb.AppendLine("| summonKnight | knight | Enable coverage-guided stalking |");
         sb.AppendLine("| summonArmy | army | Broad mutator set (havoc, interesting, dict, splice, …) |");
         sb.AppendLine("| summonBots | bots | Write analyst hint for AI seed / hunt (no live API) |");
-        sb.AppendLine("| summonJoker | joker | Call the Joker — boost chaotic random tricks (encore) |");
-        sb.AppendLine("| capitalizeJoker | joker | (auto) After Joker crash — energy + army + corpus |");
+        sb.AppendLine("| summonJoker | joker | Enable high-entropy Joker iterations (encore) |");
+        sb.AppendLine("| capitalizeJoker | joker | (auto) After Joker crash — energy + mutators + corpus |");
         sb.AppendLine();
-        sb.AppendLine("Oracle need → spell map: dictionary→dictionaryBoost; energy→energyBless;");
+        sb.AppendLine("Oracle need → action map: dictionary→dictionaryBoost; energy→energyBless;");
         sb.AppendLine("hunter→summonHunter; knight→summonKnight; army→summonArmy; bots→summonBots;");
         sb.AppendLine("rearm→rearmOracles; joker→summonJoker.");
         return sb.ToString();
@@ -416,7 +415,7 @@ public static class MagicianEngine
                     extraEnergy += 5;
                     return (true, null, "+5 corpus energy");
                 }
-                return (true, null, "no payload to bless (logged only)");
+                return (true, null, "no payload for energy boost (logged only)");
             case "rearmOracles":
                 project.Oracles = BugHunterOracleSuggestions.MergeInto(project.Oracles);
                 return (true, null, "oracle pack re-armed from Bug Hunter suggestions");
@@ -429,7 +428,7 @@ public static class MagicianEngine
                 project.BugHunter.AutoArmDictionary = true;
                 _ = BugHunterEngine.PrepareForFuzz(project, yamlPath, progress: null);
                 hunterRearmed = true;
-                return (true, "hunter", "Bug Hunter summoned — AI/robot mistake arming");
+                return (true, "hunter", "Bug Hunter enabled — AI/robot mistake arming");
             case "summonKnight":
                 if (!GetConfig(project).AllowSummonKnight)
                     return (false, null, "summonKnight disabled");
@@ -437,9 +436,9 @@ public static class MagicianEngine
                 {
                     project.Fuzz.CoverageGuided = true;
                     coverageOn = true;
-                    return (true, "knight", "coverageGuided enabled — knight stalks new paths");
+                    return (true, "knight", "coverageGuided enabled");
                 }
-                return (true, "knight", "knight already on duty (coverageGuided)");
+                return (true, "knight", "coverageGuided already enabled");
             case "summonArmy":
             {
                 if (!GetConfig(project).AllowSummonArmy)
@@ -447,14 +446,14 @@ public static class MagicianEngine
                 string[] army = ["havoc", "interesting", "dictionary", "bitflip", "expand", "insert", "arith", "splice"];
                 foreach (var m in army)
                     EnsureMutator(project, mutators, yamlPath, corpus, m, mutatorsEnsured);
-                return (true, "army", $"army mustered ({string.Join(",", mutatorsEnsured.DefaultIfEmpty("ready"))})");
+                return (true, "army", $"mutators ensured ({string.Join(",", mutatorsEnsured.DefaultIfEmpty("ready"))})");
             }
             case "summonBots":
             {
                 if (!GetConfig(project).AllowSummonBots)
                     return (false, null, "summonBots disabled");
                 var hint = WriteBotHint(project, yamlPath, need);
-                return (true, "bots", $"analyst bots queued — {hint}");
+                return (true, "bots", $"analyst hint written — {hint}");
             }
             case "summonJoker":
             {
@@ -468,31 +467,32 @@ public static class MagicianEngine
                     $"Joker encore {project.Joker.EncoreIterations} iters @ chance≈{project.Joker.EncoreChance:0.00}");
             }
             case "capitalizeJoker":
-                return (true, "joker", "capitalize is automatic on Joker crashes during fuzz");
+                return (true, "joker", "follow-up is automatic on Joker crashes during fuzz");
             default:
-                return (false, null, $"unknown spell {spellId}");
+                return (false, null, $"unknown action {spellId}");
         }
     }
 
-    private static void WriteJokerPunchline(
+    private static void WriteJokerFollowUp(
         string magicianDir,
         ProjectConfig project,
         JokerTrick trick,
         MagicianCastResult cast)
     {
         Directory.CreateDirectory(magicianDir);
-        var path = Path.Combine(magicianDir, "joker_punchline.md");
+        var path = Path.Combine(magicianDir, "joker_followup.md");
         var sb = new StringBuilder();
-        sb.AppendLine("# Magician capitalized on a Joker crash");
+        sb.AppendLine("# Magician follow-up after Joker crash");
         sb.AppendLine();
         sb.AppendLine($"Project: `{project.Name}`");
-        sb.AppendLine($"Trick: **{trick.TrickName}** (`{trick.Id}`)");
-        sb.AppendLine($"Chain: `{string.Join(" → ", trick.MutatorChain)}`");
-        sb.AppendLine($"Chaos: {trick.ChaosLevel}");
+        sb.AppendLine($"Strategy: **{trick.TrickName}** (`{trick.Id}`)");
+        sb.AppendLine($"Mutator chain: `{string.Join(" → ", trick.MutatorChain)}`");
+        sb.AppendLine($"Stack depth: {trick.ChaosLevel}");
         sb.AppendLine();
-        sb.AppendLine("The Joker threw random funny tricks; Magician kept the scream and stacked pressure.");
+        sb.AppendLine("Joker produced a crashing input via high-entropy mutation stacking;");
+        sb.AppendLine("Magician retained corpus pressure (energy, mutators, dictionary).");
         sb.AppendLine();
-        sb.AppendLine($"Follow-up spells: {cast.Summary}");
+        sb.AppendLine($"Follow-up actions: {cast.Summary}");
         sb.AppendLine();
         sb.AppendLine("```bash");
         sb.AppendLine($"randall crashes -p {project.Name}");

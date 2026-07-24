@@ -6,7 +6,7 @@ using Randall.Core;
 namespace Randall.Infrastructure.Magician;
 
 /// <summary>
-/// Live Joker trick for one fuzz iteration — chaotic decisions, not Magician spells.
+/// Live Joker strategy for one fuzz iteration — high-entropy mutation stacking.
 /// </summary>
 public sealed class JokerTrick
 {
@@ -22,24 +22,12 @@ public sealed class JokerTrick
 }
 
 /// <summary>
-/// Joker engine — throws very random fuzzing decisions at the program.
-/// Distinct from the Magician (who intervenes deliberately). The Magician may
-/// <c>summonJoker</c>, watch tricks, and capitalize on crashes.
+/// Joker engine — high-entropy / multi-mutator iterations.
+/// Distinct from Magician (campaign adjustments from Oracle needs). Magician may
+/// enable Joker, sample its iterations, and follow up on crashes it finds.
 /// </summary>
 public static class JokerEngine
 {
-    private static readonly string[] TrickNames =
-    [
-        "card-shuffle",
-        "whoopee-cushion",
-        "rubber-chicken",
-        "pie-in-face",
-        "banana-peel",
-        "confetti-cannon",
-        "wrong-door",
-        "laugh-track",
-    ];
-
     public static bool IsEnabled(ProjectConfig project) =>
         project.Joker is { Enabled: true } ||
         (project.Joker?.EncoreIterations > 0);
@@ -47,7 +35,7 @@ public static class JokerEngine
     public static JokerConfig GetConfig(ProjectConfig project) =>
         project.Joker ??= new JokerConfig();
 
-    /// <summary>Effective hijack chance (encore boosts after Magician summon).</summary>
+    /// <summary>Effective hijack chance (encore boosts after Magician enables Joker).</summary>
     public static double EffectiveChance(ProjectConfig project)
     {
         var cfg = GetConfig(project);
@@ -62,8 +50,8 @@ public static class JokerEngine
         rng.NextDouble() < EffectiveChance(project);
 
     /// <summary>
-    /// Start a chaotic trick: pick a primary mutator (biased wild) and optional bias flips.
-    /// Call <see cref="FinishTrick"/> after the normal payload is built to stack more chaos.
+    /// Start a high-entropy iteration: pick a primary mutator (biased wild) and optional bias flips.
+    /// Call <see cref="FinishTrick"/> after the normal payload is built to stack more mutators.
     /// </summary>
     public static JokerTrick StartTrick(
         ProjectConfig project,
@@ -85,23 +73,26 @@ public static class JokerEngine
         var primary = pool[rng.Next(pool.Count)];
 
         var chaos = 1 + rng.Next(1, Math.Max(2, cfg.MaxStack + 1));
-        var trick = TrickNames[rng.Next(TrickNames.Length)];
         double? flowOverride = null;
         double? graphOverride = null;
+        var biasFlip = false;
         if (cfg.FlipSessionBias && rng.NextDouble() < 0.45)
         {
             flowOverride = rng.NextDouble();
             graphOverride = rng.NextDouble();
+            biasFlip = true;
         }
+
+        var strategy = NameStrategy(primary.Name, chaos, cfg.WildBytes, biasFlip);
 
         return new JokerTrick
         {
             Id = Guid.NewGuid().ToString("N")[..10],
-            TrickName = trick,
+            TrickName = strategy,
             PrimaryMutator = primary,
             MutatorChain = [primary.Name],
             ChaosLevel = chaos,
-            Detail = $"joker:{trick} primary={primary.Name} chaos={chaos}",
+            Detail = $"strategy={strategy} primary={primary.Name} stack={chaos} wild={cfg.WildBytes} biasFlip={biasFlip}",
             FlowBiasOverride = flowOverride,
             GraphBiasOverride = graphOverride,
             WildBytes = cfg.WildBytes,
@@ -174,15 +165,28 @@ public static class JokerEngine
     public static string Describe()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Joker — chaotic random fuzz tricks (docs/MAGICIAN.md#joker)");
+        sb.AppendLine("Joker — high-entropy multi-mutator iterations (docs/MAGICIAN.md#joker)");
         sb.AppendLine();
-        sb.AppendLine("Not the Magician. The Joker hijacks iterations with stacked mutators,");
-        sb.AppendLine("wild bytes, and funny session-bias flips. Magician summons / watches /");
-        sb.AppendLine("capitalizes on any crashes the Joker finds.");
+        sb.AppendLine("Not Magician. Joker occasionally hijacks an iteration: stacked mutators,");
+        sb.AppendLine("random wild bytes, and optional session flow/graph bias overrides.");
+        sb.AppendLine("Magician can enable Joker, sample its runs, and follow up on crashes.");
         sb.AppendLine();
         sb.AppendLine("YAML: joker: { enabled: true, chance: 0.12, maxStack: 4 }");
-        sb.AppendLine("Magician: summonJoker · watchJoker · capitalizeJokerCrashes");
+        sb.AppendLine("Magician: allowSummonJoker · watchJoker · capitalizeJokerCrashes");
         return sb.ToString();
+    }
+
+    /// <summary>Stable analysis label for crash notes / verbose logs (not comedy names).</summary>
+    public static string NameStrategy(string primary, int stack, bool wild, bool biasFlip)
+    {
+        var parts = new List<string> { $"stack-{primary}" };
+        if (stack > 2)
+            parts.Add($"x{stack}");
+        if (wild)
+            parts.Add("wild");
+        if (biasFlip)
+            parts.Add("bias");
+        return string.Join("+", parts);
     }
 
     private static byte[] SprinkleWildBytes(byte[] input, Random rng)
@@ -194,13 +198,6 @@ public static class JokerEngine
         var n = 1 + rng.Next(3, 24);
         for (var i = 0; i < n; i++)
             buf[rng.Next(buf.Length)] = (byte)rng.Next(256);
-        // Occasional comedy: plant a joke marker.
-        if (rng.NextDouble() < 0.2 && buf.Length >= 4)
-        {
-            var joke = "LOL!"u8.ToArray();
-            var at = rng.Next(0, buf.Length - joke.Length + 1);
-            Buffer.BlockCopy(joke, 0, buf, at, joke.Length);
-        }
         return buf;
     }
 }
