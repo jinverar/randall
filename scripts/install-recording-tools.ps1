@@ -8,11 +8,13 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1 -IncludeFrida -Force
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1 -SkipApiMonitor
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1 -IncludeWireshark
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1 -SkipPython
 #
 # Official Suite: https://download.sysinternals.com/files/SysinternalsSuite.zip
 # Docs: https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite
 # Built-in (no download): wpr.exe (ETW), pktmon.exe - already on Windows.
 # Optional (large): Wireshark/tshark - only with -IncludeWireshark (not default).
+# Frida needs Python: installer downloads Python 3 when missing (unless -SkipFrida / -SkipPython).
 [CmdletBinding()]
 param(
     [switch]$Force,
@@ -21,9 +23,12 @@ param(
     [switch]$SkipFrida,
     [switch]$SkipApiMonitor,
     [switch]$IncludeWireshark,
+    [switch]$SkipPython,
     [string]$SuiteZipUrl = "https://download.sysinternals.com/files/SysinternalsSuite.zip",
     [string]$SuiteZipPath = "",
-    [string]$ApiMonitorZipUrl = "http://www.rohitab.com/download/api-monitor-v2r13-x86-x64.zip"
+    [string]$ApiMonitorZipUrl = "http://www.rohitab.com/download/api-monitor-v2r13-x86-x64.zip",
+    [string]$PythonInstallerUrl = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe",
+    [string]$PythonWingetId = "Python.Python.3.12"
 )
 
 $ErrorActionPreference = "Stop"
@@ -292,6 +297,157 @@ function Install-SysinternalsSuite {
     }
 }
 
+function Test-RecIsWindows {
+    if ($env:OS -eq "Windows_NT") { return $true }
+    try {
+        if ($IsWindows -eq $true) { return $true }
+    } catch { }
+    return $false
+}
+
+function Update-RecSessionPath {
+    try {
+        $machine = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+        $user = [System.Environment]::GetEnvironmentVariable("Path", "User")
+        $parts = @()
+        if ($machine) { $parts += $machine }
+        if ($user) { $parts += $user }
+        if ($parts.Count -gt 0) {
+            $env:Path = ($parts -join ";")
+        }
+    } catch {
+        Write-Verbose ("PATH refresh skipped: {0}" -f $_.Exception.Message)
+    }
+}
+
+function Find-PythonExe {
+    # Returns a python executable path usable as: & $py -m pip ...
+    Update-RecSessionPath
+
+    foreach ($cand in @("python", "python3")) {
+        $cmd = Get-Command $cand -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Source) {
+            # Avoid the Windows Store alias stub that opens ms-windows-store
+            $src = $cmd.Source
+            if ($src -match 'WindowsApps\\python') { continue }
+            return $src
+        }
+    }
+
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $probe = & py -3 -c "import sys; print(sys.executable)" 2>$null
+        $ErrorActionPreference = $prev
+        if ($LASTEXITCODE -eq 0 -and $probe) {
+            $exe = ($probe | Select-Object -Last 1).ToString().Trim()
+            if ($exe -and (Test-Path -LiteralPath $exe)) { return $exe }
+        }
+    }
+
+    $localApp = $env:LocalAppData
+    $roots = @(
+        (Join-Path $ToolsDir "python")
+    )
+    if ($localApp) {
+        $roots += (Join-Path $localApp "Programs\Python")
+    }
+    foreach ($root in $roots) {
+        if (-not $root -or -not (Test-Path -LiteralPath $root)) { continue }
+        $hit = Get-ChildItem -Path $root -Filter "python.exe" -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\WindowsApps\\' } |
+            Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+
+    return $null
+}
+
+function Install-PythonRuntime {
+    if ($SkipPython) {
+        Add-Result "Python" "skipped" "-SkipPython"
+        return $false
+    }
+
+    if (-not (Test-RecIsWindows)) {
+        Write-RecLog "[!] Auto Python install is Windows-only. Install python3 via your package manager for Frida." "Warn"
+        Add-Result "Python" "failed" "non-Windows host"
+        return $false
+    }
+
+    New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
+
+    # 1) winget (when available)
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-RecLog ("Trying winget install {0}..." -f $PythonWingetId) "Cyan"
+        try {
+            $prev = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            & winget install --id $PythonWingetId -e --accept-package-agreements --accept-source-agreements
+            $code = $LASTEXITCODE
+            $ErrorActionPreference = $prev
+            Update-RecSessionPath
+            if (Find-PythonExe) {
+                Write-RecLog "Python available via winget." "Ok"
+                Add-Result "Python" "installed" ("winget {0}" -f $PythonWingetId)
+                return $true
+            }
+            Write-RecLog ("winget exit {0}; falling back to python.org installer..." -f $code) "Warn"
+        } catch {
+            Write-RecLog ("winget Python failed ({0}); falling back to python.org installer..." -f $_.Exception.Message) "Warn"
+        }
+    } else {
+        Write-Host "  winget not found; using python.org installer."
+    }
+
+    # 2) Official python.org installer (per-user, pip, add to PATH)
+    $setup = Join-Path $script:RecTempDir "python-randall-amd64.exe"
+    try {
+        Write-RecLog "Downloading Python installer from python.org..." "Cyan"
+        Write-Host "  URL: $PythonInstallerUrl"
+        Write-Host "  Cache: $setup"
+        if ($Force -and (Test-Path -LiteralPath $setup)) {
+            Remove-Item -LiteralPath $setup -Force -ErrorAction SilentlyContinue
+        }
+        if (-not (Test-Path -LiteralPath $setup) -or (Get-Item -LiteralPath $setup).Length -lt 1MB) {
+            Download-WithProgress -Uri $PythonInstallerUrl -OutFile $setup
+        }
+
+        Write-Host "  Running silent per-user install (Include_pip=1, PrependPath=1)..."
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $p = Start-Process -FilePath $setup -ArgumentList @(
+            "/quiet",
+            "InstallAllUsers=0",
+            "PrependPath=1",
+            "Include_pip=1",
+            "Include_test=0",
+            "Include_launcher=1",
+            "SimpleInstall=1"
+        ) -Wait -PassThru
+        $ErrorActionPreference = $prev
+        Update-RecSessionPath
+
+        Start-Sleep -Seconds 2
+        $py = Find-PythonExe
+        if ($py) {
+            Write-RecLog ("Python installed: {0}" -f $py) "Ok"
+            Add-Result "Python" "installed" "python.org silent installer"
+            return $true
+        }
+
+        throw ("installer exit {0}; python.exe still not found (open a new shell or check LocalAppData\Programs\Python)" -f $p.ExitCode)
+    } catch {
+        Write-RecLog ("[!] Python auto-install failed: {0}" -f $_.Exception.Message) "Warn"
+        Write-Host "  Manual: https://www.python.org/downloads/windows/ (enable Add python.exe to PATH)"
+        Write-Host "  Or: winget install -e --id $PythonWingetId --accept-package-agreements --accept-source-agreements"
+        Add-Result "Python" "failed" $_.Exception.Message
+        return $false
+    }
+}
+
 function Install-FridaTools {
     if ($SysinternalsOnly -or $SkipFrida) {
         Add-Result "frida-tools" "skipped" $(if ($SysinternalsOnly) { "-SysinternalsOnly" } else { "-SkipFrida" })
@@ -306,36 +462,49 @@ function Install-FridaTools {
         Write-Host "  Note: Frida is a GUI/external companion - Randfuzz does not inject it."
     }
 
-    $py = $null
-    foreach ($cand in @("python", "py", "python3")) {
-        $cmd = Get-Command $cand -ErrorAction SilentlyContinue
-        if ($cmd) { $py = $cand; break }
+    $py = Find-PythonExe
+    if (-not $py) {
+        if ($SkipPython) {
+            Write-RecLog "[!] Python not found and -SkipPython set - cannot install frida-tools." "Warn"
+            Add-Result "frida-tools" "failed" "python missing (-SkipPython)"
+            Add-Result "Python" "skipped" "-SkipPython"
+            return
+        }
+        Write-RecLog "Python not found - installing Python 3 for Frida..." "Cyan"
+        if (Install-PythonRuntime) {
+            $py = Find-PythonExe
+        }
     }
 
     if (-not $py) {
-        Write-RecLog "[!] Python/pip not found - skip Frida. Install Python 3, then: pip install frida-tools" "Warn"
-        Add-Result "frida-tools" "failed" "python/pip missing"
+        Write-RecLog "[!] Python/pip still not available - skip Frida." "Warn"
+        Write-RecLog "    Manual: install Python 3 from https://www.python.org/downloads/windows/ (check Add python.exe to PATH)," "Warn"
+        Write-RecLog "    then: python -m pip install frida-tools" "Warn"
+        Add-Result "frida-tools" "failed" "python/pip missing after install attempt"
         return
     }
+
+    Write-Host ("  Using Python: {0}" -f $py)
 
     try {
         $prev = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
-        if ($py -eq "py") {
-            & py -3 -m pip install --upgrade frida-tools
-        } else {
-            & $py -m pip install --upgrade frida-tools
+        & $py -m pip --version 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  Bootstrapping pip (ensurepip)..."
+            & $py -m ensurepip --upgrade 2>&1 | Out-Null
         }
+        & $py -m pip install --upgrade frida-tools
         $code = $LASTEXITCODE
         $ErrorActionPreference = $prev
         if ($code -ne 0) {
             throw "pip exit $code"
         }
         Write-RecLog "Frida tools installed (frida / frida-ps on PATH if Scripts dir is on PATH)." "Ok"
-        Add-Result "frida-tools" "installed" "pip install frida-tools"
+        Add-Result "frida-tools" "installed" ("pip install frida-tools via {0}" -f $py)
     } catch {
         Write-RecLog ("[!] Frida install failed: {0}" -f $_.Exception.Message) "Warn"
-        Write-RecLog "    Manual: python -m pip install frida-tools" "Warn"
+        Write-RecLog ("    Manual: `"{0}`" -m pip install frida-tools" -f $py) "Warn"
         Add-Result "frida-tools" "failed" $_.Exception.Message
     }
 }

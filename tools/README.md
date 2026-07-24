@@ -148,7 +148,7 @@ copy accesschk64.exe tools\
 
 ## Frida / API Monitor (GUI companions)
 
-- **Frida:** `install-recording-tools.ps1` runs `python -m pip install frida-tools` by default (soft-fail if Python/pip missing). Use `-SkipFrida` / `-IncludeFrida`. Not injected by Randfuzz — attach yourself to the target PID.
+- **Frida:** `install-recording-tools.ps1` installs Python 3 when missing (winget `Python.Python.3.12`, else python.org silent installer), then `python -m pip install frida-tools`. Use `-SkipFrida` / `-SkipPython` to opt out. Not injected by Randfuzz — attach yourself to the target PID.
 - **API Monitor:** best-effort download from rohitab; on failure, print manual steps. Expected layout: `tools/API Monitor/apimonitor-x64.exe`.
 
 ## WinDbg Preview / classic WinDbg / cdb

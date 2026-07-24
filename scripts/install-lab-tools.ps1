@@ -17,7 +17,8 @@ param(
     [switch]$SysinternalsOnly,
     [switch]$IncludeFrida,
     [switch]$SkipFrida,
-    [switch]$SkipApiMonitor
+    [switch]$SkipApiMonitor,
+    [switch]$SkipPython
 )
 
 $ErrorActionPreference = "Stop"

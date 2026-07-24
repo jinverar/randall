@@ -152,6 +152,7 @@ For Procmon / ProcDump / TCPVCon / DebugView / Handle / ListDLLs / snapshots / S
 powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
 # Sysinternals only:  ...\install-recording-tools.ps1 -SysinternalsOnly
 # Skip Frida:         ...\install-recording-tools.ps1 -SkipFrida
+# Skip Python auto-install: ...\install-recording-tools.ps1 -SkipPython
 ```
 
 Idempotent; soft-fails per tool. **Frida** (`pip install frida-tools`) runs by default when Python is present. **API Monitor** is best-effort (manual steps printed if the rohitab URL fails). **wpr** / **pktmon** are built into Windows — no download.
