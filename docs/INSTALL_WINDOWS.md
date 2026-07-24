@@ -149,26 +149,27 @@ Manual backup: [winlibs.com](https://winlibs.com/) (x86_64 POSIX UCRT `.zip`) / 
 For Procmon / ProcDump / TCPVCon / DebugView / Handle / ListDLLs / snapshots / Strings bookends, download the official [Sysinternals Suite](https://learn.microsoft.com/en-us/sysinternals/downloads/sysinternals-suite) into `tools/`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
+scripts\install-recording-tools.cmd
+# or: powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
 # Sysinternals only:  ...\install-recording-tools.ps1 -SysinternalsOnly
 # Skip Frida:         ...\install-recording-tools.ps1 -SkipFrida
 # Skip Python auto-install: ...\install-recording-tools.ps1 -SkipPython
 ```
 
-Idempotent; soft-fails per tool. **Frida** (`pip install frida-tools`) runs by default when Python is present. **API Monitor** is best-effort (manual steps printed if the rohitab URL fails). **wpr** / **pktmon** are built into Windows — no download.
+Idempotent; soft-fails per tool. **Frida** installs into `tools\python` (never the Microsoft Store `python.exe` stub). If Frida fails, Sysinternals and the rest can still succeed — re-run or use `-SkipFrida`. **API Monitor** is best-effort (manual steps printed if the rohitab URL fails). **wpr** / **pktmon** are built into Windows — no download.
 
 > **IMPORTANT:** **pktmon** and **ETW/WPR** need Randfuzz (`randall serve` / `randall agent`) from an **Administrator** terminal — see [RECORDING.md](RECORDING.md).
 
 Umbrella (gcc + DynamoRIO + recording + debuggers):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
+scripts\install-lab-tools.cmd
+# or: powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
 # Skip large DynamoRIO zip:  ...\install-lab-tools.ps1 -SkipDynamoRio
 # Skip WinDbg / cdb:         ...\install-lab-tools.ps1 -SkipDebuggers
 ```
 
-See [tools/README.md](../tools/README.md) and [RECORDING.md](RECORDING.md).
-
+Prefer the `.cmd` launchers (or `-File`) on Windows PowerShell 5.1. Do **not** paste script text into a new `.ps1` — that often strips the UTF-8 BOM and causes `Missing expression` / `Unexpected token` parse errors.
 ---
 
 ## 5c. Install debuggers (WinDbg Preview + classic / cdb)
@@ -202,7 +203,8 @@ Many Windows 10/11 images ship with PowerShell **ExecutionPolicy = Restricted**,
 Use **Bypass for this file only** (recommended):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
+scripts\build-all-lab-targets.cmd
+# or: powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
 ```
 
 That installs gcc if needed, then compiles vulnserver, vulnhttp, vulnftp, ScreamCrash, and other practice targets under `targets\`.
@@ -219,6 +221,14 @@ Or allow your own scripts for this user (one-time):
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 .\scripts\build-all-lab-targets.ps1
 ```
+
+If you see `Missing expression` / `Missing closing ')'` / strange quote errors while building labs, you are almost certainly on an old copy or a re-saved script without a UTF-8 BOM. Use the `.cmd` launcher from a fresh clone of this branch, or:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
+```
+
+Do not copy-paste script contents into Notepad and save as a new `.ps1`.
 
 ---
 
@@ -330,6 +340,8 @@ For real dumps / memory lens, **fuzz on the agent UI** — see [LAB_AGENT.md](LA
 |-------|-----|
 | `dotnet` not found | New PowerShell after SDK install; check PATH |
 | **Scripts disabled / `PSSecurityException`** | `powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1` |
+| **`Missing expression` / smart-quote parse errors** | Use `scripts\*.cmd` or `-File` from a fresh clone of this branch; do not re-save scripts in Notepad without UTF-8 BOM |
+| **Frida failed / pip exit 9009 / Store python** | Re-run `scripts\install-recording-tools.cmd` (uses `tools\python` only). Or `-SkipFrida`. Turn OFF App execution aliases for `python.exe` |
 | Lab target missing | Re-run the Bypass command above |
 | `gcc not found` / Scream skipped | `powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1 -Verbose` (downloads WinLibs zip; no winget needed); open a **new** shell; re-run `build-screamcrash.ps1`; or `-SkipGcc` on build-all |
 | DynamoRIO download “forever” | Patience (large zip), or browser-download + unzip then **rename** to exactly `tools\dynamorio` (not `tools\DynamoRIO-Windows-*`; or use `-ZipPath`); re-run resumes via curl/BITS; `-Skip` only if skipping coverage for now |

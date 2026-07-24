@@ -15,9 +15,13 @@ scripts\install-recording-tools.cmd
 # Debuggers (WinDbg Preview + classic windbg / cdb):
 powershell -ExecutionPolicy Bypass -File .\scripts\install-debuggers.ps1
 # Umbrella (gcc + DynamoRIO + recording + debuggers):
-powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
+scripts\install-lab-tools.cmd
 # Skip debuggers:     ...\install-lab-tools.ps1 -SkipDebuggers
+# Build all vuln labs:
+scripts\build-all-lab-targets.cmd
 ```
+
+Prefer the `.cmd` launchers on Windows. They call `powershell -File` so UTF-8 BOM scripts parse correctly on Windows PowerShell 5.1 (avoids `Missing expression` / smart-quote parse failures).
 
 Idempotent — skips binaries already present unless `-Force`. Soft-fails per tool with a summary. See [docs/RECORDING.md](../docs/RECORDING.md).
 

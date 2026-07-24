@@ -1,5 +1,5 @@
-# Build ReelDeck lab media target on Windows (MinGW gcc).
-# Counterpart to scripts/build-reeldeck.sh — same C source, .exe for Windows fuzz profiles.
+﻿# Build ReelDeck lab media target on Windows (MinGW gcc).
+# Counterpart to scripts/build-reeldeck.sh - same C source, .exe for Windows fuzz profiles.
 #
 # Examples:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\build-reeldeck.ps1
@@ -22,7 +22,7 @@ if (-not (Test-Path $Src)) {
 
 $gcc = Get-Command gcc -ErrorAction SilentlyContinue
 if (-not $gcc) {
-    Write-Host "[!] gcc not on PATH — run scripts\install-gcc.ps1 (or build-all-lab-targets.ps1)." -ForegroundColor Yellow
+    Write-Host "[!] gcc not on PATH - run scripts\install-gcc.ps1 (or build-all-lab-targets.ps1)." -ForegroundColor Yellow
     exit 1
 }
 

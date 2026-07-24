@@ -679,13 +679,33 @@ function Install-FridaTools {
         }
 
         Write-Host "  pip install --upgrade frida-tools ..."
-        $code = Invoke-NativeCapture -FilePath $py -ArgumentList @(
-            "-m", "pip", "install", "--upgrade", "frida-tools"
+        $pipArgs = @(
+            "-m", "pip", "install", "--upgrade", "--disable-pip-version-check",
+            "frida-tools"
         )
+        $code = Invoke-NativeCapture -FilePath $py -ArgumentList $pipArgs
         if ($code.StdOut) { Write-Host $code.StdOut.TrimEnd() }
         if ($code.StdErr) { Write-Host $code.StdErr.TrimEnd() }
         if ($code.ExitCode -ne 0) {
-            throw "pip exit $($code.ExitCode)"
+            Write-Host "  Retrying Frida pip with PyPI trusted-host (proxy/SSL fallback)..."
+            $pipArgs2 = @(
+                "-m", "pip", "install", "--upgrade", "--disable-pip-version-check",
+                "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org",
+                "frida-tools"
+            )
+            $code = Invoke-NativeCapture -FilePath $py -ArgumentList $pipArgs2
+            if ($code.StdOut) { Write-Host $code.StdOut.TrimEnd() }
+            if ($code.StdErr) { Write-Host $code.StdErr.TrimEnd() }
+            if ($code.ExitCode -ne 0) {
+                throw "pip exit $($code.ExitCode)"
+            }
+        }
+        # Prove import works (catches broken embeddable site-packages path early).
+        $imp = Invoke-NativeCapture -FilePath $py -ArgumentList @("-c", "import frida; print('frida', frida.__version__)")
+        if ($imp.StdOut) { Write-Host ("  {0}" -f $imp.StdOut.Trim()) }
+        if ($imp.ExitCode -ne 0) {
+            if ($imp.StdErr) { Write-Host $imp.StdErr.TrimEnd() }
+            throw "frida import failed after pip install"
         }
         Write-RecLog "Frida tools installed via tools\python (Store python.exe was not used)." "Ok"
         Add-Result "frida-tools" "installed" ("pip via {0}" -f $py)

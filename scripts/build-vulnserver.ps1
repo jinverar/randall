@@ -1,4 +1,4 @@
-# Build Randall's custom vulnserver lab binary
+﻿# Build Randall's custom vulnserver lab binary
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Project = Join-Path $Root "targets\Randall.Vulnserver\Randall.Vulnserver.csproj"

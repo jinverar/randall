@@ -1,4 +1,4 @@
-# Pull latest Randall source and rebuild CLI, Server, and lab targets.
+﻿# Pull latest Randall source and rebuild CLI, Server, and lab targets.
 # Does NOT re-download DynamoRIO, Sysinternals, gcc, etc. unless -InstallTools.
 #
 # Examples:

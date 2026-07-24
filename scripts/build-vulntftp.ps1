@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Project = Join-Path $Root "targets\Randall.VulnTftp\Randall.VulnTftp.csproj"
 $OutDir = Join-Path $Root "targets\vulntftp"
