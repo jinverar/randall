@@ -28,6 +28,8 @@ param(
     [string]$SuiteZipPath = "",
     [string]$ApiMonitorZipUrl = "http://www.rohitab.com/download/api-monitor-v2r13-x86-x64.zip",
     [string]$PythonInstallerUrl = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe",
+    [string]$PythonEmbedUrl = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip",
+    [string]$GetPipUrl = "https://bootstrap.pypa.io/get-pip.py",
     [string]$PythonWingetId = "Python.Python.3.12"
 )
 
@@ -305,42 +307,6 @@ function Test-RecIsWindows {
     return $false
 }
 
-function Update-RecSessionPath {
-    try {
-        $machine = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
-        $user = [System.Environment]::GetEnvironmentVariable("Path", "User")
-        $parts = @()
-        if ($machine) { $parts += $machine }
-        if ($user) { $parts += $user }
-        if ($parts.Count -gt 0) {
-            $env:Path = ($parts -join ";")
-        }
-    } catch {
-        Write-Verbose ("PATH refresh skipped: {0}" -f $_.Exception.Message)
-    }
-}
-
-function Test-PythonExeWorks {
-    param([string]$Exe)
-    if ([string]::IsNullOrWhiteSpace($Exe)) { return $false }
-    if (-not (Test-Path -LiteralPath $Exe)) { return $false }
-    # Windows Store / AppExecutionAlias stub - never use
-    if ($Exe -match '(?i)[\\/]WindowsApps[\\/]') { return $false }
-
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    try {
-        $out = & $Exe -c "import sys; print('%d.%d' % (sys.version_info[0], sys.version_info[1]))" 2>$null
-        if ($LASTEXITCODE -ne 0) { return $false }
-        $ver = (($out | Select-Object -Last 1).ToString().Trim())
-        return ($ver -match '^[23]\.\d+')
-    } catch {
-        return $false
-    } finally {
-        $ErrorActionPreference = $prev
-    }
-}
-
 function Get-ToolsPythonDir {
     return (Join-Path $ToolsDir "python")
 }
@@ -349,48 +315,89 @@ function Get-ToolsPythonExe {
     return (Join-Path (Get-ToolsPythonDir) "python.exe")
 }
 
-function Find-PythonExe {
-    # Prefer Randfuzz-owned install under tools\python (avoids Windows Store stub on PATH).
-    Update-RecSessionPath
-
-    $candidates = New-Object System.Collections.Generic.List[string]
-
-    $toolsPy = Get-ToolsPythonExe
-    if (Test-Path -LiteralPath $toolsPy) { [void]$candidates.Add($toolsPy) }
-
-    $localApp = $env:LocalAppData
-    if ($localApp) {
-        $progPy = Join-Path $localApp "Programs\Python"
-        if (Test-Path -LiteralPath $progPy) {
-            Get-ChildItem -Path $progPy -Filter "python.exe" -Recurse -File -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -notmatch '(?i)[\\/]WindowsApps[\\/]' } |
-                ForEach-Object { [void]$candidates.Add($_.FullName) }
+function Invoke-NativeCapture {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$ArgumentList = @(),
+        [int]$TimeoutSec = 600
+    )
+    # Never call Windows Store python stubs via call operator - that raises
+    # NativeCommandError (exit 9009) under $ErrorActionPreference Stop.
+    if (-not (Test-Path -LiteralPath $FilePath)) {
+        return @{ ExitCode = 9009; StdOut = ""; StdErr = "exe missing: $FilePath" }
+    }
+    $outFile = Join-Path $script:RecTempDir ("randall-native-out-{0}.txt" -f [guid]::NewGuid().ToString("N"))
+    $errFile = Join-Path $script:RecTempDir ("randall-native-err-{0}.txt" -f [guid]::NewGuid().ToString("N"))
+    try {
+        $p = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait -PassThru `
+            -NoNewWindow -WindowStyle Hidden `
+            -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+        $stdout = ""
+        $stderr = ""
+        if (Test-Path -LiteralPath $outFile) {
+            $stdout = Get-Content -LiteralPath $outFile -Raw -ErrorAction SilentlyContinue
         }
-    }
-
-    foreach ($cand in @("python", "python3")) {
-        $cmd = Get-Command $cand -ErrorAction SilentlyContinue
-        if ($cmd -and $cmd.Source) { [void]$candidates.Add($cmd.Source) }
-    }
-
-    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
-    if ($pyLauncher) {
-        $prev = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        $probe = & py -3 -c "import sys; print(sys.executable)" 2>$null
-        $ErrorActionPreference = $prev
-        if ($LASTEXITCODE -eq 0 -and $probe) {
-            $exe = ($probe | Select-Object -Last 1).ToString().Trim()
-            if ($exe) { [void]$candidates.Add($exe) }
+        if (Test-Path -LiteralPath $errFile) {
+            $stderr = Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue
         }
+        if ($null -eq $stdout) { $stdout = "" }
+        if ($null -eq $stderr) { $stderr = "" }
+        return @{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
+    } finally {
+        Remove-Item -LiteralPath $outFile,$errFile -Force -ErrorAction SilentlyContinue
     }
+}
 
-    foreach ($exe in $candidates) {
-        if (Test-PythonExeWorks $exe) {
-            return $exe
+function Test-PythonExeWorks {
+    param([string]$Exe)
+    if ([string]::IsNullOrWhiteSpace($Exe)) { return $false }
+    if (-not (Test-Path -LiteralPath $Exe)) { return $false }
+    # Windows Store / AppExecutionAlias stub - never use (causes exit 9009)
+    if ($Exe -match '(?i)[\\/]WindowsApps[\\/]') { return $false }
+    try {
+        $item = Get-Item -LiteralPath $Exe -Force -ErrorAction Stop
+        # Store aliases are often 0-byte reparse points
+        if ($item.Length -lt 1024 -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            return $false
         }
+    } catch { }
+
+    $r = Invoke-NativeCapture -FilePath $Exe -ArgumentList @(
+        "-c", "import sys; print('%d.%d' % (sys.version_info[0], sys.version_info[1]))"
+    )
+    if ($r.ExitCode -ne 0) { return $false }
+    $combined = ($r.StdOut + "`n" + $r.StdErr)
+    if ($combined -match '(?i)Microsoft Store|ms-windows-store|Python was not found') {
+        return $false
     }
-    return $null
+    $ver = ($r.StdOut.Trim() -split "\r?\n" | Select-Object -Last 1).Trim()
+    return ($ver -match '^[23]\.\d+')
+}
+
+function Enable-EmbeddableSite {
+    param([string]$PythonDir)
+    # python3xx._pth must enable site for pip/frida-tools
+    $pth = Get-ChildItem -Path $PythonDir -Filter "python*._pth" -File -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if (-not $pth) { return }
+    $lines = @(Get-Content -LiteralPath $pth.FullName)
+    $out = New-Object System.Collections.Generic.List[string]
+    $hasSitePackages = $false
+    $hasImportSite = $false
+    foreach ($line in $lines) {
+        $t = $line.Trim()
+        if ($t -match '^#\s*import site') {
+            [void]$out.Add("import site")
+            $hasImportSite = $true
+            continue
+        }
+        if ($t -eq "import site") { $hasImportSite = $true }
+        if ($t -eq "Lib\site-packages" -or $t -eq "Lib/site-packages") { $hasSitePackages = $true }
+        [void]$out.Add($line)
+    }
+    if (-not $hasSitePackages) { [void]$out.Add("Lib\site-packages") }
+    if (-not $hasImportSite) { [void]$out.Add("import site") }
+    Set-Content -LiteralPath $pth.FullName -Value $out -Encoding ASCII
 }
 
 function Install-PythonRuntime {
@@ -400,7 +407,7 @@ function Install-PythonRuntime {
     }
 
     if (-not (Test-RecIsWindows)) {
-        Write-RecLog "[!] Auto Python install is Windows-only. Install python3 via your package manager for Frida." "Warn"
+        Write-RecLog "[!] Auto Python install is Windows-only." "Warn"
         Add-Result "Python" "failed" "non-Windows host"
         return $false
     }
@@ -415,27 +422,78 @@ function Install-PythonRuntime {
 
     New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
 
-    # Primary: official installer into tools\python (no PATH / Store stub involvement).
+    # Primary: official Windows embeddable package -> tools\python (no PATH, no Store stub)
+    $zip = Join-Path $script:RecTempDir "python-randall-embed-amd64.zip"
+    $getPip = Join-Path $script:RecTempDir "randall-get-pip.py"
+    try {
+        Write-RecLog "Downloading embeddable Python -> tools\python (avoids Microsoft Store stub)..." "Cyan"
+        Write-Host "  URL: $PythonEmbedUrl"
+        Write-Host "  Target: $toolsPyDir"
+        if ($Force -and (Test-Path -LiteralPath $zip)) {
+            Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+        }
+        if (-not (Test-Path -LiteralPath $zip) -or (Get-Item -LiteralPath $zip).Length -lt 1MB) {
+            Download-WithProgress -Uri $PythonEmbedUrl -OutFile $zip
+        }
+
+        if (Test-Path -LiteralPath $toolsPyDir) {
+            Remove-Item -LiteralPath $toolsPyDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        New-Item -ItemType Directory -Force -Path $toolsPyDir | Out-Null
+        Write-Host "  Extracting embeddable package..."
+        Expand-Archive -Path $zip -DestinationPath $toolsPyDir -Force
+        Enable-EmbeddableSite -PythonDir $toolsPyDir
+
+        if (-not (Test-Path -LiteralPath $toolsPyExe)) {
+            throw "python.exe missing after extract under $toolsPyDir"
+        }
+        if (-not (Test-PythonExeWorks $toolsPyExe)) {
+            throw "extracted python.exe is not usable"
+        }
+
+        Write-Host "  Installing pip (get-pip.py)..."
+        if ($Force -and (Test-Path -LiteralPath $getPip)) {
+            Remove-Item -LiteralPath $getPip -Force -ErrorAction SilentlyContinue
+        }
+        if (-not (Test-Path -LiteralPath $getPip) -or (Get-Item -LiteralPath $getPip).Length -lt 10KB) {
+            Download-WithProgress -Uri $GetPipUrl -OutFile $getPip
+        }
+        $pipRc = Invoke-NativeCapture -FilePath $toolsPyExe -ArgumentList @(
+            $getPip, "--no-warn-script-location"
+        )
+        if ($pipRc.StdOut) { Write-Host $pipRc.StdOut.TrimEnd() }
+        if ($pipRc.StdErr) { Write-Host $pipRc.StdErr.TrimEnd() }
+        if ($pipRc.ExitCode -ne 0) {
+            throw "get-pip.py exit $($pipRc.ExitCode)"
+        }
+
+        $verRc = Invoke-NativeCapture -FilePath $toolsPyExe -ArgumentList @("-m", "pip", "--version")
+        if ($verRc.ExitCode -ne 0) {
+            throw "pip not available after get-pip.py"
+        }
+        Write-Host ("  {0}" -f $verRc.StdOut.Trim())
+        Write-RecLog ("Python ready: {0}" -f $toolsPyExe) "Ok"
+        Add-Result "Python" "installed" "embeddable -> tools\python + get-pip"
+        return $true
+    } catch {
+        Write-RecLog ("[!] Embeddable Python install failed: {0}" -f $_.Exception.Message) "Warn"
+        Write-Host "  Falling back to full python.org installer into tools\python..."
+    }
+
+    # Fallback: full installer with TargetDir=tools\python
     $setup = Join-Path $script:RecTempDir "python-randall-amd64.exe"
     try {
-        Write-RecLog "Downloading Python installer from python.org -> tools\python ..." "Cyan"
-        Write-Host "  URL: $PythonInstallerUrl"
-        Write-Host "  TargetDir: $toolsPyDir"
         if ($Force -and (Test-Path -LiteralPath $setup)) {
             Remove-Item -LiteralPath $setup -Force -ErrorAction SilentlyContinue
         }
         if (-not (Test-Path -LiteralPath $setup) -or (Get-Item -LiteralPath $setup).Length -lt 1MB) {
             Download-WithProgress -Uri $PythonInstallerUrl -OutFile $setup
         }
-
-        if ($Force -and (Test-Path -LiteralPath $toolsPyDir)) {
+        if (Test-Path -LiteralPath $toolsPyDir) {
             Remove-Item -LiteralPath $toolsPyDir -Recurse -Force -ErrorAction SilentlyContinue
         }
         New-Item -ItemType Directory -Force -Path $toolsPyDir | Out-Null
-
-        Write-Host "  Running silent install into tools\python (Include_pip=1, PrependPath=0)..."
-        $prev = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
+        Write-Host "  Running silent full installer (TargetDir=tools\python)..."
         $p = Start-Process -FilePath $setup -ArgumentList @(
             "/quiet",
             "TargetDir=$toolsPyDir",
@@ -445,77 +503,25 @@ function Install-PythonRuntime {
             "Include_test=0",
             "Include_launcher=0",
             "Include_doc=0",
-            "Include_dev=0",
             "AssociateFiles=0",
             "Shortcuts=0",
             "SimpleInstall=1"
         ) -Wait -PassThru -WindowStyle Hidden
-        $ErrorActionPreference = $prev
         Start-Sleep -Seconds 2
-
         if (Test-PythonExeWorks $toolsPyExe) {
             Write-RecLog ("Python installed: {0}" -f $toolsPyExe) "Ok"
-            Add-Result "Python" "installed" "python.org -> tools\python"
+            Add-Result "Python" "installed" "python.org TargetDir=tools\python"
             return $true
         }
-
-        Write-RecLog ("tools\python install incomplete (exit {0}); trying winget fallback..." -f $p.ExitCode) "Warn"
+        throw ("full installer exit {0}; tools\python\python.exe still unusable" -f $p.ExitCode)
     } catch {
-        Write-RecLog ("python.org tools\python install failed: {0}" -f $_.Exception.Message) "Warn"
-        Write-Host "  Falling back to winget / default install..."
+        Write-RecLog ("[!] Python auto-install failed: {0}" -f $_.Exception.Message) "Warn"
+        Write-Host "  Important: Settings -> Apps -> Advanced app settings -> App execution aliases"
+        Write-Host "            Turn OFF python.exe and python3.exe (Microsoft Store stubs)."
+        Write-Host "  Manual: download embeddable zip from python.org and extract to tools\python"
+        Add-Result "Python" "failed" $_.Exception.Message
+        return $false
     }
-
-    # Fallback: winget into the usual per-user location
-    $winget = Get-Command winget -ErrorAction SilentlyContinue
-    if ($winget) {
-        Write-RecLog ("Trying winget install {0}..." -f $PythonWingetId) "Cyan"
-        try {
-            $prev = $ErrorActionPreference
-            $ErrorActionPreference = "Continue"
-            & winget install --id $PythonWingetId -e --accept-package-agreements --accept-source-agreements 2>&1 | Out-Host
-            $code = $LASTEXITCODE
-            $ErrorActionPreference = $prev
-            Update-RecSessionPath
-            Start-Sleep -Seconds 2
-            if (Find-PythonExe) {
-                Write-RecLog "Python available via winget." "Ok"
-                Add-Result "Python" "installed" ("winget {0}" -f $PythonWingetId)
-                return $true
-            }
-            Write-RecLog ("winget exit {0}; Python still not usable." -f $code) "Warn"
-        } catch {
-            Write-RecLog ("winget Python failed: {0}" -f $_.Exception.Message) "Warn"
-        }
-    }
-
-    Write-RecLog "[!] Python auto-install failed." "Warn"
-    Write-Host "  Manual: https://www.python.org/downloads/windows/ (disable Store app alias for python.exe)"
-    Write-Host "  Settings -> Apps -> Advanced app settings -> App execution aliases -> turn OFF python.exe / python3.exe"
-    Write-Host "  Or: winget install -e --id $PythonWingetId --accept-package-agreements --accept-source-agreements"
-    Add-Result "Python" "failed" "auto-install failed (Store stub / installer)"
-    return $false
-}
-
-function Invoke-PythonModule {
-    param(
-        [Parameter(Mandatory = $true)][string]$PythonExe,
-        [Parameter(Mandatory = $true)][string[]]$ModuleArgs
-    )
-    # Run via Start-Process so the Windows Store stub stderr does not become a
-    # NativeCommandError / RemoteException under $ErrorActionPreference Stop.
-    $argList = @("-m") + $ModuleArgs
-    $p = Start-Process -FilePath $PythonExe -ArgumentList $argList -Wait -PassThru -NoNewWindow `
-        -RedirectStandardOutput (Join-Path $script:RecTempDir "randall-py-stdout.txt") `
-        -RedirectStandardError (Join-Path $script:RecTempDir "randall-py-stderr.txt")
-    $stdoutPath = Join-Path $script:RecTempDir "randall-py-stdout.txt"
-    $stderrPath = Join-Path $script:RecTempDir "randall-py-stderr.txt"
-    if (Test-Path -LiteralPath $stdoutPath) {
-        Get-Content -LiteralPath $stdoutPath -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-    }
-    if (Test-Path -LiteralPath $stderrPath) {
-        Get-Content -LiteralPath $stderrPath -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-    }
-    return $p.ExitCode
 }
 
 function Install-FridaTools {
@@ -524,7 +530,6 @@ function Install-FridaTools {
         return
     }
 
-    # Default: attempt Frida (companion). -IncludeFrida is explicit but same path.
     if ($IncludeFrida) {
         Write-RecLog "Installing Frida (-IncludeFrida)..." "Cyan"
     } else {
@@ -532,47 +537,61 @@ function Install-FridaTools {
         Write-Host "  Note: Frida is a GUI/external companion - Randfuzz does not inject it."
     }
 
-    $py = Find-PythonExe
-    if (-not $py) {
+    # Frida uses ONLY tools\python\python.exe - never PATH / Store alias (exit 9009).
+    $py = Get-ToolsPythonExe
+    Write-Host "  Frida Python path: $py (PATH python.exe is ignored)"
+
+    if (-not (Test-PythonExeWorks $py)) {
         if ($SkipPython) {
-            Write-RecLog "[!] No working Python found and -SkipPython set - cannot install frida-tools." "Warn"
-            Write-Host "  Tip: turn OFF Windows 'App execution aliases' for python.exe (Store stub causes exit 9009)."
-            Add-Result "frida-tools" "failed" "python missing (-SkipPython)"
+            Write-RecLog "[!] tools\python missing and -SkipPython set." "Warn"
+            Add-Result "frida-tools" "failed" "tools\python missing (-SkipPython)"
             Add-Result "Python" "skipped" "-SkipPython"
             return
         }
-        Write-RecLog "No working Python on PATH (Store stub ignored) - installing into tools\python ..." "Cyan"
-        if (Install-PythonRuntime) {
-            $py = Find-PythonExe
+        Write-RecLog "tools\python not ready - installing embeddable Python (not the Store stub)..." "Cyan"
+        if (-not (Install-PythonRuntime)) {
+            Add-Result "frida-tools" "failed" "python auto-install failed"
+            return
         }
+        $py = Get-ToolsPythonExe
     }
 
-    if (-not $py) {
-        Write-RecLog "[!] Python/pip still not available - skip Frida." "Warn"
-        Write-RecLog "    Disable Store python aliases, then re-run, or install from python.org." "Warn"
-        Write-RecLog "    Manual: tools\python\python.exe -m pip install frida-tools" "Warn"
-        Add-Result "frida-tools" "failed" "python/pip missing after install attempt"
+    if (-not (Test-PythonExeWorks $py)) {
+        Write-RecLog "[!] tools\python\python.exe still not usable - skip Frida." "Warn"
+        Add-Result "frida-tools" "failed" "tools\python unusable"
         return
     }
 
     Write-Host ("  Using Python: {0}" -f $py)
-
     try {
-        $pipVer = Invoke-PythonModule -PythonExe $py -ModuleArgs @("pip", "--version")
-        if ($pipVer -ne 0) {
-            Write-Host "  Bootstrapping pip (ensurepip)..."
-            [void](Invoke-PythonModule -PythonExe $py -ModuleArgs @("ensurepip", "--upgrade"))
+        $pipVer = Invoke-NativeCapture -FilePath $py -ArgumentList @("-m", "pip", "--version")
+        if ($pipVer.ExitCode -ne 0) {
+            Write-Host "  Bootstrapping pip..."
+            $gp = Join-Path $script:RecTempDir "randall-get-pip.py"
+            if (-not (Test-Path -LiteralPath $gp) -or (Get-Item -LiteralPath $gp).Length -lt 10KB) {
+                Download-WithProgress -Uri $GetPipUrl -OutFile $gp
+            }
+            $boot = Invoke-NativeCapture -FilePath $py -ArgumentList @($gp, "--no-warn-script-location")
+            if ($boot.StdOut) { Write-Host $boot.StdOut.TrimEnd() }
+            if ($boot.StdErr) { Write-Host $boot.StdErr.TrimEnd() }
+            if ($boot.ExitCode -ne 0) { throw "get-pip exit $($boot.ExitCode)" }
         }
-        $code = Invoke-PythonModule -PythonExe $py -ModuleArgs @("pip", "install", "--upgrade", "frida-tools")
-        if ($code -ne 0) {
-            throw "pip exit $code"
+
+        Write-Host "  pip install --upgrade frida-tools ..."
+        $code = Invoke-NativeCapture -FilePath $py -ArgumentList @(
+            "-m", "pip", "install", "--upgrade", "frida-tools"
+        )
+        if ($code.StdOut) { Write-Host $code.StdOut.TrimEnd() }
+        if ($code.StdErr) { Write-Host $code.StdErr.TrimEnd() }
+        if ($code.ExitCode -ne 0) {
+            throw "pip exit $($code.ExitCode)"
         }
-        Write-RecLog "Frida tools installed (frida / frida-ps under the Python Scripts dir)." "Ok"
-        Add-Result "frida-tools" "installed" ("pip install frida-tools via {0}" -f $py)
+        Write-RecLog "Frida tools installed via tools\python (Store python.exe was not used)." "Ok"
+        Add-Result "frida-tools" "installed" ("pip via {0}" -f $py)
     } catch {
         Write-RecLog ("[!] Frida install failed: {0}" -f $_.Exception.Message) "Warn"
         Write-RecLog ("    Manual: `"{0}`" -m pip install frida-tools" -f $py) "Warn"
-        Write-Host "  If you saw a Microsoft Store python message: Settings -> Apps -> App execution aliases -> OFF for python.exe"
+        Write-Host "  If Microsoft Store python still appears: turn OFF App execution aliases for python.exe"
         Add-Result "frida-tools" "failed" $_.Exception.Message
     }
 }

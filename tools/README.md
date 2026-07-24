@@ -148,7 +148,7 @@ copy accesschk64.exe tools\
 
 ## Frida / API Monitor (GUI companions)
 
-- **Frida:** installs a real Python under `tools\python` when missing (ignores the Windows Store python stub that causes exit 9009), then `tools\python\python.exe -m pip install frida-tools`. Use `-SkipFrida` / `-SkipPython` to opt out. Not injected by Randfuzz — attach yourself to the target PID.
+- **Frida:** always uses `tools\python\python.exe`. If missing, downloads the Windows **embeddable** CPython zip + get-pip into `tools\python` (never uses PATH / Microsoft Store `python.exe`, which causes exit 9009). Then `pip install frida-tools`. Opt out: `-SkipFrida` / `-SkipPython`.
 - **API Monitor:** best-effort download from rohitab; on failure, print manual steps. Expected layout: `tools/API Monitor/apimonitor-x64.exe`.
 
 ## WinDbg Preview / classic WinDbg / cdb
