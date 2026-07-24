@@ -111,13 +111,17 @@ function Invoke-LabBuildScript {
         throw "Missing script: $scriptPath"
     }
     # Use -File so Windows PowerShell 5.1 honors UTF-8 BOM (avoids missing ] / quote parse errors).
+    # Pipe child stdout/stderr to Write-Host so dotnet/build lines are not captured as function output
+    # (otherwise $code becomes an array of log lines and "$code -ne 0" false-fails successful builds).
     $psExe = Get-Command powershell.exe -ErrorAction SilentlyContinue
     if ($psExe -and $psExe.Source) {
-        & $psExe.Source -NoProfile -ExecutionPolicy Bypass -File $scriptPath
-        return $LASTEXITCODE
+        & $psExe.Source -NoProfile -ExecutionPolicy Bypass -File $scriptPath 2>&1 | Write-Host
+    } else {
+        & $scriptPath 2>&1 | Write-Host
     }
-    & $scriptPath
-    return $LASTEXITCODE
+    $exitCode = $LASTEXITCODE
+    if ($null -eq $exitCode) { $exitCode = 0 }
+    return $exitCode
 }
 
 foreach ($s in $Required) {

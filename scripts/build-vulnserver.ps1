@@ -12,3 +12,4 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $Exe = Join-Path $OutDir "randall-vulnserver.exe"
 Write-Host "Done: $Exe"
 Write-Host "Fuzz: dotnet run --project src/Randall.Cli -- fuzz -c projects/vulnserver.yaml"
+exit 0
