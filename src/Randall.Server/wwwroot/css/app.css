@@ -3378,6 +3378,27 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
   color: var(--danger);
   border-radius: 2px;
 }
+button.canister-badge {
+  cursor: pointer;
+  font-family: inherit;
+}
+button.canister-badge:hover,
+button.canister-badge:focus-visible {
+  background: color-mix(in srgb, var(--danger) 22%, var(--panel));
+  outline: 2px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  outline-offset: 2px;
+}
+.scream-harvest-off-notice {
+  margin-top: 0.65rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px dashed color-mix(in srgb, var(--danger) 40%, var(--border));
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--danger) 8%, rgba(0, 0, 0, 0.35));
+  font-size: 0.82rem;
+}
+html[data-scream-canisters="off"] .scream-harvest-off-notice[hidden] {
+  display: block !important;
+}
 
 .scream-harvest-header {
   position: relative;

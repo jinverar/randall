@@ -1089,12 +1089,17 @@
           <div class="scream-harvest-hero-shade"></div>
         </div>
         <div class="scream-harvest-copy">
-          <h1>Crashes <span class="canister-badge" title="Every captured crash is a harvested scream — bottled with its dump &amp; triage">scream canisters</span></h1>
+          <h1>Crashes <button type="button" class="canister-badge" id="canister-badge-btn" title="Jump to scare-floor harvest rack (or show it if hidden)">scream canisters</button></h1>
           <p>You scared the target, it screamed — each unique crash is bottled in a canister (dump + triage). Watch the harvest fill. Scan density → isolate a signature → open the best unique hit and read <em>why</em>.</p>
+          <p class="scream-harvest-off-notice" id="scream-harvest-off-notice" hidden>
+            Harvest rack is hidden.
+            <button type="button" class="btn btn-sm" id="scream-harvest-show-btn">Show canisters</button>
+            Turn on <strong>Animate</strong> in the rack controls for mist.
+          </p>
         </div>
       </header>
 
-      <div class="scream-harvest panel" aria-label="Scream canister harvest">
+      <div class="scream-harvest panel" id="scream-harvest-panel" aria-label="Scream canister harvest">
         <div class="scream-harvest-head">
           <div>
             <h2 class="scream-harvest-title">Scare floor harvest</h2>
@@ -1380,6 +1385,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=fix-nav-1"></script>
+  <script type="module" src="/js/app.js?v=scream-harvest-ux-1"></script>
 </body>
 </html>

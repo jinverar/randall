@@ -4073,15 +4073,46 @@ document.addEventListener('keydown', (ev) => {
 document.getElementById('dash-open-canisters')?.addEventListener('click', () => {
   switchView('crashes');
   loadCrashes(document.getElementById('crash-filter')?.value || stalkProject || '').catch(() => {});
+  requestAnimationFrame(() => scrollToScreamHarvest());
 });
 document.getElementById('fuzz-open-canisters')?.addEventListener('click', () => {
   switchView('crashes');
   loadCrashes(document.getElementById('crash-filter')?.value || stalkProject || '').catch(() => {});
+  requestAnimationFrame(() => scrollToScreamHarvest());
+});
+document.getElementById('canister-badge-btn')?.addEventListener('click', () => {
+  if (document.documentElement.getAttribute('data-scream-canisters') === 'off') {
+    enableScreamCanistersFromUi();
+    return;
+  }
+  scrollToScreamHarvest();
+});
+document.getElementById('scream-harvest-show-btn')?.addEventListener('click', () => {
+  enableScreamCanistersFromUi();
 });
 document.getElementById('scream-harvest-mode')?.addEventListener('change', (e) => {
   harvestState.mode = e.target.value === 'severity' ? 'severity' : 'projects';
   paintHarvestViews();
 });
+
+function scrollToScreamHarvest() {
+  document.getElementById('scream-harvest-panel')
+    ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+async function enableScreamCanistersFromUi() {
+  const animOn = document.getElementById('scream-harvest-anim')?.checked;
+  applyScreamHarvestPrefs({ canisters: true, animations: animOn });
+  try { await api.put('/api/ui/prefs', { screamCanisters: true }); } catch { /* localStorage still restores */ }
+  scrollToScreamHarvest();
+}
+
+function syncScreamHarvestOffNotice() {
+  const notice = document.getElementById('scream-harvest-off-notice');
+  if (!notice) return;
+  const off = document.documentElement.getAttribute('data-scream-canisters') === 'off';
+  notice.hidden = !off;
+}
 
 function applyScreamHarvestPrefs({ canisters, animations, persist = true } = {}) {
   const cansOn = canisters !== false;
@@ -4092,6 +4123,7 @@ function applyScreamHarvestPrefs({ canisters, animations, persist = true } = {})
   const an = document.getElementById('scream-harvest-anim');
   if (en) en.checked = cansOn;
   if (an) an.checked = animOn;
+  syncScreamHarvestOffNotice();
   if (persist) {
     try {
       localStorage.setItem('randfuzz.screamCanisters', cansOn ? '1' : '0');
