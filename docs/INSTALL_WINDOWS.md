@@ -40,6 +40,14 @@ Expect `8.0.x`.
 git --version
 ```
 
+**One-liner (winget):**
+
+```powershell
+winget install -e --id Git.Git --accept-package-agreements --accept-source-agreements
+```
+
+If Git is missing when you run `scripts\update-lab.ps1`, the update script tries that winget install automatically (then refreshes PATH so `git pull` works in the same run). Use `-SkipGitInstall` to skip auto-install, or `-SkipPull` to rebuild without pulling.
+
 ---
 
 ## 3. Clone the repo
@@ -84,8 +92,11 @@ What it does:
 Useful flags:
 
 ```powershell
-# Skip pull (already up to date)
+# Skip pull (already up to date / offline rebuild)
 powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -SkipPull
+
+# Skip winget Git auto-install (must have git on PATH for pull)
+powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -SkipGitInstall
 
 # Refresh third-party tools (idempotent; skips existing binaries)
 powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -InstallTools

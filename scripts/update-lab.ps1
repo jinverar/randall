@@ -6,12 +6,14 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -InstallTools
 #   powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -SkipPull
 #   powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -SkipLabTargets
+#   powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -SkipGitInstall
 [CmdletBinding()]
 param(
     [switch]$InstallTools,
     [switch]$SkipPull,
     [switch]$SkipLabTargets,
-    [switch]$SkipGcc
+    [switch]$SkipGcc,
+    [switch]$SkipGitInstall
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,6 +45,153 @@ function Assert-GitRepo {
     }
 }
 
+function Refresh-SessionPath {
+    $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $user = [Environment]::GetEnvironmentVariable("Path", "User")
+    $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ";"
+}
+
+function Add-SessionPathEntry {
+    param([string]$Dir)
+    if (-not $Dir -or -not (Test-Path $Dir)) { return $false }
+    $norm = $Dir.TrimEnd('\')
+    foreach ($part in ($env:Path -split ";")) {
+        if ($part -and ($part.TrimEnd('\') -ieq $norm)) { return $false }
+    }
+    $env:Path = "$norm;$env:Path"
+    return $true
+}
+
+function Find-GitCandidates {
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    $dirs = @(
+        "C:\Program Files\Git\cmd",
+        "C:\Program Files\Git\bin",
+        (Join-Path $env:LOCALAPPDATA "Programs\Git\cmd"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Git\bin"),
+        "$env:LOCALAPPDATA\Microsoft\WinGet\Links",
+        "$env:ProgramFiles\WinGet\Links"
+    )
+    foreach ($dir in $dirs) {
+        if (-not (Test-Path $dir)) { continue }
+        $gitExe = Join-Path $dir "git.exe"
+        if ((Test-Path $gitExe) -and -not $candidates.Contains($gitExe)) {
+            $candidates.Add($gitExe) | Out-Null
+        }
+    }
+    foreach ($wgRoot in @(
+            (Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"),
+            (Join-Path ${env:ProgramFiles} "WinGet\Packages")
+        )) {
+        if (-not (Test-Path $wgRoot)) { continue }
+        Get-ChildItem -Path $wgRoot -Filter "git.exe" -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'Git\\cmd\\git\.exe$|Git\\bin\\git\.exe$|\\Git\.Git\\' } |
+            Select-Object -First 4 |
+            ForEach-Object {
+                if (-not $candidates.Contains($_.FullName)) { $candidates.Add($_.FullName) | Out-Null }
+            }
+    }
+    return $candidates
+}
+
+function Resolve-GitExecutable {
+    Refresh-SessionPath
+    $cmd = Get-Command git -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+
+    foreach ($candidate in (Find-GitCandidates)) {
+        $bin = Split-Path $candidate -Parent
+        Add-SessionPathEntry $bin | Out-Null
+        $cmd = Get-Command git -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Source) { return $cmd.Source }
+        if (Test-Path $candidate) { return $candidate }
+    }
+    return $null
+}
+
+function Show-GitManualInstallHelp {
+    Write-UpdateLog "" "Warn"
+    Write-UpdateLog "[x] Git is required for git pull but was not found on PATH." "Error"
+    Write-UpdateLog "    Install Git for Windows, then re-run this script:" "Warn"
+    Write-UpdateLog "      winget install -e --id Git.Git --accept-package-agreements --accept-source-agreements" "Cyan"
+    Write-UpdateLog "    Or download: https://git-scm.com/download/win" "Cyan"
+    Write-UpdateLog "    Offline / no pull: re-run with -SkipPull (rebuild only; no source update)." "Warn"
+    Write-UpdateLog "    Skip auto-install attempt: -SkipGitInstall" "Warn"
+}
+
+function Test-WingetAvailable {
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) { return $null }
+    try {
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $verOut = & winget --version 2>&1
+        $ErrorActionPreference = $prev
+        if ($LASTEXITCODE -ne 0 -and -not ($verOut -match '\d+\.\d+')) { return $null }
+        return $winget
+    } catch {
+        return $null
+    }
+}
+
+function Install-GitViaWinget {
+    $winget = Test-WingetAvailable
+    if (-not $winget) {
+        Write-UpdateLog "[!] winget not available; cannot auto-install Git." "Warn"
+        return $false
+    }
+
+    Write-UpdateLog "Git not found — installing Git for Windows via winget (Git.Git)..." "Cyan"
+    $log = Join-Path $env:TEMP "randall-winget-git.log"
+    $argSets = @(
+        @("install", "-e", "--id", "Git.Git", "--accept-package-agreements", "--accept-source-agreements", "--scope", "user"),
+        @("install", "-e", "--id", "Git.Git", "--accept-package-agreements", "--accept-source-agreements")
+    )
+    foreach ($wingetArgs in $argSets) {
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & winget @wingetArgs 2>&1 | Tee-Object -FilePath $log | ForEach-Object { Write-Host $_ }
+        $code = $LASTEXITCODE
+        $ErrorActionPreference = $prev
+        if ($null -eq $code) { $code = 0 }
+        if ($code -eq 0) {
+            Write-UpdateLog "[ok] Git installed via winget." "Ok"
+            return $true
+        }
+        Write-UpdateLog "[!] winget exit $code (see $log); trying next install mode..." "Warn"
+    }
+    return $false
+}
+
+function Ensure-GitForPull {
+    $gitExe = Resolve-GitExecutable
+    if ($gitExe) {
+        Write-UpdateLog "Git: $gitExe" "Ok"
+        return $gitExe
+    }
+
+    if ($SkipGitInstall) {
+        Show-GitManualInstallHelp
+        exit 1
+    }
+
+    if (-not (Install-GitViaWinget)) {
+        Show-GitManualInstallHelp
+        exit 1
+    }
+
+    Refresh-SessionPath
+    $gitExe = Resolve-GitExecutable
+    if (-not $gitExe) {
+        Write-UpdateLog "[!] Git was installed but is not on PATH yet in this session." "Warn"
+        Show-GitManualInstallHelp
+        exit 1
+    }
+
+    Write-UpdateLog "Git: $gitExe" "Ok"
+    return $gitExe
+}
+
 function Test-ServerMayBeRunning {
     $names = @("Randall.Server", "dotnet")
     foreach ($name in $names) {
@@ -72,7 +221,8 @@ if (Test-ServerMayBeRunning) {
 if (-not $SkipPull) {
     Write-UpdateLog ""
     Write-UpdateLog "======== git pull ========" "Cyan"
-    & git -C $Root pull --ff-only
+    $gitExe = Ensure-GitForPull
+    & $gitExe -C $Root pull --ff-only
     if ($LASTEXITCODE -ne 0) {
         Write-UpdateLog "[x] git pull failed (exit $LASTEXITCODE). Resolve conflicts or fetch manually." "Error"
         exit $LASTEXITCODE

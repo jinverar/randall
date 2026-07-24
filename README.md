@@ -64,6 +64,8 @@ Fresh VM or bare metal. Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_W
 
 **Need:** [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) · [Git](https://git-scm.com/download/win) · PowerShell · network (MinGW gcc zip for Scream; winget optional) · ~8 GB RAM recommended
 
+**Git one-liner (manual):** `winget install -e --id Git.Git --accept-package-agreements --accept-source-agreements` — or use [git-scm.com/download/win](https://git-scm.com/download/win). If Git is missing when you run `update-lab.ps1`, the script tries that winget install automatically (use `-SkipGitInstall` to skip the attempt, or `-SkipPull` to rebuild without pulling).
+
 Prefer **`git clone` / `git pull`** over a GitHub ZIP of the repo — you get script fixes without re-downloading the whole tree. If you already unpacked a ZIP under Downloads, clone fresh (or `git pull` on a real clone) so you pick up the zip-based `install-gcc.ps1`. **Offline:** keep a copy of `tools\` (MinGW, DynamoRIO, etc.), drop it into the clone after pull, then run `install-gcc.ps1` or `install-lab-tools.ps1` — see [INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md#offline-tools-no-network).
 
 ```powershell
@@ -111,6 +113,8 @@ If you see *“running scripts is disabled on this system”*, that Bypass form 
 
 `update-lab.ps1` runs **`git pull`, `dotnet build`, and lab-target builds in one step**. You do **not** need a separate `dotnet build` or lab-target build afterward unless you used `-SkipLabTargets` and later need those native binaries.
 
+If **Git is not installed**, the update script detects it and tries `winget install Git.Git` before pulling (refreshing PATH for the same run). Use `-SkipGitInstall` to skip auto-install, or `-SkipPull` for an offline rebuild without fetching source.
+
 ```powershell
 cd $env:USERPROFILE\Projects\randall   # or wherever you cloned
 
@@ -119,6 +123,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1
 
 # Faster: UI / CLI / server / docs only — skip native lab targets
 powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -SkipLabTargets
+
+# Offline / already up to date — rebuild only, no git pull
+powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -SkipPull
 
 # Re-install third-party tools only when scripts/docs say so
 # ...\update-lab.ps1 -InstallTools
