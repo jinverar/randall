@@ -102,6 +102,24 @@ dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000
 
 **Gitignored (safe across pulls):** `tools/dynamorio/`, `tools/mingw64/`, `tools/*.exe`, `data/`, `projects/local/`, `.env` — see [.gitignore](../.gitignore). Pull never deletes them.
 
+### Offline tools (no network)
+
+Keep a pre-downloaded `tools\` tree (MinGW, DynamoRIO, Sysinternals, etc.) outside git. After `git pull`, copy it into the clone, then register PATH — no downloads:
+
+```powershell
+cd $env:USERPROFILE\Projects\randall
+# copy your saved tools\ here so e.g. tools\mingw64\bin\gcc.exe exists
+
+powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1
+# or register gcc + DynamoRIO + debuggers + recording tools:
+powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
+
+powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
+gcc --version   # works in this same window after install-gcc
+```
+
+`install-gcc.ps1` detects `tools\mingw64\bin\gcc.exe`, prepends it to the **current session** and your **user PATH**, and skips the WinLibs zip when gcc is already present.
+
 ---
 
 ## 4. Build Randfuzz
@@ -128,9 +146,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1
 gcc --version
 ```
 
-Idempotent — safe to re-run. Use `-Skip` to bail out without installing. Needs network for the ~260 MB WinLibs zip.
+Idempotent — safe to re-run. Use `-Skip` to bail out without installing. Network is only needed when gcc is missing and must be downloaded (~260 MB WinLibs zip). If you copied `tools\mingw64\` offline, the script only updates PATH.
 
-**After a successful install, open a new PowerShell window** before `gcc --version` in another shell — user PATH changes do not apply to shells that were already open.
+The script refreshes **this PowerShell session** so `gcc --version` works immediately afterward. **Other terminals** that were already open still need a new window (or prepend the `bin` folder manually).
 
 Optional winget one-liner (only if App Installer / winget is installed):
 

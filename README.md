@@ -64,7 +64,7 @@ Fresh VM or bare metal. Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_W
 
 **Need:** [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) · [Git](https://git-scm.com/download/win) · PowerShell · network (MinGW gcc zip for Scream; winget optional) · ~8 GB RAM recommended
 
-Prefer **`git clone` / `git pull`** over a GitHub ZIP of the repo — you get script fixes without re-downloading the whole tree. If you already unpacked a ZIP under Downloads, clone fresh (or `git pull` on a real clone) so you pick up the zip-based `install-gcc.ps1`.
+Prefer **`git clone` / `git pull`** over a GitHub ZIP of the repo — you get script fixes without re-downloading the whole tree. If you already unpacked a ZIP under Downloads, clone fresh (or `git pull` on a real clone) so you pick up the zip-based `install-gcc.ps1`. **Offline:** keep a copy of `tools\` (MinGW, DynamoRIO, etc.), drop it into the clone after pull, then run `install-gcc.ps1` or `install-lab-tools.ps1` — see [INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md#offline-tools-no-network).
 
 ```powershell
 # 1) Clone
