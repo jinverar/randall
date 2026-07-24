@@ -3864,23 +3864,359 @@ html[data-theme="light"] .scream-canister-liquid {
   opacity: 0.75;
 }
 
-.scream-canister-vapor {
+/* —— Scream mist (ANIMATE on) —— */
+.scream-canister-mist {
   position: absolute;
-  left: 28%;
-  right: 28%;
-  top: 34%;
-  height: 22%;
+  inset: 0;
   pointer-events: none;
+  z-index: 2;
+  overflow: hidden;
+}
+
+.scream-canister-mist .mist-wisps {
+  position: absolute;
+  inset: 0;
+}
+
+.scream-canister-mist .mist-wisp {
+  position: absolute;
+  left: var(--mx, 50%);
+  top: var(--my, 70%);
+  width: 22%;
+  height: 30%;
+  transform: translate(-50%, -50%);
+  border-radius: 50% 42% 55% 48%;
+  filter: blur(2.5px);
   opacity: 0;
-  z-index: 1;
-  background: radial-gradient(ellipse at bottom, rgba(255, 210, 120, 0.45), transparent 70%);
+  will-change: transform, opacity;
+}
+
+.scream-canister-mist .mist-wisp.ribbon {
+  width: 10%;
+  height: 42%;
+  border-radius: 40% 60% 35% 65%;
   filter: blur(2px);
+}
+
+.scream-canister-mist .mist-wisp.bolt {
+  width: 7%;
+  height: 38%;
+  border-radius: 30% 70% 20% 80%;
+  filter: blur(1.5px);
+  clip-path: polygon(50% 0%, 65% 35%, 100% 40%, 70% 55%, 85% 100%, 50% 72%, 15% 100%, 30% 55%, 0% 40%, 35% 35%);
+}
+
+.scream-canister-mist .mist-wisp.shape {
+  width: 26%;
+  height: 22%;
+  border-radius: 45% 55% 60% 40%;
+  filter: blur(3px);
+}
+
+.scream-canister-mist.tone-green .mist-wisp {
+  background: radial-gradient(ellipse at 40% 60%, rgba(90, 230, 130, 0.62), rgba(18, 70, 38, 0.12) 72%);
+}
+.scream-canister-mist.tone-yellow .mist-wisp {
+  background: radial-gradient(ellipse at 45% 55%, rgba(255, 220, 70, 0.68), rgba(160, 110, 8, 0.18) 70%);
+}
+.scream-canister-mist.tone-red .mist-wisp {
+  background: radial-gradient(ellipse at 50% 50%, rgba(255, 55, 35, 0.78), rgba(110, 8, 8, 0.28) 68%);
+}
+.scream-canister-mist.tone-purple .mist-wisp {
+  background: radial-gradient(ellipse at 35% 45%, rgba(170, 80, 255, 0.62), rgba(12, 4, 28, 0.42) 75%);
+}
+
+.scream-canister-mist .mist-sparks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.scream-canister-mist .mist-spark {
+  position: absolute;
+  left: var(--sx, 50%);
+  top: var(--sy, 60%);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #ffe066;
+  box-shadow: 0 0 6px rgba(255, 220, 80, 0.85);
+  opacity: 0;
+}
+.scream-canister-mist.tone-red .mist-spark {
+  background: #ff8060;
+  box-shadow: 0 0 8px rgba(255, 60, 30, 0.9);
+}
+
+.scream-canister-mist .mist-glyph {
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.42rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 0 8px rgba(255, 200, 120, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.scream-canister-mist.tone-purple .mist-glyph {
+  color: rgba(210, 160, 255, 0.88);
+  text-shadow: 0 0 10px rgba(140, 60, 220, 0.65);
+}
+
+.scream-canister-mist .mist-tendril {
+  position: absolute;
+  left: 58%;
+  bottom: 8%;
+  width: 6%;
+  height: 38%;
+  border-radius: 50% 50% 40% 40%;
+  background: linear-gradient(0deg, rgba(70, 210, 110, 0.45), transparent);
+  filter: blur(2px);
+  opacity: 0;
+  transform-origin: bottom center;
+}
+
+.scream-canister-mist .mist-glow {
+  position: absolute;
+  inset: 10% 8%;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.scream-canister-mist.intensity-turbulent .mist-glow,
+.scream-canister-mist.intensity-max .mist-glow {
+  opacity: 0.35;
+  background: radial-gradient(ellipse at 50% 65%, var(--mist-glow, rgba(255, 180, 60, 0.35)), transparent 72%);
+}
+.scream-canister-mist.tone-green { --mist-glow: rgba(80, 220, 120, 0.35); }
+.scream-canister-mist.tone-yellow { --mist-glow: rgba(255, 210, 60, 0.42); }
+.scream-canister-mist.tone-red { --mist-glow: rgba(255, 60, 30, 0.48); }
+.scream-canister-mist.tone-purple { --mist-glow: rgba(150, 70, 255, 0.38); }
+
+.scream-canister-mist .mist-flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.15) 45%, transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scream-canister-mist .mist-tube {
+  display: none;
+}
+
+.scream-canister-capture-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  overflow: visible;
+}
+
+.scream-canister-capture-fx .mist-tube {
+  position: absolute;
+  left: 50%;
+  top: 2%;
+  width: 10%;
+  height: 52%;
+  transform: translateX(-50%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 240, 200, 0.4) 50%, transparent);
+  filter: blur(1px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scream-canister-mist .mist-warn-led {
+  position: absolute;
+  top: 6%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #ff3020;
+  box-shadow: 0 0 8px rgba(255, 40, 20, 0.85);
+  opacity: 0;
+}
+.scream-canister-mist .mist-warn-led.a { left: 18%; }
+.scream-canister-mist .mist-warn-led.b { right: 18%; }
+
+/* Legacy vapor slot — kept for compat; mist lives inside porthole now */
+.scream-canister-vapor {
+  display: none;
+}
+
+html[data-scream-anim="on"] .scream-canister.filling .scream-canister-mist .mist-wisp,
+html[data-scream-anim="on"] .scream-canister.is-live .scream-canister-mist .mist-wisp {
+  animation: mist-wisp-curl var(--wd, 3.2s) ease-in-out infinite;
+  animation-delay: var(--wl, 0s);
+}
+html[data-scream-anim="on"] .scream-canister.filling .scream-canister-mist.intensity-tiny .mist-wisp,
+html[data-scream-anim="on"] .scream-canister.is-live .scream-canister-mist.intensity-tiny .mist-wisp {
+  opacity: 0.38;
+}
+html[data-scream-anim="on"] .scream-canister.filling .scream-canister-mist.intensity-light .mist-wisp,
+html[data-scream-anim="on"] .scream-canister.is-live .scream-canister-mist.intensity-light .mist-wisp {
+  opacity: 0.52;
+}
+html[data-scream-anim="on"] .scream-canister.filling .scream-canister-mist.intensity-swirl .mist-wisp,
+html[data-scream-anim="on"] .scream-canister.is-live .scream-canister-mist.intensity-swirl .mist-wisp {
+  opacity: 0.68;
+}
+html[data-scream-anim="on"] .scream-canister.filling .scream-canister-mist.intensity-turbulent .mist-wisp,
+html[data-scream-anim="on"] .scream-canister.is-live .scream-canister-mist.intensity-turbulent .mist-wisp,
+html[data-scream-anim="on"] .scream-canister.filling .scream-canister-mist.intensity-max .mist-wisp,
+html[data-scream-anim="on"] .scream-canister.is-live .scream-canister-mist.intensity-max .mist-wisp {
+  opacity: 0.82;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist .mist-wisp.reverse {
+  animation-direction: reverse;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist.tone-red .mist-wisp.bolt {
+  animation-name: mist-bolt-slam;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist .mist-spark {
+  animation: mist-spark-pulse var(--sd, 0.8s) ease-in-out infinite;
+  animation-delay: var(--sl, 0s);
+}
+
+html[data-scream-anim="on"] .scream-canister-mist .mist-glyph {
+  animation: mist-glyph-dissolve var(--gl, 5s) ease-in-out infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist.tone-green .mist-tendril {
+  animation: mist-tendril-up 4.8s ease-in-out infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.tone-yellow.intensity-swirl),
+html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.tone-yellow.intensity-turbulent),
+html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.tone-yellow.intensity-max) {
+  animation: mist-glass-hit 3.6s ease-in-out infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist.intensity-max .mist-warn-led {
+  animation: mist-warn-blink 0.55s steps(2, end) infinite;
+  opacity: 1;
+}
+
+html[data-scream-anim="on"] .scream-canister[data-mist-intensity="max"].filling > .scream-canister-vessel {
+  animation: canister-rattle 0.14s linear infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister.just-bottled .mist-flash {
+  animation: mist-capture-flash 0.88s ease-out 1;
+}
+html[data-scream-anim="on"] .scream-canister.just-bottled .scream-canister-capture-fx .mist-tube {
+  animation: mist-tube-pour 0.88s ease-out 1;
+}
+html[data-scream-anim="on"] .scream-canister.just-bottled .scream-canister-vessel {
+  animation: canister-capture-shake 0.88s ease-out 1;
+}
+
+@keyframes mist-wisp-curl {
+  0%, 100% {
+    transform: translate(-50%, -50%) translate(0, 0) scale(0.82) rotate(0deg);
+  }
+  22% {
+    transform: translate(-50%, -50%) translate(var(--d1x, 0), var(--d1y, -12px)) scale(0.95) rotate(10deg);
+  }
+  52% {
+    transform: translate(-50%, -50%) translate(var(--d2x, 0), var(--d2y, -24px)) scale(1.05) rotate(-8deg);
+  }
+  78% {
+    transform: translate(-50%, -50%) translate(calc(var(--d2x, 0) * 0.35), calc(var(--d1y, -12px) * 1.15)) scale(0.92) rotate(5deg);
+  }
+}
+
+@keyframes mist-bolt-slam {
+  0%, 100% {
+    transform: translate(-50%, -50%) translate(0, 0) scale(0.9);
+    opacity: 0.55;
+  }
+  18% {
+    transform: translate(calc(-50% - 28%), -50%) scale(1.05);
+    opacity: 0.95;
+  }
+  36% {
+    transform: translate(-50%, -50%) scale(1.1);
+    opacity: 0.85;
+  }
+  54% {
+    transform: translate(calc(-50% + 28%), -50%) scale(1.05);
+    opacity: 0.95;
+  }
+  72% {
+    transform: translate(-50%, calc(-50% - 8px)) scale(1.08);
+    opacity: 0.9;
+  }
+}
+
+@keyframes mist-spark-pulse {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  45% { opacity: 1; transform: scale(1.4); }
+  70% { opacity: 0.2; transform: scale(0.8); }
+}
+
+@keyframes mist-glyph-dissolve {
+  0%, 68%, 100% { opacity: 0; filter: blur(4px); transform: translate(-50%, -50%) scale(0.85); }
+  78% { opacity: 0.88; filter: blur(0); transform: translate(-50%, -50%) scale(1); }
+  88% { opacity: 0.35; filter: blur(2px); transform: translate(-50%, -58%) scale(1.05); }
+}
+
+@keyframes mist-tendril-up {
+  0%, 72%, 100% { opacity: 0; transform: scaleY(0.2); }
+  82% { opacity: 0.65; transform: scaleY(1); }
+  92% { opacity: 0; transform: scaleY(0.4) translateY(-12%); }
+}
+
+@keyframes mist-glass-hit {
+  0%, 88%, 100% { box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06); }
+  92% { box-shadow: inset 0 0 14px rgba(255, 220, 80, 0.35), 0 0 0 1px rgba(255, 230, 120, 0.25); }
+}
+
+@keyframes mist-warn-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+
+@keyframes canister-rattle {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  25% { transform: translate(-1px, 0.5px) rotate(-0.4deg); }
+  50% { transform: translate(1px, -0.5px) rotate(0.4deg); }
+  75% { transform: translate(-0.5px, -0.5px) rotate(-0.2deg); }
+}
+
+@keyframes mist-capture-flash {
+  0% { opacity: 0; }
+  18% { opacity: 0.95; }
+  45% { opacity: 0.15; }
+  100% { opacity: 0; }
+}
+
+@keyframes mist-tube-pour {
+  0% { opacity: 0; transform: translateX(-50%) scaleY(0.2); }
+  25% { opacity: 0.9; transform: translateX(-50%) scaleY(1); }
+  100% { opacity: 0; transform: translateX(-50%) scaleY(0.6); }
+}
+
+@keyframes canister-capture-shake {
+  0%, 100% { transform: translate(0, 0); }
+  12% { transform: translate(-2px, 1px); }
+  24% { transform: translate(2px, -1px); }
+  36% { transform: translate(-2px, -1px); }
+  48% { transform: translate(2px, 1px); }
+  60% { transform: translate(-1px, 0); }
 }
 
 .scream-canister.filling .scream-canister-vapor,
 .scream-canister.is-live .scream-canister-vapor {
-  opacity: 0.65;
-  animation: scream-vapor-rise 2.4s ease-in-out infinite;
+  opacity: 0;
+  animation: none;
 }
 
 @keyframes scream-vapor-rise {
@@ -4241,8 +4577,18 @@ html[data-scream-anim="on"] .scream-harvest-ambience.anim .amb {
 
 @media (prefers-reduced-motion: reduce) {
   .canister-floaties .floatie,
-  .scream-harvest-ambience .amb {
+  .scream-harvest-ambience .amb,
+  .scream-canister-mist .mist-wisp,
+  .scream-canister-mist .mist-spark,
+  .scream-canister-mist .mist-glyph,
+  .scream-canister-mist .mist-tendril,
+  .scream-canister-mist .mist-warn-led,
+  .scream-canister.just-bottled .scream-canister-vessel,
+  .scream-canister[data-mist-intensity="max"].filling > .scream-canister-vessel {
     animation: none !important;
+  }
+  .scream-canister-mist .mist-wisp {
+    opacity: 0.45 !important;
   }
 }
 
@@ -4301,6 +4647,12 @@ html[data-theme="light"] .scream-bottled-toast {
 @media (prefers-reduced-motion: reduce) {
   .scream-canister-liquid,
   .scream-canister-vapor,
+  .scream-canister-mist .mist-wisp,
+  .scream-canister-mist .mist-spark,
+  .scream-canister-mist .mist-glyph,
+  .scream-canister-mist .mist-tendril,
+  .scream-canister-mist .mist-flash,
+  .scream-canister-mist .mist-tube,
   .scream-canister.pulse .scream-canister-vessel,
   .scream-canister.just-bottled .scream-canister-vessel,
   .scream-canister.is-live .scream-canister-vessel,
@@ -4325,6 +4677,7 @@ html[data-scream-canisters="off"] .scream-harvest-header {
 }
 html:not([data-scream-anim="on"]) .scream-canister-liquid,
 html:not([data-scream-anim="on"]) .scream-canister-vapor,
+html:not([data-scream-anim="on"]) .scream-canister-mist,
 html:not([data-scream-anim="on"]) .scream-canister.pulse,
 html:not([data-scream-anim="on"]) .scream-canister.live .scream-canister-vessel,
 html:not([data-scream-anim="on"]) .scream-canister-live-badge,
@@ -4332,6 +4685,9 @@ html:not([data-scream-anim="on"]) .scream-harvest-pressure.critical,
 html:not([data-scream-anim="on"]) .scream-bottled-toast {
   animation: none !important;
   transition: none !important;
+}
+html:not([data-scream-anim="on"]) .scream-canister-mist {
+  display: none !important;
 }
 html:not([data-scream-anim="on"]) .scream-canister-liquid {
   /* Still show fill level instantly — no rise animation. */

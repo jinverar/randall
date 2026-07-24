@@ -3454,6 +3454,114 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
   });
 }
 
+/** Deterministic 0..1 PRNG for per-canister wisp layout (stable across re-renders). */
+function mistRand(seed) {
+  let h = 2166136261;
+  const s = String(seed || '');
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 15), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Mist palette ↔ harvest mood / severity (ANIMATE on):
+ *   none   — laughter / empty (0 screams)
+ *   green  — watching (2 unique) — lazy anomaly wisps
+ *   purple — watching + exactly 1 unique — rare unknown scream
+ *   yellow — toxic (interesting ribbons / sparks)
+ *   red    — virulent, EIP, or toxic+critical — exploitable lightning
+ */
+function canisterMistTone(mood, slot = {}) {
+  const count = slot.count || 0;
+  if (mood === 'laughter' || count <= 0) return 'none';
+  if (mood === 'eip' || mood === 'virulent') return 'red';
+  if (mood === 'toxic') return (slot.critical || 0) > 0 ? 'red' : 'yellow';
+  if (mood === 'watching') return count === 1 && !(slot.critical || 0) ? 'purple' : 'green';
+  return 'green';
+}
+
+/** Fill % → mist density: 10% tiny → 50% swirl → 90% turbulent → 100% warning. */
+function canisterMistIntensity(pct) {
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  if (p <= 0) return 'idle';
+  if (p < 10) return 'tiny';
+  if (p < 50) return 'light';
+  if (p < 90) return 'swirl';
+  if (p < 100) return 'turbulent';
+  return 'max';
+}
+
+function canisterMistHtml(slot, pct, mood, { compact = false } = {}) {
+  const tone = canisterMistTone(mood, slot);
+  const intensity = canisterMistIntensity(pct);
+  if (tone === 'none' || intensity === 'idle') return '';
+
+  const wispBudget = compact
+    ? { tiny: 1, light: 2, swirl: 3, turbulent: 4, max: 4 }
+    : { tiny: 2, light: 3, swirl: 5, turbulent: 7, max: 8 };
+  const n = wispBudget[intensity] || 2;
+  const rand = mistRand(`${slot.id}|${tone}|${intensity}`);
+  const wisps = [];
+
+  for (let i = 0; i < n; i++) {
+    const mx = Math.round(14 + rand() * 72);
+    const my = Math.round(52 + rand() * 38);
+    const d1x = Math.round(-16 + rand() * 32);
+    const d1y = Math.round(-28 + rand() * -6);
+    const d2x = Math.round(-14 + rand() * 28);
+    const d2y = Math.round(-42 + rand() * -8);
+    const wd = (2.6 + rand() * 2.8).toFixed(2);
+    const wl = (rand() * 2.4).toFixed(2);
+    let kind = '';
+    if (tone === 'yellow' && rand() > 0.62) kind = ' ribbon';
+    else if (tone === 'red' && rand() > 0.55) kind = ' bolt';
+    else if (tone === 'purple' && rand() > 0.45) kind = ' shape';
+    const rev = tone === 'purple' && rand() > 0.5 ? ' reverse' : '';
+    wisps.push(
+      `<span class="mist-wisp${kind}${rev}" style="--mx:${mx}%;--my:${my}%;--d1x:${d1x}px;--d1y:${d1y}px;--d2x:${d2x}px;--d2y:${d2y}px;--wd:${wd}s;--wl:${wl}s"></span>`,
+    );
+  }
+
+  let sparks = '';
+  if ((tone === 'yellow' || tone === 'red') && intensity !== 'tiny') {
+    const sn = compact ? (tone === 'red' ? 2 : 1) : (tone === 'red' ? 4 : 2);
+    const bits = [];
+    for (let i = 0; i < sn; i++) {
+      bits.push(
+        `<span class="mist-spark" style="--sx:${Math.round(rand() * 100)}%;--sy:${Math.round(38 + rand() * 52)}%;--sd:${(0.55 + rand() * 0.9).toFixed(2)}s;--sl:${(rand() * 2.2).toFixed(2)}s"></span>`,
+      );
+    }
+    sparks = `<div class="mist-sparks">${bits.join('')}</div>`;
+  }
+
+  let glyph = '';
+  if (!compact && intensity !== 'tiny') {
+    const glyphs = ['0xC0000005', 'RIP', 'ACCESS_VIOLATION', 'SIGSEGV', 'EIP'];
+    const pick = glyphs[Math.floor(rand() * glyphs.length)];
+    glyph = `<span class="mist-glyph" style="--gl:${(3.5 + rand() * 4.5).toFixed(1)}s">${pick}</span>`;
+  }
+
+  const tendril = tone === 'green' && !compact && intensity !== 'tiny'
+    ? '<span class="mist-tendril"></span>'
+    : '';
+
+  return `<div class="scream-canister-mist tone-${tone} intensity-${intensity}" data-tone="${tone}" data-intensity="${intensity}" aria-hidden="true">
+    <div class="mist-wisps">${wisps.join('')}</div>
+    ${sparks}
+    ${glyph}
+    ${tendril}
+    <div class="mist-glow"></div>
+    <div class="mist-flash"></div>
+    ${intensity === 'max' ? '<span class="mist-warn-led a"></span><span class="mist-warn-led b"></span>' : ''}
+  </div>`;
+}
+
 function canisterFloatiesHtml(mood) {
   // Lightweight CSS scare / laughter sprites — browser-only, no fuzz RAM.
   if (mood === 'laughter') {
@@ -3539,7 +3647,11 @@ function animateCanisterFills(rack) {
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         btn.style.setProperty('--fill', `${target}%`);
-        if (target > from) btn.classList.add('just-bottled');
+        if (target > from) {
+          btn.classList.add('just-bottled');
+          clearTimeout(btn._bottleFlash);
+          btn._bottleFlash = setTimeout(() => btn.classList.remove('just-bottled'), 950);
+        }
       });
     });
     harvestState.prevFillById[id] = target;
@@ -3665,18 +3777,22 @@ function renderScreamCanisters(opts = {}) {
           <span class="scream-canister-fill-readout" title="Porthole fill">${pct}%</span>
         </div>`;
     const floaties = compact ? '' : canisterFloatiesHtml(mood);
+    const mist = canisterMistHtml(s, pct, mood, { compact });
+    const mistIntensity = canisterMistIntensity(pct);
     return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling} ${pulse} ${live}" role="listitem"
       data-slot="${s.id}" data-target-fill="${pct}" data-sev="${s.sevFilter || ''}" data-project="${s.project || ''}"
-      data-fill="${pct}" data-ip="${s.ipControlled ? '1' : '0'}" data-mood="${mood}" title="${escapeAttr(s.title)}" style="${style}">
+      data-fill="${pct}" data-ip="${s.ipControlled ? '1' : '0'}" data-mood="${mood}" data-mist-intensity="${mistIntensity}"
+      title="${escapeAttr(s.title)}" style="${style}">
       <div class="scream-canister-vessel">
         <img class="scream-canister-art" src="${art}" alt="" width="186" height="280" loading="lazy" decoding="async" />
         <div class="scream-canister-porthole" aria-hidden="true">
           <div class="scream-canister-liquid"></div>
+          ${mist}
         </div>
         <div class="scream-canister-gauge" aria-hidden="true" title="Harvest pressure">
           <span class="scream-canister-gauge-needle"></span>
         </div>
-        <div class="scream-canister-vapor" aria-hidden="true"></div>
+        <div class="scream-canister-capture-fx" aria-hidden="true"><div class="mist-tube"></div></div>
         ${floaties}
         ${s.ipControlled ? '<span class="scream-canister-eip-badge" title="Instruction pointer looks controlled">EIP</span>' : ''}
         ${mood === 'laughter' ? '<span class="scream-canister-laugh-badge" title="No screams — scare floor laughter">HA</span>' : ''}
