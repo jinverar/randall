@@ -312,39 +312,73 @@ function Get-ToolsPythonDir {
 }
 
 function Get-ToolsPythonExe {
-    return (Join-Path (Get-ToolsPythonDir) "python.exe")
+    $dir = Get-ToolsPythonDir
+    if (Test-RecIsWindows) {
+        return (Join-Path $dir "python.exe")
+    }
+    # Linux/macOS CI / non-Windows: venv layout
+    foreach ($rel in @("bin/python3", "bin/python", "python3", "python")) {
+        $cand = Join-Path $dir $rel
+        if (Test-Path -LiteralPath $cand) { return $cand }
+    }
+    return (Join-Path $dir "bin/python3")
+}
+
+function ConvertTo-ProcessArgumentString {
+    param([string[]]$ArgumentList)
+    # Windows PowerShell 5.1 Start-Process mangles string[] ArgumentList;
+    # pass one correctly quoted string instead.
+    $parts = foreach ($a in $ArgumentList) {
+        if ($null -eq $a) { continue }
+        $s = [string]$a
+        if ($s -match '[\s"]') {
+            '"' + ($s.Replace('"', '\"')) + '"'
+        } else {
+            $s
+        }
+    }
+    return ($parts -join ' ')
 }
 
 function Invoke-NativeCapture {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
         [string[]]$ArgumentList = @(),
-        [int]$TimeoutSec = 600
+        [int]$TimeoutSec = 1200
     )
-    # Never call Windows Store python stubs via call operator - that raises
-    # NativeCommandError (exit 9009) under $ErrorActionPreference Stop.
+    # Never invoke Windows Store python stubs via bare PATH 'python' - that raises
+    # NativeCommandError (exit 9009). Callers must pass an absolute tools\python path.
     if (-not (Test-Path -LiteralPath $FilePath)) {
         return @{ ExitCode = 9009; StdOut = ""; StdErr = "exe missing: $FilePath" }
     }
-    $outFile = Join-Path $script:RecTempDir ("randall-native-out-{0}.txt" -f [guid]::NewGuid().ToString("N"))
-    $errFile = Join-Path $script:RecTempDir ("randall-native-err-{0}.txt" -f [guid]::NewGuid().ToString("N"))
+    if ($FilePath -match '(?i)[\\/]WindowsApps[\\/]') {
+        return @{ ExitCode = 9009; StdOut = ""; StdErr = "refusing WindowsApps python stub: $FilePath" }
+    }
+
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
     try {
-        $p = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait -PassThru `
-            -NoNewWindow -WindowStyle Hidden `
-            -RedirectStandardOutput $outFile -RedirectStandardError $errFile
-        $stdout = ""
-        $stderr = ""
-        if (Test-Path -LiteralPath $outFile) {
-            $stdout = Get-Content -LiteralPath $outFile -Raw -ErrorAction SilentlyContinue
+        $lines = & $FilePath @ArgumentList 2>&1
+        $code = $LASTEXITCODE
+        if ($null -eq $code) { $code = 0 }
+        $stdout = New-Object System.Text.StringBuilder
+        $stderr = New-Object System.Text.StringBuilder
+        foreach ($line in @($lines)) {
+            if ($line -is [System.Management.Automation.ErrorRecord]) {
+                [void]$stderr.AppendLine($line.ToString())
+            } else {
+                [void]$stdout.AppendLine([string]$line)
+            }
         }
-        if (Test-Path -LiteralPath $errFile) {
-            $stderr = Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue
+        return @{
+            ExitCode = [int]$code
+            StdOut   = $stdout.ToString()
+            StdErr   = $stderr.ToString()
         }
-        if ($null -eq $stdout) { $stdout = "" }
-        if ($null -eq $stderr) { $stderr = "" }
-        return @{ ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
+    } catch {
+        return @{ ExitCode = 1; StdOut = ""; StdErr = $_.Exception.Message }
     } finally {
-        Remove-Item -LiteralPath $outFile,$errFile -Force -ErrorAction SilentlyContinue
+        $ErrorActionPreference = $prev
     }
 }
 
@@ -352,31 +386,32 @@ function Test-PythonExeWorks {
     param([string]$Exe)
     if ([string]::IsNullOrWhiteSpace($Exe)) { return $false }
     if (-not (Test-Path -LiteralPath $Exe)) { return $false }
-    # Windows Store / AppExecutionAlias stub - never use (causes exit 9009)
     if ($Exe -match '(?i)[\\/]WindowsApps[\\/]') { return $false }
     try {
         $item = Get-Item -LiteralPath $Exe -Force -ErrorAction Stop
-        # Store aliases are often 0-byte reparse points
-        if ($item.Length -lt 1024 -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        # Windows Store app aliases are tiny reparse points under WindowsApps.
+        # Do NOT reject normal symlinks (Linux venv python -> /usr/bin/python3).
+        if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -and
+            ($Exe -match '(?i)[\\/]WindowsApps[\\/]' -or $item.Length -eq 0)) {
             return $false
         }
     } catch { }
 
     $r = Invoke-NativeCapture -FilePath $Exe -ArgumentList @(
-        "-c", "import sys; print('%d.%d' % (sys.version_info[0], sys.version_info[1]))"
+        "-c", "import sys; print(sys.version_info[0]); print(sys.version_info[1])"
     )
     if ($r.ExitCode -ne 0) { return $false }
     $combined = ($r.StdOut + "`n" + $r.StdErr)
     if ($combined -match '(?i)Microsoft Store|ms-windows-store|Python was not found') {
         return $false
     }
-    $ver = ($r.StdOut.Trim() -split "\r?\n" | Select-Object -Last 1).Trim()
-    return ($ver -match '^[23]\.\d+')
+    $lines = @($r.StdOut.Trim() -split "\r?\n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    if ($lines.Count -lt 2) { return $false }
+    return ($lines[0] -match '^[23]$' -and $lines[1] -match '^\d+$')
 }
 
 function Enable-EmbeddableSite {
     param([string]$PythonDir)
-    # python3xx._pth must enable site for pip/frida-tools
     $pth = Get-ChildItem -Path $PythonDir -Filter "python*._pth" -File -ErrorAction SilentlyContinue |
         Select-Object -First 1
     if (-not $pth) { return }
@@ -406,12 +441,6 @@ function Install-PythonRuntime {
         return $false
     }
 
-    if (-not (Test-RecIsWindows)) {
-        Write-RecLog "[!] Auto Python install is Windows-only." "Warn"
-        Add-Result "Python" "failed" "non-Windows host"
-        return $false
-    }
-
     $toolsPyDir = Get-ToolsPythonDir
     $toolsPyExe = Get-ToolsPythonExe
     if ((-not $Force) -and (Test-PythonExeWorks $toolsPyExe)) {
@@ -422,7 +451,65 @@ function Install-PythonRuntime {
 
     New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
 
-    # Primary: official Windows embeddable package -> tools\python (no PATH, no Store stub)
+    # Non-Windows (CI/agent): create a venv under tools/python so the same Frida path works.
+    if (-not (Test-RecIsWindows)) {
+        Write-RecLog "Non-Windows host - creating tools/python venv for Frida..." "Cyan"
+        $bootstrap = $null
+        foreach ($cand in @("python3", "python")) {
+            $cmd = Get-Command $cand -ErrorAction SilentlyContinue
+            if ($cmd -and $cmd.Source) { $bootstrap = $cmd.Source; break }
+        }
+        if (-not $bootstrap) {
+            Write-RecLog "[!] python3 not found to create tools/python venv." "Warn"
+            Add-Result "Python" "failed" "python3 missing on non-Windows host"
+            return $false
+        }
+        try {
+            if (Test-Path -LiteralPath $toolsPyDir) {
+                Remove-Item -LiteralPath $toolsPyDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            $prev = $ErrorActionPreference
+            $ErrorActionPreference = "Continue"
+            # Prefer full venv; if ensurepip missing (Debian), create without pip and use get-pip.py.
+            & $bootstrap -m venv $toolsPyDir 2>$null
+            $vc = $LASTEXITCODE
+            if ($vc -ne 0) {
+                & $bootstrap -m venv --without-pip $toolsPyDir
+                $vc = $LASTEXITCODE
+            }
+            $ErrorActionPreference = $prev
+            if ($vc -ne 0) { throw "venv exit $vc" }
+            $toolsPyExe = Get-ToolsPythonExe
+            if (-not (Test-Path -LiteralPath $toolsPyExe)) {
+                throw "venv python missing at $toolsPyExe"
+            }
+            # Ensure pip exists (venv --without-pip or broken ensurepip)
+            $pipCheck = Invoke-NativeCapture -FilePath $toolsPyExe -ArgumentList @("-m", "pip", "--version")
+            if ($pipCheck.ExitCode -ne 0) {
+                Write-Host "  Bootstrapping pip into venv (get-pip.py)..."
+                $getPip = Join-Path $script:RecTempDir "randall-get-pip.py"
+                if (-not (Test-Path -LiteralPath $getPip) -or (Get-Item -LiteralPath $getPip).Length -lt 10KB) {
+                    Download-WithProgress -Uri $GetPipUrl -OutFile $getPip
+                }
+                $boot = Invoke-NativeCapture -FilePath $toolsPyExe -ArgumentList @($getPip, "--no-warn-script-location")
+                if ($boot.StdOut) { Write-Host $boot.StdOut.TrimEnd() }
+                if ($boot.StdErr) { Write-Host $boot.StdErr.TrimEnd() }
+                if ($boot.ExitCode -ne 0) { throw "get-pip exit $($boot.ExitCode)" }
+            }
+            if (-not (Test-PythonExeWorks $toolsPyExe)) {
+                throw "venv python not usable at $toolsPyExe"
+            }
+            Write-RecLog ("Python venv ready: {0}" -f $toolsPyExe) "Ok"
+            Add-Result "Python" "installed" "venv -> tools/python"
+            return $true
+        } catch {
+            Write-RecLog ("[!] venv install failed: {0}" -f $_.Exception.Message) "Warn"
+            Add-Result "Python" "failed" $_.Exception.Message
+            return $false
+        }
+    }
+
+    # Windows primary: embeddable package -> tools\python (never PATH / Store stub)
     $zip = Join-Path $script:RecTempDir "python-randall-embed-amd64.zip"
     $getPip = Join-Path $script:RecTempDir "randall-get-pip.py"
     try {
@@ -444,6 +531,7 @@ function Install-PythonRuntime {
         Expand-Archive -Path $zip -DestinationPath $toolsPyDir -Force
         Enable-EmbeddableSite -PythonDir $toolsPyDir
 
+        $toolsPyExe = Get-ToolsPythonExe
         if (-not (Test-Path -LiteralPath $toolsPyExe)) {
             throw "python.exe missing after extract under $toolsPyDir"
         }
@@ -480,7 +568,7 @@ function Install-PythonRuntime {
         Write-Host "  Falling back to full python.org installer into tools\python..."
     }
 
-    # Fallback: full installer with TargetDir=tools\python
+    # Windows fallback: full installer TargetDir=tools\python
     $setup = Join-Path $script:RecTempDir "python-randall-amd64.exe"
     try {
         if ($Force -and (Test-Path -LiteralPath $setup)) {
@@ -494,7 +582,7 @@ function Install-PythonRuntime {
         }
         New-Item -ItemType Directory -Force -Path $toolsPyDir | Out-Null
         Write-Host "  Running silent full installer (TargetDir=tools\python)..."
-        $p = Start-Process -FilePath $setup -ArgumentList @(
+        $setupArgs = @(
             "/quiet",
             "TargetDir=$toolsPyDir",
             "InstallAllUsers=0",
@@ -506,8 +594,17 @@ function Install-PythonRuntime {
             "AssociateFiles=0",
             "Shortcuts=0",
             "SimpleInstall=1"
-        ) -Wait -PassThru -WindowStyle Hidden
+        )
+        $setupParams = @{
+            FilePath         = $setup
+            ArgumentList     = $setupArgs
+            Wait             = $true
+            PassThru         = $true
+        }
+        if (Test-RecIsWindows) { $setupParams["WindowStyle"] = "Hidden" }
+        $p = Start-Process @setupParams
         Start-Sleep -Seconds 2
+        $toolsPyExe = Get-ToolsPythonExe
         if (Test-PythonExeWorks $toolsPyExe) {
             Write-RecLog ("Python installed: {0}" -f $toolsPyExe) "Ok"
             Add-Result "Python" "installed" "python.org TargetDir=tools\python"
@@ -518,7 +615,7 @@ function Install-PythonRuntime {
         Write-RecLog ("[!] Python auto-install failed: {0}" -f $_.Exception.Message) "Warn"
         Write-Host "  Important: Settings -> Apps -> Advanced app settings -> App execution aliases"
         Write-Host "            Turn OFF python.exe and python3.exe (Microsoft Store stubs)."
-        Write-Host "  Manual: download embeddable zip from python.org and extract to tools\python"
+        Write-Host "  Manual: extract python.org embeddable zip to tools\python, then re-run."
         Add-Result "Python" "failed" $_.Exception.Message
         return $false
     }
@@ -537,7 +634,7 @@ function Install-FridaTools {
         Write-Host "  Note: Frida is a GUI/external companion - Randfuzz does not inject it."
     }
 
-    # Frida uses ONLY tools\python\python.exe - never PATH / Store alias (exit 9009).
+    # Frida uses ONLY tools\python - never PATH / Store alias (exit 9009).
     $py = Get-ToolsPythonExe
     Write-Host "  Frida Python path: $py (PATH python.exe is ignored)"
 
@@ -548,8 +645,10 @@ function Install-FridaTools {
             Add-Result "Python" "skipped" "-SkipPython"
             return
         }
-        Write-RecLog "tools\python not ready - installing embeddable Python (not the Store stub)..." "Cyan"
-        if (-not (Install-PythonRuntime)) {
+        Write-RecLog "tools\python not ready - installing Python into tools\python (not the Store stub)..." "Cyan"
+        # Capture only the last bool - PowerShell functions can leak pipeline noise.
+        $pyInstalled = @(Install-PythonRuntime | Where-Object { $_ -is [bool] } | Select-Object -Last 1)
+        if (-not ($pyInstalled -contains $true)) {
             Add-Result "frida-tools" "failed" "python auto-install failed"
             return
         }
@@ -557,7 +656,7 @@ function Install-FridaTools {
     }
 
     if (-not (Test-PythonExeWorks $py)) {
-        Write-RecLog "[!] tools\python\python.exe still not usable - skip Frida." "Warn"
+        Write-RecLog "[!] tools\python still not usable - skip Frida." "Warn"
         Add-Result "frida-tools" "failed" "tools\python unusable"
         return
     }
@@ -575,6 +674,8 @@ function Install-FridaTools {
             if ($boot.StdOut) { Write-Host $boot.StdOut.TrimEnd() }
             if ($boot.StdErr) { Write-Host $boot.StdErr.TrimEnd() }
             if ($boot.ExitCode -ne 0) { throw "get-pip exit $($boot.ExitCode)" }
+        } else {
+            if ($pipVer.StdOut) { Write-Host ("  {0}" -f $pipVer.StdOut.Trim()) }
         }
 
         Write-Host "  pip install --upgrade frida-tools ..."

@@ -7,7 +7,8 @@ Third-party binaries used by Randall live here. They are **not** committed — i
 After clone, pull Sysinternals (+ optional Frida / API Monitor) into `tools/`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
+scripts\install-recording-tools.cmd
+# or: powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
 # Sysinternals only:  ...\install-recording-tools.ps1 -SysinternalsOnly
 # Skip Frida:         ...\install-recording-tools.ps1 -SkipFrida
 # Optional Wireshark: ...\install-recording-tools.ps1 -IncludeWireshark
