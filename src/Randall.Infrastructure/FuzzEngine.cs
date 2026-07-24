@@ -1104,7 +1104,10 @@ public sealed class FuzzEngine
                                 payload: payload);
                             var intel = CrashIntelAdvisor.Build(
                                 project, yamlPath, commandName, mutator.Name, payload, result,
-                                targetExeResolved, triagePreview, id);
+                                targetExeResolved, triagePreview, id,
+                                newEdgesAtCrash: newEdges,
+                                totalEdgesAtCrash: coverage.TotalEdges,
+                                coverageGuided: coverageGuided);
                             try
                             {
                                 CrashIntelAdvisor.WriteIntelFiles(

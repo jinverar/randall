@@ -41,10 +41,12 @@ The intel pack includes:
 
 | Section | Purpose |
 |---------|---------|
-| **Findings** | What the scream looks like (command, mutator, exit, transport) |
+| **Findings** | What the scream looks like (command, mutator, exit, transport) + oracle/magician/joker arming status |
+| **Coverage / depth / missed blocks** | Whether BB stalk ran; honest “unknown depth” when coverage was off |
+| **Recipe recommendations** | Scare Floor / seed-ladder ideas for better crash cases |
 | **Exploit-test recommendations** | Probes to run next (cyclic depth, checksec, heaptriage) — **not** payloads |
 | **GDB commands** | Ready-to-paste `gdb`/`gef` triage lines |
-| **Next CLI** | `scream walk`, `gdb walk`, `exploit guide`, pack |
+| **Next CLI** | `stalk map`, `scream walk`, `gdb walk`, `exploit guide`, pack |
 
 ```bash
 randall crashes -p vulnturret --intel

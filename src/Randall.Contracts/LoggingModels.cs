@@ -63,6 +63,8 @@ public sealed record CrashIntelDto(
     string Hypothesis,
     IReadOnlyList<string> Findings,
     IReadOnlyList<string> ExploitTestRecommendations,
+    IReadOnlyList<string> RecipeRecommendations,
+    IReadOnlyList<string> CoverageNotes,
     IReadOnlyList<string> GdbCommands,
     IReadOnlyList<string> NextCliCommands,
     string Disclaimer = "Triage & research only — no shellcode, weaponized payloads, or exploit templates.");

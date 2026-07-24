@@ -33,15 +33,22 @@ public class CrashIntelAdvisorTests
         Assert.Contains("boundary", intel.Hypothesis, StringComparison.OrdinalIgnoreCase);
         Assert.NotEmpty(intel.Findings);
         Assert.Contains(intel.ExploitTestRecommendations, r => r.Contains("cyclic", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(intel.RecipeRecommendations, r => r.Contains("Scare Floor", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(intel.RecipeRecommendations, r => r.Contains("length-lie", StringComparison.OrdinalIgnoreCase) || r.Contains("Recipe", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(intel.CoverageNotes, c => c.Contains("coverageGuided", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(intel.CoverageNotes, c => c.Contains("stalk map", StringComparison.OrdinalIgnoreCase) || c.Contains("reverse engineering", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(intel.Findings, f => f.Contains("oracle:", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(intel.GdbCommands, g => g.Contains("bt full", StringComparison.Ordinal));
         Assert.Contains(intel.GdbCommands, g => g.Contains("info registers", StringComparison.Ordinal));
         Assert.Contains(intel.NextCliCommands, c => c.Contains("scream walk", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(intel.NextCliCommands, c => c.Contains("checksec", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(intel.NextCliCommands, c => c.Contains("stalk map", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(intel.ExploitTestRecommendations, r =>
             r.Contains("shellcode", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("Triage", intel.Disclaimer, StringComparison.OrdinalIgnoreCase);
 
         var text = CrashIntelAdvisor.FormatConsole(intel);
+        Assert.Contains("RECIPE RECOMMENDATIONS", text);
+        Assert.Contains("COVERAGE / DEPTH", text);
         Assert.Contains("EXPLOIT-TEST RECOMMENDATIONS", text);
         Assert.Contains("GDB COMMANDS", text);
         Assert.Contains("NEXT CLI", text);
@@ -59,6 +66,8 @@ public class CrashIntelAdvisorTests
                 "test hyp",
                 ["finding"],
                 ["probe"],
+                ["recipe"],
+                ["coverage"],
                 ["gdb -q"],
                 ["randall checksec --exe x"]);
             var id = Guid.NewGuid();
