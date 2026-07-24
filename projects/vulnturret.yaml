@@ -34,11 +34,32 @@ sessionFlows:
   - name: hello_config
     steps: [HELLO, CONFIG]
     mutateStep: last
+# Oracle / Magician / Joker — judgment, intervention, chaotic tricks
+oracles:
+  enabled: true
+magician:
+  enabled: true
+  autoCastOnOracle: true
+  blessOnStart: true
+  allowSummonHunter: true
+  allowSummonKnight: true
+  allowSummonArmy: true
+  allowSummonBots: true
+  allowSummonJoker: true
+  watchJoker: true
+  capitalizeJokerCrashes: true
+joker:
+  enabled: true
+  chance: 0.18
+  maxStack: 4
+  wildBytes: true
+  flipSessionBias: true
 fuzz:
   maxIterations: 800
   powerSchedule: true
   havocDepth: 8
   sessionFlowBias: 0.45
+  coverageGuided: true
   corpusDir: ../data/corpus/vulnturret
   crashesDir: ../data/crashes/vulnturret
 seeds:
