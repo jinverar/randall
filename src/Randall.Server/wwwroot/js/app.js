@@ -588,7 +588,6 @@ async function loadHealth() {
     } catch { /* ignore */ }
   }
 }
-}
 
 // —— Recipe catalog (Scare Floor): browse target-class recipes and instantiate projects ——
 let recipeCatalogInit = false;
