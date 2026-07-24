@@ -89,15 +89,22 @@ static void PrintHelp()
           randall pattern offset -q <val> [-l N]   Find offset of a value/register in the pattern
           randall exploitdev --exe <p> --core <c> [--pattern-len N]   Faulting registers + RIP offset
           randall exploit guide --exe <p> [--core c] [--pattern-len N]
-                                            Triage playbook → offset, then ROP Studio / WinDbg walk
+                                            Triage playbook → offset, then ROP / debugger walk
+          randall scream walk -i <crash-guid> [--goal auto]
+                                            Crash triage walk: CONTROL→stack→badchars→sketch→walk
+          randall stack lens -i <crash-guid> [--window N]
+                                            Stack map (CONTROL slots × crashing input)
           randall rop scan --exe <path> [--arch x64|x86]
           randall rop search --exe <path> --need pop-rdi [--badchars "00 0a"]
           randall rop sketch --exe <path> --goal auto|pivot|write|control|leak|canary
           randall rop from-crash -i <crash-guid> [--goal auto] [--exe path] [--modules N]
-          randall rop show -i <crash-guid>       Existing ROP/walk/badchars sidecars
+          randall rop show -i <crash-guid>       Existing triage sidecars (walk/stack/rop/…)
           randall rop badchars -i <crash-guid>   Learn badchars from crashing input
           randall windbg scripts            RandfuzzDbg script paths
           randall windbg walk -i <crash-guid>   Write *_windbg_walk.json + script hints
+          randall gdb walk -i <crash-guid>               Linux GDB/GEF walk JSON (+ scripts)
+          randall gdb scripts                            Print GDB script paths
+          randall ladder diff [-i crash] [-p project]    Mitigation ladder compare (vulnlab tiers)
           randall memory -i <crash-guid>    Memory lens (UAF fill, regions, neighborhood)
           randall memory --pid N            Live VirtualQueryEx sample
           randall stalk layers -p <project>              List stalk layers
@@ -111,12 +118,7 @@ static void PrintHelp()
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall stalk from-crash -i <crash-guid> [--tag crash]
           randall scream watch -p <pid> [-o dumpsDir]   Built-in exception dump watcher
-          randall scream walk -i <crash-guid> [--goal auto]  CONTROL→stack→badchars→sketch→walk
-          randall stack lens -i <crash-guid> [--window N]    Dump-native CONTROL map (stack slots)
           randall scream selftest          Lab AV target → attach → dump regression
-          randall ladder diff [-i crash] [-p project]    Mitigation ladder compare (vulnlab tiers)
-          randall gdb walk -i <crash-guid>               Linux GDB/GEF walk JSON (+ scripts)
-          randall gdb scripts                            Print GDB script paths
           randall debug tools
           randall debug open -i <crash-guid> [--kind windbg|windbg-preview]
           randall debug attach -p <pid> | -t <project> [--kind …]

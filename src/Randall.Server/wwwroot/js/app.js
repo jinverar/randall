@@ -2324,36 +2324,50 @@ function renderCrashDetail(detail, title) {
       <p class="hint" id="crash-memory-status">Loading…</p>
       <div id="crash-memory-body"></div>
     </div>
-    <div class="triage-box" id="crash-rop-box">
-      <h4>ROP Studio / RandfuzzDbg <span class="hint-inline">lab sketches — no payloads</span></h4>
-      <p class="hint" id="crash-rop-status">Gadget catalog + WinDbg walk for this scream.</p>
-      <div id="crash-rop-body" class="hint"></div>
-      <div class="btn-row wrap" style="margin-top:0.5rem; align-items:center; gap:0.5rem">
-        <label class="hint" for="crash-rop-goal">Goal
-          <select id="crash-rop-goal">
-            <option value="auto" selected>auto</option>
-            <option value="pivot">pivot</option>
+    <div class="triage-box crash-triage-panel" id="crash-rop-box">
+      <h4>Crash triage <span class="hint-inline">offset → stack map → gadgets → debugger</span></h4>
+      <p class="hint crash-triage-lead" id="crash-rop-status">
+        One walk: find CONTROL, map stack slots, learn badchars, sketch gadgets, export WinDbg/GDB notes.
+        Outputs are citations and walk JSON — not exploit payloads.
+      </p>
+      <ol class="crash-triage-steps hint" aria-label="Triage flow">
+        <li>CONTROL @ offset</li>
+        <li>Stack map</li>
+        <li>Badchars + ROP sketch</li>
+        <li>Debugger walk</li>
+      </ol>
+      <div id="crash-rop-body" class="hint crash-triage-body"></div>
+      <div class="crash-triage-primary">
+        <label class="hint" for="crash-rop-goal">Sketch goal
+          <select id="crash-rop-goal" title="auto picks from NX / PIE / canary">
+            <option value="auto" selected>auto (tier-aware)</option>
             <option value="control">control</option>
+            <option value="pivot">pivot</option>
             <option value="write">write</option>
             <option value="leak">leak</option>
             <option value="canary">canary</option>
           </select>
         </label>
-        <label class="hint" for="crash-rop-need">Need
-          <input type="text" id="crash-rop-need" value="ret" size="10" placeholder="pop-rdi / pivot" />
-        </label>
         <label class="hint" for="crash-rop-badchars">Badchars
-          <input type="text" id="crash-rop-badchars" size="16" placeholder="\x00\x0a (auto)" />
+          <input type="text" id="crash-rop-badchars" size="18" placeholder="\x00\x0a (auto)" />
         </label>
-        <button type="button" class="btn primary" id="crash-scream-walk-btn">Walk this scream</button>
-        <button type="button" class="btn" id="crash-stack-lens-btn">Stack Lens</button>
-        <button type="button" class="btn" id="crash-rop-sketch-btn">ROP sketch</button>
-        <button type="button" class="btn" id="crash-rop-search-btn">Search gadgets</button>
-        <button type="button" class="btn" id="crash-rop-badchars-btn">Learn badchars</button>
-        <button type="button" class="btn" id="crash-windbg-walk-btn">WinDbg walk</button>
-        <button type="button" class="btn" id="crash-gdb-walk-btn">GDB walk</button>
-        <button type="button" class="btn" id="crash-ladder-btn">Ladder diff</button>
+        <button type="button" class="btn primary" id="crash-scream-walk-btn">Run triage walk</button>
       </div>
+      <details class="crash-triage-more">
+        <summary>Step tools <span class="hint-inline">stack · gadgets · debugger · ladder</span></summary>
+        <div class="btn-row wrap crash-triage-more-row">
+          <label class="hint" for="crash-rop-need">Need
+            <input type="text" id="crash-rop-need" value="ret" size="10" placeholder="pop-rdi / pivot" />
+          </label>
+          <button type="button" class="btn" id="crash-stack-lens-btn">Stack map</button>
+          <button type="button" class="btn" id="crash-rop-sketch-btn">ROP sketch</button>
+          <button type="button" class="btn" id="crash-rop-search-btn">Search gadgets</button>
+          <button type="button" class="btn" id="crash-rop-badchars-btn">Learn badchars</button>
+          <button type="button" class="btn" id="crash-windbg-walk-btn">WinDbg walk</button>
+          <button type="button" class="btn" id="crash-gdb-walk-btn">GDB walk</button>
+          <button type="button" class="btn" id="crash-ladder-btn">Mitigation ladder</button>
+        </div>
+      </details>
     </div>
     <p class="hint crash-path"><code>${escapeAttr(detail.summary.inputPath)}</code></p>
     <div class="btn-row tool-cmds wrap">
@@ -2376,13 +2390,17 @@ function renderCrashDetail(detail, title) {
     try {
       const side = await api.get(`/api/crashes/${id}/rop-sidecars`);
       if (!side) return;
-      if (status) status.textContent = side.summaryLine || 'ROP sidecars';
+      if (status) status.textContent = side.summaryLine || 'Triage artifacts loaded';
       if (badInput && side.badChars?.badCharsHex) badInput.value = side.badChars.badCharsHex;
       if (!body) return;
       const parts = [];
+      const stepsEl = document.querySelector('#crash-rop-box .crash-triage-steps');
+      if (stepsEl && (side.screamWalk || side.stackLens || side.sketch || side.walkPath)) {
+        stepsEl.classList.add('is-done-hint');
+      }
       if (side.screamWalk) {
         const sw = side.screamWalk;
-        parts.push(`<p class="hint">Scream walk · goal <code>${escapeAttr(sw.goalResolved || sw.goal || 'auto')}</code>` +
+        parts.push(`<p class="hint">Triage walk · goal <code>${escapeAttr(sw.goalResolved || sw.goal || 'auto')}</code>` +
           (sw.controlledOffset != null
             ? ` · CONTROL <code>${escapeAttr(sw.controlledRegister || 'IP')}</code> @ ${sw.controlledOffset}`
             : '') +
@@ -2390,7 +2408,7 @@ function renderCrashDetail(detail, title) {
           `</p>`);
         const swSteps = sw.steps || [];
         if (swSteps.length) {
-          parts.push(`<ol>${swSteps.map((s) =>
+          parts.push(`<ol class="crash-triage-result">${swSteps.map((s) =>
             `<li><strong>${escapeAttr(s.status || '')}</strong> ${escapeAttr(s.title || '')}` +
             (s.detail ? `<div class="hint">${escapeAttr(s.detail)}</div>` : '') +
             `</li>`).join('')}</ol>`);
@@ -2442,7 +2460,10 @@ function renderCrashDetail(detail, title) {
         parts.push(`<p class="hint">Modules: ${side.walk.moduleCandidates.map((m) => escapeAttr(m.split(/[\\\\/]/).pop())).join(', ')}</p>`);
       }
       if (parts.length) body.innerHTML = parts.join('');
-      else if (status) status.textContent = side.summaryLine || 'No ROP / Scream Walk sidecars yet';
+      else if (status) {
+        status.textContent = side.summaryLine
+          || 'No triage artifacts yet — run the triage walk to build CONTROL, stack map, sketch, and debugger notes.';
+      }
     } catch {
       /* no sidecars yet */
     }
@@ -2485,12 +2506,12 @@ function renderCrashDetail(detail, title) {
     const body = document.getElementById('crash-rop-body');
     const out = document.getElementById('export-result');
     try {
-      if (status) status.textContent = 'Stack Lens…';
+      if (status) status.textContent = 'Mapping stack…';
       const report = await api.post('/api/stack/lens', {
         crashId: detail.summary.id,
         windowBytes: 128,
       });
-      if (status) status.textContent = report.summaryLine || 'Stack Lens';
+      if (status) status.textContent = report.summaryLine || 'Stack map';
       if (body) {
         const pc = report.primaryControl;
         const words = report.words || [];
@@ -2510,7 +2531,7 @@ function renderCrashDetail(detail, title) {
       if (out) out.textContent = report.outputPath ? `Wrote ${report.outputPath}` : (report.summaryLine || '');
       loadCrashRopSidecars(detail.summary.id).catch(() => {});
     } catch (err) {
-      if (status) status.textContent = 'Stack Lens failed';
+      if (status) status.textContent = 'Stack map failed';
       if (out) out.textContent = err.message;
     }
   });
@@ -2522,13 +2543,13 @@ function renderCrashDetail(detail, title) {
     const goal = document.getElementById('crash-rop-goal')?.value || 'auto';
     const badCharsHex = (document.getElementById('crash-rop-badchars')?.value || '').trim() || null;
     try {
-      if (status) status.textContent = 'Walking scream…';
+      if (status) status.textContent = 'Running triage walk…';
       const report = await api.post('/api/scream/walk', {
         crashId: detail.summary.id,
         goal,
         badCharsHex,
       });
-      if (status) status.textContent = report.summaryLine || 'Scream walk';
+      if (status) status.textContent = report.summaryLine || 'Triage walk complete';
       if (body) {
         const steps = report.steps || [];
         body.innerHTML = `<p class="hint">Goal <code>${escapeAttr(report.goalResolved || goal)}</code>` +
@@ -2536,7 +2557,7 @@ function renderCrashDetail(detail, title) {
             ? ` · CONTROL ${escapeAttr(report.controlledRegister || 'IP')} @ ${report.controlledOffset}`
             : '') +
           (report.mitigationTier ? ` · ${escapeAttr(report.mitigationTier)}` : '') +
-          `</p><ol>${steps.map((s) =>
+          `</p><ol class="crash-triage-result">${steps.map((s) =>
             `<li><strong>${escapeAttr(s.status)}</strong> ${escapeAttr(s.title)}` +
             (s.detail ? `<div class="hint">${escapeAttr(s.detail)}</div>` : '') +
             (s.artifactPath ? `<div class="hint"><code>${escapeAttr(s.artifactPath)}</code></div>` : '') +
@@ -2545,7 +2566,7 @@ function renderCrashDetail(detail, title) {
       if (out) out.textContent = report.playbookPath ? `Wrote ${report.playbookPath}` : (report.summaryLine || '');
       loadCrashRopSidecars(detail.summary.id).catch(() => {});
     } catch (err) {
-      if (status) status.textContent = 'Scream walk failed';
+      if (status) status.textContent = 'Triage walk failed';
       if (out) out.textContent = err.message;
     }
   });

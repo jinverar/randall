@@ -2741,6 +2741,80 @@ html[data-theme="cyber"] .stalker-meta .status-crash {
   font-size: 0.85rem;
 }
 .triage-box h4 { margin: 0 0 0.4rem; font-size: 0.8rem; color: var(--muted); text-transform: uppercase; }
+
+.crash-triage-panel .crash-triage-lead {
+  margin: 0 0 0.55rem;
+  max-width: 42rem;
+  line-height: 1.45;
+}
+.crash-triage-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  counter-reset: triage-step;
+}
+.crash-triage-steps li {
+  counter-increment: triage-step;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.crash-triage-steps li::before {
+  content: counter(triage-step) ". ";
+  color: var(--accent, #6ea8fe);
+  font-weight: 600;
+}
+.crash-triage-steps.is-done-hint li {
+  color: var(--text);
+}
+.crash-triage-primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.55rem 0.75rem;
+  margin-top: 0.35rem;
+}
+.crash-triage-primary label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.crash-triage-primary select,
+.crash-triage-primary input {
+  min-height: 2rem;
+}
+.crash-triage-more {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.55rem;
+}
+.crash-triage-more > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.8rem;
+  color: var(--muted);
+  user-select: none;
+}
+.crash-triage-more > summary::-webkit-details-marker { display: none; }
+.crash-triage-more > summary::before {
+  content: "▸ ";
+  color: var(--accent, #6ea8fe);
+}
+.crash-triage-more[open] > summary::before { content: "▾ "; }
+.crash-triage-more-row {
+  margin-top: 0.55rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+.crash-triage-result {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+}
+.crash-triage-body:empty { display: none; }
+.crash-triage-body:not(:empty) { margin-bottom: 0.65rem; }
+
 .reg-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
