@@ -105,17 +105,31 @@ If you see *“running scripts is disabled on this system”*, that Bypass form 
 
 ### Updating the VM (after first install)
 
-**Clone once, pull + rebuild** — do not re-download the GitHub ZIP or re-run full tool installs every time. Binaries under `tools/` (DynamoRIO, Sysinternals, MinGW) stay on disk; `git pull` only refreshes source.
+**Clone once, pull + rebuild** — do not re-download the GitHub ZIP or re-run full tool installs every time. Binaries under `tools/` (DynamoRIO, Sysinternals, MinGW) stay on disk.
+
+**Stop Randall.Server first** if it is running (Ctrl+C in its terminal). A running server can lock DLLs and cause the rebuild to fail.
+
+`update-lab.ps1` runs **`git pull`, `dotnet build`, and lab-target builds in one step**. You do **not** need a separate `dotnet build` or lab-target build afterward unless you used `-SkipLabTargets` and later need those native binaries.
 
 ```powershell
 cd $env:USERPROFILE\Projects\randall   # or wherever you cloned
 
-# Stop Randall.Server first if it is running (avoids locked DLLs during rebuild)
+# Full update (default): pull + .NET rebuild + all lab targets
 powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1
-# Re-install tools only when scripts/docs say so:  ...\update-lab.ps1 -InstallTools
+
+# Faster: UI / CLI / server / docs only — skip native lab targets
+powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1 -SkipLabTargets
+
+# Re-install third-party tools only when scripts/docs say so
+# ...\update-lab.ps1 -InstallTools
 
 dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000
 ```
+
+| When | Command |
+|------|---------|
+| Changed fuzz targets, YAML pointing at lab exes, or native lab code | Full `update-lab.ps1` (no skip) |
+| Randall UI, server, CLI, or docs only | `-SkipLabTargets` (faster) |
 
 Migrating off `Downloads\randall-main` ZIP: clone fresh (above), **copy your existing `tools\` folder into the clone once** (gcc, dynamorio, Sysinternals exes are gitignored), run `install-lab-tools.ps1` only if something is still missing. Keep secrets in `projects/local/` or `.env` — also gitignored.
 

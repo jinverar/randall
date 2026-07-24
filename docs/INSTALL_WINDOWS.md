@@ -63,13 +63,13 @@ If you already unpacked a ZIP (e.g. under `Downloads\randall-main\`), migrate on
 
 ## Updating the VM (after first install)
 
-Day-to-day updates: **pull source, rebuild** — no ZIP, no full tool reinstall.
+Day-to-day updates: **pull source, rebuild** — no ZIP, no full tool reinstall. Stop **Randall.Server** first if it is running (locked DLLs). The script already runs `git pull` + `dotnet build` + lab targets — **no extra build step** after it unless you used `-SkipLabTargets` and need those binaries. See [README — Updating the VM](../README.md#updating-the-vm-after-first-install) for when to use full update vs `-SkipLabTargets`.
 
 ```powershell
 cd $env:USERPROFILE\Projects\randall
 
-# Stop Randall.Server / agent first if running (Ctrl+C) — avoids locked DLLs during rebuild
 powershell -ExecutionPolicy Bypass -File .\scripts\update-lab.ps1
+# UI/server-only (faster):  ...\update-lab.ps1 -SkipLabTargets
 ```
 
 What it does:
