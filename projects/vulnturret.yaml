@@ -60,6 +60,7 @@ fuzz:
   havocDepth: 8
   sessionFlowBias: 0.45
   coverageGuided: true
+  verbose: true
   corpusDir: ../data/corpus/vulnturret
   crashesDir: ../data/crashes/vulnturret
 seeds:

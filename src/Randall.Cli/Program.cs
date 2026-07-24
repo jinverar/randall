@@ -66,6 +66,7 @@ static void PrintHelp()
           randall targets              List lab project profiles
           randall fuzz -c <project>    Fuzz a project profile (see targets)
           randall fuzz -c <project> --dry-run
+          randall fuzz -c <project> --coverage [--verbose]
           randall crashes [-p name] [--intel]   List saved crashes (add --intel for headlines)
           randall crashes show -i <guid>        Full intel + GDB recommendations for one crash
           randall crashes pack -p name [-o zip] [--no-runs]   Offline crash/dump/lens pack
@@ -1010,6 +1011,7 @@ static async Task<int> RunFuzzAsync(string[] args)
     string? config = null;
     var dryRun = false;
     var coverage = false;
+    var verbose = false;
     int? maxIterations = null;
     string? debuggerMode = null;
     string? debuggerKind = null;
@@ -1024,6 +1026,8 @@ static async Task<int> RunFuzzAsync(string[] args)
             dryRun = true;
         else if (args[i] is "--coverage")
             coverage = true;
+        else if (args[i] is "-v" or "--verbose")
+            verbose = true;
         else if (args[i] is "--max-iterations" && i + 1 < args.Length &&
                  int.TryParse(args[++i], out var max))
             maxIterations = max;
@@ -1042,7 +1046,7 @@ static async Task<int> RunFuzzAsync(string[] args)
     if (config is null)
     {
         Console.Error.WriteLine(
-            "Usage: randall fuzz -c projects/vulnserver.yaml [--dry-run] [--coverage] [--max-iterations N]");
+            "Usage: randall fuzz -c projects/vulnserver.yaml [--dry-run] [--coverage] [--verbose] [--max-iterations N]");
         Console.Error.WriteLine(
             "       [--profile basic|fuzz|fuzzier] [--unlimited]  (unlimited bug stalking — stop with Ctrl-C)");
         Console.Error.WriteLine(
@@ -1078,6 +1082,8 @@ static async Task<int> RunFuzzAsync(string[] args)
         Console.WriteLine("Engine: randall (own generation + stalk)");
     if (dryRun)
         Console.WriteLine("[dry-run mode]");
+    if (verbose || project.Fuzz.Verbose)
+        Console.WriteLine("Verbose: Oracle findings · Magician spells · Joker tricks · coverage edges · INTEL on dedup");
     if (coverage || project.Fuzz.CoverageGuided)
     {
         var dr = DynamoRioRunner.Discover();
@@ -1104,7 +1110,8 @@ static async Task<int> RunFuzzAsync(string[] args)
             null,
             debuggerMode,
             debuggerKind,
-            openOnCrash));
+            openOnCrash,
+            Verbose: verbose || project.Fuzz.Verbose));
     Console.WriteLine($"Done: {result.Iterations} iterations, {result.CrashesFound} crashes");
     return 0;
 }

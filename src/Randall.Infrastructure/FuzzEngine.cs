@@ -32,6 +32,7 @@ public sealed class FuzzEngine
         var dryRun = options.DryRun;
         var coverageGuided = options.CoverageGuided || project.Fuzz.CoverageGuided;
         var maxIterations = options.MaxIterations ?? project.Fuzz.MaxIterations;
+        var verbose = options.Verbose || project.Fuzz.Verbose;
 
         // Bug Hunter engine: analyze AI/human sources + suggest oracle/dict arming.
         // Oracle engine (below) remains judgment/reporting only.
@@ -99,7 +100,10 @@ public sealed class FuzzEngine
         progress?.OnStarted(project.Name, project.Kind);
         FuzzAnalystLog.Info(progress,
             $"Fuzzing '{project.Name}' ({project.Kind}) — max {maxIterations} iterations" +
-            (dryRun ? " [dry-run]" : ""));
+            (dryRun ? " [dry-run]" : "") +
+            (verbose ? " [verbose]" : ""));
+        if (verbose)
+            LogVerboseEngineBanner(project, progress, coverageGuided, useCoverage);
 
         var debuggerMode = (options.DebuggerMode ?? project.Fuzz.DebuggerMode ?? "none")
             .Trim().ToLowerInvariant();
@@ -477,6 +481,16 @@ public sealed class FuzzEngine
                         iterFlowBias = fb;
                     if (jokerTrick.GraphBiasOverride is double gb)
                         iterGraphBias = gb;
+                    if (verbose)
+                    {
+                        FuzzAnalystLog.Info(progress,
+                            $"Joker plays [{jokerTrick.TrickName}] id={jokerTrick.Id} " +
+                            $"primary={jokerTrick.PrimaryMutator.Name} chaos={jokerTrick.ChaosLevel} " +
+                            $"wild={jokerTrick.WildBytes} " +
+                            $"flowBias={(jokerTrick.FlowBiasOverride is double f ? f.ToString("0.00") : "-")} " +
+                            $"graphBias={(jokerTrick.GraphBiasOverride is double g ? g.ToString("0.00") : "-")}",
+                            iterations);
+                    }
                 }
                 else
                 {
@@ -665,6 +679,13 @@ public sealed class FuzzEngine
                     seedSource = seedSource.StartsWith("joker", StringComparison.Ordinal)
                         ? seedSource
                         : $"joker/{seedSource}";
+                    if (verbose)
+                    {
+                        FuzzAnalystLog.Info(progress,
+                            $"Joker finished [{jokerTrick.TrickName}] chain={string.Join('→', mutatorChain)} " +
+                            $"payload={payload.Length}B detail={jokerTrick.Detail}",
+                            iterations);
+                    }
                 }
                 var sw = Stopwatch.StartNew();
                 string? iterTracePath = null;
@@ -676,7 +697,7 @@ public sealed class FuzzEngine
                         : $"{commandName}/joker:{jokerTrick.TrickName}";
                     FuzzAnalystLog.Case(progress, iterations, dryLabel);
                     FuzzAnalystLog.Step(progress, $"Fuzzing node '{commandName}'", iterations);
-                    FuzzAnalystLog.Tx(progress, payload, iterations);
+                    FuzzAnalystLog.Tx(progress, payload, iterations, verbose ? 64 : 24);
                     sw.Stop();
                     journal?.LogIteration(new IterationLogEntry(
                         iterations, DateTimeOffset.UtcNow, commandName, mutator.Name, mutatorChain,
@@ -739,7 +760,7 @@ public sealed class FuzzEngine
                 }
 
                 FuzzAnalystLog.Step(progress, $"Fuzzing node '{commandName}'", iterations);
-                FuzzAnalystLog.Tx(progress, payload, iterations);
+                FuzzAnalystLog.Tx(progress, payload, iterations, verbose ? 64 : 24);
 
                 TargetRunResult result;
                 if (inProcess is not null)
@@ -965,6 +986,34 @@ public sealed class FuzzEngine
                             project, yamlPath, oracleEval, corpus, payload, mutators, progress);
                         if (cast is { CoverageGuidedEnabled: true })
                             coverageGuided = true;
+                        if (verbose && cast is { Spells.Count: > 0 })
+                        {
+                            foreach (var spell in cast.Spells)
+                            {
+                                FuzzAnalystLog.Info(progress,
+                                    $"  Magician spell {spell.Spell}" +
+                                    (spell.Summon is null ? "" : $"→{spell.Summon}") +
+                                    $": {spell.Detail} ({spell.Reason})",
+                                    iterations);
+                            }
+                            if (cast.MutatorsEnsured.Count > 0)
+                                FuzzAnalystLog.Info(progress,
+                                    $"  Magician mutators ensured: {string.Join(',', cast.MutatorsEnsured)}",
+                                    iterations);
+                            if (cast.DictionaryTokensAdded.Count > 0)
+                                FuzzAnalystLog.Info(progress,
+                                    $"  Magician dict tokens +{cast.DictionaryTokensAdded.Count}: " +
+                                    string.Join(',', cast.DictionaryTokensAdded.Take(8)) +
+                                    (cast.DictionaryTokensAdded.Count > 8 ? ",…" : ""),
+                                    iterations);
+                            if (cast.ExtraEnergyBoost > 0)
+                                FuzzAnalystLog.Info(progress,
+                                    $"  Magician energy boost +{cast.ExtraEnergyBoost}", iterations);
+                            if (cast.CoverageGuidedEnabled)
+                                FuzzAnalystLog.Info(progress, "  Magician enabled coverageGuided (knight)", iterations);
+                            if (cast.HunterRearmed)
+                                FuzzAnalystLog.Info(progress, "  Magician re-armed Bug Hunter", iterations);
+                        }
                     }
                     if (oracleEval.RetainInCorpus && !result.Crashed && oracleEval.Findings.Count > 0)
                     {
@@ -977,7 +1026,39 @@ public sealed class FuzzEngine
                             corpus.BoostEnergy(payload, oracleEval.EnergyBoost);
                     }
 
-                    if (!string.IsNullOrEmpty(oracleEval.Summary))
+                    if (verbose)
+                    {
+                        if (oracleEval.Findings.Count == 0)
+                        {
+                            FuzzAnalystLog.Info(progress,
+                                "Oracle: clean (no findings)", iterations);
+                        }
+                        else
+                        {
+                            foreach (var f in oracleEval.Findings)
+                            {
+                                var line =
+                                    $"Oracle finding {f.RuleClass}/{f.RuleId}:{f.Severity} " +
+                                    $"conf={f.Confidence:0.00} cmd={f.Command ?? "-"} " +
+                                    $"expect={f.ExpectedRelation} actual={f.ActualRelation}";
+                                if (f.Severity is "violation" or "runtime")
+                                    FuzzAnalystLog.Warn(progress, line, iterations);
+                                else
+                                    FuzzAnalystLog.Info(progress, line, iterations);
+                            }
+                            if (oracleEval.Needs.Count > 0)
+                            {
+                                FuzzAnalystLog.Info(progress,
+                                    $"Oracle needs Magician: {string.Join("; ", oracleEval.Needs.Select(n => $"{n.Request}({n.Severity})"))}",
+                                    iterations);
+                            }
+                            FuzzAnalystLog.Info(progress,
+                                $"Oracle score={oracleEval.InterestingnessScore} retain={oracleEval.RetainInCorpus} " +
+                                $"energy+={oracleEval.EnergyBoost} summary={oracleEval.Summary}",
+                                iterations);
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(oracleEval.Summary))
                     {
                         if (oracleEval.MaxSeverity >= OracleSeverity.Violation)
                             FuzzAnalystLog.Warn(progress,
@@ -1026,6 +1107,16 @@ public sealed class FuzzEngine
                     corpus.SeenCount,
                     coverage.TotalEdges,
                     iterDetail));
+
+                if (verbose)
+                {
+                    FuzzAnalystLog.Info(progress,
+                        $"Coverage edges new={newEdges} total={coverage.TotalEdges} " +
+                        $"novel={newCoverage} corpus={corpus.SeenCount} " +
+                        $"payload={payload.Length}B mutator={mutator.Name}" +
+                        (jokerTrick is null ? "" : $" joker={jokerTrick.TrickName}"),
+                        iterations);
+                }
 
                 FuzzAnalystLog.Step(progress, "Monitor / checkAlive", iterations);
 
@@ -1164,6 +1255,26 @@ public sealed class FuzzEngine
                         var sc = CrashSidecarWriter.TryRead(saved.SidecarPath);
                         if (sc?.Intel is { } intel)
                             Console.WriteLine(CrashIntelAdvisor.FormatConsole(intel));
+                    }
+                    else if (verbose && !savedResult.IsNew)
+                    {
+                        // Dedup path skipped sidecar rebuild — rebuild INTEL for the console only.
+                        var triagePreview = CrashTriage.Classify(
+                            analysis: null,
+                            sidecar: null,
+                            summary: new CrashSummaryDto(
+                                saved.Id, project.Name, iterations, mutatorLabel, payloadHash, saved.InputPath,
+                                saved.MiniDumpPath ?? crashDump, result.ExitCode?.ToString(), crashTag,
+                                saved.SidecarPath, journal?.RunId,
+                                DateTimeOffset.UtcNow),
+                            payload: payload);
+                        var intel = CrashIntelAdvisor.Build(
+                            project, yamlPath, commandName, mutator.Name, payload, result,
+                            targetExeResolved, triagePreview, saved.Id,
+                            newEdgesAtCrash: newEdges,
+                            totalEdgesAtCrash: coverage.TotalEdges,
+                            coverageGuided: coverageGuided);
+                        Console.WriteLine(CrashIntelAdvisor.FormatConsole(intel));
                     }
 
                     if (savedResult.IsNew && project.Notifications is { Enabled: true, OnUniqueCrash: true })
@@ -1538,5 +1649,45 @@ public sealed class FuzzEngine
             }
         }
         return list;
+    }
+
+    private static void LogVerboseEngineBanner(
+        ProjectConfig project,
+        IFuzzProgressSink? progress,
+        bool coverageGuided,
+        bool useCoverage)
+    {
+        var o = project.Oracles;
+        var m = project.Magician;
+        var j = project.Joker;
+        var bh = project.BugHunter;
+        FuzzAnalystLog.Info(progress,
+            $"Engines — oracle={(o is { Enabled: true } ? "ON" : "off")} " +
+            $"magician={(m is { Enabled: true } ? "ON" : "off")} " +
+            $"joker={(j is { Enabled: true } || (j?.EncoreIterations > 0) ? "ON" : "off")} " +
+            $"bugHunter={(bh is { Enabled: true } ? "ON" : "off")} " +
+            $"coverageGuided={(coverageGuided ? "ON" : "off")} " +
+            $"stalk={(useCoverage ? "armed" : "off")}");
+        if (o is { Enabled: true })
+        {
+            FuzzAnalystLog.Info(progress,
+                $"  Oracle rules: auth={o.Auth.Count} state={o.State.Count} integer={o.Integer.Count} " +
+                $"structure={o.Structure.Count} resource={o.Resource.Count} " +
+                $"invariants={o.Invariants.Count} differential={o.Differential.Count} metamorphic={o.Metamorphic.Count}");
+        }
+        if (m is { Enabled: true })
+        {
+            FuzzAnalystLog.Info(progress,
+                $"  Magician: blessOnStart={m.BlessOnStart} autoCast={m.AutoCastOnOracle} " +
+                $"summonJoker={m.AllowSummonJoker} watchJoker={m.WatchJoker} " +
+                $"capitalizeJoker={m.CapitalizeJokerCrashes}");
+        }
+        if (j is { Enabled: true } || (j?.EncoreIterations > 0))
+        {
+            FuzzAnalystLog.Info(progress,
+                $"  Joker: chance={JokerEngine.EffectiveChance(project):0.00} " +
+                $"maxStack={j?.MaxStack ?? 0} wildBytes={j?.WildBytes == true} " +
+                $"flipSessionBias={j?.FlipSessionBias == true} encoreLeft={j?.EncoreIterations ?? 0}");
+        }
     }
 }

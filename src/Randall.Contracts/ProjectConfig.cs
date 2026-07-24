@@ -223,6 +223,12 @@ public sealed class FuzzConfig
     /// <summary>When true and DynamoRIO is available, prioritize inputs that hit new edges.</summary>
     public bool CoverageGuided { get; set; }
     /// <summary>
+    /// Extra console detail during fuzz (Oracle findings, Magician spells, Joker tricks,
+    /// coverage edges, longer TX hex, INTEL on every crash including dedup).
+    /// CLI: <c>randall fuzz -c … --verbose</c>.
+    /// </summary>
+    public bool Verbose { get; set; }
+    /// <summary>
     /// When true (file/harness + DynamoRIO), also capture a <b>binary</b> drcov sidecar
     /// (no <c>-dump_text</c>) on novel coverage for optional Dragon Dance import.
     /// Text traces stay under <c>corpus/traces/</c>; binary under <c>corpus/traces-binary/</c>.
