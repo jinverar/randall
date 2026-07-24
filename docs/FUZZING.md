@@ -150,4 +150,4 @@ fuzz:
   verbose: true
 ```
 
-Prints engine banner, per-finding Oracle lines, Magician spell details, Joker play/finish, coverage edges each iteration, longer TX hex, and INTEL blocks even on deduped crashes.
+Prints engine banner, per-finding Oracle lines, Magician action details, Joker strategy/apply, coverage edges each iteration, longer TX hex, and INTEL blocks even on deduped crashes.

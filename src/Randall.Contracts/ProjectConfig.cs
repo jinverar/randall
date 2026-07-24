@@ -40,14 +40,14 @@ public sealed class ProjectConfig
     public BugHunterConfig? BugHunter { get; set; }
 
     /// <summary>
-    /// Magician engine — casts spells / summons helpers when the Oracle needs intervention.
+    /// Magician engine — campaign adjustments when the Oracle reports needs.
     /// See docs/MAGICIAN.md. Does not judge runs or attribute AI vs human code.
     /// </summary>
     public MagicianConfig? Magician { get; set; }
 
     /// <summary>
-    /// Joker engine — very random / funny fuzz decisions. Magician can summon, watch,
-    /// and capitalize on Joker's crashes. See docs/MAGICIAN.md#joker.
+    /// Joker engine — high-entropy / multi-mutator iterations. Magician can enable, sample,
+    /// and follow up on Joker's crashes. See docs/MAGICIAN.md#joker.
     /// </summary>
     public JokerConfig? Joker { get; set; }
 
@@ -223,7 +223,7 @@ public sealed class FuzzConfig
     /// <summary>When true and DynamoRIO is available, prioritize inputs that hit new edges.</summary>
     public bool CoverageGuided { get; set; }
     /// <summary>
-    /// Extra console detail during fuzz (Oracle findings, Magician spells, Joker tricks,
+    /// Extra console detail during fuzz (Oracle findings, Magician actions, Joker strategy,
     /// coverage edges, longer TX hex, INTEL on every crash including dedup).
     /// CLI: <c>randall fuzz -c … --verbose</c>.
     /// </summary>

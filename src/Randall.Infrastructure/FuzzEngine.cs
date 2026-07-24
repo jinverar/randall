@@ -36,7 +36,7 @@ public sealed class FuzzEngine
 
         // Bug Hunter engine: analyze AI/human sources + suggest oracle/dict arming.
         // Oracle engine (below) remains judgment/reporting only.
-        // Magician (after) casts spells / summons when Oracle needs intervention.
+        // Magician applies campaign actions when Oracle reports needs.
         _ = BugHunterEngine.PrepareForFuzz(project, yamlPath, options.Progress);
         _ = MagicianEngine.PrepareForFuzz(project, yamlPath, options.Progress);
 
@@ -484,8 +484,8 @@ public sealed class FuzzEngine
                     if (verbose)
                     {
                         FuzzAnalystLog.Info(progress,
-                            $"Joker plays [{jokerTrick.TrickName}] id={jokerTrick.Id} " +
-                            $"primary={jokerTrick.PrimaryMutator.Name} chaos={jokerTrick.ChaosLevel} " +
+                            $"Joker strategy={jokerTrick.TrickName} id={jokerTrick.Id} " +
+                            $"primary={jokerTrick.PrimaryMutator.Name} stack={jokerTrick.ChaosLevel} " +
                             $"wild={jokerTrick.WildBytes} " +
                             $"flowBias={(jokerTrick.FlowBiasOverride is double f ? f.ToString("0.00") : "-")} " +
                             $"graphBias={(jokerTrick.GraphBiasOverride is double g ? g.ToString("0.00") : "-")}",
@@ -682,7 +682,7 @@ public sealed class FuzzEngine
                     if (verbose)
                     {
                         FuzzAnalystLog.Info(progress,
-                            $"Joker finished [{jokerTrick.TrickName}] chain={string.Join('→', mutatorChain)} " +
+                            $"Joker applied strategy={jokerTrick.TrickName} chain={string.Join('→', mutatorChain)} " +
                             $"payload={payload.Length}B detail={jokerTrick.Detail}",
                             iterations);
                     }
@@ -991,7 +991,7 @@ public sealed class FuzzEngine
                             foreach (var spell in cast.Spells)
                             {
                                 FuzzAnalystLog.Info(progress,
-                                    $"  Magician spell {spell.Spell}" +
+                                    $"  Magician action {spell.Spell}" +
                                     (spell.Summon is null ? "" : $"→{spell.Summon}") +
                                     $": {spell.Detail} ({spell.Reason})",
                                     iterations);
@@ -1010,7 +1010,7 @@ public sealed class FuzzEngine
                                 FuzzAnalystLog.Info(progress,
                                     $"  Magician energy boost +{cast.ExtraEnergyBoost}", iterations);
                             if (cast.CoverageGuidedEnabled)
-                                FuzzAnalystLog.Info(progress, "  Magician enabled coverageGuided (knight)", iterations);
+                                FuzzAnalystLog.Info(progress, "  Magician enabled coverageGuided", iterations);
                             if (cast.HunterRearmed)
                                 FuzzAnalystLog.Info(progress, "  Magician re-armed Bug Hunter", iterations);
                         }
@@ -1049,7 +1049,7 @@ public sealed class FuzzEngine
                             if (oracleEval.Needs.Count > 0)
                             {
                                 FuzzAnalystLog.Info(progress,
-                                    $"Oracle needs Magician: {string.Join("; ", oracleEval.Needs.Select(n => $"{n.Request}({n.Severity})"))}",
+                                    $"Oracle requests: {string.Join("; ", oracleEval.Needs.Select(n => $"{n.Request}({n.Severity})"))}",
                                     iterations);
                             }
                             FuzzAnalystLog.Info(progress,
@@ -1678,9 +1678,9 @@ public sealed class FuzzEngine
         if (m is { Enabled: true })
         {
             FuzzAnalystLog.Info(progress,
-                $"  Magician: blessOnStart={m.BlessOnStart} autoCast={m.AutoCastOnOracle} " +
-                $"summonJoker={m.AllowSummonJoker} watchJoker={m.WatchJoker} " +
-                $"capitalizeJoker={m.CapitalizeJokerCrashes}");
+                $"  Magician: startAdjust={m.BlessOnStart} autoOnOracle={m.AutoCastOnOracle} " +
+                $"enableJoker={m.AllowSummonJoker} sampleJoker={m.WatchJoker} " +
+                $"followJokerCrash={m.CapitalizeJokerCrashes}");
         }
         if (j is { Enabled: true } || (j?.EncoreIterations > 0))
         {

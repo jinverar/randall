@@ -140,6 +140,26 @@ public class MagicianJokerTests
         Assert.Contains("summonJoker", cat);
         Assert.Contains("capitalizeJoker", cat);
     }
+
+    [Fact]
+    public void Joker_StrategyName_IsAnalytical()
+    {
+        Assert.Equal("stack-havoc", JokerEngine.NameStrategy("havoc", 2, false, false));
+        Assert.Equal("stack-havoc+x4+wild", JokerEngine.NameStrategy("havoc", 4, true, false));
+        Assert.Equal("stack-interesting+x3+wild+bias", JokerEngine.NameStrategy("interesting", 3, true, true));
+
+        var p = new ProjectConfig
+        {
+            Name = "t",
+            Joker = new JokerConfig { Enabled = true, Chance = 1, MaxStack = 3, WildBytes = true, FlipSessionBias = false },
+        };
+        var muts = BuiltInMutators.Create(["havoc", "bitflip"], seed: 1).ToList();
+        var trick = JokerEngine.StartTrick(p, muts, new Random(1));
+        Assert.StartsWith("stack-", trick.TrickName);
+        Assert.DoesNotContain("laugh", trick.TrickName);
+        Assert.DoesNotContain("pie", trick.TrickName);
+        Assert.Contains("primary=", trick.Detail);
+    }
 }
 
 public class StalkProfileTests

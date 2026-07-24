@@ -48,11 +48,11 @@ public static class CrashIntelAdvisor
             ? "oracle: ON — semantic judgment armed for this project"
             : "oracle: OFF — enable oracles.enabled for wrong-but-alive detection (docs/ORACLES.md)");
         findings.Add(project.Magician is { Enabled: true }
-            ? "magician: ON — spells/summons armed"
+            ? "magician: ON — campaign adjustments armed"
             : "magician: OFF — optional; enable after oracles for intervention (docs/MAGICIAN.md)");
         findings.Add(project.Joker is { Enabled: true }
             ? $"joker: ON (chance={project.Joker.Chance})"
-            : "joker: OFF — chaotic tricks not armed");
+            : "joker: OFF — high-entropy stacking not armed");
         findings.Add(project.BugHunter is { Enabled: true }
             ? "bugHunter: ON — AI/human hunt arming enabled"
             : "bugHunter: OFF — optional AI-codegen hunt (docs/BUG_HUNTER.md)");

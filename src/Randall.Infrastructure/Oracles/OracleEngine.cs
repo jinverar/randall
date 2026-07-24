@@ -28,7 +28,7 @@ public sealed record OracleEvalResult(
 /// Oracle engine — judgment, reporting, and foresight needs.
 /// Evaluates observations against configured rules, emits findings, optionally
 /// signals corpus retain/boost, and asks the Magician for help via <see cref="OracleNeedDto"/>.
-/// Does not attribute AI/human code (Bug Hunter) or cast spells (Magician).
+/// Does not attribute AI/human code (Bug Hunter) or apply Magician campaign actions.
 /// </summary>
 public static class OracleEngine
 {
