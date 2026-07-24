@@ -94,7 +94,7 @@ magician: { enabled: true, … }
 joker: { enabled: true, chance: 0.15, … }
 ```
 
-Joker throws chaos; Magician capitalizes on crashes. Oracle can request army/knight when structure/integer findings fire.
+Joker runs high-entropy iterations; Magician follows up on crashes. Oracle can request army/knight when structure/integer findings fire.
 
 ### Round 4 — DynamoRIO edges (when installed)
 
