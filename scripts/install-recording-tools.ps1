@@ -678,6 +678,16 @@ function Install-FridaTools {
             if ($pipVer.StdOut) { Write-Host ("  {0}" -f $pipVer.StdOut.Trim()) }
         }
 
+        # Embeddable Python often lacks setuptools; frida-tools sdist build needs it.
+        Write-Host "  pip install --upgrade setuptools wheel ..."
+        $buildDeps = Invoke-NativeCapture -FilePath $py -ArgumentList @(
+            "-m", "pip", "install", "--upgrade", "--disable-pip-version-check",
+            "setuptools", "wheel"
+        )
+        if ($buildDeps.StdOut) { Write-Host $buildDeps.StdOut.TrimEnd() }
+        if ($buildDeps.StdErr) { Write-Host $buildDeps.StdErr.TrimEnd() }
+        if ($buildDeps.ExitCode -ne 0) { throw "setuptools/wheel pip exit $($buildDeps.ExitCode)" }
+
         Write-Host "  pip install --upgrade frida-tools ..."
         $pipArgs = @(
             "-m", "pip", "install", "--upgrade", "--disable-pip-version-check",
