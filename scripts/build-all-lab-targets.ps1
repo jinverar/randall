@@ -20,8 +20,26 @@ function Refresh-SessionPath {
     $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ";"
 }
 
+function Add-MingwBinsToSessionPath {
+    param([string]$RepoRoot)
+    $bins = @(
+        (Join-Path $RepoRoot "tools\mingw64\bin"),
+        (Join-Path $env:LOCALAPPDATA "Randfuzz\mingw64\bin")
+    )
+    foreach ($bin in $bins) {
+        if (-not (Test-Path (Join-Path $bin "gcc.exe"))) { continue }
+        $norm = $bin.TrimEnd('\')
+        $present = $false
+        foreach ($part in ($env:Path -split ";")) {
+            if ($part -and ($part.TrimEnd('\') -ieq $norm)) { $present = $true; break }
+        }
+        if (-not $present) { $env:Path = "$norm;$env:Path" }
+    }
+}
+
 function Test-GccOnPath {
     Refresh-SessionPath
+    Add-MingwBinsToSessionPath $Root
     return [bool](Get-Command gcc -ErrorAction SilentlyContinue)
 }
 
@@ -77,6 +95,7 @@ if (-not $SkipGcc) {
                 Write-Host ("[!] gcc install error: {0} - continuing; Scream may be skipped." -f $_.Exception.Message) -ForegroundColor Yellow
             }
             Refresh-SessionPath
+            Add-MingwBinsToSessionPath $Root
         }
     } else {
         Write-Host "gcc found on PATH - Scream native helpers can build." -ForegroundColor Green

@@ -71,6 +71,24 @@ function Invoke-Step {
         Write-Host "[!] $Name exited $code (continuing)" -ForegroundColor Yellow
         $failed.Add("$Name (exit $code)") | Out-Null
     }
+    return $code
+}
+
+function Add-MingwBinsToSessionPath {
+    $repoRoot = Split-Path $Scripts -Parent
+    $bins = @(
+        (Join-Path $repoRoot "tools\mingw64\bin"),
+        (Join-Path $env:LOCALAPPDATA "Randfuzz\mingw64\bin")
+    )
+    foreach ($bin in $bins) {
+        if (-not (Test-Path (Join-Path $bin "gcc.exe"))) { continue }
+        $norm = $bin.TrimEnd('\')
+        $present = $false
+        foreach ($part in ($env:Path -split ";")) {
+            if ($part -and ($part.TrimEnd('\') -ieq $norm)) { $present = $true; break }
+        }
+        if (-not $present) { $env:Path = "$norm;$env:Path" }
+    }
 }
 
 Write-Host "Randfuzz lab tools umbrella installer"
@@ -80,6 +98,7 @@ if (-not $SkipGcc -and -not $SysinternalsOnly) {
     $gccArgs = @()
     if ($Force) { $gccArgs += "-Force" }
     Invoke-Step -Name "gcc / MinGW" -ScriptPath (Join-Path $Scripts "install-gcc.ps1") -ScriptArgs $gccArgs
+    Add-MingwBinsToSessionPath
 } else {
     Write-Host ""
     Write-Host "======== gcc / MinGW ======== (skipped)" -ForegroundColor DarkGray

@@ -29,6 +29,8 @@ $WingetPackages = @(
 # Override with -ZipUrl if this release moves.
 $DefaultWinLibsZipUrl = "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.1.0posix-14.0.0-ucrt-r3/winlibs-x86_64-posix-seh-gcc-16.1.0-mingw-w64ucrt-14.0.0-r3.zip"
 $script:LastInstallError = $null
+$script:UserPathAdded = $false
+$script:SessionPathRefreshed = $false
 
 function Write-GccLog {
     param([string]$Message, [string]$Level = "Info")
@@ -43,9 +45,66 @@ function Write-GccLog {
 }
 
 function Refresh-SessionPath {
+    # Rebuild from persisted Machine+User PATH (stale in-process after SetEnvironmentVariable).
     $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $user = [Environment]::GetEnvironmentVariable("Path", "User")
     $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ";"
+}
+
+function Test-PathInSessionPath {
+    param([string]$Dir)
+    if (-not $Dir) { return $false }
+    $norm = $Dir.TrimEnd('\')
+    foreach ($part in ($env:Path -split ";")) {
+        if ($part -and ($part.TrimEnd('\') -ieq $norm)) { return $true }
+    }
+    return $false
+}
+
+function Add-SessionPathEntry {
+    param([string]$Dir)
+    if (-not $Dir -or -not (Test-Path $Dir)) { return $false }
+    if (Test-PathInSessionPath $Dir) { return $false }
+    $env:Path = "$($Dir.TrimEnd('\'));$env:Path"
+    $script:SessionPathRefreshed = $true
+    Write-Verbose "Prepended to session PATH: $Dir"
+    return $true
+}
+
+function Add-KnownMingwBinsToSessionPath {
+    foreach ($candidate in (Find-GccCandidates)) {
+        Add-SessionPathEntry (Split-Path $candidate -Parent) | Out-Null
+    }
+    $preferredBin = Join-Path (Get-PreferredMingwRoot) "bin"
+    Add-SessionPathEntry $preferredBin | Out-Null
+}
+
+function Write-GccSessionPathNote {
+    $gccCmd = Get-Command gcc -ErrorAction SilentlyContinue
+    if ($gccCmd) {
+        if ($script:SessionPathRefreshed) {
+            Write-GccLog "This PowerShell session PATH is refreshed — gcc works here now." "Ok"
+        }
+        if ($script:UserPathAdded) {
+            Write-Host "Saved to user PATH for future shells."
+        } elseif (-not $script:SessionPathRefreshed) {
+            Write-Host "User PATH already included MinGW; gcc was already available in this session."
+        } else {
+            Write-Host "User PATH already included MinGW; this session is now refreshed."
+            Write-Host "Other open terminals still need a new window or:"
+            $bin = Split-Path $gccCmd.Source -Parent
+            Write-Host "  `$env:PATH = `"$bin;`" + `$env:PATH"
+        }
+        return
+    }
+
+    $bin = Join-Path (Get-PreferredMingwRoot) "bin"
+    if (Test-Path (Join-Path $bin "gcc.exe")) {
+        Write-GccLog "[!] gcc.exe exists but is not on session PATH yet." "Warn"
+        Write-Host "Run in this window:"
+        Write-Host "  `$env:PATH = `"$bin;`" + `$env:PATH"
+    }
+    Write-Host "Or open a new PowerShell window (user PATH was updated)."
 }
 
 function Get-PreferredMingwRoot {
@@ -126,10 +185,7 @@ function Test-GccAvailable {
 
     foreach ($candidate in (Find-GccCandidates)) {
         $bin = Split-Path $candidate -Parent
-        if ($env:Path -notlike "*$bin*") {
-            $env:Path = "$bin;$env:Path"
-            Write-Verbose "Prepended to session PATH: $bin"
-        }
+        Add-SessionPathEntry $bin | Out-Null
         $cmd = Get-Command gcc -ErrorAction SilentlyContinue
         if ($cmd) { return $cmd.Source }
         if (Test-Path $candidate) { return $candidate }
@@ -153,21 +209,23 @@ function Show-GccVersion {
 function Ensure-UserPathEntry {
     param([string]$Dir)
     if (-not (Test-Path $Dir)) { return }
+    $dirNorm = $Dir.TrimEnd('\')
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if (-not $userPath) { $userPath = "" }
     $parts = $userPath -split ";" | Where-Object { $_ }
-    if ($parts -contains $Dir) {
-        Write-Verbose "User PATH already contains: $Dir"
-        return
+    $wasInUser = $parts | Where-Object { $_.TrimEnd('\') -ieq $dirNorm }
+    if (-not $wasInUser) {
+        # Prepend so gcc wins over stale entries.
+        $newPath = if ($userPath.TrimEnd(";")) { "$dirNorm;$userPath" } else { $dirNorm }
+        [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+        Write-GccLog "Added to user PATH: $dirNorm" "Ok"
+        $script:UserPathAdded = $true
+    } else {
+        Write-Verbose "User PATH already contains: $dirNorm"
     }
-    # Prepend so gcc wins over stale entries.
-    $newPath = if ($userPath.TrimEnd(";")) { "$Dir;$userPath" } else { $Dir }
-    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-    Write-GccLog "Added to user PATH: $Dir" "Ok"
-    if ($env:Path -notlike "*$Dir*") {
-        $env:Path = "$Dir;$env:Path"
-    }
-    Refresh-SessionPath
+    # SetEnvironmentVariable does not update GetEnvironmentVariable in-process;
+    # prepend here instead of Refresh-SessionPath (which would drop the new entry).
+    Add-SessionPathEntry $dirNorm | Out-Null
 }
 
 function Persist-GccBinPaths {
@@ -479,6 +537,8 @@ if ($existing -and -not $Force) {
     Write-Host "gcc already available."
     Show-GccVersion $existing
     Persist-GccBinPaths
+    Add-KnownMingwBinsToSessionPath
+    Write-GccSessionPathNote
     exit 0
 }
 
@@ -505,10 +565,11 @@ if (-not $ok) { $ok = Install-ViaChocolatey }
 $gcc = Test-GccAvailable
 if ($gcc) {
     Persist-GccBinPaths
+    Add-KnownMingwBinsToSessionPath
     Write-Host ""
     Write-GccLog "gcc ready for this session." "Ok"
     Show-GccVersion $gcc
-    Write-Host "Open a new PowerShell window if another shell still lacks gcc (user PATH was updated)."
+    Write-GccSessionPathNote
     exit 0
 }
 

@@ -13,6 +13,18 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $machine = [Environment]::GetEnvironmentVariable("Path", "Machine")
 $user = [Environment]::GetEnvironmentVariable("Path", "User")
 $env:Path = (@($machine, $user) | Where-Object { $_ }) -join ";"
+foreach ($bin in @(
+        (Join-Path $Root "tools\mingw64\bin"),
+        (Join-Path $env:LOCALAPPDATA "Randfuzz\mingw64\bin")
+    )) {
+    if (-not (Test-Path (Join-Path $bin "gcc.exe"))) { continue }
+    $norm = $bin.TrimEnd('\')
+    $present = $false
+    foreach ($part in ($env:Path -split ";")) {
+        if ($part -and ($part.TrimEnd('\') -ieq $norm)) { $present = $true; break }
+    }
+    if (-not $present) { $env:Path = "$norm;$env:Path" }
+}
 
 $Gcc = Get-Command gcc -ErrorAction SilentlyContinue
 if (-not $Gcc) {
