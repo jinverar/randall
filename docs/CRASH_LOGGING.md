@@ -28,7 +28,30 @@ data/crashes/<project>/
 | `RunId` | Links to `data/runs/<runId>/` journal |
 | `At` | UTC timestamp |
 
-## `*_crash.json` sidecar
+## Analysis intel (Linux-first)
+
+On each **new** unique crash, Randfuzz attaches an `Intel` block to `*_crash.json` and writes:
+
+```
+data/crashes/<project>/<project>_<iter>_<hash>_intel.txt
+data/crashes/<project>/<crash-guid>_intel.txt
+```
+
+The intel pack includes:
+
+| Section | Purpose |
+|---------|---------|
+| **Findings** | What the scream looks like (command, mutator, exit, transport) |
+| **Exploit-test recommendations** | Probes to run next (cyclic depth, checksec, heaptriage) — **not** payloads |
+| **GDB commands** | Ready-to-paste `gdb`/`gef` triage lines |
+| **Next CLI** | `scream walk`, `gdb walk`, `exploit guide`, pack |
+
+```bash
+randall crashes -p vulnturret --intel
+randall crashes show -i <crash-guid>
+```
+
+Scope stays triage/research: control offset → ROP Studio sketches → GDB/WinDbg walks. No shellcode or weaponized templates.
 
 Superset of index fields plus triage-oriented data:
 

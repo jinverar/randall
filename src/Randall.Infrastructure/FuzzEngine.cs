@@ -1094,6 +1094,27 @@ public sealed class FuzzEngine
                         buildSidecar: id =>
                         {
                             var traceCopy = CrashSidecarWriter.CopyTrace(crashesDir, id, iterTracePath);
+                            var triagePreview = CrashTriage.Classify(
+                                analysis: null,
+                                sidecar: null,
+                                summary: new CrashSummaryDto(
+                                    id, project.Name, iterations, mutatorLabel, payloadHash, expectedInputPath,
+                                    crashDump, result.ExitCode?.ToString(), crashTag, null, journal?.RunId,
+                                    DateTimeOffset.UtcNow),
+                                payload: payload);
+                            var intel = CrashIntelAdvisor.Build(
+                                project, yamlPath, commandName, mutator.Name, payload, result,
+                                targetExeResolved, triagePreview, id);
+                            try
+                            {
+                                CrashIntelAdvisor.WriteIntelFiles(
+                                    crashesDir, id, project.Name, iterations, payloadHash, intel);
+                            }
+                            catch (Exception intelEx)
+                            {
+                                FuzzAnalystLog.Warn(progress, $"intel write: {intelEx.Message}", iterations);
+                            }
+
                             return new CrashSidecarDto(
                                 id,
                                 journal?.RunId ?? "",
@@ -1122,7 +1143,8 @@ public sealed class FuzzEngine
                                 new TransportSnapshotDto(
                                     project.Kind, project.Transport.Host, project.Transport.Port, project.Transport.Tls),
                                 new FuzzSnapshotDto(coverageGuided, dryRun, Path.GetFullPath(yamlPath)),
-                                DateTimeOffset.UtcNow);
+                                DateTimeOffset.UtcNow,
+                                intel);
                         });
                     var saved = savedResult.Crash;
 
@@ -1133,6 +1155,13 @@ public sealed class FuzzEngine
                         (saved.MiniDumpPath is not null ? $" dump={saved.MiniDumpPath}" : "") +
                         (saved.SidecarPath is not null ? $" sidecar={saved.SidecarPath}" : "") +
                         (crashTag is not null ? $" tag={crashTag}" : ""));
+
+                    if (savedResult.IsNew && saved.SidecarPath is not null)
+                    {
+                        var sc = CrashSidecarWriter.TryRead(saved.SidecarPath);
+                        if (sc?.Intel is { } intel)
+                            Console.WriteLine(CrashIntelAdvisor.FormatConsole(intel));
+                    }
 
                     if (savedResult.IsNew && project.Notifications is { Enabled: true, OnUniqueCrash: true })
                     {
