@@ -334,6 +334,61 @@ For real dumps / memory lens, **fuzz on the agent UI** — see [LAB_AGENT.md](LA
 
 ---
 
+## Uninstall
+
+`scripts\uninstall-lab.ps1` stops everything Randfuzz started, then removes what the install/build scripts put in place. It never touches your git clone (`src\`, `docs\`, `projects\`, `.git\`) and never touches system-wide installs (.NET SDK, Git, WinDbg / Windows SDK debuggers, winget packages) — those aren't owned by these scripts.
+
+**Always stops (regardless of flags):**
+
+| Step | How |
+|------|-----|
+| `Randall.Server` (web UI) | Kill `dotnet` processes running `Randall.Server`, plus a standalone `randall`/`Randall.Server.exe` if published |
+| `Randall.Cli` sessions (fuzz / agent / serve) | Kill `dotnet` processes running `Randall.Cli` |
+| Vuln labs (vulnserver, vulnhttp, vulnftp, vulnssh, vulntftp, vulnrpc, vulnsmb, ScreamCrash) | `randall labs stop-all` / `randall runtime stop-all` via the built CLI, plus a raw process-name + port-listener backstop (9999, 8080, 2121, 2222, 6969, 1355, 4455) |
+| Recorders | `randall recorders stop` (Procmon `/Terminate`, DebugView, ProcDump, `wpr -cancel`, `pktmon stop`, tshark/dumpcap), plus a raw process-name backstop |
+
+**Then removes (unless skipped):**
+
+```powershell
+# Preview only - nothing stopped, nothing deleted
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -WhatIf
+
+# Stop everything + remove tools\ and targets\ content (prompts y/N first)
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1
+
+# Same, but skip the confirmation prompt
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -Force
+
+# Only stop processes - leave every installed file in place
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -StopOnly
+
+# Keep the large downloads (tools\dynamorio, tools\mingw64, Sysinternals, API Monitor)
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -Force -KeepTools
+
+# Keep the built lab binaries (targets\vulnserver\*.exe, etc.) - rebuild is fast anyway
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -Force -KeepTargets
+
+# Also wipe data\ (crash dumps, corpus, runtime-slots.json) - opt-in, NOT default
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -Force -RemoveData
+```
+
+| Removed by default | Kept by default |
+|---------------------|------------------|
+| `tools\dynamorio\`, `tools\DynamoRIO-*\`, `tools\mingw64\`, `tools\API Monitor\`, `tools\*.exe` (Sysinternals) | `tools\README.md`, `.gitkeep` files |
+| `targets\<lab>\*` built binaries (`.exe`/`.dll`) | `targets\<lab>\.gitkeep` |
+| Repo-local mingw entries this install added to your **user PATH** (`tools\mingw64\bin`, `%LOCALAPPDATA%\Randfuzz\mingw64\bin`) | Any pre-existing PATH entries (e.g. your own Strawberry Perl / system gcc) |
+| — | `data\` (crash dumps, corpus, `runtime-slots.json`) — pass `-RemoveData` to include it |
+| — | .NET SDK, Git, WinDbg Preview, Windows SDK Debugging Tools, Frida/pip packages, winget packages — not installed exclusively by these scripts |
+
+Reinstall / rebuild afterward with the usual commands:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\build-all-lab-targets.ps1
+```
+
+---
+
 ## Common gotchas
 
 | Issue | Fix |

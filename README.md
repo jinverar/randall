@@ -119,6 +119,33 @@ Migrating off `Downloads\randall-main` ZIP: clone fresh (above), **copy your exi
 
 Full checklist: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md#updating-the-vm-after-first-install).
 
+### Uninstall / clean up a lab machine
+
+Stops the server, any fuzz/agent sessions, vuln labs, and recorders, then removes what the installers put under `tools\` and `targets\`. Your git clone (`src\`, `docs\`, `projects\`) is never touched.
+
+```powershell
+# Preview only - stops nothing, deletes nothing
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -WhatIf
+
+# Stop + remove tools\ and targets\ (prompts for confirmation)
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1
+
+# Same, no prompt
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -Force
+
+# Just stop server/labs/recorders - keep every installed file
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -StopOnly
+
+# Keep the big downloads (DynamoRIO / gcc / Sysinternals) or the built lab exes
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -Force -KeepTools
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -Force -KeepTargets
+
+# Also wipe data\ (crash dumps, corpus, runtime-slots.json) - opt-in, not default
+powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -Force -RemoveData
+```
+
+Full details: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md#uninstall).
+
 Open **[http://127.0.0.1:5000](http://127.0.0.1:5000)** — Dashboard (stalker CFG), Fuzz, Crashes, Case builder, Help.
 
 Smoke:
