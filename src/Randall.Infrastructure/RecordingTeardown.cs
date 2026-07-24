@@ -237,7 +237,10 @@ public static class RecordingTeardown
         }
         catch (Exception ex)
         {
-            items.Add(new RecordingStopItemDto(name, null, $"error: {ex.Message}"));
+            var status = BenignRecorderPipeException.IsBenign(ex)
+                ? $"warn: {ex.Message}"
+                : $"error: {ex.Message}";
+            items.Add(new RecordingStopItemDto(name, null, status));
         }
     }
 

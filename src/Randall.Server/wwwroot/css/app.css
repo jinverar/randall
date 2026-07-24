@@ -1055,6 +1055,15 @@ code, .mono {
   white-space: nowrap;
 }
 
+.labs-fetch-error {
+  padding: 0.75rem 0.5rem;
+  line-height: 1.45;
+}
+
+.labs-fetch-actions {
+  margin-top: 0.65rem;
+}
+
 .labs-actions .btn {
   margin: 0.1rem 0.15rem 0.1rem 0;
 }

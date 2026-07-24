@@ -65,7 +65,6 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                             request.StringsOnCrash),
                         token);
 
-                    progress.OnCompleted(result);
                     lock (_gate)
                     {
                         _status = _status with
@@ -85,6 +84,39 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                     lock (_gate)
                     {
                         _status = _status with { Running = false, Phase = "stopped", LastMessage = "Stopped by user" };
+                    }
+                }
+                catch (Exception ex) when (BenignRecorderPipeException.IsBenign(ex))
+                {
+                    FuzzRunResult partial;
+                    lock (_gate)
+                    {
+                        partial = new FuzzRunResult(
+                            _status.Iterations,
+                            _status.CorpusAdded,
+                            _status.Crashes,
+                            []);
+                        _status = _status with
+                        {
+                            Running = false,
+                            Phase = partial.Iterations > 0 ? "completed" : "error",
+                            LastMessage = partial.Iterations > 0
+                                ? $"Done — {partial.Iterations} iterations (recorder teardown noise: {ex.Message})"
+                                : ex.Message,
+                        };
+                    }
+
+                    if (partial.Iterations > 0)
+                    {
+                        try { sink?.OnCompleted(partial); }
+                        catch (Exception notifyEx) when (BenignRecorderPipeException.IsBenign(notifyEx))
+                        {
+                            /* hub/client pipe already closed */
+                        }
+                    }
+                    else
+                    {
+                        sink?.OnError(ex.Message);
                     }
                 }
                 catch (Exception ex)

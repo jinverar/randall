@@ -11,6 +11,7 @@ namespace Randall.Infrastructure;
 public sealed class TsharkCapture : IDisposable
 {
     private Process? _process;
+    private CancellationTokenSource? _drainCts;
     private bool _disposed;
     private bool _stopped;
 
@@ -187,14 +188,18 @@ public sealed class TsharkCapture : IDisposable
             }
 
             // Drain pipes so buffers cannot fill during a long run.
+            capture._drainCts = new CancellationTokenSource();
+            var drainToken = capture._drainCts.Token;
             _ = Task.Run(() =>
             {
-                try { capture._process?.StandardOutput.ReadToEnd(); } catch { /* ignore */ }
-            });
+                try { capture._process?.StandardOutput.ReadToEnd(); }
+                catch (Exception ex) when (IsBenignPipeDrain(ex) || drainToken.IsCancellationRequested) { /* ignore */ }
+            }, drainToken);
             _ = Task.Run(() =>
             {
-                try { capture._process?.StandardError.ReadToEnd(); } catch { /* ignore */ }
-            });
+                try { capture._process?.StandardError.ReadToEnd(); }
+                catch (Exception ex) when (IsBenignPipeDrain(ex) || drainToken.IsCancellationRequested) { /* ignore */ }
+            }, drainToken);
 
             TryWriteMeta(capture, "running");
         }
@@ -239,6 +244,13 @@ public sealed class TsharkCapture : IDisposable
         }
         finally
         {
+            try
+            {
+                _drainCts?.Cancel();
+                _drainCts?.Dispose();
+            }
+            catch { /* ignore */ }
+            _drainCts = null;
             try { _process.Dispose(); } catch { /* ignore */ }
             _process = null;
         }
@@ -359,6 +371,9 @@ public sealed class TsharkCapture : IDisposable
                text.Contains("permission", StringComparison.OrdinalIgnoreCase) ||
                text.Contains("not permitted", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsBenignPipeDrain(Exception ex) =>
+        BenignRecorderPipeException.IsBenign(ex);
 
     private static string QuoteArg(string value) =>
         value.Contains(' ') || value.Contains('"')

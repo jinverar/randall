@@ -1546,12 +1546,24 @@ public sealed class FuzzEngine
         }
 
         var runResult = new FuzzRunResult(iterations, corpusAdded, crashCount, crashes);
-        options.Progress?.OnCompleted(runResult);
+        TryNotifyCompleted(options.Progress, runResult);
         return runResult;
         }
         finally
         {
             HttpCookieSession.End();
+        }
+    }
+
+    private static void TryNotifyCompleted(IFuzzProgressSink? progress, FuzzRunResult result)
+    {
+        try
+        {
+            progress?.OnCompleted(result);
+        }
+        catch (Exception ex) when (BenignRecorderPipeException.IsBenign(ex))
+        {
+            FuzzAnalystLog.Warn(progress, $"Recording teardown notify skipped: {ex.Message}");
         }
     }
 

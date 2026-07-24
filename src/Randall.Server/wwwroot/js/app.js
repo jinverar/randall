@@ -12,8 +12,22 @@ const api = {
     } catch { /* ignore */ }
     return h;
   },
+  networkHint(err, path = '') {
+    const raw = err?.message || String(err || 'unknown error');
+    if (raw === 'Failed to fetch' || /networkerror|load failed|fetch/i.test(raw)) {
+      return 'Cannot reach Randall.Server — restart it, then click Refresh. '
+        + 'Lab targets are still on disk; the server is just unreachable.'
+        + (path ? ` (${path})` : '');
+    }
+    return raw;
+  },
   get: async (path) => {
-    const r = await fetch(path, { headers: api.headers() });
+    let r;
+    try {
+      r = await fetch(path, { headers: api.headers() });
+    } catch (err) {
+      throw new Error(api.networkHint(err, path));
+    }
     const data = await r.json().catch(() => null);
     if (!r.ok) throw new Error(data?.error || data?.message || `${r.status} ${path}`);
     return data;
@@ -26,6 +40,8 @@ const api = {
     const data = r.status === 204 ? null : await r.json().catch(() => null);
     if (!r.ok) throw new Error(data?.error || data?.message || `${r.status} ${path}`);
     return data;
+  }).catch((err) => {
+    throw new Error(api.networkHint(err, path));
   }),
   put: (path, body) => fetch(path, {
     method: 'PUT',
@@ -35,9 +51,16 @@ const api = {
     const data = r.status === 204 ? null : await r.json().catch(() => null);
     if (!r.ok) throw new Error(data?.error || data?.message || `${r.status} ${path}`);
     return data;
+  }).catch((err) => {
+    throw new Error(api.networkHint(err, path));
   }),
   del: async (path) => {
-    const r = await fetch(path, { method: 'DELETE', headers: api.headers() });
+    let r;
+    try {
+      r = await fetch(path, { method: 'DELETE', headers: api.headers() });
+    } catch (err) {
+      throw new Error(api.networkHint(err, path));
+    }
     const data = r.status === 204 ? null : await r.json().catch(() => null);
     if (!r.ok) throw new Error(data?.error || data?.message || `${r.status} ${path}`);
     return data;
@@ -3244,6 +3267,7 @@ let harvestState = {
   lastUnique: 0,
   lastIpCount: 0,
   refreshTimer: null,
+  paintTimer: null,
   prevFillById: {},
   mode: 'projects', // projects | severity
   liveProject: null,
@@ -3498,6 +3522,7 @@ function canisterMistIntensity(pct) {
 }
 
 function canisterMistHtml(slot, pct, mood, { compact = false } = {}) {
+  if (document.documentElement.getAttribute('data-scream-anim') !== 'on') return '';
   const tone = canisterMistTone(mood, slot);
   const intensity = canisterMistIntensity(pct);
   if (tone === 'none' || intensity === 'idle') return '';
@@ -3563,6 +3588,7 @@ function canisterMistHtml(slot, pct, mood, { compact = false } = {}) {
 }
 
 function canisterFloatiesHtml(mood) {
+  if (document.documentElement.getAttribute('data-scream-anim') !== 'on') return '';
   // Lightweight CSS scare / laughter sprites — browser-only, no fuzz RAM.
   if (mood === 'laughter') {
     return `<div class="canister-floaties laughter" aria-hidden="true">
@@ -3628,7 +3654,9 @@ function paintHarvestAmbience(root, floorMood, stats = {}) {
 function animateCanisterFills(rack) {
   const buttons = [...rack.querySelectorAll('.scream-canister[data-slot]')];
   const animOn = document.documentElement.getAttribute('data-scream-anim') === 'on';
-  if (!animOn) {
+  const snapOnly = !animOn || document.hidden
+    || document.documentElement.getAttribute('data-scream-canisters') === 'off';
+  if (snapOnly) {
     for (const btn of buttons) {
       const id = btn.dataset.slot || '';
       const target = Number(btn.dataset.targetFill || btn.dataset.fill || 0);
@@ -3867,7 +3895,19 @@ function renderScreamCanisters(opts = {}) {
   harvestState.lastIpCount = ipHits;
 }
 
-function paintHarvestViews() {
+function paintHarvestViews(opts = {}) {
+  const force = !!opts.force;
+  if (!force && document.hidden) return;
+  if (!force && harvestState.liveProject) {
+    clearTimeout(harvestState.paintTimer);
+    harvestState.paintTimer = setTimeout(() => paintHarvestViewsNow(), 48);
+    return;
+  }
+  paintHarvestViewsNow();
+}
+
+function paintHarvestViewsNow() {
+  harvestState.paintTimer = null;
   renderScreamCanisters({
     rackId: 'scream-canister-rack',
     statusId: 'scream-harvest-status',
@@ -4098,6 +4138,10 @@ async function initScreamHarvestPrefs() {
   applyScreamHarvestPrefs({ canisters: cansOn, animations: animOn, persist: true });
 }
 
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) paintHarvestViews({ force: true });
+});
+
 
 let hub;
 
@@ -4199,7 +4243,16 @@ async function connectHub() {
   });
 
   hub.on('fuzzError', (e) => {
-    appendLogUnique(`Error!!!! ${e.message}`, 'crash');
+    const msg = e.message || '';
+    const benignPipe = /pipe is being closed|pipe is broken|broken pipe|transport connection/i.test(msg);
+    if (benignPipe) {
+      appendLogUnique(`Info: ${msg} (recorder teardown — run preserved)`, 'warn');
+      setStatus('Completed');
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      return;
+    }
+    appendLogUnique(`Error!!!! ${msg}`, 'crash');
     setStatus('Error');
     startBtn.disabled = false;
     stopBtn.disabled = true;
@@ -5212,7 +5265,18 @@ async function refreshLabs() {
     await refreshRuntime();
   } catch (err) {
     updateLabsCampaignStrip([]);
-    if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="hint">${escapeAttr(err.message)}</td></tr>`;
+    const hint = escapeAttr(err.message);
+    const retry = '<button type="button" class="btn" id="labs-retry-inline">Refresh labs</button>';
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="6" class="hint labs-fetch-error">
+        <strong>Lab library unreachable</strong>
+        <div>${hint}</div>
+        <div class="labs-fetch-actions">${retry}</div>
+      </td></tr>`;
+      document.getElementById('labs-retry-inline')?.addEventListener('click', () => {
+        refreshLabs().catch(() => {});
+      });
+    }
     if (status) status.textContent = err.message;
   }
 }
@@ -5279,7 +5343,15 @@ async function refreshRuntime() {
     if (status)
       status.textContent = `${running} running · ${slots.length} slots · ${data?.machineName || 'local'}`;
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" class="hint">${escapeAttr(err.message)}</td></tr>`;
+    const hint = escapeAttr(err.message);
+    tbody.innerHTML = `<tr><td colspan="5" class="hint labs-fetch-error">
+      <strong>Target Runtime unreachable</strong>
+      <div>${hint}</div>
+      <div class="labs-fetch-actions"><button type="button" class="btn" id="runtime-retry-inline">Refresh runtime</button></div>
+    </td></tr>`;
+    document.getElementById('runtime-retry-inline')?.addEventListener('click', () => {
+      refreshRuntime().catch(() => {});
+    });
     if (status) status.textContent = err.message;
   }
 }
