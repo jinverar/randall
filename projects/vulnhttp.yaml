@@ -1,5 +1,5 @@
 name: vulnhttp
-description: Randall VulnHttp — HTTP lab. Prefer projects/webapp.yaml (kind: http). Build with scripts/build-vulnhttp.ps1
+description: "Randall VulnHttp — HTTP lab. Prefer projects/webapp.yaml (kind: http). Build with scripts/build-vulnhttp.ps1"
 kind: http
 target:
   executable: ../targets/vulnhttp/randall-vulnhttp

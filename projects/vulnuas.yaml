@@ -1,0 +1,59 @@
+name: vulnuas
+description: "Fictional UAS1 tactical link (TCP) — lab only, not a real UAS. Build scripts/build-vulnuas.ps1"
+kind: tcp
+target:
+  executable: ../targets/vulnuas/randall-vulnuas.exe
+  args: ["--mode", "tcp"]
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 15650
+  receiveTimeoutMs: 1200
+sessionCommands:
+  - name: HELLO
+    model: protocols/vulnuas_hello.yaml
+    readBanner: true
+  - name: ROUTE
+    model: protocols/vulnuas_route.yaml
+    readBanner: true
+  - name: SENSOR
+    model: protocols/vulnuas_sensor.yaml
+    readBanner: true
+  - name: TASK
+    model: protocols/vulnuas_task.yaml
+    readBanner: true
+sessionFlows:
+  - name: hello_route
+    steps: [HELLO, ROUTE]
+    mutateStep: last
+  - name: hello_sensor
+    steps: [HELLO, SENSOR]
+    mutateStep: last
+  - name: hello_task
+    steps: [HELLO, TASK]
+    mutateStep: last
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  sessionFlowBias: 0.45
+  corpusDir: ../data/corpus/vulnuas
+  crashesDir: ../data/crashes/vulnuas
+seeds:
+  - seeds/vulnuas_hello.bin
+  - seeds/vulnuas_route.bin
+  - seeds/vulnuas_sensor.bin
+  - seeds/vulnuas_task.bin
+  - seeds/vulnuas_hello_boom.bin
+  - seeds/vulnuas_route_boom.bin
+  - seeds/vulnuas_sensor_boom.bin
+  - seeds/vulnuas_task_boom.bin
+mutators:
+  - boundary
+  - interesting
+  - expand
+  - havoc
+  - bitflip
+  - splice

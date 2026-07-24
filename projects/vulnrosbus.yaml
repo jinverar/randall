@@ -1,0 +1,51 @@
+name: vulnrosbus
+description: "Fictional RRBS robot topic/service bus (TCP) — lab only, not ROS/DDS. Build scripts/build-vulnrosbus.ps1"
+kind: tcp
+target:
+  executable: ../targets/vulnrosbus/randall-vulnrosbus.exe
+  longLived: true
+  timeoutMs: 5000
+transport:
+  type: tcp
+  host: 127.0.0.1
+  port: 15562
+  receiveTimeoutMs: 800
+sessionCommands:
+  - name: TOPIC
+    model: protocols/vulnrosbus_topic.yaml
+  - name: SERVICE
+    model: protocols/vulnrosbus_service.yaml
+  - name: PARAM
+    model: protocols/vulnrosbus_param.yaml
+sessionFlows:
+  - name: topic_only
+    steps: [TOPIC]
+    mutateStep: last
+  - name: service_only
+    steps: [SERVICE]
+    mutateStep: last
+  - name: param_only
+    steps: [PARAM]
+    mutateStep: last
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  sessionFlowBias: 0.4
+  corpusDir: ../data/corpus/vulnrosbus
+  crashesDir: ../data/crashes/vulnrosbus
+seeds:
+  - seeds/vulnrosbus_topic.bin
+  - seeds/vulnrosbus_service.bin
+  - seeds/vulnrosbus_param.bin
+  - seeds/vulnrosbus_topic_boom.bin
+  - seeds/vulnrosbus_service_boom.bin
+  - seeds/vulnrosbus_param_boom.bin
+  - seeds/vulnrosbus_cmdvel_boom.bin
+mutators:
+  - boundary
+  - interesting
+  - expand
+  - havoc
+  - bitflip
+  - splice

@@ -7,16 +7,21 @@ Third-party binaries used by Randall live here. They are **not** committed — i
 After clone, pull Sysinternals (+ optional Frida / API Monitor) into `tools/`:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
+scripts\install-recording-tools.cmd
+# or: powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1
 # Sysinternals only:  ...\install-recording-tools.ps1 -SysinternalsOnly
 # Skip Frida:         ...\install-recording-tools.ps1 -SkipFrida
 # Optional Wireshark: ...\install-recording-tools.ps1 -IncludeWireshark
 # Debuggers (WinDbg Preview + classic windbg / cdb):
 powershell -ExecutionPolicy Bypass -File .\scripts\install-debuggers.ps1
 # Umbrella (gcc + DynamoRIO + recording + debuggers):
-powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1
+scripts\install-lab-tools.cmd
 # Skip debuggers:     ...\install-lab-tools.ps1 -SkipDebuggers
+# Build all vuln labs:
+scripts\build-all-lab-targets.cmd
 ```
+
+Prefer the `.cmd` launchers on Windows. They call `powershell -File` so UTF-8 BOM scripts parse correctly on Windows PowerShell 5.1 (avoids `Missing expression` / smart-quote parse failures).
 
 Idempotent — skips binaries already present unless `-Force`. Soft-fails per tool with a summary. See [docs/RECORDING.md](../docs/RECORDING.md).
 
@@ -148,7 +153,7 @@ copy accesschk64.exe tools\
 
 ## Frida / API Monitor (GUI companions)
 
-- **Frida:** `install-recording-tools.ps1` runs `python -m pip install frida-tools` by default (soft-fail if Python/pip missing). Use `-SkipFrida` / `-IncludeFrida`. Not injected by Randfuzz — attach yourself to the target PID.
+- **Frida:** always uses `tools\python\python.exe`. If missing, downloads the Windows **embeddable** CPython zip + get-pip into `tools\python` (never uses PATH / Microsoft Store `python.exe`, which causes exit 9009). Then `pip install frida-tools`. Opt out: `-SkipFrida` / `-SkipPython`.
 - **API Monitor:** best-effort download from rohitab; on failure, print manual steps. Expected layout: `tools/API Monitor/apimonitor-x64.exe`.
 
 ## WinDbg Preview / classic WinDbg / cdb

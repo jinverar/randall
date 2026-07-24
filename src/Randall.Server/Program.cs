@@ -290,14 +290,25 @@ app.MapPost("/api/runtime/stop-all", async (HttpRequest http, string? agent, str
     }
 });
 
-app.MapGet("/api/labs", async (HttpRequest http, string? agent, string? agentToken, CancellationToken ct) =>
+app.MapGet("/api/labs", async (HttpRequest http, string? agent, string? agentToken, string? category, CancellationToken ct) =>
 {
     try
     {
         if (string.IsNullOrWhiteSpace(agent))
-            return Results.Ok(LabServerManager.List());
+            return Results.Ok(LabServerManager.List(category: category));
         var token = LabAccessHttp.ResolveOutboundAgentToken(http, agentToken);
-        return Results.Ok(await LabAgentClient.ListAsync(agent, token, ct));
+        return Results.Ok(await LabAgentClient.ListAsync(agent, token, category, ct));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+app.MapGet("/api/labs/library", (string? category) =>
+{
+    try
+    {
+        return Results.Ok(LabServerManager.Library(category: category));
     }
     catch (Exception ex)
     {

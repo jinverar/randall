@@ -1,0 +1,38 @@
+name: vulnturret-config
+description: STT1 CONFIG — type 0x04 + key/value (sentry station lab)
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnturret_type_config.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: sized
+          lengthName: key_len
+          lengthBytes: 2
+          littleEndian: false
+          child:
+            type: string
+            name: key
+            mutable: true
+            value: "fov"
+            minSize: 1
+            maxSize: 64
+        - type: sized
+          lengthName: val_len
+          lengthBytes: 2
+          littleEndian: false
+          child:
+            type: bytes
+            name: value
+            mutable: true
+            minSize: 0
+            maxSize: 256
+            seedFile: seeds/vulnturret_udp_payload.bin

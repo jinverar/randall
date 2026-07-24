@@ -53,4 +53,6 @@ public sealed record FuzzRunOptions(
     bool? EtwCapture = null,
     bool? DebugViewCapture = null,
     bool? SysinternalsSnapshots = null,
-    bool? StringsOnCrash = null);
+    bool? StringsOnCrash = null,
+    /// <summary>Extra Oracle / Magician / Joker / coverage / INTEL console detail.</summary>
+    bool Verbose = false);

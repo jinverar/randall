@@ -50,7 +50,24 @@ public sealed record CrashSidecarDto(
     string? ResponseHex,
     TransportSnapshotDto Transport,
     FuzzSnapshotDto FuzzSnapshot,
-    DateTimeOffset ObservedAt);
+    DateTimeOffset ObservedAt,
+    /// <summary>Analysis-oriented intel (exploit-test probes + GDB) — triage only, no payloads.</summary>
+    CrashIntelDto? Intel = null);
+
+/// <summary>
+/// Post-crash intelligence for analysts: what to probe next and which GDB commands to run.
+/// Explicitly not an exploit recipe — no shellcode / payloads.
+/// </summary>
+public sealed record CrashIntelDto(
+    string Headline,
+    string Hypothesis,
+    IReadOnlyList<string> Findings,
+    IReadOnlyList<string> ExploitTestRecommendations,
+    IReadOnlyList<string> RecipeRecommendations,
+    IReadOnlyList<string> CoverageNotes,
+    IReadOnlyList<string> GdbCommands,
+    IReadOnlyList<string> NextCliCommands,
+    string Disclaimer = "Triage & research only — no shellcode, weaponized payloads, or exploit templates.");
 
 public sealed record TransportSnapshotDto(string Kind, string Host, int Port, bool Tls);
 

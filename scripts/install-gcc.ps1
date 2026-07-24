@@ -1,4 +1,4 @@
-# Install MinGW gcc on Windows so Scream/native helpers can build.
+﻿# Install MinGW gcc on Windows so Scream/native helpers can build.
 # Idempotent. Primary path: direct WinLibs zip (no admin, no winget) under
 # tools\mingw64 or %LOCALAPPDATA%\Randfuzz\mingw64. Optional: winget / Chocolatey.
 #
@@ -494,7 +494,7 @@ Write-Host "2) winget (optional, if installed)"
 Write-Host "3) Chocolatey (optional, if installed)"
 Write-Host ""
 
-# Fresh Win10 VMs often have no winget — zip is the reliable primary path.
+# Fresh Win10 VMs often have no winget - zip is the reliable primary path.
 $ok = Install-ViaWinLibsZip
 if (-not $ok) {
     Write-GccLog "Zip install failed; trying winget if available..." "Warn"

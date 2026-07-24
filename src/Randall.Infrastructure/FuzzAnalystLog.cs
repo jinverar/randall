@@ -19,9 +19,13 @@ public static class FuzzAnalystLog
     public static void Step(IFuzzProgressSink? sink, string message, int? iteration = null) =>
         Emit(sink, "step", $"Test Step: {message}", iteration);
 
-    public static void Tx(IFuzzProgressSink? sink, ReadOnlySpan<byte> payload, int? iteration = null)
+    public static void Tx(
+        IFuzzProgressSink? sink,
+        ReadOnlySpan<byte> payload,
+        int? iteration = null,
+        int maxPreviewBytes = 24)
     {
-        var preview = HexPreview(payload);
+        var preview = HexPreview(payload, maxPreviewBytes);
         var msg = $"Transmitting {payload.Length} bytes: {preview}";
         Emit(sink, "tx", msg, iteration, payload.Length, preview);
     }

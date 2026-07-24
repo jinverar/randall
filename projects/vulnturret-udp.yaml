@@ -1,0 +1,31 @@
+name: vulnturret-udp
+description: "Fictional STT1 sentry telemetry (UDP) — lab only, not a weapon system. Build scripts/build-vulnturret.ps1"
+kind: udp
+target:
+  executable: ../targets/vulnturret/randall-vulnturret.exe
+  args: ["--mode", "udp"]
+  longLived: true
+  timeoutMs: 3000
+transport:
+  type: udp
+  host: 127.0.0.1
+  port: 15661
+  receiveTimeoutMs: 500
+sessionCommands:
+  - name: TELEMETRY
+    model: protocols/vulnturret_udp.yaml
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  corpusDir: ../data/corpus/vulnturret-udp
+  crashesDir: ../data/crashes/vulnturret-udp
+seeds:
+  - seeds/vulnturret_udp_pose.bin
+  - seeds/vulnturret_udp_pose_boom.bin
+mutators:
+  - havoc
+  - bitflip
+  - interesting
+  - expand
+  - boundary

@@ -1,0 +1,31 @@
+name: vulnuas-udp
+description: "Fictional UAS1 telemetry (UDP) — lab only, not a real UAS. Build scripts/build-vulnuas.ps1"
+kind: udp
+target:
+  executable: ../targets/vulnuas/randall-vulnuas.exe
+  args: ["--mode", "udp"]
+  longLived: true
+  timeoutMs: 3000
+transport:
+  type: udp
+  host: 127.0.0.1
+  port: 15651
+  receiveTimeoutMs: 500
+sessionCommands:
+  - name: TELEMETRY
+    model: protocols/vulnuas_udp.yaml
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  corpusDir: ../data/corpus/vulnuas-udp
+  crashesDir: ../data/crashes/vulnuas-udp
+seeds:
+  - seeds/vulnuas_udp_nav.bin
+  - seeds/vulnuas_udp_nav_boom.bin
+mutators:
+  - havoc
+  - bitflip
+  - interesting
+  - expand
+  - boundary

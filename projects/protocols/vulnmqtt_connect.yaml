@@ -1,0 +1,41 @@
+name: vulnmqtt-connect
+description: RMQ1 CONNECT — type 0x10 + BE rem_len + proto + client_id (length-field crash lab)
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnmqtt_type_connect.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: sized
+          lengthName: proto_len
+          lengthBytes: 2
+          littleEndian: false
+          child:
+            type: static
+            value: "RMQ1"
+        - type: static
+          value: "\x01\x02"
+        - type: word
+          name: keepalive
+          mutable: true
+          littleEndian: false
+          value: 60
+        - type: sized
+          lengthName: client_id_len
+          lengthBytes: 2
+          littleEndian: false
+          child:
+            type: string
+            name: client_id
+            mutable: true
+            value: "lab-device"
+            minSize: 1
+            maxSize: 256

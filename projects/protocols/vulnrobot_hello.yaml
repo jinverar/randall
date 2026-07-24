@@ -1,0 +1,25 @@
+name: vulnrobot-hello
+description: RBT1 HELLO — type 0x01 + BE rem_len + name_len + controller name
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnrobot_type_hello.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: sized
+      lengthName: name_len
+      lengthBytes: 2
+      littleEndian: false
+      child:
+        type: string
+        name: controller_name
+        mutable: true
+        value: "lab-arm"
+        minSize: 1
+        maxSize: 256

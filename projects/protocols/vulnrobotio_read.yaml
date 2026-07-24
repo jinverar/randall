@@ -1,0 +1,35 @@
+name: vulnrobotio-read
+description: RMB1 READ_COILS — MBAP + func 0x01 + addr/qty (not Modbus)
+blocks:
+  - type: word
+    name: tx_id
+    mutable: true
+    littleEndian: false
+    value: 1
+  - type: static
+    value: "\x00\x01"
+  - type: sized
+    lengthName: adu_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: static
+          value: "\x01"
+        - type: bytes
+          name: func
+          mutable: false
+          minSize: 1
+          maxSize: 1
+          seedFile: seeds/vulnrobotio_func_read_coils.bin
+        - type: word
+          name: addr
+          mutable: true
+          littleEndian: false
+          value: 0
+        - type: word
+          name: qty
+          mutable: true
+          littleEndian: false
+          value: 1

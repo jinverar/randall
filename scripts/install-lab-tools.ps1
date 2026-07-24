@@ -1,4 +1,4 @@
-# Umbrella lab installer: gcc + DynamoRIO + recording tools + debuggers (WinDbg / cdb).
+﻿# Umbrella lab installer: gcc + DynamoRIO + recording tools + debuggers (WinDbg / cdb).
 # Each step is optional via -Skip* switches. Uses ExecutionPolicy Bypass-friendly -File invocation.
 #
 # Examples:
@@ -17,12 +17,29 @@ param(
     [switch]$SysinternalsOnly,
     [switch]$IncludeFrida,
     [switch]$SkipFrida,
-    [switch]$SkipApiMonitor
+    [switch]$SkipApiMonitor,
+    [switch]$SkipPython
 )
 
 $ErrorActionPreference = "Stop"
 $Scripts = $PSScriptRoot
 $failed = [System.Collections.Generic.List[string]]::new()
+
+function Get-WindowsPowerShellExe {
+    # Prefer Windows PowerShell 5.1 for -File + UTF-8 BOM scripts on Windows.
+    # Fall back to current host (pwsh) on non-Windows / when powershell.exe is absent.
+    $cmd = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+    if ($PSHOME) {
+        $candidate = Join-Path $PSHOME "powershell.exe"
+        if (Test-Path -LiteralPath $candidate) { return $candidate }
+        $pwsh = Join-Path $PSHOME "pwsh"
+        if (Test-Path -LiteralPath $pwsh) { return $pwsh }
+        $pwshExe = Join-Path $PSHOME "pwsh.exe"
+        if (Test-Path -LiteralPath $pwshExe) { return $pwshExe }
+    }
+    return $null
+}
 
 function Invoke-Step {
     param(
@@ -37,11 +54,19 @@ function Invoke-Step {
         $failed.Add($Name) | Out-Null
         return
     }
+    $psExe = Get-WindowsPowerShellExe
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @ScriptArgs
-    $code = $LASTEXITCODE
+    if ($psExe) {
+        # -File + UTF-8 BOM is required so WinPS 5.1 does not misread ASCII punctuation.
+        & $psExe -NoProfile -ExecutionPolicy Bypass -File $ScriptPath @ScriptArgs
+        $code = $LASTEXITCODE
+    } else {
+        & $ScriptPath @ScriptArgs
+        $code = $LASTEXITCODE
+    }
     $ErrorActionPreference = $prev
+    if ($null -eq $code) { $code = 0 }
     if ($code -ne 0) {
         Write-Host "[!] $Name exited $code (continuing)" -ForegroundColor Yellow
         $failed.Add("$Name (exit $code)") | Out-Null
@@ -76,6 +101,7 @@ if (-not $SkipRecordingTools) {
     if ($IncludeFrida) { $recArgs += "-IncludeFrida" }
     if ($SkipFrida) { $recArgs += "-SkipFrida" }
     if ($SkipApiMonitor) { $recArgs += "-SkipApiMonitor" }
+    if ($SkipPython) { $recArgs += "-SkipPython" }
     Invoke-Step -Name "Recording tools" -ScriptPath (Join-Path $Scripts "install-recording-tools.ps1") -ScriptArgs $recArgs
 } else {
     Write-Host ""

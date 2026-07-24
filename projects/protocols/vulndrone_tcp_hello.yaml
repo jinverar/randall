@@ -1,0 +1,13 @@
+name: vulndrone-tcp-hello
+description: RDL1 TCP HELLO — magic + H + mutable GCS name (NUL-terminated)
+blocks:
+  - type: static
+    value: "RDL1H"
+  - type: string
+    name: gcs_name
+    mutable: true
+    value: "lab"
+    minSize: 2
+    maxSize: 256
+  - type: static
+    value: "\x00"

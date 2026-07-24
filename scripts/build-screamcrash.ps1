@@ -1,4 +1,4 @@
-# Build Randfuzz Scream regression lab binaries (native AV + optional TCP target).
+﻿# Build Randfuzz Scream regression lab binaries (native AV + optional TCP target).
 # Native helpers need gcc (MinGW/Strawberry). Without gcc this script warns and exits 0
 # so build-all-lab-targets can finish the other labs (vulnserver, etc.).
 # Prefer: powershell -ExecutionPolicy Bypass -File .\scripts\install-gcc.ps1

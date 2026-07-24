@@ -66,7 +66,9 @@ static void PrintHelp()
           randall targets              List lab project profiles
           randall fuzz -c <project>    Fuzz a project profile (see targets)
           randall fuzz -c <project> --dry-run
-          randall crashes [-p name]    List saved crashes
+          randall fuzz -c <project> --coverage [--verbose]
+          randall crashes [-p name] [--intel]   List saved crashes (add --intel for headlines)
+          randall crashes show -i <guid>        Full intel + GDB recommendations for one crash
           randall crashes pack -p name [-o zip] [--no-runs]   Offline crash/dump/lens pack
           randall crashes unpack -i zip   Import pack into data/crashes
           randall crashes pull -a http://vm:5000 -p name [-o zip]  Pull pack from agent
@@ -1009,6 +1011,7 @@ static async Task<int> RunFuzzAsync(string[] args)
     string? config = null;
     var dryRun = false;
     var coverage = false;
+    var verbose = false;
     int? maxIterations = null;
     string? debuggerMode = null;
     string? debuggerKind = null;
@@ -1023,6 +1026,8 @@ static async Task<int> RunFuzzAsync(string[] args)
             dryRun = true;
         else if (args[i] is "--coverage")
             coverage = true;
+        else if (args[i] is "-v" or "--verbose")
+            verbose = true;
         else if (args[i] is "--max-iterations" && i + 1 < args.Length &&
                  int.TryParse(args[++i], out var max))
             maxIterations = max;
@@ -1041,7 +1046,7 @@ static async Task<int> RunFuzzAsync(string[] args)
     if (config is null)
     {
         Console.Error.WriteLine(
-            "Usage: randall fuzz -c projects/vulnserver.yaml [--dry-run] [--coverage] [--max-iterations N]");
+            "Usage: randall fuzz -c projects/vulnserver.yaml [--dry-run] [--coverage] [--verbose] [--max-iterations N]");
         Console.Error.WriteLine(
             "       [--profile basic|fuzz|fuzzier] [--unlimited]  (unlimited bug stalking — stop with Ctrl-C)");
         Console.Error.WriteLine(
@@ -1077,6 +1082,8 @@ static async Task<int> RunFuzzAsync(string[] args)
         Console.WriteLine("Engine: randall (own generation + stalk)");
     if (dryRun)
         Console.WriteLine("[dry-run mode]");
+    if (verbose || project.Fuzz.Verbose)
+        Console.WriteLine("Verbose: Oracle findings · Magician spells · Joker tricks · coverage edges · INTEL on dedup");
     if (coverage || project.Fuzz.CoverageGuided)
     {
         var dr = DynamoRioRunner.Discover();
@@ -1103,7 +1110,8 @@ static async Task<int> RunFuzzAsync(string[] args)
             null,
             debuggerMode,
             debuggerKind,
-            openOnCrash));
+            openOnCrash,
+            Verbose: verbose || project.Fuzz.Verbose));
     Console.WriteLine($"Done: {result.Iterations} iterations, {result.CrashesFound} crashes");
     return 0;
 }
@@ -1127,22 +1135,97 @@ static async Task<int> RunCrashesAsync(string[] args)
 static int ListCrashes(string[] args)
 {
     string? projectFilter = null;
-    for (var i = 0; i < args.Length - 1; i++)
+    Guid? showId = null;
+    var verbose = false;
+    for (var i = 0; i < args.Length; i++)
     {
-        if (args[i] is "-p" or "--project")
+        if (args[i] is "-p" or "--project" && i + 1 < args.Length)
             projectFilter = args[++i];
+        else if (args[i] is "-i" or "--id" && i + 1 < args.Length && Guid.TryParse(args[++i], out var g))
+            showId = g;
+        else if (args[i] is "show" && i + 1 < args.Length)
+        {
+            // randall crashes show -i <guid>  OR  randall crashes show <guid>
+            if (args[i + 1] is "-i" or "--id" && i + 2 < args.Length && Guid.TryParse(args[i + 2], out var g2))
+            {
+                showId = g2;
+                i += 2;
+            }
+            else if (Guid.TryParse(args[i + 1], out var g3))
+            {
+                showId = g3;
+                i++;
+            }
+        }
+        else if (args[i] is "-v" or "--verbose" or "--intel")
+            verbose = true;
     }
+
+    if (showId is Guid sid)
+        return ShowCrashIntel(sid);
 
     foreach (var c in CrashCatalog.ListAll(projectFilter: projectFilter))
     {
         var dump = c.MiniDumpPath is not null ? $" dump={c.MiniDumpPath}" : "";
         var sev = c.Severity is not null ? $" [{c.Severity}/{c.CrashClass}]" : "";
+        var ctrl = c.IpLooksControlled ? " CONTROL?" : "";
         Console.WriteLine(
-            $"{c.ObservedAt:u} {c.Project} iter={c.Iteration} {c.Mutator}{sev} exit={c.TargetExitCode}{dump}");
+            $"{c.ObservedAt:u} {c.Project} iter={c.Iteration} {c.Mutator}{sev}{ctrl} exit={c.TargetExitCode}{dump}");
+        Console.WriteLine($"             id={c.Id:N}");
         Console.WriteLine($"             {c.InputPath}");
         if (c.FaultAddress is not null || c.ExceptionHint is not null)
             Console.WriteLine($"             {c.ExceptionHint ?? ""} @ {c.FaultAddress ?? "?"}");
+
+        if (verbose)
+        {
+            var detail = CrashCatalog.GetDetail(c.Id);
+            var intel = detail?.Sidecar?.Intel
+                ?? (detail?.Sidecar is { } sc
+                    ? CrashIntelAdvisor.BuildFromSidecar(sc, triage: detail.Triage)
+                    : null);
+            if (intel is not null)
+            {
+                Console.WriteLine($"             intel: {intel.Headline}");
+                Console.WriteLine($"             show:  randall crashes show -i {c.Id:N}");
+            }
+        }
     }
+
+    if (!verbose && showId is null)
+        Console.WriteLine("Tip: randall crashes -p <project> --intel   ·  randall crashes show -i <guid>");
+
+    return 0;
+}
+
+static int ShowCrashIntel(Guid id)
+{
+    var detail = CrashCatalog.GetDetail(id);
+    if (detail is null)
+    {
+        Console.Error.WriteLine($"Crash not found: {id:N}");
+        return 1;
+    }
+
+    var s = detail.Summary;
+    Console.WriteLine($"Crash {s.Id:N}  project={s.Project} iter={s.Iteration} mutator={s.Mutator}");
+    Console.WriteLine($"  input:  {s.InputPath}  ({detail.InputLength} bytes)");
+    Console.WriteLine($"  exit:   {s.TargetExitCode}  class={s.CrashClass} severity={s.Severity}");
+    if (detail.Triage is { } t)
+        Console.WriteLine($"  triage: {t.Summary}");
+    Console.WriteLine($"  hex:    {detail.HexPreview}");
+    Console.WriteLine($"  ascii:  {detail.AsciiPreview}");
+
+    var intel = detail.Sidecar?.Intel
+        ?? (detail.Sidecar is { } sc
+            ? CrashIntelAdvisor.BuildFromSidecar(sc, triage: detail.Triage)
+            : null);
+    if (intel is null)
+    {
+        Console.WriteLine("(no intel — re-fuzz with current build to generate CrashIntel sidecars)");
+        return 0;
+    }
+
+    Console.WriteLine(CrashIntelAdvisor.FormatConsole(intel));
     return 0;
 }
 
@@ -4328,13 +4411,23 @@ static int RunLabs(string[] args)
     {
         foreach (var lab in LabServerManager.List())
         {
-            var state = !lab.ExeExists ? "not-built" : lab.Running ? (lab.Reachable ? "running" : "starting") : "stopped";
+            var state = !lab.ExeExists
+                ? "not-built"
+                : !lab.Startable
+                    ? "profile"
+                    : lab.Running
+                        ? (lab.Reachable ? "running" : "starting")
+                        : "stopped";
+            var endpoint = !lab.Startable || lab.Protocol.Equals("file", StringComparison.OrdinalIgnoreCase) || lab.Port <= 0
+                ? "file"
+                : $"{lab.Protocol}/{lab.Port}";
             Console.WriteLine(
-                $"{lab.Id,-12} {lab.Protocol}/{lab.Port,-5} {state,-10} pid={(lab.Pid?.ToString() ?? "-"),-6} {lab.Name}");
+                $"{lab.Id,-14} {endpoint,-10} {state,-10} pid={(lab.Pid?.ToString() ?? "-"),-6} [{lab.Category}] {lab.Name}");
         }
 
         Console.WriteLine();
-        Console.WriteLine("Tips: labs start on 127.0.0.1 only. UI: Fuzz → Lab servers. Rebuild: .\\scripts\\build-all-lab-targets.ps1");
+        Console.WriteLine("Tips: listener labs bind 127.0.0.1. File entries are profile-only — randall fuzz -c <project>.");
+        Console.WriteLine("UI: Fuzz → Lab library. Rebuild: .\\scripts\\build-all-lab-targets.ps1 · scripts/build-file-text.sh");
         Console.WriteLine("Target Runtime (arbitrary exe): randall runtime — see docs/TARGET_RUNTIME.md");
         return 0;
     }

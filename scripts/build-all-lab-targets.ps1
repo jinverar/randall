@@ -1,4 +1,4 @@
-# Build all Randall lab target binaries.
+﻿# Build all Randall lab target binaries.
 # ScreamCrash needs gcc. By default, if gcc is missing, this script runs install-gcc.ps1
 # (WinLibs zip primary; optional winget / Chocolatey). Use -SkipGcc to skip install + Scream.
 #
@@ -33,7 +33,15 @@ $Required = @(
     "build-vulnssh.ps1",
     "build-vulntftp.ps1",
     "build-vulnrpc.ps1",
-    "build-vulnsmb.ps1"
+    "build-vulnsmb.ps1",
+    "build-vulndrone.ps1",
+    "build-vulnuas.ps1",
+    "build-vulnturret.ps1",
+    "build-vulnmqtt.ps1",
+    "build-vulnrobot.ps1",
+    "build-vulnrosbus.ps1",
+    "build-vulnrobotio.ps1",
+    "build-vulnai.ps1"
 )
 
 # Optional labs - warn and continue on skip/failure.
@@ -54,8 +62,14 @@ if (-not $SkipGcc) {
         if (-not (Test-Path $installScript)) {
             Write-Host "[!] install-gcc.ps1 missing - Scream may be skipped." -ForegroundColor Yellow
         } else {
+            Write-Host "  Running install-gcc.ps1 via -File..."
             try {
-                & $installScript
+                $psExe = Get-Command powershell.exe -ErrorAction SilentlyContinue
+                if ($psExe -and $psExe.Source) {
+                    & $psExe.Source -NoProfile -ExecutionPolicy Bypass -File $installScript
+                } else {
+                    & $installScript
+                }
                 if ($LASTEXITCODE -ne 0) {
                     Write-Host "[!] gcc install failed/skipped - Scream may be skipped. Use -SkipGcc to silence this." -ForegroundColor Yellow
                 }
@@ -71,21 +85,39 @@ if (-not $SkipGcc) {
     Write-Host "Skipping gcc install (-SkipGcc). Scream will warn/skip if gcc is missing." -ForegroundColor Yellow
 }
 
+function Invoke-LabBuildScript {
+    param([string]$ScriptName)
+    $scriptPath = Join-Path $Root "scripts\$ScriptName"
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        throw "Missing script: $scriptPath"
+    }
+    # Use -File so Windows PowerShell 5.1 honors UTF-8 BOM (avoids missing ] / quote parse errors).
+    $psExe = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($psExe -and $psExe.Source) {
+        & $psExe.Source -NoProfile -ExecutionPolicy Bypass -File $scriptPath
+        return $LASTEXITCODE
+    }
+    & $scriptPath
+    return $LASTEXITCODE
+}
+
 foreach ($s in $Required) {
     Write-Host "`n=== $s ===" -ForegroundColor Cyan
-    & (Join-Path $Root "scripts\$s")
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[x] $s failed (exit $LASTEXITCODE)" -ForegroundColor Red
-        exit $LASTEXITCODE
+    $code = Invoke-LabBuildScript -ScriptName $s
+    if ($null -eq $code) { $code = 0 }
+    if ($code -ne 0) {
+        Write-Host "[x] $s failed (exit $code)" -ForegroundColor Red
+        exit $code
     }
 }
 
 foreach ($s in $Optional) {
     Write-Host "`n=== $s (optional) ===" -ForegroundColor Cyan
     try {
-        & (Join-Path $Root "scripts\$s")
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "[!] $s failed (exit $LASTEXITCODE) - continuing without it." -ForegroundColor Yellow
+        $code = Invoke-LabBuildScript -ScriptName $s
+        if ($null -eq $code) { $code = 0 }
+        if ($code -ne 0) {
+            Write-Host "[!] $s failed (exit $code) - continuing without it." -ForegroundColor Yellow
             $skippedOptional += $s
         }
     } catch {

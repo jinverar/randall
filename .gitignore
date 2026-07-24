@@ -40,6 +40,22 @@ targets/vulnrpc/*
 !targets/vulnrpc/.gitkeep
 targets/vulnsmb/*
 !targets/vulnsmb/.gitkeep
+targets/vulndrone/*
+!targets/vulndrone/.gitkeep
+targets/vulnuas/*
+!targets/vulnuas/.gitkeep
+targets/vulnturret/*
+!targets/vulnturret/.gitkeep
+targets/vulnmqtt/*
+!targets/vulnmqtt/.gitkeep
+targets/vulnrobot/*
+!targets/vulnrobot/.gitkeep
+targets/vulnrosbus/*
+!targets/vulnrosbus/.gitkeep
+targets/vulnrobotio/*
+!targets/vulnrobotio/.gitkeep
+targets/vulnai/*
+!targets/vulnai/.gitkeep
 targets/screamcrash/*
 !targets/screamcrash/.gitkeep
 # VulnLab: keep the C source, ignore compiled tier binaries
@@ -73,3 +89,4 @@ targets/file-framed/app
 targets/file-framed/app.exe
 data/bench/
 data/rop/
+tools/python/

@@ -1,0 +1,27 @@
+name: vulnrobot-joint
+description: RBT1 JOINT — type 0x02 + BE rem_len + joint_count + angle bytes
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnrobot_type_joint.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: word
+          name: joint_count
+          mutable: true
+          littleEndian: false
+          value: 6
+        - type: bytes
+          name: angles
+          mutable: true
+          minSize: 0
+          maxSize: 256
+          seedFile: seeds/vulnrobot_angles.bin

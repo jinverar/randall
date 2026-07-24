@@ -8,52 +8,39 @@ namespace Randall.Infrastructure;
 
 /// <summary>
 /// Start/stop/status for Randall lab vuln servers (randall-vuln*).
-/// Defaults to loopback bind for public-WiFi safety.
+/// Catalog metadata lives in <see cref="LabCatalog"/>; defaults to loopback bind.
 /// </summary>
 public static class LabServerManager
 {
     private static readonly ConcurrentDictionary<string, int> PidsWeStarted = new(StringComparer.OrdinalIgnoreCase);
 
-    private sealed record LabDef(
-        string Id,
-        string Name,
-        string Description,
-        int Port,
-        string Protocol,
-        string ProcessName,
-        string ExeRelativePath,
-        string ProjectYaml);
-
-    private static readonly LabDef[] Catalog =
-    [
-        new("vulnserver", "Vulnserver", "TCP command lab (TRUN/GMON/…)", 9999, "tcp",
-            "randall-vulnserver", "targets/vulnserver/randall-vulnserver.exe", "projects/vulnserver.yaml"),
-        new("vulnhttp", "VulnHttp", "HTTP/1.1 parser lab", 8080, "tcp",
-            "randall-vulnhttp", "targets/vulnhttp/randall-vulnhttp.exe", "projects/vulnhttp.yaml"),
-        new("vulnftp", "VulnFtp", "FTP session lab", 2121, "tcp",
-            "randall-vulnftp", "targets/vulnftp/randall-vulnftp.exe", "projects/vulnftp.yaml"),
-        new("vulnssh", "VulnSsh", "SSH-shaped stub lab", 2222, "tcp",
-            "randall-vulnssh", "targets/vulnssh/randall-vulnssh.exe", "projects/vulnssh.yaml"),
-        new("vulntftp", "VulnTftp", "UDP TFTP RRQ/WRQ lab", 6969, "udp",
-            "randall-vulntftp", "targets/vulntftp/randall-vulntftp.exe", "projects/vulntftp.yaml"),
-        new("vulnrpc", "VulnRpc", "DCE-shaped RPC lab", 1355, "tcp",
-            "randall-vulnrpc", "targets/vulnrpc/randall-vulnrpc.exe", "projects/vulnrpc.yaml"),
-        new("vulnsmb", "VulnSmb", "NBSS+SMB2 + pipe→DCE lab", 4455, "tcp",
-            "randall-vulnsmb", "targets/vulnsmb/randall-vulnsmb.exe", "projects/vulnsmb.yaml"),
-    ];
-
-    public static IReadOnlyList<LabServerInfoDto> List(string? repoRoot = null)
+    public static IReadOnlyList<LabServerInfoDto> List(string? repoRoot = null, string? category = null)
     {
         repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
-        return Catalog.Select(d => Describe(d, repoRoot)).ToList();
+        IEnumerable<LabCatalog.Def> q = LabCatalog.All;
+        if (!string.IsNullOrWhiteSpace(category) && !category.Equals("all", StringComparison.OrdinalIgnoreCase))
+            q = q.Where(d => d.Category.Equals(category, StringComparison.OrdinalIgnoreCase));
+        return q.Select(d => Describe(d, repoRoot)).ToList();
+    }
+
+    public static LabLibraryListDto Library(string? repoRoot = null, string? category = null)
+    {
+        var labs = List(repoRoot, category);
+        return new LabLibraryListDto(
+            labs,
+            LabCatalog.Categories(),
+            labs.Count(l => l.Running),
+            labs.Count(l => l.ExeExists));
     }
 
     public static LabServerActionResultDto Start(string id, string? repoRoot = null)
     {
         repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
-        var def = Find(id);
+        var def = LabCatalog.Find(id);
         if (def is null)
             return new LabServerActionResultDto(false, $"Unknown lab: {id}", id);
+        if (!def.Startable)
+            return new LabServerActionResultDto(false, $"{def.Name} is a profile-only entry (not startable).", id);
 
         var existing = FindRunning(def);
         if (existing is not null)
@@ -63,19 +50,24 @@ public static class LabServerManager
                 $"{def.Name} already running (PID {existing.Id}) on :{def.Port}", def.Id, existing.Id);
         }
 
-        var exe = Path.GetFullPath(Path.Combine(repoRoot, def.ExeRelativePath.Replace('/', Path.DirectorySeparatorChar)));
-        if (!File.Exists(exe))
+        var exeDeclared = Path.GetFullPath(Path.Combine(repoRoot, def.ExeRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var exe = ExecutableResolver.FindExisting(exeDeclared);
+        if (exe is null)
         {
+            var hint = def.BuildHint ?? $"scripts/build-{def.Id}.ps1 (or build-all-lab-targets.ps1 / build-lab-targets.sh)";
             return new LabServerActionResultDto(false,
-                $"Executable missing: {def.ExeRelativePath}. Run scripts/build-{def.Id}.ps1 (or build-all-lab-targets.ps1).",
+                $"Executable missing: {def.ExeRelativePath}. Build with: {hint}",
                 def.Id);
         }
 
-        // Labs are presets on Target Runtime (loopback bind for public-WiFi safety)
+        var args = new List<string> { "-p", def.Port.ToString(), "--host", "127.0.0.1" };
+        if (def.ExtraArgs is { Length: > 0 })
+            args.AddRange(def.ExtraArgs);
+
         var st = TargetRuntimeService.Start(new TargetRuntimeStartRequest(
             Id: def.Id,
             Executable: exe,
-            Args: ["-p", def.Port.ToString(), "--host", "127.0.0.1"],
+            Args: args.ToArray(),
             WorkingDirectory: Path.GetDirectoryName(exe),
             WaitPort: def.Port,
             WaitHost: "127.0.0.1",
@@ -92,17 +84,15 @@ public static class LabServerManager
 
     public static LabServerActionResultDto Stop(string id)
     {
-        var def = Find(id);
+        var def = LabCatalog.Find(id);
         if (def is null)
             return new LabServerActionResultDto(false, $"Unknown lab: {id}", id);
 
-        // Prefer Target Runtime slot (clean ownership), then fall back to process-name kill
         if (TargetRuntimeService.IsManagedRunning(def.Id) || TargetRuntimeService.Status(def.Id).Executable is not null)
         {
             var st = TargetRuntimeService.Stop(def.Id);
             ProcessTreeKill.TryKillPortListeners(def.Port, def.Protocol, out _);
-            // Also clear orphans with the same image name
-            foreach (var p in FindAllRunning(def))
+            foreach (var p in FindStopTargets(def))
             {
                 try
                 {
@@ -120,14 +110,25 @@ public static class LabServerManager
             return new LabServerActionResultDto(st.Ok, st.Message, def.Id, st.Pid);
         }
 
-        var procs = FindAllRunning(def);
-        if (procs.Count == 0)
+        var portListeners = ProcessTreeKill.TryKillPortListeners(def.Port, def.Protocol, out _);
+        var procs = FindStopTargets(def);
+        if (procs.Count == 0 && portListeners.Count == 0)
         {
-            PidsWeStarted.TryRemove(def.Id, out _);
-            return new LabServerActionResultDto(true, $"{def.Name} is not running", def.Id);
+            // Shared binary may still be the only signal — if port is down, we are done.
+            if (ProcessNameIsShared(def) && !IsReachable(def))
+            {
+                PidsWeStarted.TryRemove(def.Id, out _);
+                return new LabServerActionResultDto(true, $"{def.Name} is not running", def.Id);
+            }
+
+            if (!ProcessNameIsShared(def))
+            {
+                PidsWeStarted.TryRemove(def.Id, out _);
+                return new LabServerActionResultDto(true, $"{def.Name} is not running", def.Id);
+            }
         }
 
-        var killed = 0;
+        var killed = portListeners.Count;
         foreach (var p in procs)
         {
             try
@@ -152,14 +153,15 @@ public static class LabServerManager
 
         PidsWeStarted.TryRemove(def.Id, out _);
         return new LabServerActionResultDto(true,
-            $"Stopped {def.Name} ({killed} process(es))", def.Id);
+            killed > 0 ? $"Stopped {def.Name} ({killed} process(es))" : $"{def.Name} stopped",
+            def.Id);
     }
 
     public static LabServerActionResultDto StopAll()
     {
         var notes = new List<string>();
         var ok = true;
-        foreach (var def in Catalog)
+        foreach (var def in LabCatalog.Startable())
         {
             var r = Stop(def.Id);
             notes.Add(r.Message);
@@ -169,10 +171,11 @@ public static class LabServerManager
         return new LabServerActionResultDto(ok, string.Join("; ", notes), "all");
     }
 
-    private static LabServerInfoDto Describe(LabDef def, string repoRoot)
+    private static LabServerInfoDto Describe(LabCatalog.Def def, string repoRoot)
     {
-        var exe = Path.GetFullPath(Path.Combine(repoRoot, def.ExeRelativePath.Replace('/', Path.DirectorySeparatorChar)));
-        var exeExists = File.Exists(exe);
+        var exeDeclared = Path.GetFullPath(Path.Combine(repoRoot, def.ExeRelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var exe = ExecutableResolver.FindExisting(exeDeclared);
+        var exeExists = exe is not null;
         var proc = FindRunning(def);
         var running = proc is not null;
         var pid = proc?.Id;
@@ -182,11 +185,15 @@ public static class LabServerManager
         var reachable = running && IsReachable(def);
         string? note = null;
         if (!exeExists)
-            note = "Build with scripts/build-" + def.Id + ".ps1";
+            note = "Build: " + (def.BuildHint ?? ("scripts/build-" + def.Id + ".ps1"));
+        else if (!def.Startable)
+            note = "Profile-only — fuzz with: randall fuzz -c " + def.ProjectYaml.Replace('\\', '/');
         else if (running && !reachable)
             note = "Process up but port not accepting yet";
         else if (running)
-            note = "Listening (prefer 127.0.0.1 — stop if you started an older all-interfaces build)";
+            note = "Listening on 127.0.0.1";
+
+        var bindHint = def.Startable ? "127.0.0.1" : "profile";
 
         return new LabServerInfoDto(
             def.Id,
@@ -201,17 +208,63 @@ public static class LabServerManager
             running,
             pid,
             reachable,
-            "127.0.0.1",
-            note);
+            bindHint,
+            note,
+            def.Category,
+            def.Difficulty,
+            def.Tags,
+            def.DocsPath,
+            def.BuildHint,
+            def.Startable);
     }
 
-    private static LabDef? Find(string id) =>
-        Catalog.FirstOrDefault(d => d.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+    private static bool ProcessNameIsShared(LabCatalog.Def def) =>
+        LabCatalog.All.Count(d => d.ProcessName.Equals(def.ProcessName, StringComparison.OrdinalIgnoreCase)) > 1;
 
-    private static Process? FindRunning(LabDef def) =>
-        FindAllRunning(def).FirstOrDefault();
+    private static Process? FindRunning(LabCatalog.Def def)
+    {
+        // Profile-only / file labs have no long-lived listener.
+        if (!def.Startable || string.IsNullOrWhiteSpace(def.ProcessName) || def.Port <= 0)
+            return null;
 
-    private static List<Process> FindAllRunning(LabDef def)
+        // Prefer the PID we started for this catalog id (shared binaries like vulndrone/vulnrobot udp/tcp).
+        if (PidsWeStarted.TryGetValue(def.Id, out var knownPid))
+        {
+            try
+            {
+                var known = Process.GetProcessById(knownPid);
+                if (!known.HasExited)
+                    return known;
+                known.Dispose();
+            }
+            catch
+            {
+                /* gone */
+            }
+
+            PidsWeStarted.TryRemove(def.Id, out _);
+        }
+
+        var candidates = FindAllRunning(def);
+        if (candidates.Count == 0)
+            return null;
+
+        // Shared ProcessName: only treat as this lab when its port is accepting.
+        if (ProcessNameIsShared(def))
+        {
+            if (IsReachable(def))
+                return candidates[0];
+            foreach (var p in candidates)
+                p.Dispose();
+            return null;
+        }
+
+        foreach (var extra in candidates.Skip(1))
+            extra.Dispose();
+        return candidates[0];
+    }
+
+    private static List<Process> FindAllRunning(LabCatalog.Def def)
     {
         var list = new List<Process>();
         try
@@ -239,8 +292,36 @@ public static class LabServerManager
         return list;
     }
 
-    private static bool IsReachable(LabDef def)
+    /// <summary>Processes to stop for this lab — never kill sibling labs that share a binary.</summary>
+    private static List<Process> FindStopTargets(LabCatalog.Def def)
     {
+        if (PidsWeStarted.TryGetValue(def.Id, out var knownPid))
+        {
+            try
+            {
+                var known = Process.GetProcessById(knownPid);
+                if (!known.HasExited)
+                    return [known];
+                known.Dispose();
+            }
+            catch
+            {
+                /* gone */
+            }
+        }
+
+        if (ProcessNameIsShared(def))
+            return []; // port kill below handles listeners; avoid stopping sibling modes
+
+        return FindAllRunning(def);
+    }
+
+    private static bool IsReachable(LabCatalog.Def def)
+    {
+        if (!def.Startable || def.Port <= 0 ||
+            def.Protocol.Equals("file", StringComparison.OrdinalIgnoreCase))
+            return false;
+
         try
         {
             if (def.Protocol.Equals("udp", StringComparison.OrdinalIgnoreCase))

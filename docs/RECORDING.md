@@ -110,7 +110,7 @@ Dynamic instrumentation without rebuilding the target:
 - Instrument parsers / decoders live  
 
 ```powershell
-# Via installer (default) or: python -m pip install frida-tools
+# Via installer (downloads Python when missing) or: python -m pip install frida-tools
 # After Target Runtime starts — PID from UI / doctor / Process Explorer
 frida -p <pid> -l projects/local/myapp/hooks.js
 ```
@@ -391,7 +391,7 @@ Or copy manually from the [Sysinternals Suite](https://learn.microsoft.com/en-us
 | wpr (ETW) | Built-in Windows (`System32\wpr.exe`) | Wired (`etwCapture`) |
 | DynamoRIO / gflags / WinDbg / cdb | `install-debuggers.ps1` / [tools/README.md](../tools/README.md) | Wired / SDK |
 | API Monitor | `tools/API Monitor/apimonitor-x64.exe` (installer best-effort) | GUI companion |
-| Frida | `pip install frida-tools` (installer default; `-SkipFrida`) | External companion |
+| Frida | Auto-installs Python 3 when missing, then `pip install frida-tools` (default; `-SkipFrida` / `-SkipPython`) | External companion |
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\install-recording-tools.ps1

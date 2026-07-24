@@ -1,0 +1,32 @@
+name: vulnrobot-udp
+description: "Fictional RBT1 robot telemetry (UDP) — lab only, not ROS/UR/Fanuc. Build scripts/build-vulnrobot.ps1"
+kind: udp
+target:
+  executable: ../targets/vulnrobot/randall-vulnrobot.exe
+  args: ["--mode", "udp"]
+  longLived: true
+  timeoutMs: 3000
+transport:
+  type: udp
+  host: 127.0.0.1
+  port: 15561
+  receiveTimeoutMs: 500
+sessionCommands:
+  - name: TELEMETRY
+    model: protocols/vulnrobot_udp.yaml
+fuzz:
+  maxIterations: 800
+  powerSchedule: true
+  havocDepth: 8
+  corpusDir: ../data/corpus/vulnrobot-udp
+  crashesDir: ../data/crashes/vulnrobot-udp
+seeds:
+  - seeds/vulnrobot_udp_pose.bin
+  - seeds/vulnrobot_udp_pose_boom.bin
+  - seeds/vulnrobot_udp_len_boom.bin
+mutators:
+  - havoc
+  - bitflip
+  - interesting
+  - expand
+  - boundary

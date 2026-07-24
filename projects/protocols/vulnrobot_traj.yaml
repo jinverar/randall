@@ -1,0 +1,27 @@
+name: vulnrobot-traj
+description: RBT1 TRAJ — type 0x03 + BE rem_len + waypoint_count + waypoint table
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnrobot_type_traj.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: word
+          name: waypoint_count
+          mutable: true
+          littleEndian: false
+          value: 2
+        - type: bytes
+          name: waypoints
+          mutable: true
+          minSize: 0
+          maxSize: 512
+          seedFile: seeds/vulnrobot_waypoints.bin

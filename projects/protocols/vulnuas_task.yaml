@@ -1,0 +1,33 @@
+name: vulnuas-task
+description: UAS1 TASK — type 0x04 + task_id + args (tactical-link lab)
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnuas_type_task.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: bytes
+          name: task_id
+          mutable: true
+          minSize: 1
+          maxSize: 1
+          seedFile: seeds/vulnuas_type_hello.bin
+        - type: sized
+          lengthName: arg_len
+          lengthBytes: 2
+          littleEndian: false
+          child:
+            type: bytes
+            name: task_args
+            mutable: true
+            minSize: 0
+            maxSize: 256
+            seedFile: seeds/vulnuas_taskargs.bin

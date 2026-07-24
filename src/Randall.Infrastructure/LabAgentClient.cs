@@ -47,11 +47,14 @@ public static class LabAgentClient
     }
 
     public static async Task<IReadOnlyList<LabServerInfoDto>> ListAsync(
-        string agentUrl, string? token = null, CancellationToken ct = default)
+        string agentUrl, string? token = null, string? category = null, CancellationToken ct = default)
     {
         if (!TryNormalizeAgentUrl(agentUrl, out var baseUrl, out var err))
             throw new ArgumentException(err);
-        using var req = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/labs");
+        var path = $"{baseUrl}/api/labs";
+        if (!string.IsNullOrWhiteSpace(category) && !category.Equals("all", StringComparison.OrdinalIgnoreCase))
+            path += $"?category={Uri.EscapeDataString(category.Trim())}";
+        using var req = new HttpRequestMessage(HttpMethod.Get, path);
         LabAccess.Apply(req, token);
         using var resp = await Http.SendAsync(req, ct);
         await EnsureSuccess(resp, ct);

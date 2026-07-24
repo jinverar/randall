@@ -1,11 +1,11 @@
-# Build in-repo file-text lab target for Windows (MinGW gcc).
+﻿# Build in-repo file-text lab target for Windows (MinGW gcc).
 param()
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Out = Join-Path $Root "targets\file-text"
 $Src = Join-Path $Out "file_text.c"
 if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
-    Write-Host "[!] gcc not on PATH — run scripts\install-gcc.ps1" -ForegroundColor Yellow
+    Write-Host "[!] gcc not on PATH - run scripts\install-gcc.ps1" -ForegroundColor Yellow
     exit 1
 }
 New-Item -ItemType Directory -Force -Path $Out | Out-Null

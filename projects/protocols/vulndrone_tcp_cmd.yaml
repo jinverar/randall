@@ -1,0 +1,22 @@
+name: vulndrone-tcp-cmd
+description: RDL1 TCP CMD — magic + C + cmdId + length-prefixed args
+blocks:
+  - type: static
+    value: "RDL1C"
+  - type: bytes
+    name: cmd_id
+    mutable: true
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulndrone_cmdid.bin
+  - type: sized
+    lengthName: arg_len
+    lengthBytes: 2
+    littleEndian: true
+    child:
+      type: bytes
+      name: args
+      mutable: true
+      minSize: 0
+      maxSize: 512
+      seedFile: seeds/vulndrone_cmdargs.bin

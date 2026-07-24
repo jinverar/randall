@@ -1,0 +1,5 @@
+{
+  "notes": "Expected Bug Hunter attribution for examples/vulnai-sample — AI blocks on infer/tool/admin handlers.",
+  "annotated_ai_regions": ["handle_infer", "handle_tool", "handle_admin"],
+  "annotated_human_regions": ["read_rag_hdr"]
+}

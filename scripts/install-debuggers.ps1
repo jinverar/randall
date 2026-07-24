@@ -1,4 +1,4 @@
-# Install WinDbg Preview + Debugging Tools for Windows (classic windbg / cdb).
+﻿# Install WinDbg Preview + Debugging Tools for Windows (classic windbg / cdb).
 # Idempotent. Soft-fails with manual links. Matches Randall.Infrastructure.DebuggerTools discovery.
 #
 # Examples:

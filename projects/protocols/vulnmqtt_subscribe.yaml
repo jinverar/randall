@@ -1,0 +1,39 @@
+name: vulnmqtt-subscribe
+description: RMQ1 SUBSCRIBE — type 0x82 + BE rem_len + pkt_id + count + one topic filter
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnmqtt_type_subscribe.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: word
+          name: packet_id
+          mutable: true
+          littleEndian: false
+          value: 1
+        - type: word
+          name: topic_count
+          mutable: true
+          littleEndian: false
+          value: 1
+        - type: sized
+          lengthName: filter_len
+          lengthBytes: 2
+          littleEndian: false
+          child:
+            type: string
+            name: topic_filter
+            mutable: true
+            value: "lab/#"
+            minSize: 1
+            maxSize: 256
+        - type: static
+          value: "\x00"

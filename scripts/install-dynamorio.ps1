@@ -1,4 +1,4 @@
-# Download DynamoRIO into tools/dynamorio (gitignored lab dependency).
+﻿# Download DynamoRIO into tools/dynamorio (gitignored lab dependency).
 # Optional for coverage; Randfuzz finds crashes without it.
 # IMPORTANT: the download is large and may take a while on slow networks.
 #
@@ -13,7 +13,7 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -ZipPath C:\Users\007\Downloads\DynamoRIO-Windows-11.3.0.zip
 #   # Or drop a zip / extracted folder under tools\ then re-run (auto-detects + renames)
 #
-# Footnote — coverage later / skip for now:
+# Footnote - coverage later / skip for now:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-dynamorio.ps1 -Skip
 param(
     [string]$Version = "",

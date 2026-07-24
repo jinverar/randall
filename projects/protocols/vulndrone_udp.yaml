@@ -1,0 +1,22 @@
+name: vulndrone-udp
+description: RDL1 UDP telemetry — magic + msgId + length + mutable payload
+blocks:
+  - type: static
+    value: "RDL1"
+  - type: bytes
+    name: msg_id
+    mutable: true
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulndrone_msgid.bin
+  - type: sized
+    lengthName: telem_len
+    lengthBytes: 2
+    littleEndian: true
+    child:
+      type: bytes
+      name: payload
+      mutable: true
+      minSize: 4
+      maxSize: 1400
+      seedFile: seeds/vulndrone_payload.bin

@@ -136,3 +136,18 @@ See [ENGINE_ADAPTERS.md](ENGINE_ADAPTERS.md). Crashes sync into the usual scream
 2. Compare `bitflip` vs `interesting` on a length-prefixed file model
 3. Add three custom dictionary tokens from your target's protocol
 4. Review crash clusters in the web UI before exporting triage bundles
+
+## Verbose console (`--verbose` / `fuzz.verbose`)
+
+```bash
+randall fuzz -c projects/vulnturret.yaml --verbose --max-iterations 40
+```
+
+Or in YAML:
+
+```yaml
+fuzz:
+  verbose: true
+```
+
+Prints engine banner, per-finding Oracle lines, Magician spell details, Joker play/finish, coverage edges each iteration, longer TX hex, and INTEL blocks even on deduped crashes.

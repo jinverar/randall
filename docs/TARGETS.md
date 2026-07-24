@@ -5,6 +5,7 @@ Public examples ship with **vulnserver** (TCP) plus generic **file** templates. 
 | Project | Kind | What you learn |
 |---------|------|----------------|
 | **vulnserver** | TCP | Network generation, session graph, classic overflow path |
+| **vulndrone-udp** / **vulndrone-tcp** | UDP / TCP | Fictional RDL1 drone / GCS length-field labs ([DRONE_LAB.md](DRONE_LAB.md)) |
 | **file-text** | File | Structured text / XML shell + mutable body |
 | **file-framed** | File | Length-prefixed binary records (off-by-one length fields) |
 

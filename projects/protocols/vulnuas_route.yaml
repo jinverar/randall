@@ -1,0 +1,27 @@
+name: vulnuas-route
+description: UAS1 ROUTE — type 0x02 + waypoint count (tactical-link lab)
+blocks:
+  - type: bytes
+    name: pkt_type
+    mutable: false
+    minSize: 1
+    maxSize: 1
+    seedFile: seeds/vulnuas_type_route.bin
+  - type: sized
+    lengthName: rem_len
+    lengthBytes: 2
+    littleEndian: false
+    child:
+      type: group
+      children:
+        - type: word
+          name: wp_count
+          mutable: true
+          littleEndian: false
+          value: 2
+        - type: bytes
+          name: waypoints
+          mutable: true
+          minSize: 12
+          maxSize: 400
+          seedFile: seeds/vulnuas_waypoints.bin
