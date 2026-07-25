@@ -1,5 +1,5 @@
-# Stage optional Ghidra RE companions (GhidrAssist, C++ Class Analyzer).
-# Document-first — Randfuzz does not invoke these from the fuzz loop.
+﻿# Stage optional Ghidra RE companions (GhidrAssist, C++ Class Analyzer).
+# Document-first - Randfuzz does not invoke these from the fuzz loop.
 #
 # Examples:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra-re-companions.ps1
@@ -54,7 +54,7 @@ function Ensure-Clone([string]$Name, [string]$Url, [string]$Dest) {
         return
     }
     New-Item -ItemType Directory -Force -Path (Split-Path $Dest) | Out-Null
-    Write-Log "  Cloning $Name …"
+    Write-Log "  Cloning $Name ..."
     git clone --depth 1 $Url $Dest
     Write-Log "  Cloned $Name" "Ok"
 }
@@ -73,7 +73,7 @@ $results = @()
 if ($DoAll -or $GhidrAssist) {
     $dest = Join-Path $SrcDir "ghidrassist"
     Ensure-Clone "GhidrAssist" "https://github.com/jtang613/GhidrAssist.git" $dest
-    Write-Log "  GhidrAssist: install release zip via Ghidra File → Install Extensions" "Warn"
+    Write-Log "  GhidrAssist: install release zip via Ghidra File -> Install Extensions" "Warn"
     Write-Log "  Configure LLM API key inside GhidrAssist settings (not stored by Randfuzz)" "Warn"
     $results += @{ Name = "ghidrassist"; Status = "staged"; Path = $dest }
 }
@@ -87,11 +87,11 @@ if ($DoAll -or $CppClassAnalyzer) {
 
 $ghidra = Resolve-GhidraInstallDir $GhidraDir
 if ($InstallToGhidra -and $null -eq $ghidra) {
-    Write-Log "Ghidra not found under tools/ghidra-app — skip -InstallToGhidra" "Warn"
+    Write-Log "Ghidra not found under tools/ghidra-app - skip -InstallToGhidra" "Warn"
 }
 elseif ($InstallToGhidra -and $ghidra) {
-    Write-Log "Manual step: File → Install Extensions in Ghidra ($ghidra)" "Warn"
-    Write-Log "Pre-built zips vary by Ghidra version — see each repo's releases." "Warn"
+    Write-Log "Manual step: File -> Install Extensions in Ghidra ($ghidra)" "Warn"
+    Write-Log "Pre-built zips vary by Ghidra version - see each repo's releases." "Warn"
 }
 
 $marker = @{
@@ -102,4 +102,4 @@ $marker = @{
 }
 $marker | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 $MarkerPath
 Write-Log "Marker: $MarkerPath" "Ok"
-Write-Log "Done. These companions are optional RE tools — not required for fuzz." "Ok"
+Write-Log "Done. These companions are optional RE tools - not required for fuzz." "Ok"

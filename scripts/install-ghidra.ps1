@@ -1,5 +1,5 @@
-# Download Ghidra into tools/ghidra-app (gitignored lab dependency).
-# Randfuzz Script Manager Python importers stay in committed tools/ghidra/ — do not overwrite.
+﻿# Download Ghidra into tools/ghidra-app (gitignored lab dependency).
+# Randfuzz Script Manager Python importers stay in committed tools/ghidra/ - do not overwrite.
 # Optional RE GUI (~560 MB); Ghidra 12.x needs JDK 21.
 #
 # Examples:
@@ -150,7 +150,7 @@ function Ensure-Jdk {
     }
 
     if ($SkipJdk) {
-        Write-GhidraLog "  -SkipJdk — Ghidra 12.x needs JDK 21 (https://adoptium.net/)" "Warn"
+        Write-GhidraLog "  -SkipJdk - Ghidra 12.x needs JDK 21 (https://adoptium.net/)" "Warn"
         Add-Result "JDK" "skipped" "-SkipJdk"
         return Find-JavaHome
     }
@@ -168,7 +168,7 @@ function Ensure-Jdk {
             if ($home) {
                 [Environment]::SetEnvironmentVariable("JAVA_HOME", $home, "User")
                 $env:JAVA_HOME = $home
-                Write-GhidraLog "  JAVA_HOME → $home" "Ok"
+                Write-GhidraLog "  JAVA_HOME -> $home" "Ok"
                 Add-Result "JDK" "installed" $home
                 return $home
             }
@@ -224,7 +224,7 @@ function Download-WithProgress {
 function Install-FromExtractRoot {
     param([string]$InnerPath)
     if (-not (Test-GhidraInstalled $InnerPath)) {
-        throw "Unexpected layout — expected ghidraRun.bat under $InnerPath"
+        throw "Unexpected layout - expected ghidraRun.bat under $InnerPath"
     }
     if (Test-Path $Dest) { Remove-Item $Dest -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
@@ -242,7 +242,7 @@ function Expand-GhidraZip {
     Write-Host "Extracting $ZipFile ..."
     Expand-Archive -Path $ZipFile -DestinationPath $extract -Force
     $inner = Get-ChildItem $extract -Directory | Select-Object -First 1
-    if (-not $inner) { throw "Unexpected zip layout — no top-level directory" }
+    if (-not $inner) { throw "Unexpected zip layout - no top-level directory" }
     Install-FromExtractRoot $inner.FullName
     Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
 }
@@ -252,10 +252,10 @@ function Write-ManualHints {
     Write-GhidraLog "Manual install:" "Cyan"
     Write-Host "  1. Install JDK 21: winget install Microsoft.OpenJDK.21"
     Write-Host "  2. Download ghidra_*_PUBLIC_*.zip from https://github.com/NationalSecurityAgency/ghidra/releases"
-    Write-Host "     (Assets drop-down — NOT 'Source code')"
+    Write-Host "     (Assets drop-down - NOT 'Source code')"
     Write-Host "  3. Extract and move/rename the top-level folder to exactly tools\ghidra-app"
     Write-Host "     so tools\ghidra-app\ghidraRun.bat exists."
-    Write-Host "  4. Script Manager → add committed tools\ghidra\ (Randfuzz importers)."
+    Write-Host "  4. Script Manager -> add committed tools\ghidra\ (Randfuzz importers)."
     Write-Host "  Docs: docs/GHIDRA_INTEGRATION.md"
 }
 
@@ -264,7 +264,7 @@ function Invoke-OptionalExtensions {
 
     if (-not $DragonDance -and -not $GhidraMcp) { return 0 }
     if (-not (Test-GhidraInstalled $Dest) -and -not (Test-Path $Marker)) {
-        Write-GhidraLog "Extension install skipped — Ghidra app not installed yet." "Warn"
+        Write-GhidraLog "Extension install skipped - Ghidra app not installed yet." "Warn"
         return 0
     }
 
@@ -322,7 +322,7 @@ if ($Skip) {
 
 Write-Host "Randfuzz Ghidra installer"
 Write-Host "  App target:  $Dest"
-Write-Host "  Scripts:     $ScriptsDir  (committed — Script Manager)"
+Write-Host "  Scripts:     $ScriptsDir  (committed - Script Manager)"
 Write-Host ""
 Write-Host "IMPORTANT: large download (~560 MB). Optional unless you want the RE GUI."
 Write-Host ""
@@ -332,7 +332,7 @@ if ((Test-Path $Marker) -and -not $Force) {
     Add-Result "ghidra" "ok" $Marker
     Ensure-Jdk | Out-Null
     Write-Host ""
-    Write-Host "Script Manager → add: $ScriptsDir"
+    Write-Host "Script Manager -> add: $ScriptsDir"
     Write-Host "Doctor: dotnet run --project src\Randall.Cli -- doctor -c projects\vulnserver.yaml"
     $ext = Invoke-OptionalExtensions -DragonDance:$DragonDance -GhidraMcp:$GhidraMcp
     if ($ext -ne 0) { exit $ext }
@@ -357,7 +357,7 @@ if (-not $Force) {
 
 $jdk = Ensure-Jdk
 if (-not $jdk) {
-    Write-GhidraLog "Continuing without confirmed JDK — Ghidra may fail to launch until JDK 21 is installed." "Warn"
+    Write-GhidraLog "Continuing without confirmed JDK - Ghidra may fail to launch until JDK 21 is installed." "Warn"
 }
 
 New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
@@ -377,7 +377,7 @@ if ($localZip) {
     Expand-GhidraZip $localZip
     Add-Result "ghidra" "installed" $Marker
     Write-Host ""
-    Write-Host "Script Manager → add: $ScriptsDir"
+    Write-Host "Script Manager -> add: $ScriptsDir"
     Write-Host "Doctor: dotnet run --project src\Randall.Cli -- doctor -c projects\vulnserver.yaml"
     $ext = Invoke-OptionalExtensions -DragonDance:$DragonDance -GhidraMcp:$GhidraMcp
     if ($ext -ne 0) { exit $ext }
@@ -408,7 +408,7 @@ if ((Test-Path $zip) -and -not $Force) {
         Expand-GhidraZip $zip
         Add-Result "ghidra" "installed" $Marker
         Write-Host ""
-        Write-Host "Script Manager → add: $ScriptsDir"
+        Write-Host "Script Manager -> add: $ScriptsDir"
         $ext = Invoke-OptionalExtensions -DragonDance:$DragonDance -GhidraMcp:$GhidraMcp
         if ($ext -ne 0) { exit $ext }
         exit 0
@@ -454,7 +454,7 @@ foreach ($r in $script:Results) {
 
 Write-Host ""
 Write-Host "Launch:  $Marker"
-Write-Host "Scripts: Script Manager → add directory $ScriptsDir"
+Write-Host "Scripts: Script Manager -> add directory $ScriptsDir"
 Write-Host "Doctor:  dotnet run --project src\Randall.Cli -- doctor -c projects\vulnserver.yaml"
 Write-Host "Docs:    docs/GHIDRA_INTEGRATION.md"
 

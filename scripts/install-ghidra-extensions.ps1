@@ -1,9 +1,9 @@
-# Build and stage Ghidra extensions for Randfuzz RE workflows (Dragon Dance for binary drcov).
+﻿# Build and stage Ghidra extensions for Randfuzz RE workflows (Dragon Dance for binary drcov).
 # Requires a local Ghidra install (tools/ghidra-app or GHIDRA_INSTALL_DIR), JDK 21, Gradle 8.5+.
 #
-# Dragon Dance has no pre-built zip for Ghidra 12.x — this script clones upstream, runs
+# Dragon Dance has no pre-built zip for Ghidra 12.x - this script clones upstream, runs
 # Ghidra's buildExtension task, copies the zip to tools/ghidra-extensions/dist/, and
-# extracts into <ghidra>/Ghidra/Extensions/ (same result as File → Install Extensions).
+# extracts into <ghidra>/Ghidra/Extensions/ (same result as File -> Install Extensions).
 #
 # Examples:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra-extensions.ps1
@@ -29,7 +29,7 @@ $SrcDir = Join-Path $ExtRoot "src\dragondance"
 $DistDir = Join-Path $ExtRoot "dist"
 $MarkerPath = Join-Path $ExtRoot "dragondance.installed.json"
 
-# Pinned upstream (last master commit as of research — build against your Ghidra version).
+# Pinned upstream (last master commit as of research - build against your Ghidra version).
 $DragonDanceRepo = "https://github.com/0ffffffffh/dragondance.git"
 $DragonDanceSha = "19e2ecefe4a29e682dd571454cef05743d1f409d"
 
@@ -184,7 +184,7 @@ function Ensure-Jdk {
     }
 
     if ($SkipJdk) {
-        Write-ExtLog "  -SkipJdk — Ghidra extension build needs JDK 21" "Warn"
+        Write-ExtLog "  -SkipJdk - Ghidra extension build needs JDK 21" "Warn"
         Add-Result "JDK" "skipped" "-SkipJdk"
         return Find-JavaHome
     }
@@ -207,7 +207,7 @@ function Ensure-Jdk {
         }
     }
 
-    Write-ExtLog "  JDK 21 not found — install manually (winget install Microsoft.OpenJDK.21)" "Warn"
+    Write-ExtLog "  JDK 21 not found - install manually (winget install Microsoft.OpenJDK.21)" "Warn"
     Add-Result "JDK" "failed" "JDK 21 required"
     return $null
 }
@@ -255,7 +255,7 @@ function Ensure-Gradle {
         }
     }
 
-    Write-ExtLog "  Gradle not available — install Gradle >= $minVer and re-run" "Warn"
+    Write-ExtLog "  Gradle not available - install Gradle >= $minVer and re-run" "Warn"
     Add-Result "gradle" "failed" "Gradle >= $minVer required"
     return $null
 }
@@ -323,7 +323,7 @@ function Build-DragonDanceExtension {
             throw @"
 gradle buildExtension failed (exit $LASTEXITCODE).
 Dragon Dance targets Ghidra 9.x APIs; Ghidra 12 may need manual patches.
-See docs/GHIDRA_INTEGRATION.md — primary Randfuzz path is Script Manager scripts;
+See docs/GHIDRA_INTEGRATION.md - primary Randfuzz path is Script Manager scripts;
 Cartographer is a maintained drcov alternative if the build fails.
 "@
         }
@@ -354,7 +354,7 @@ function Install-ExtensionZip {
     try {
         Expand-Archive -Path $ZipPath -DestinationPath $stage -Force
         $inner = Get-ChildItem $stage -Directory | Select-Object -First 1
-        if (-not $inner) { throw "Unexpected extension zip layout — no top-level directory in $ZipPath" }
+        if (-not $inner) { throw "Unexpected extension zip layout - no top-level directory in $ZipPath" }
 
         $dest = Join-Path $extensionsRoot $inner.Name
         if (Test-Path $dest) {
@@ -418,7 +418,7 @@ function Install-DragonDance {
         installedAt       = (Get-Date).ToString("o")
     }
 
-    Add-Result "Dragon Dance" "installed" "$extDir · sha $DragonDanceSha"
+    Add-Result "Dragon Dance" "installed" "$extDir  -  sha $DragonDanceSha"
 }
 
 function Write-ManualHints {
@@ -427,7 +427,7 @@ function Write-ManualHints {
     Write-Host "  1. Install Ghidra: .\scripts\install-ghidra.ps1"
     Write-Host "  2. Clone https://github.com/0ffffffffh/dragondance @ $DragonDanceSha"
     Write-Host "  3. gradle -PGHIDRA_INSTALL_DIR=<tools\ghidra-app> buildExtension"
-    Write-Host "  4. Ghidra → File → Install Extensions → green + → select dist\*.zip → restart"
+    Write-Host "  4. Ghidra -> File -> Install Extensions -> green + -> select dist\*.zip -> restart"
     Write-Host "  Primary Randfuzz path remains tools\ghidra\ Script Manager scripts."
     Write-Host "  Docs: docs/GHIDRA_INTEGRATION.md"
 }
@@ -447,7 +447,7 @@ Write-Host ""
 
 $ghidraInstall = Resolve-GhidraInstallDir -Override $GhidraDir
 if (-not $ghidraInstall) {
-    Write-ExtLog "Ghidra not found — install Ghidra first (scripts/install-ghidra.ps1)." "Warn"
+    Write-ExtLog "Ghidra not found - install Ghidra first (scripts/install-ghidra.ps1)." "Warn"
     Write-ManualHints
     Add-Result "ghidra" "failed" "install Ghidra before extensions"
     exit 1
@@ -511,9 +511,9 @@ foreach ($r in $script:Results) {
 }
 
 Write-Host ""
-Write-Host "After first launch: CodeBrowser → File → Configure → enable Dragon Dance plugin if prompted."
-Write-Host "Import binary drcov: Window → Dragon Dance → traces-binary/*.log from randall stalk capture-binary."
-Write-Host "Primary stalk colors: Script Manager → tools\ghidra\ (RandfuzzImport*.py)."
+Write-Host "After first launch: CodeBrowser -> File -> Configure -> enable Dragon Dance plugin if prompted."
+Write-Host "Import binary drcov: Window -> Dragon Dance -> traces-binary/*.log from randall stalk capture-binary."
+Write-Host "Primary stalk colors: Script Manager -> tools\ghidra\ (RandfuzzImport*.py)."
 Write-Host "Docs: docs/GHIDRA_INTEGRATION.md"
 
 $failed = @($script:Results | Where-Object { $_.Status -eq "failed" })

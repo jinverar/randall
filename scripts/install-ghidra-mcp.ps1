@@ -1,8 +1,8 @@
-# Opt-in installer for bethington/ghidra-mcp (Ghidra 12.x MCP companion).
+﻿# Opt-in installer for bethington/ghidra-mcp (Ghidra 12.x MCP companion).
 # Builds from source with upstream setup tooling; idempotent via marker file.
 #
-# After install you MUST restart Ghidra, enable GhidraMCP (File → Configure), and start the
-# HTTP server (Tools → GhidraMCP → Start MCP Server). Default: http://127.0.0.1:8089/
+# After install you MUST restart Ghidra, enable GhidraMCP (File -> Configure), and start the
+# HTTP server (Tools -> GhidraMCP -> Start MCP Server). Default: http://127.0.0.1:8089/
 #
 # Examples:
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra-mcp.ps1
@@ -143,7 +143,7 @@ function Ensure-GhidraMcpSource {
         & git fetch --tags --depth 1 origin "refs/tags/$WantedTag" 2>&1 | Out-Null
         & git checkout "tags/$WantedTag" 2>&1 | ForEach-Object { Write-Host $_ }
         if ($LASTEXITCODE -ne 0) {
-            Write-McpLog "Tag $WantedTag not found — using main branch." "Warn"
+            Write-McpLog "Tag $WantedTag not found - using main branch." "Warn"
             & git checkout main 2>&1 | Out-Null
         }
         $head = (& git rev-parse HEAD).Trim()
@@ -181,7 +181,7 @@ function Write-ManualHints {
     Write-Host "  3. git clone $GhidraMcpRepo"
     Write-Host "  4. python -m tools.setup ensure-prereqs --ghidra-path <tools\ghidra-app>"
     Write-Host "  5. python -m tools.setup build && python -m tools.setup deploy --ghidra-path <tools\ghidra-app>"
-    Write-Host "  6. Restart Ghidra → File → Configure → enable GhidraMCP → Tools → GhidraMCP → Start MCP Server"
+    Write-Host "  6. Restart Ghidra -> File -> Configure -> enable GhidraMCP -> Tools -> GhidraMCP -> Start MCP Server"
     Write-Host "  Query: randall ghidra mcp ping"
     Write-Host "  Docs: docs/GHIDRA_INTEGRATION.md#ghidra-mcp-companion"
 }
@@ -200,7 +200,7 @@ Write-Host ""
 
 $ghidraInstall = Resolve-GhidraInstallDir -Override $GhidraDir
 if (-not $ghidraInstall) {
-    Write-McpLog "Ghidra not found — install Ghidra first (scripts/install-ghidra.ps1)." "Warn"
+    Write-McpLog "Ghidra not found - install Ghidra first (scripts/install-ghidra.ps1)." "Warn"
     Write-ManualHints
     Add-Result "ghidra" "failed" "install Ghidra before ghidra-mcp"
     exit 1
@@ -253,7 +253,7 @@ try {
         installedAt      = (Get-Date).ToString("o")
     }
 
-    Add-Result "ghidra-mcp" "installed" "$Tag · $head"
+    Add-Result "ghidra-mcp" "installed" "$Tag  -  $head"
 } catch {
     Write-McpLog $_.Exception.Message "Error"
     Write-ManualHints
@@ -275,8 +275,8 @@ foreach ($r in $script:Results) {
 
 Write-Host ""
 Write-Host "IMPORTANT: restart Ghidra after extension deploy."
-Write-Host "  1. File → Configure → Configure All Plugins → enable GhidraMCP"
-Write-Host "  2. Tools → GhidraMCP → Start MCP Server  (default http://127.0.0.1:8089/)"
+Write-Host "  1. File -> Configure -> Configure All Plugins -> enable GhidraMCP"
+Write-Host "  2. Tools -> GhidraMCP -> Start MCP Server  (default http://127.0.0.1:8089/)"
 Write-Host "  3. randall ghidra mcp ping"
 Write-Host "  4. randall ghidra mcp callers --import memcpy"
 Write-Host "Docs: docs/GHIDRA_INTEGRATION.md#ghidra-mcp-companion"
