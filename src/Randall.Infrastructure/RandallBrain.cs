@@ -23,6 +23,7 @@ public sealed class RandallBrain
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
     public sealed record Signals(
@@ -112,7 +113,7 @@ public sealed class RandallBrain
                 $"{lead.Name} weight={lead.SelectionWeight}"));
         }
 
-        var corpusBias = ResolveCorpusBias(top);
+        var corpusBias = ResolveCorpusBias(top, signals);
         var energyBoost = ResolveEnergyBoost(top, signals);
 
         var total = Math.Clamp(why.Sum(t => t.Points), 0, 100);
@@ -173,12 +174,7 @@ public sealed class RandallBrain
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        var snapshot = new BrainDecisionSnapshotDto(
-            decision.Project,
-            decision.Active,
-            decision.Active,
-            decision,
-            decision.At);
+        var snapshot = BrainDecisionSnapshotDto.FromDecision(decision, decision.Project);
         File.WriteAllText(path, JsonSerializer.Serialize(snapshot, JsonOptions));
         BrainDecisionStore.SetLive(decision);
 
@@ -236,12 +232,7 @@ public sealed class RandallBrain
         var live = BrainDecisionStore.GetLive(project);
         if (live is not null)
         {
-            return new BrainDecisionSnapshotDto(
-                project,
-                true,
-                live.Active,
-                live,
-                live.At);
+            return BrainDecisionSnapshotDto.FromDecision(live, project);
         }
 
         var path = LastDecisionPath(project, repoRoot);
@@ -250,7 +241,10 @@ public sealed class RandallBrain
 
         try
         {
-            return JsonSerializer.Deserialize<BrainDecisionSnapshotDto>(File.ReadAllText(path), JsonOptions);
+            var snap = JsonSerializer.Deserialize<BrainDecisionSnapshotDto>(File.ReadAllText(path), JsonOptions);
+            if (snap?.LastDecision is not null && snap.Decision is null)
+                return BrainDecisionSnapshotDto.FromDecision(snap.LastDecision, snap.Project, snap.Enabled, snap.EmptyHint);
+            return snap;
         }
         catch
         {
@@ -282,14 +276,16 @@ public sealed class RandallBrain
 
         if (signals.Frontier?.Frontiers is { Count: > 0 } frontiers)
         {
+            var frontierBoost = FrontierRichnessBoost(signals);
             foreach (var f in frontiers.Take(4))
             {
+                var score = f.Score + frontierBoost;
                 list.Add(new HuntCandidate(
                     "frontier",
                     LabelFrontier(f),
-                    f.Score,
+                    score,
                     f.Detail,
-                    BuildFrontierTerms(f)));
+                    BuildFrontierTerms(f, frontierBoost)));
             }
         }
 
@@ -407,8 +403,9 @@ public sealed class RandallBrain
             m.Name.Equals(name, StringComparison.OrdinalIgnoreCase))?.Name;
     }
 
-    private static double ResolveCorpusBias(HuntCandidate top) =>
-        top.Kind switch
+    private static double ResolveCorpusBias(HuntCandidate top, Signals signals)
+    {
+        var bias = top.Kind switch
         {
             "frontier" => 0.82,
             "static" => 0.78,
@@ -418,6 +415,12 @@ public sealed class RandallBrain
             "mutator" => 0.68,
             _ => 0.65,
         };
+
+        if (top.Kind == "frontier" && FrontierRichnessBoost(signals) >= 10)
+            bias = Math.Min(0.88, bias + 0.04);
+
+        return bias;
+    }
 
     private static int ResolveEnergyBoost(HuntCandidate top, Signals signals)
     {
@@ -514,9 +517,29 @@ public sealed class RandallBrain
                 : $"{f.FunctionName} → {f.ToAddress}",
         };
 
-    private static IReadOnlyList<OracleScoreTerm> BuildFrontierTerms(FrontierBranchDto f)
+    private static int FrontierRichnessBoost(Signals signals)
+    {
+        var frontier = signals.Frontier;
+        if (frontier is null || frontier.FrontierCount < 3)
+            return 0;
+
+        var topScore = frontier.Frontiers.Count > 0
+            ? frontier.Frontiers.Max(f => f.Score)
+            : 0;
+
+        if (frontier.FrontierCount >= 8 && topScore >= 70)
+            return 15;
+        if (frontier.FrontierCount >= 5 && topScore >= 60)
+            return 10;
+        return 5;
+    }
+
+    private static IReadOnlyList<OracleScoreTerm> BuildFrontierTerms(FrontierBranchDto f, int richnessBoost = 0)
     {
         var terms = new List<OracleScoreTerm> { new("frontier rank", f.Score, f.Kind) };
+        if (richnessBoost > 0)
+            terms.Add(new OracleScoreTerm("frontier richness", richnessBoost,
+                $"{f.Score + richnessBoost} boosted"));
         if (f.UnseenSuccessorCount > 0)
             terms.Add(new OracleScoreTerm("unseen successors", Math.Min(12, f.UnseenSuccessorCount * 3),
                 $"{f.UnseenSuccessorCount}"));

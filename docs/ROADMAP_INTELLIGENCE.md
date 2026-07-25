@@ -46,7 +46,7 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | **Stalk map (in-Randall RE)** | PE/ELF strings, imports, hotspots on missed blocks | [STALK_MAP.md](STALK_MAP.md) — proximity, not full CFG |
 | **Frontier (gray doors)** | CFG/session fork scoring → `frontier.json` | `FrontierEngine` · `stalk frontier` |
 | **Mutator credit** | Bandit-lite productive-mutator bias + persistence | `MutatorCreditTracker` · `fuzz.mutatorCredit` (default on) |
-| **RandallBrain** | Closed-loop seed/mutator/energy fusion | `RandallBrain` · `fuzz.brain` (default on) · `GET /api/fuzz/brain` |
+| **RandallBrain** | Closed-loop seed/mutator/energy fusion | `RandallBrain` · `fuzz.brain` (default on) · `GET /api/fuzz/brain` · `decision` alias (`inputId`/`score`/`reasons`/`actions`) |
 | **Scream Intelligence** | `CrashIntelligenceDto`, ScreamScore, novelty, lineage stub | [SCREAM_INTELLIGENCE.md](SCREAM_INTELLIGENCE.md) · Crashes / Investigation API |
 | **Scream canisters** | Mood thresholds, EIP/RIP seal, harvest rack | UI Crashes tab · [canisters README](assets/canisters/README.md) |
 | **Ghidra export + pack** | Script Manager importers, stalk layers, crash packs | [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md) |
@@ -104,7 +104,7 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | `FrontierEngine` + `frontier.json` | ✅ | CFG branches, session forks, edge-gap fallback |
 | CLI `stalk frontier` + API | ✅ | Persists under `data/stalk/<project>/` |
 | Ghidra CFG + coverage overlay input | ✅ | Needs `randall-analysis.json` for best scores |
-| Auto seed/dictionary nudge from top frontiers | ✅ | `RandallBrain` closed-loop picker in `FuzzEngine` |
+| Auto seed/dictionary nudge from top frontiers | ✅ | `RandallBrain` closed-loop picker; **rich `frontier.json`** (+5…+15 score boost, corpus bias up to ~88%) |
 | Frontier-aware corpus energy in `FuzzEngine` | ✅ | Brain + `ghidraStaticBias` energy boosts |
 
 **Done when:** Top-N frontiers automatically boost related dictionary tokens or Scare Floor suggestions after each stalk layer.

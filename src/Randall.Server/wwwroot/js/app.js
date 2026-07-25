@@ -731,6 +731,7 @@ function scareBrainExecRate(fuzzStatus) {
 
 function scareBrainDecisionLine(brain) {
   if (!brain) return '';
+  if (brain.decision?.summary) return brain.decision.summary;
   if (brain.lastDecision?.summary) return brain.lastDecision.summary;
   if (typeof brain.lastDecision === 'string') return brain.lastDecision;
   return brain.summary || brain.line || brain.message || brain.decision || '';
@@ -743,6 +744,10 @@ function scareBrainBarPct(t) {
     if (m && /coverage|priority|covered/i.test(`${term.label} ${term.detail}`)) {
       return Math.min(100, Math.max(4, parseFloat(m[1])));
     }
+  }
+  if (t.kind === 'static' && t.detail) {
+    const cov = t.detail.match(/(\d+(?:\.\d+)?)\s*%\s*covered/i);
+    if (cov) return Math.min(100, Math.max(4, parseFloat(cov[1])));
   }
   return Math.min(100, Math.max(6, t.score || 0));
 }
@@ -4295,6 +4300,7 @@ function renderScreamCanisters(opts = {}) {
     const filling = pct > 0 ? 'filling' : '';
     const pulse = ((rose || ipRose) && (s.ipControlled || s.live || mood === 'virulent')) ? 'pulse' : '';
     const live = s.live ? 'is-live' : '';
+    const hot = s.screamHot ? 'scream-hot' : '';
     const hue = moodHue(mood, s.hue);
     const gauge = gaugeAngleForFill(pct, mood);
     const style = [
@@ -4319,7 +4325,7 @@ function renderScreamCanisters(opts = {}) {
     const floaties = compact ? '' : canisterFloatiesHtml(mood);
     const mist = canisterMistHtml(s, pct, mood, { compact });
     const mistIntensity = canisterMistIntensity(pct);
-    return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling} ${pulse} ${live}" role="listitem"
+    return `<button type="button" class="scream-canister ${s.cls} ${active} ${filling} ${pulse} ${live} ${hot}" role="listitem"
       data-slot="${s.id}" data-target-fill="${pct}" data-sev="${s.sevFilter || ''}" data-project="${s.project || ''}"
       data-fill="${pct}" data-ip="${s.ipControlled ? '1' : '0'}" data-mood="${mood}" data-mist-intensity="${mistIntensity}"
       title="${escapeAttr(s.title)}" style="${style}">

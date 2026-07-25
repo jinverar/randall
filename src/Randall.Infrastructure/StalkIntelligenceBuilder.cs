@@ -156,9 +156,12 @@ public static class StalkIntelligenceBuilder
 
     private static string BuildStaticDetail(RandallAnalysisFunctionDto fn)
     {
-        var parts = new List<string> { $"priority {fn.FuzzPriority}/100" };
-        if (fn.UncoveredBlockCount > 0)
+        var parts = new List<string>();
+        if (fn.CoverageFraction is >= 0 and < 1.0)
+            parts.Add($"{fn.CoverageFraction:P0} covered");
+        else if (fn.UncoveredBlockCount > 0)
             parts.Add($"{fn.UncoveredBlockCount} uncovered BB(s)");
+        parts.Add($"priority {fn.FuzzPriority}/100");
         if (fn.HasDangerousCalls && fn.DangerousCalls.Count > 0)
             parts.Add(string.Join(", ", fn.DangerousCalls.Take(3)));
         return string.Join(" · ", parts);
@@ -220,6 +223,14 @@ public static class StalkIntelligenceBuilder
                 "dangerous calls",
                 Math.Min(15, fn.DangerousCalls.Count * 5),
                 string.Join(", ", fn.DangerousCalls.Take(4))));
+        }
+
+        if (fn.CoverageFraction is >= 0 and < 1.0)
+        {
+            terms.Add(new OracleScoreTerm(
+                "static+dynamic",
+                Math.Min(24, (int)Math.Round((1.0 - fn.CoverageFraction.Value) * fn.FuzzPriority / 4.0)),
+                $"{fn.CoverageFraction:P0} covered · priority {fn.FuzzPriority}/100"));
         }
 
         if (fn.UncoveredBlockCount > 0)

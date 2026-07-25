@@ -162,7 +162,16 @@ The map lists functions, per-function CFG blocks, sink call graph edges, and a `
 
 **Source→sink paths:** when `randall-analysis.json` includes imports/sinks and call edges, `SourceSinkPathScorer` ranks input API → dangerous sink routes (SaTC-style static reachability, not a separate engine). Surfaces in `randall oracles -p <project>` and static-map score bonuses.
 
-This does **not** rewrite the full fuzz schedule from static data alone — it matures the Ghidra → Oracle pipe and nudges exploration. Crash-RIP decompile snippets and TraceRMI translation are optional via `randall ghidra mcp crash` ([GHIDRA_DEBUGGER.md](GHIDRA_DEBUGGER.md)).
+This does **not** replace coverage-guided exploration — it **closes the loop** via **RandallBrain** (`fuzz.brain: true`, default on). When `frontier.json`, oracle findings, scream clusters, or static map data exist, the brain fuses them into a **NextHuntDecision** (reviewer alias **`decision`** / `RandallDecision`: `inputId`, `score`, `reasons`, `actions`) each fuzz iteration:
+
+| Brain action | Source |
+|--------------|--------|
+| Corpus priority bias (65–88%) | Top frontier / static / oracle / scream focus |
+| Preferred mutator (62% blend with credit) | Focus kind → havoc, dictionary, interesting, … |
+| Corpus energy +2…+8 | Novel coverage / oracle retains while brain active |
+| Explainable Why? terms | Scare Floor factory map + `GET /api/fuzz/brain?project=` |
+
+Without stalk/scream signals the brain **soft no-ops** — baseline AFL-style pick unchanged. Optional `fuzz.ghidraStaticBias: true` still adds per-edge energy when high-priority functions stay uncovered. Crash-RIP decompile snippets and TraceRMI translation are optional via `randall ghidra mcp crash` ([GHIDRA_DEBUGGER.md](GHIDRA_DEBUGGER.md)) — not automatic in canisters.
 
 See [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md) for headless vs Script Manager export and companion tools (GhidraMCP, BinExport).
 

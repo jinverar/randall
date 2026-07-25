@@ -1184,17 +1184,16 @@ app.MapGet("/api/fuzz/brain", (string? project) =>
         var snapshot = RandallBrain.TryLoadSnapshot(name);
         if (snapshot is null)
         {
-            return Results.Ok(new BrainDecisionSnapshotDto(
+            return Results.Ok(BrainDecisionSnapshotDto.FromDecision(
+                null,
                 name,
-                Enabled: true,
-                HasSignals: false,
-                LastDecision: null,
-                PersistedAt: null,
-                EmptyHint:
+                emptyHint:
                 "No brain decision yet — run fuzz with frontier/static/oracle/scream data or `randall stalk frontier`."));
         }
 
-        return Results.Ok(snapshot);
+        return Results.Ok(snapshot.Decision is null && snapshot.LastDecision is not null
+            ? BrainDecisionSnapshotDto.FromDecision(snapshot.LastDecision, snapshot.Project, snapshot.Enabled, snapshot.EmptyHint)
+            : snapshot);
     }
     catch (Exception ex)
     {

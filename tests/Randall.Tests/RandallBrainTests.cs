@@ -205,6 +205,137 @@ public class RandallBrainTests
         Assert.False(RandallBrain.ShouldActivate(projectCfg, signals));
     }
 
+    [Fact]
+    public void Decide_RichFrontier_BeatsHighStaticPriority()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "brain-rich-frontier";
+            WriteRichFrontier(root, project, count: 8, topScore: 82);
+            WriteStaticMap(root, project, fuzzPriority: 78);
+
+            var brain = new RandallBrain();
+            var signals = brain.LoadSignals(project, root);
+            var mutators = BuiltInMutators.Create(
+                ["bitflip", "havoc", "dictionary", "splice", "cyclic"], seed: 42);
+            var decision = brain.Decide(project, signals, [], mutators, iteration: 2);
+
+            Assert.True(decision.Active);
+            Assert.Equal("frontier", decision.FocusKind);
+            Assert.True(decision.CorpusPriorityBias >= 0.84);
+            Assert.Contains(decision.WhyTerms, t =>
+                t.Label.Contains("frontier", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void ToRandallDecision_MapsReviewerShape()
+    {
+        var decision = new NextHuntDecision(
+            12,
+            DateTimeOffset.UtcNow,
+            "demo",
+            true,
+            "Randall thinks: frontier door [88]",
+            "frontier",
+            "parse_input→0x401020",
+            88,
+            "havoc",
+            0.86,
+            5,
+            [
+                new OracleScoreTerm("frontier rank", 75, "cfg-branch"),
+                new OracleScoreTerm("frontier richness", 10, "boosted"),
+                new OracleScoreTerm("mutator pick", 6, "havoc"),
+            ],
+            new OracleScore(91, [], "cfg"));
+
+        var mapped = decision.ToRandallDecision();
+
+        Assert.Equal("frontier:parse_input→0x401020", mapped.InputId);
+        Assert.Equal(91, mapped.Score);
+        Assert.True(mapped.Reasons.ContainsKey("frontierProximity"));
+        Assert.Equal("havoc", mapped.Actions.PreferredMutator);
+        Assert.Equal("parse_input→0x401020", mapped.Actions.TargetFunction);
+        Assert.True(mapped.Actions.EnergyMultiplier >= 2.0);
+        Assert.True(mapped.Actions.RetainFocus);
+    }
+
+    [Fact]
+    public void PersistLast_IncludesDecisionAlias()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "brain-alias";
+            var brain = new RandallBrain();
+            var decision = new NextHuntDecision(
+                3,
+                DateTimeOffset.UtcNow,
+                project,
+                true,
+                "Randall thinks: static parse [80]",
+                "static",
+                "parse_input",
+                80,
+                "dictionary",
+                0.78,
+                3,
+                [new OracleScoreTerm("fuzz priority", 80, "80/100")],
+                new OracleScore(80, [new OracleScoreTerm("fuzz priority", 80, "80/100")], "static"));
+
+            brain.PersistLast(decision, root);
+
+            var json = File.ReadAllText(RandallBrain.LastDecisionPath(project, root));
+            Assert.Contains("\"decision\"", json, StringComparison.Ordinal);
+            Assert.Contains("\"inputId\"", json, StringComparison.Ordinal);
+            Assert.Contains("\"actions\"", json, StringComparison.Ordinal);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    private static void WriteRichFrontier(string root, string project, int count, int topScore)
+    {
+        var dir = Path.Combine(root, "data", "stalk", project);
+        Directory.CreateDirectory(dir);
+        var frontiers = Enumerable.Range(0, count)
+            .Select(i => new FrontierBranchDto(
+                $"bb:0x401{i * 10:D3}->0x401{i * 10 + 20:D3}",
+                "cfg-branch",
+                topScore - i * 2,
+                2,
+                0.4,
+                2,
+                0.6,
+                "parse_input",
+                $"0x401{i * 10:D3}",
+                $"0x401{i * 10 + 20:D3}",
+                "demo.exe",
+                "uncovered successor"))
+            .ToList();
+        var report = new FrontierReportDto(
+            project,
+            DateTime.UtcNow.ToString("O"),
+            "cfg",
+            "rich frontier",
+            count * 2,
+            count,
+            null,
+            frontiers,
+            "hint");
+        File.WriteAllText(
+            Path.Combine(dir, FrontierEngine.FileName),
+            JsonSerializer.Serialize(report, JsonOptions));
+    }
+
     private static void WriteFrontier(string root, string project, int score)
     {
         var dir = Path.Combine(root, "data", "stalk", project);

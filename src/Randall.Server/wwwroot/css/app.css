@@ -4580,6 +4580,47 @@ html[data-scream-anim="on"] .scream-canister.just-bottled .scream-canister-vesse
   60% { transform: translate(-1px, 0); }
 }
 
+/* Purple hot-canister jackpot — novelty + oracle (Animate on) */
+html[data-scream-anim="on"] .scream-canister.scream-hot .scream-canister-vessel {
+  animation: canister-hot-shake 0.42s ease-in-out infinite;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--stalk-purple) 55%, transparent);
+}
+
+html[data-scream-anim="on"] .scream-canister.scream-hot.filling > .scream-canister-vessel {
+  animation: canister-hot-shake 0.32s ease-in-out infinite, canister-hot-rattle 0.11s linear infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister.scream-hot .scream-canister-porthole:has(.scream-canister-mist.tone-purple) {
+  animation: mist-glass-hit 2.4s ease-in-out infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister.scream-hot.just-bottled .scream-canister-vessel {
+  animation: canister-hot-jackpot 1.05s cubic-bezier(0.22, 1, 0.36, 1) 1;
+}
+
+@keyframes canister-hot-shake {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  15% { transform: translate(-3px, 2px) rotate(-0.6deg); }
+  30% { transform: translate(3px, -2px) rotate(0.6deg); }
+  45% { transform: translate(-3px, -2px) rotate(-0.5deg); }
+  60% { transform: translate(3px, 2px) rotate(0.5deg); }
+  75% { transform: translate(-2px, 0) rotate(-0.3deg); }
+}
+
+@keyframes canister-hot-rattle {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(0, -1px); }
+}
+
+@keyframes canister-hot-jackpot {
+  0% { transform: scale(1); }
+  18% { transform: scale(1.06) translate(-4px, 2px); }
+  36% { transform: scale(1.04) translate(4px, -2px); }
+  54% { transform: scale(1.05) translate(-3px, -2px); }
+  72% { transform: scale(1.03) translate(3px, 1px); }
+  100% { transform: scale(1); }
+}
+
 .scream-canister.filling .scream-canister-vapor,
 .scream-canister.is-live .scream-canister-vapor {
   opacity: 0;

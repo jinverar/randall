@@ -119,6 +119,23 @@ fuzz:
 
 Populate signals: `randall stalk ghidra-analyze` (or manual export) → short fuzz with coverage → `randall stalk frontier -p <project>` → oracle/scream history from crashes.
 
+### RandallDecision API mapping
+
+External docs may refer to a central **`RandallDecision`** object. On disk and API this is the **`decision`** field on `BrainDecisionSnapshotDto` — a stable alias of **`NextHuntDecision`**:
+
+| RandallDecision | NextHuntDecision / brain |
+|-----------------|--------------------------|
+| `inputId` | `{focusKind}:{focusLabel}` (e.g. `frontier:parse_input→0x401020`) |
+| `score` | `scoreBreakdown.total` or `focusScore` |
+| `reasons.*` | `whyTerms[]` normalized (`frontierProximity`, `staticTargetPriority`, `mutationSuccess`, `crashNovelty`, …) |
+| `actions.preferredMutator` | `preferredMutator` |
+| `actions.targetFunction` | `focusLabel` when kind is frontier/static/patch/scream |
+| `actions.corpusPriorityBias` | `corpusPriorityBias` (0.65–0.88) |
+| `actions.energyMultiplier` | `1 + recommendedEnergyBoost/4` |
+| `actions.retainFocus` | `active` |
+
+Endpoints: `GET /api/fuzz/brain?project=<name>` · Scare Floor **lastBrainDecision** · `data/stalk/<project>/brain_last.json`.
+
 ## Session flows (stateful TCP)
 
 Random single-command fuzzing misses bugs that need a **probe** first (banner, STAT, GMON keepalive):

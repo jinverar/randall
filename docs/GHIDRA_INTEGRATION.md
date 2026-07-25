@@ -246,6 +246,8 @@ randall stalk ghidra-analyze -p vulnserver --import-only /path/to/randall-analys
 
 Oracle reads the map lightly: `randall oracles -p <project>` prints top static targets when the file exists.
 
+**Closed loop (RandallBrain):** static `fuzzPriority` + drcov overlay feed **NextHuntDecision** each fuzz iteration (`fuzz.brain`, default on). Scare Floor factory map rows show **coverage % · priority N/100** with **Why?** term breakdowns; live state at `GET /api/fuzz/brain?project=` and `data/stalk/<project>/brain_last.json` (includes reviewer **`decision`** alias: `inputId`, `score`, `reasons`, `actions`). Soft no-op until frontier/static/oracle/scream artifacts exist — see [FUZZING.md](FUZZING.md#randallbrain-closed-loop-hunt-steering).
+
 ### Companion tools: BinExport / BinDiff (patch-hunt)
 
 Randfuzz does **not** ship or invoke BinDiff. We document the workflow, stage the Ghidra
