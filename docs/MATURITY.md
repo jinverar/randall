@@ -34,7 +34,7 @@ This doc expands the unfinished surface into concrete gaps, done criteria, and p
 | Automated test suite | Capable | `tests/Randall.Tests` covers LabAccess, HTTP, Magician, paths |
 | L2–L4 packet forge | Missing | Phase 24 — deferred on purpose |
 
-Related: [ROADMAP.md](ROADMAP.md) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_ADAPTERS.md](ENGINE_ADAPTERS.md) · [LAB_AGENT.md](LAB_AGENT.md)
+Related: [ROADMAP.md](ROADMAP.md) · [ROADMAP_INTELLIGENCE.md](ROADMAP_INTELLIGENCE.md) (Intelligence Loop vision + phases) · [BUG_HUNTER.md](BUG_HUNTER.md) · [ENGINE_ADAPTERS.md](ENGINE_ADAPTERS.md) · [LAB_AGENT.md](LAB_AGENT.md)
 
 ---
 
