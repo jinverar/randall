@@ -118,7 +118,7 @@ public static class TargetIntelligenceBuilder
             try
             {
                 var cfg = ProjectLoader.Load(yaml);
-                differential = cfg.Oracles.Enabled && cfg.Oracles.Differential.Count > 0;
+                differential = cfg.Oracles?.Enabled == true && (cfg.Oracles.Differential?.Count ?? 0) > 0;
             }
             catch { /* ignore */ }
         }
@@ -223,10 +223,10 @@ public static class TargetIntelligenceBuilder
     {
         var diffRules = new List<TargetIntelligenceDifferentialRuleDto>();
         var differentialEnabled = false;
-        if (cfg?.Oracles.Enabled == true && cfg.Oracles.Differential.Count > 0)
+        if (cfg?.Oracles?.Enabled == true && (cfg.Oracles.Differential?.Count ?? 0) > 0)
         {
             differentialEnabled = true;
-            foreach (var rule in cfg.Oracles.Differential)
+            foreach (var rule in cfg.Oracles.Differential!)
             {
                 var refPath = yamlPath is null
                     ? rule.ReferenceExecutable
