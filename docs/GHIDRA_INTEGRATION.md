@@ -88,8 +88,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1 -DragonDan
 # Or extensions alone when Ghidra is already under tools/ghidra-app
 powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra-extensions.ps1
 
+# GhidraMCP companion (bethington/ghidra-mcp @ Ghidra 12.x)
+powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra-mcp.ps1
+
 # Umbrella lab installer
-powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra -GhidraExtensions
+powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra -GhidraExtensions -GhidraMcp
 ```
 
 Installs Ghidra to `tools/ghidra-app/` (gitignored). Dragon Dance is built from upstream
@@ -194,6 +197,7 @@ Manager scripts; these are optional RE accelerators.
 | Export layers to Ghidra | Stalking bugs → **Ghidra** · `stalk export --format ghidra` |
 | Full Ghidra pack | `randall stalk ghidra-pack -p P` |
 | **Static target map (Oracle)** | `randall stalk ghidra-analyze -p P [--binary path]` → `randall-analysis.json` |
+| **Live GhidraMCP Q&A** | `randall ghidra mcp ping` · `callers --import memcpy` · `oracles -p P --mcp-import recv` |
 | **Patch-hunt diff merge** | `randall stalk ghidra-diff -p P --from baseline.json` → `changedFunctions[]` |
 | Binary drcov for DD | `randall stalk capture-binary -p P` · YAML `captureBinaryDrcov` |
 | Crash → Ghidra pack | Crashes → Export · `randall export -i <guid>` |
@@ -325,11 +329,35 @@ randall stalk ghidra-diff -p vulnserver --from baseline.json --bsim-json bsim-ma
 Oracle reads `changedFunctions` lightly when present — prioritize modified functions with
 high `changeScore` and sink proximity for patch-directed fuzz campaigns.
 
+### Ghidra MCP companion {#ghidra-mcp-companion}
+
+**Fork:** [bethington/ghidra-mcp](https://github.com/bethington/ghidra-mcp) (Ghidra 12.x, actively maintained).
+Supersedes [LaurieWired/GhidraMCP](https://github.com/LaurieWired/GhidraMCP) for Ghidra 12 installs.
+
+| Concern | `randall-analysis.json` (batch) | GhidraMCP (live) |
+|---------|--------------------------------|------------------|
+| When | Headless / Script Manager export | Ghidra open + MCP HTTP server running |
+| Randall entry | `stalk ghidra-analyze`, Oracle static hints | `ghidra mcp …`, `oracles --mcp-import` |
+| Required? | No | No — soft-fails offline; never in CI/fuzz |
+
+**Install (opt-in):** `powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra-mcp.ps1`
+
+After install: **restart Ghidra** → enable **GhidraMCP** plugin → **Tools → GhidraMCP → Start MCP Server**
+(default `http://127.0.0.1:8089/`). Env: `GHIDRA_MCP_PORT`, `GHIDRA_MCP_URL`, `GHIDRA_MCP_AUTH_TOKEN`.
+
+**Query:**
+
+```bash
+randall ghidra mcp ping
+randall ghidra mcp imports --filter recv
+randall ghidra mcp callers --import memcpy
+randall oracles -p vulnserver --mcp-import recv
+```
+
 ### Other companions (document-only)
 
 | Tool | Role |
 |------|------|
-| [GhidraMCP](https://github.com/bethington/ghidra-mcp) | Agent/Oracle programmatic queries (separate install) |
 | TraceRMI / Ghidra Debugger | Live crash ↔ static correlation in Ghidra |
 
 Randfuzz owns the JSON contract in-repo (`tools/ghidra/RandfuzzExportAnalysis.py` +
@@ -344,6 +372,7 @@ Done now:
 
 - Real Script Manager importers (layers, crash novel, tools/ghidra)
 - **Static target map export** (`RandfuzzExportAnalysis.py`, `stalk ghidra-analyze`)
+- **GhidraMCP companion** (`install-ghidra-mcp.ps1`, `GhidraMcpClient`, `randall ghidra mcp`)
 - **JSON diff merge** (`stalk ghidra-diff`, `--diff-from`) + optional `changedFunctions[]` / `bsimMatches[]`
 - **BinExport install helper** (`scripts/install-binexport.ps1`) + doctor `binexport`/`bindiff` warns
 - Module table start/end → `modules.txt` + open-program filter

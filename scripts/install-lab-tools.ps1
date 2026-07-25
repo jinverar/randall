@@ -8,7 +8,7 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SysinternalsOnly
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SkipGcc -SkipDynamoRio -SkipFrida
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra   # optional RE (~560 MB)
-#   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra -GhidraExtensions
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra -GhidraExtensions -GhidraMcp
 [CmdletBinding()]
 param(
     [switch]$Force,
@@ -24,7 +24,9 @@ param(
     # Optional: Ghidra RE GUI (~560 MB + JDK 21). Not part of default lab install.
     [switch]$Ghidra,
     # Optional: build/install Dragon Dance extension (requires Ghidra + JDK 21 + Gradle).
-    [switch]$GhidraExtensions
+    [switch]$GhidraExtensions,
+    # Optional: bethington/ghidra-mcp companion (Python 3.10+ + Maven; requires Ghidra).
+    [switch]$GhidraMcp
 )
 
 $ErrorActionPreference = "Stop"
@@ -146,19 +148,22 @@ if ($Ghidra -and -not $SysinternalsOnly) {
     $ghArgs = @()
     if ($Force) { $ghArgs += "-Force" }
     if ($GhidraExtensions) { $ghArgs += "-DragonDance" }
+    if ($GhidraMcp) { $ghArgs += "-GhidraMcp" }
     Invoke-Step -Name "Ghidra (optional RE)" -ScriptPath (Join-Path $Scripts "install-ghidra.ps1") -ScriptArgs $ghArgs
 } else {
     Write-Host ""
     Write-Host "======== Ghidra (optional RE) ======== (skipped — pass -Ghidra to install ~560 MB)" -ForegroundColor DarkGray
 }
 
-if ($GhidraExtensions -and -not $Ghidra -and -not $SysinternalsOnly) {
+if (($GhidraExtensions -or $GhidraMcp) -and -not $Ghidra -and -not $SysinternalsOnly) {
     $extArgs = @()
     if ($Force) { $extArgs += "-Force" }
-    Invoke-Step -Name "Ghidra extensions (Dragon Dance)" -ScriptPath (Join-Path $Scripts "install-ghidra-extensions.ps1") -ScriptArgs $extArgs
-} elseif (-not $GhidraExtensions) {
+    if (-not $GhidraExtensions) { $extArgs += "-SkipDragonDance" }
+    if ($GhidraMcp) { $extArgs += "-GhidraMcp" }
+    Invoke-Step -Name "Ghidra extensions" -ScriptPath (Join-Path $Scripts "install-ghidra-extensions.ps1") -ScriptArgs $extArgs
+} elseif (-not $GhidraExtensions -and -not $GhidraMcp) {
     Write-Host ""
-    Write-Host "======== Ghidra extensions ======== (skipped — pass -GhidraExtensions with -Ghidra)" -ForegroundColor DarkGray
+    Write-Host "======== Ghidra extensions ======== (skipped — pass -GhidraExtensions / -GhidraMcp)" -ForegroundColor DarkGray
 }
 
 Write-Host ""

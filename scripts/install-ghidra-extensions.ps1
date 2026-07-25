@@ -10,12 +10,14 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra-extensions.ps1 -Skip
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra-extensions.ps1 -Force
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1 -DragonDance
-#   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra -GhidraExtensions
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra-extensions.ps1 -GhidraMcp
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra -GhidraExtensions -GhidraMcp
 [CmdletBinding()]
 param(
     [switch]$Skip,
     [switch]$Force,
     [switch]$SkipDragonDance,
+    [switch]$GhidraMcp,
     [switch]$SkipJdk,
     [string]$GhidraDir = ""
 )
@@ -466,6 +468,33 @@ if (-not $SkipDragonDance) {
     }
 } else {
     Add-Result "Dragon Dance" "skipped" "-SkipDragonDance"
+}
+
+if ($GhidraMcp) {
+    $mcpScript = Join-Path $PSScriptRoot "install-ghidra-mcp.ps1"
+    if (Test-Path $mcpScript) {
+        Write-Host ""
+        Write-Host "======== Ghidra MCP (bethington/ghidra-mcp) ========" -ForegroundColor Cyan
+        $mcpArgs = @("-File", $mcpScript, "-GhidraDir", $ghidraInstall)
+        if ($Force) { $mcpArgs += "-Force" }
+        $psExe = Get-Command powershell.exe -ErrorAction SilentlyContinue
+        if ($psExe) {
+            & $psExe.Source -NoProfile -ExecutionPolicy Bypass @mcpArgs
+        } else {
+            if ($Force) { & $mcpScript -GhidraDir $ghidraInstall -Force }
+            else { & $mcpScript -GhidraDir $ghidraInstall }
+        }
+        if ($LASTEXITCODE -ne 0) {
+            Add-Result "Ghidra MCP" "failed" "install-ghidra-mcp.ps1 exit $LASTEXITCODE"
+        } else {
+            Add-Result "Ghidra MCP" "ok" "see install-ghidra-mcp.ps1 summary"
+        }
+    } else {
+        Write-ExtLog "Missing $mcpScript" "Warn"
+        Add-Result "Ghidra MCP" "failed" "missing install-ghidra-mcp.ps1"
+    }
+} else {
+    Add-Result "Ghidra MCP" "skipped" "pass -GhidraMcp to install"
 }
 
 Write-Host ""

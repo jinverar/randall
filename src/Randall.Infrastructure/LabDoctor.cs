@@ -238,6 +238,19 @@ public static class LabDoctor
                 ? (ghidra.JavaHome is not null ? $"JAVA_HOME / JDK → {ghidra.JavaHome}" : "java on PATH")
                 : "JDK 21 recommended for Ghidra — winget Microsoft.OpenJDK.21 or scripts/install-ghidra.ps1");
 
+        try
+        {
+            var probe = GhidraMcpClient.ProbeAsync().GetAwaiter().GetResult();
+            Add("ghidra-mcp", probe.Available ? "ok" : "warn",
+                probe.Available
+                    ? $"live @ {probe.BaseUrl}" + (probe.ProgramName is not null ? $" · {probe.ProgramName}" : "")
+                    : "optional — scripts/install-ghidra-mcp.ps1 · randall ghidra mcp ping");
+        }
+        catch
+        {
+            Add("ghidra-mcp", "warn", "optional — scripts/install-ghidra-mcp.ps1");
+        }
+
         var binexport = BinExportTools.Discover(CrashCatalog.FindRepoRoot());
         Add("binexport", binexport.IsBinExportExtensionPresent ? "ok" : "warn",
             binexport.IsBinExportExtensionPresent
