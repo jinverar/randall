@@ -629,6 +629,20 @@ body.nav-collapsed .nav-reopen { display: flex; }
 .scare-brain-covbar-fill.kind-frontier {
   background: linear-gradient(90deg, var(--stalk-blue), color-mix(in srgb, var(--stalk-purple, #9333ea) 55%, var(--stalk-blue)));
 }
+.scare-brain-covbar-pressure {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stalk-green) 35%, transparent);
+}
+.scare-brain-covbar-pressure .scare-brain-covbar-fill.kind-frontier {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--stalk-green) 40%, transparent), var(--stalk-green));
+}
+.scare-door-pressure-stats {
+  margin: 0.15rem 0 0;
+  font-size: 0.72rem;
+  color: var(--stalk-green, #4ade80);
+  font-family: var(--mono);
+  line-height: 1.35;
+  word-break: break-word;
+}
 .scare-brain-covbar-fill.kind-oracle {
   background: linear-gradient(90deg, var(--stalk-red), #d97706);
 }
@@ -3999,6 +4013,12 @@ html[data-scream-canisters="off"] #scream-harvest-panel .scream-canister-rack:em
     0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
+.scream-canister-porthole:has(.scream-canister-mist.sinister) {
+  box-shadow:
+    inset 0 0 18px rgba(0, 0, 0, 0.78),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
 .scream-canister-liquid {
   position: absolute;
   left: 0;
@@ -4352,11 +4372,16 @@ html[data-theme="light"] .scream-canister-liquid {
 }
 
 .scream-canister-mist.sinister .mist-glow {
-  opacity: 0.28;
+  opacity: 0.38;
 }
 
 .scream-canister-mist.is-live-mist.sinister .mist-glow {
-  opacity: 0.42;
+  opacity: 0.52;
+}
+
+.scream-canister-mist.intensity-turbulent.sinister .mist-glow,
+.scream-canister-mist.intensity-max.sinister .mist-glow {
+  opacity: 0.58;
 }
 
 .scream-canister-mist .mist-live-steam {
@@ -4390,6 +4415,31 @@ html[data-scream-anim="on"] .scream-canister-mist.sinister .mist-wisp.wall-slam 
 
 html[data-scream-anim="on"] .scream-canister-mist.is-live-mist .mist-live-steam {
   animation: mist-live-steam 2.4s ease-in-out infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist.sinister .mist-glyph {
+  animation: mist-glyph-flash var(--gl, 3.2s) ease-in-out infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister.is-live.mood-virulent .scream-canister-porthole,
+html[data-scream-anim="on"] .scream-canister.is-live.mood-eip .scream-canister-porthole,
+html[data-scream-anim="on"] .scream-canister.is-live.mood-toxic.scream-hot .scream-canister-porthole {
+  animation: canister-live-vignette 2.6s ease-in-out infinite;
+}
+
+@keyframes canister-live-vignette {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 18px rgba(0, 0, 0, 0.78),
+      0 0 0 1px rgba(160, 20, 20, 0.22),
+      0 0 10px rgba(255, 30, 20, 0.08);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 24px rgba(30, 0, 0, 0.92),
+      0 0 0 2px rgba(255, 50, 30, 0.48),
+      0 0 22px rgba(255, 40, 20, 0.24);
+  }
 }
 
 html[data-scream-anim="on"] .scream-canister-mist.sinister.tone-purple .mist-glyph,
@@ -4463,10 +4513,10 @@ html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.
 }
 
 @keyframes mist-glyph-flash {
-  0%, 58%, 100% { opacity: 0; filter: blur(5px); transform: translate(-50%, -50%) scale(0.8); }
-  68% { opacity: 0.95; filter: blur(0); transform: translate(-50%, -50%) scale(1.05); }
-  78% { opacity: 0.55; filter: blur(1px); transform: translate(-50%, -58%) scale(1.08); }
-  88% { opacity: 0; filter: blur(4px); transform: translate(-50%, -62%) scale(0.92); }
+  0%, 42%, 100% { opacity: 0; filter: blur(5px); transform: translate(-50%, -50%) scale(0.78); }
+  52% { opacity: 1; filter: blur(0); transform: translate(-50%, -50%) scale(1.08); }
+  64% { opacity: 0.72; filter: blur(0.5px); transform: translate(-50%, -58%) scale(1.1); }
+  76% { opacity: 0; filter: blur(4px); transform: translate(-50%, -64%) scale(0.9); }
 }
 
 @keyframes mist-live-steam {
@@ -4520,18 +4570,45 @@ html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.
   top: 48%;
   transform: translate(-50%, -50%);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.42rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: rgba(255, 255, 255, 0.82);
-  text-shadow: 0 0 8px rgba(255, 200, 120, 0.55);
+  font-size: clamp(0.58rem, 2.8vw, 0.74rem);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: rgba(255, 248, 235, 0.95);
+  text-shadow:
+    0 0 10px rgba(255, 200, 120, 0.75),
+    0 1px 0 rgba(0, 0, 0, 0.65);
   opacity: 0;
   pointer-events: none;
   white-space: nowrap;
+  z-index: 2;
+}
+.scream-canister-mist .mist-glyph.sinister {
+  font-size: clamp(0.64rem, 3vw, 0.82rem);
+  letter-spacing: 0.08em;
+}
+.scream-canister-mist .mist-glyph.alt {
+  font-size: clamp(0.52rem, 2.4vw, 0.66rem);
+  opacity: 0;
+}
+.scream-canister-mist.tone-red .mist-glyph {
+  color: rgba(255, 220, 210, 0.96);
+  text-shadow:
+    0 0 12px rgba(255, 60, 30, 0.85),
+    0 0 4px rgba(255, 140, 80, 0.55),
+    0 1px 0 rgba(0, 0, 0, 0.7);
 }
 .scream-canister-mist.tone-purple .mist-glyph {
-  color: rgba(210, 160, 255, 0.88);
-  text-shadow: 0 0 10px rgba(140, 60, 220, 0.65);
+  color: rgba(235, 190, 255, 0.96);
+  text-shadow:
+    0 0 14px rgba(160, 60, 255, 0.8),
+    0 0 4px rgba(220, 140, 255, 0.5),
+    0 1px 0 rgba(0, 0, 0, 0.7);
+}
+.scream-canister-mist.tone-yellow .mist-glyph {
+  color: rgba(255, 240, 180, 0.94);
+  text-shadow:
+    0 0 10px rgba(255, 180, 40, 0.7),
+    0 1px 0 rgba(0, 0, 0, 0.65);
 }
 
 .scream-canister-mist .mist-tendril {
@@ -4560,9 +4637,19 @@ html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.
   background: radial-gradient(ellipse at 50% 65%, var(--mist-glow, rgba(255, 180, 60, 0.35)), transparent 72%);
 }
 .scream-canister-mist.tone-green { --mist-glow: rgba(80, 220, 120, 0.35); }
-.scream-canister-mist.tone-yellow { --mist-glow: rgba(255, 210, 60, 0.42); }
-.scream-canister-mist.tone-red { --mist-glow: rgba(255, 60, 30, 0.48); }
-.scream-canister-mist.tone-purple { --mist-glow: rgba(150, 70, 255, 0.38); }
+.scream-canister-mist.tone-yellow { --mist-glow: rgba(255, 170, 40, 0.48); }
+.scream-canister-mist.tone-red { --mist-glow: rgba(255, 45, 25, 0.58); }
+.scream-canister-mist.tone-purple { --mist-glow: rgba(170, 55, 255, 0.52); }
+
+html[data-scream-anim="on"] .scream-canister-mist.sinister .mist-flash {
+  animation: mist-sinister-flash 4.8s ease-in-out infinite;
+}
+
+@keyframes mist-sinister-flash {
+  0%, 88%, 100% { opacity: 0; }
+  91% { opacity: 0.55; }
+  93% { opacity: 0.08; }
+}
 
 .scream-canister-mist .mist-flash {
   position: absolute;

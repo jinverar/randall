@@ -754,12 +754,21 @@ function scareBrainExecRate(fuzzStatus) {
   return scareBrainState.execPerSec;
 }
 
-function scareBrainDecisionLine(brain) {
-  if (!brain) return '';
-  if (brain.decision?.summary) return brain.decision.summary;
-  if (brain.lastDecision?.summary) return brain.lastDecision.summary;
-  if (typeof brain.lastDecision === 'string') return brain.lastDecision;
-  return brain.summary || brain.line || brain.message || brain.decision || '';
+function scareBrainDecisionLine(brain, intel) {
+  const memoryMsg = intel?.brainMemoryMessage || brain?.memoryMessage;
+  const memoryConf = intel?.brainMemoryConfidence ?? brain?.memoryConfidence;
+  let line = '';
+  if (brain?.decision?.summary) line = brain.decision.summary;
+  else if (brain?.lastDecision?.summary) line = brain.lastDecision.summary;
+  else if (typeof brain?.lastDecision === 'string') line = brain.lastDecision;
+  else line = brain?.summary || brain?.line || brain?.message || brain?.decision || '';
+  if (memoryMsg && !line.includes('Prior knowledge retained')) {
+    line = line ? `${line} · ${memoryMsg}` : memoryMsg;
+  } else if (memoryConf != null && memoryConf < 0.999 && !line.includes('memory=')) {
+    const pct = Math.round(memoryConf * 100);
+    line = line ? `${line} · memory=${pct}%` : `Prior knowledge retained: ${pct}%`;
+  }
+  return line;
 }
 
 function scareBrainBarPct(t) {
@@ -860,11 +869,18 @@ function renderScareBrainTargetIntel(profile) {
   if (profile.dynamic?.totalIterations > 0) {
     parts.push(`${profile.dynamic.totalIterations} campaign iters`);
   }
+  if (profile.brainMemoryConfidence != null && profile.brainMemoryConfidence < 0.999) {
+    parts.push(`brain memory ${Math.round(profile.brainMemoryConfidence * 100)}%`);
+  }
   const detail = parts.length ? `<p class="hint">${escapeAttr(parts.join(' · '))}</p>` : '';
+  const memoryNote = profile.brainMemoryMessage
+    ? `<p class="hint scare-brain-memory">${escapeAttr(profile.brainMemoryMessage)}</p>`
+    : '';
   return `<div class="scare-brain-target-intel-inner">
     <h3>Target intelligence</h3>
     <p>${escapeAttr(profile.summary)}</p>
     ${detail}
+    ${memoryNote}
     <p class="hint"><code>data/stalk/${escapeAttr(profile.project)}/target_intelligence.json</code></p>
   </div>`;
 }
@@ -880,12 +896,35 @@ function renderScareBrainTerms(breakdown) {
   return `${total}<ul class="scare-brain-terms">${rows}</ul>`;
 }
 
+function renderScareDoorPressureStats(t) {
+  if (t.kind !== 'frontier') return '';
+  const attempts = t.attempts || 0;
+  const hasPressure = attempts > 0 || (t.progressFraction != null && t.progressFraction > 0);
+  if (!hasPressure) return '';
+  const parts = [];
+  if (attempts > 0) parts.push(`${attempts} attempt${attempts === 1 ? '' : 's'}`);
+  if (t.closestDistance != null && t.closestDistance > 0) parts.push(`closest d=${Number(t.closestDistance).toFixed(1)}`);
+  if (t.lastProgress) parts.push(t.lastProgress);
+  if (t.bestSeedId) parts.push(`seed ${t.bestSeedId.slice(0, 8)}`);
+  if (t.bestMutation) parts.push(`mut ${t.bestMutation}`);
+  if (t.staticScore > 0 && t.staticScore !== t.score) parts.push(`static ${t.staticScore}`);
+  return parts.length
+    ? `<p class="scare-door-pressure-stats">${escapeAttr(parts.join(' · '))}</p>`
+    : '';
+}
+
 function renderScareBrainTarget(t, index) {
   const kind = scareBrainKindLabel(t.kind);
   const addr = t.address ? ` · <code>${escapeAttr(t.address)}</code>` : '';
   const whyId = `scare-brain-why-${index}`;
   const hasBreakdown = !!(t.scoreBreakdown?.terms?.length);
   const barPct = scareBrainBarPct(t);
+  const pressureClass = t.kind === 'frontier' && (t.attempts > 0 || (t.progressFraction != null && t.progressFraction > 0))
+    ? ' scare-brain-covbar-pressure'
+    : '';
+  const barTitle = t.kind === 'frontier' && t.progressFraction != null && t.progressFraction > 0
+    ? `Hunt pressure ${Math.round(t.progressFraction * 100)}%`
+    : 'Coverage / priority signal';
   const almost = (t.approachCount > 0 || t.crossedCount > 0)
     ? `<span class="scare-brain-almost" title="Approach minus crossed">≈ open ${Math.max(0, (t.approachCount || 0) - (t.crossedCount || 0))}</span>`
     : '';
@@ -898,9 +937,10 @@ function renderScareBrainTarget(t, index) {
       <div class="scare-brain-label">${escapeAttr(t.label)}
         <span class="scare-brain-kind kind-${escapeAttr(t.kind)}">${escapeAttr(kind)}</span>${addr}${almost}
       </div>
-      <div class="scare-brain-covbar" role="meter" aria-valuenow="${barPct}" aria-valuemin="0" aria-valuemax="100" title="Coverage / priority signal">
+      <div class="scare-brain-covbar${pressureClass}" role="meter" aria-valuenow="${barPct}" aria-valuemin="0" aria-valuemax="100" title="${escapeAttr(barTitle)}">
         <span class="scare-brain-covbar-fill kind-${escapeAttr(t.kind)}" style="width:${barPct}%"></span>
       </div>
+      ${renderScareDoorPressureStats(t)}
       <p class="scare-brain-detail">${escapeAttr(t.detail || '')}</p>
     </div>
     <button type="button" class="scare-brain-why" id="${whyId}" data-brain-why="${index}" aria-expanded="false" ${hasBreakdown ? '' : 'disabled title="No breakdown yet"'}>Why?</button>
@@ -1000,7 +1040,7 @@ async function refreshScareFloorBrain(opts = {}) {
     }
 
     if (decisionEl) {
-      const line = scareBrainDecisionLine(brainDecision);
+      const line = scareBrainDecisionLine(brainDecision, intel);
       if (line) {
         decisionEl.innerHTML = `<strong>Randall thinks:</strong> ${escapeAttr(line)}`;
         decisionEl.classList.remove('hidden');
@@ -3564,7 +3604,7 @@ function renderCrashClusterChips() {
   });
 }
 
-function renderCrashEventList() {
+function renderCrashEventList(opts = {}) {
   const el = document.getElementById('crashes-table');
   const nav = document.getElementById('crash-nav-label');
   const stats = document.getElementById('crash-stats');
@@ -3617,12 +3657,12 @@ function renderCrashEventList() {
   <p class="hint crash-keys">↑↓/j k navigate · <kbd>n</kbd> next unique · <kbd>u</kbd> toggle unique</p>`;
 
   el.querySelectorAll('tr.crash-event').forEach((row) => {
-    row.addEventListener('click', () => selectCrashById(row.dataset.id));
+    row.addEventListener('click', () => selectCrashById(row.dataset.id, { scrollIntoView: true }));
   });
-  el.querySelector('tr.selected')?.scrollIntoView({ block: 'nearest' });
+  if (opts.scrollSelected) scheduleCrashEventScroll(true);
 }
 
-async function selectCrashById(id) {
+async function selectCrashById(id, { scrollIntoView = false } = {}) {
   if (!id) return;
   let idx = crashState.filtered.findIndex((c) => c.id === id);
   if (idx < 0 && crashState.all.some((c) => c.id === id)) {
@@ -3646,7 +3686,7 @@ async function selectCrashById(id) {
   }
   crashState.selectedId = id;
   crashState.selectedIndex = idx;
-  renderCrashEventList();
+  renderCrashEventList({ scrollSelected: scrollIntoView });
   try {
     const detail = await api.get(`/api/crashes/${id}`);
     const c = detail.summary;
@@ -3663,7 +3703,7 @@ function selectCrashOffset(delta) {
   let idx = crashState.selectedIndex;
   if (idx < 0) idx = 0;
   else idx = Math.min(list.length - 1, Math.max(0, idx + delta));
-  selectCrashById(list[idx].id);
+  selectCrashById(list[idx].id, { scrollIntoView: true });
 }
 
 function selectNextUnique() {
@@ -3679,7 +3719,7 @@ function selectNextUnique() {
       || clusterMetaFor(list[idx])?.clusterId
       || crashClassKey(list[idx]);
     if (key !== startKey || crashState.uniqueOnly) {
-      selectCrashById(list[idx].id);
+      selectCrashById(list[idx].id, { scrollIntoView: true });
       return;
     }
   }
@@ -3747,11 +3787,11 @@ function screamCaptionForMood(mood) {
 }
 
 function moodHue(mood, fallback) {
-  if (mood === 'eip') return 8;
-  if (mood === 'virulent') return 95; // sickly toxic green
-  if (mood === 'toxic') return 78;
-  if (mood === 'watching') return fallback != null ? fallback : 188;
-  if (mood === 'laughter') return 48; // warm gold
+  if (mood === 'eip') return 280;
+  if (mood === 'virulent') return 4;
+  if (mood === 'toxic') return 18;
+  if (mood === 'watching') return fallback != null ? fallback : 42;
+  if (mood === 'laughter') return 48;
   return fallback != null ? fallback : 188;
 }
 
@@ -3781,6 +3821,38 @@ function harvestCriticalCount(crashes) {
     if (crashSev(c) === 'critical') n += 1;
   }
   return n;
+}
+
+function harvestHighCount(crashes) {
+  let n = 0;
+  for (const c of crashes || []) {
+    if (crashSev(c) === 'high') n += 1;
+  }
+  return n;
+}
+
+/** Debounced event-list scroll — skipped while harvest rack is on screen. */
+let crashEventScrollTimer = null;
+
+function harvestPanelVisible(minRatio = 0.28) {
+  const panel = document.getElementById('scream-harvest-panel');
+  if (!panel || panel.offsetParent === null) return false;
+  const r = panel.getBoundingClientRect();
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  const visible = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+  if (visible <= 0) return false;
+  return visible / Math.min(r.height, vh) >= minRatio;
+}
+
+function scheduleCrashEventScroll(force = false) {
+  clearTimeout(crashEventScrollTimer);
+  crashEventScrollTimer = setTimeout(() => {
+    if (!force && harvestPanelVisible()) return;
+    const el = document.getElementById('crashes-table');
+    const row = el?.querySelector('tr.selected');
+    if (!row || !el) return;
+    row.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+  }, 140);
 }
 
 function markHarvestProjectSeen(name) {
@@ -4003,6 +4075,7 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects', filterCont
         ipControlled: ipHits > 0,
         ipCount: ipHits,
         critical: bySev.critical,
+        high: bySev.high,
         mood,
         scream: screamCaptionForMood(mood),
       },
@@ -4025,6 +4098,7 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects', filterCont
           ipControlled: false,
           ipCount: 0,
           critical: sev === 'critical' ? count : 0,
+          high: sev === 'high' ? count : 0,
           mood: sevMood,
           scream: screamCaptionForMood(sevMood),
         };
@@ -4129,6 +4203,7 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects', filterCont
     const unique = harvestUniqueCount(list);
     const ipCount = harvestIpControlCount(list);
     const critical = harvestCriticalCount(list);
+    const high = harvestHighCount(list);
     const mood = scoreHarvestMood({ unique, critical, ipCount });
     const ipControlled = ipCount > 0;
     const live = harvestState.liveProjects.has(name);
@@ -4166,6 +4241,7 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects', filterCont
       ipControlled,
       ipCount,
       critical,
+      high,
       mood,
       scream: screamCaptionForMood(mood),
       screamHot: screamHotSlot,
@@ -4191,18 +4267,26 @@ function mistRand(seed) {
 /**
  * Mist palette ↔ harvest mood / severity (ANIMATE on):
  *   none   — laughter / empty (0 screams)
- *   green  — watching (2 unique) — lazy anomaly wisps
- *   purple — watching + exactly 1 unique — rare unknown scream
- *   yellow — toxic (interesting ribbons / sparks)
- *   red    — virulent, EIP, or toxic+critical — exploitable lightning
+ *   green  — calm only (unused on sinister tiers)
+ *   purple — rare unknown / EIP / hot / live virulent
+ *   yellow — yelp with severity or toxic without crit
+ *   red    — toxic+critical, virulent, exploitable lightning
  */
 function canisterMistTone(mood, slot = {}) {
-  if (slot.screamHot) return 'purple';
+  if (slot.screamHot || slot.ipControlled) return 'purple';
   const count = slot.count || 0;
+  const critical = slot.critical || 0;
+  const high = slot.high || 0;
   if (mood === 'laughter' || count <= 0) return 'none';
-  if (mood === 'eip' || mood === 'virulent') return 'red';
-  if (mood === 'toxic') return (slot.critical || 0) > 0 ? 'red' : 'yellow';
-  if (mood === 'watching') return count === 1 && !(slot.critical || 0) ? 'purple' : 'green';
+  if (mood === 'eip') return 'purple';
+  if (mood === 'virulent') return slot.live ? 'purple' : 'red';
+  if (mood === 'toxic') return critical > 0 ? 'red' : 'yellow';
+  if (mood === 'watching') {
+    if (critical > 0 || high > 0) return 'yellow';
+    if (count === 1) return 'purple';
+    if (count >= 2) return 'yellow';
+    return 'green';
+  }
   return 'green';
 }
 
@@ -4219,8 +4303,9 @@ function canisterMistIntensity(pct) {
 
 function isSinisterMist(mood, slot = {}) {
   const tone = canisterMistTone(mood, slot);
-  return !!slot.screamHot || !!slot.live || mood === 'toxic' || mood === 'virulent' || mood === 'eip'
-    || tone === 'purple' || tone === 'red';
+  return tone === 'red' || tone === 'purple' || tone === 'yellow'
+    || !!slot.screamHot || !!slot.live
+    || mood === 'toxic' || mood === 'virulent' || mood === 'eip';
 }
 
 function canisterMistHtml(slot, pct, mood, { compact = false } = {}) {
@@ -4277,13 +4362,23 @@ function canisterMistHtml(slot, pct, mood, { compact = false } = {}) {
   }
 
   let glyph = '';
-  const glyphChance = sinister ? 0.55 : 1;
-  if (intensity !== 'tiny' && rand() <= glyphChance) {
-    const glyphs = tone === 'purple'
-      ? ['0xDEAD', 'RIP', 'HOT', '???', 'SIGSEGV']
-      : ['0xC0000005', 'RIP', 'ACCESS_VIOLATION', 'SIGSEGV', 'EIP'];
-    const pick = glyphs[Math.floor(rand() * glyphs.length)];
-    glyph = `<span class="mist-glyph${sinister ? ' sinister' : ''}" style="--gl:${(2.8 + rand() * (sinister ? 3.2 : 4.5)).toFixed(1)}s">${pick}</span>`;
+  const glyphBudget = sinister && (intensity === 'max' || intensity === 'turbulent') ? 2 : 1;
+  const glyphChance = sinister ? 0.88 : 0.62;
+  if (intensity !== 'tiny') {
+    const sinisterGlyphs = ['0xDEAD', 'RIP', 'HOT', '???', 'SIGSEGV', 'BOOM', 'CORRUPT'];
+    const warnGlyphs = ['0xC0000005', 'RIP', 'ACCESS_VIOLATION', 'SIGSEGV', 'EIP', 'FAULT'];
+    const glyphs = (tone === 'purple' || tone === 'red') ? sinisterGlyphs : warnGlyphs;
+    const bits = [];
+    for (let gi = 0; gi < glyphBudget; gi++) {
+      if (rand() > glyphChance) continue;
+      const pick = glyphs[Math.floor(rand() * glyphs.length)];
+      const gl = (sinister ? 1.6 + rand() * 2.4 : 2.8 + rand() * 3.8).toFixed(1);
+      const gy = gi ? 56 + Math.round(rand() * 14) : 44 + Math.round(rand() * 10);
+      bits.push(
+        `<span class="mist-glyph${sinister ? ' sinister' : ''}${gi ? ' alt' : ''}" style="--gl:${gl}s;top:${gy}%">${pick}</span>`,
+      );
+    }
+    glyph = bits.join('');
   }
 
   const tendril = tone === 'green' && !compact && intensity !== 'tiny' && !sinister
@@ -4860,9 +4955,14 @@ document.getElementById('scream-harvest-mode')?.addEventListener('change', (e) =
   paintHarvestViews();
 });
 
+let screamHarvestScrollTimer = null;
+
 function scrollToScreamHarvest() {
-  document.getElementById('scream-harvest-panel')
-    ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  clearTimeout(screamHarvestScrollTimer);
+  screamHarvestScrollTimer = setTimeout(() => {
+    document.getElementById('scream-harvest-panel')
+      ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, 90);
 }
 
 async function enableScreamCanistersFromUi() {
