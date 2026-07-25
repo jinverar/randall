@@ -120,11 +120,18 @@ oracles:
 
 Session facts (`BIND_ACK` seen, commands observed) live in an in-run **OracleSessionTracker** and reset when the long-lived target crashes.
 
-## Interestingness
+## Interestingness (Randall Intelligence Loop)
+
+Each fuzz iteration emits unified **Observation** events on `FuzzEngine.ObservationBus` and an explainable **OracleScore** (0–100):
 
 ```text
-score ≈ new_edges×10 + confirmed_violation×100 + near_miss×12
+Observation { Type, RunId, Confidence, Novelty, Severity, Data }
+OracleScore   { Total, Terms[], Summary }
 ```
+
+**Score formula** (additive, clamped to 100): new coverage min(30, edges×10); violation min(50, count×35); near miss min(24, count×12); state/auth +20; semantic +15; runtime min(40, count×25). Crashes: +80 crash + up to +20 coverage-at-crash.
+
+**Where scores appear:** verbose fuzz log; `oracle_findings.jsonl` (`oracleScoreTotal` / `oracleScoreTerms`); crash sidecars (`randallScore`). `InterestingnessScore` == `Score.Total`.
 
 Violations / near-misses → `SaveInteresting` + `BoostEnergy` so the schedule evolves toward **semantic** failures.
 

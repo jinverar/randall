@@ -13,6 +13,8 @@ namespace Randall.Infrastructure;
 
 public sealed class FuzzEngine
 {
+    public ObservationBus ObservationBus { get; private set; } = new();
+
     public Task<FuzzRunResult> RunAsync(
         ProjectConfig project,
         string yamlPath,
@@ -45,6 +47,7 @@ public sealed class FuzzEngine
 
         try
         {
+        ObservationBus = new ObservationBus();
         var seeds = LoadAllSeeds(project, yamlPath);
         if (seeds.Count == 0)
             seeds.Add(Array.Empty<byte>());
@@ -92,6 +95,7 @@ public sealed class FuzzEngine
             journal = FuzzRunJournal.Start(project, yamlPath, dryRun, coverageGuided, stalkBackend, stalkNote);
             Console.WriteLine($"Run journal: {journal.RunDirectory}");
         }
+        var runId = journal?.RunId ?? Guid.NewGuid().ToString("N");
         var useCoverage = coverageGuided && stalk.IsAvailable;
         var useCoverageFile = useCoverage &&
                               project.Kind.Equals("file", StringComparison.OrdinalIgnoreCase);
@@ -952,7 +956,7 @@ public sealed class FuzzEngine
                     corpusAdded++;
                 }
 
-                // Cooperative path stalking (ReelDeck and friends via REELDECK_PATHLOG).
+                var payloadHash = InputHash.StackHash(payload);
                 if (result.PathHits is { Count: > 0 } hits)
                 {
                     var novelPaths = pathCoverage.Add(hits);
@@ -973,7 +977,16 @@ public sealed class FuzzEngine
                                 $"[{string.Join(',', hits.Take(10))}{(hits.Count > 10 ? ",…" : "")}]",
                                 iterations);
                         }
+
+                        ObservationBus.Publish(ObservationEvents.Path(
+                            runId, iterations, payloadHash, novelPaths, pathCoverage.Total, project.Name));
                     }
+                }
+
+                if (newEdges > 0)
+                {
+                    ObservationBus.Publish(ObservationEvents.Coverage(
+                        runId, iterations, payloadHash, newEdges, coverage.TotalEdges, project.Name));
                 }
 
                 // Hybrid semantic oracle stack — supplements coverage (docs/ORACLES.md).
@@ -998,6 +1011,10 @@ public sealed class FuzzEngine
                         iterations, newEdges, coverage.TotalEdges, pluginAbortDetail, expectPattern,
                         oracleSession);
                     oracleEval = await OracleEngine.EvaluateAsync(oracleObs, cancellationToken);
+                    ObservationBus.Publish(ObservationEvents.OracleEval(
+                        runId, iterations, payloadHash, oracleEval.Score,
+                        oracleEval.MaxSeverity.ToString().ToLowerInvariant(),
+                        oracleEval.Findings.Count, oracleEval.Summary, project.Name));
                     // Advance session facts after evaluation (so pre-auth checks see prior iters only).
                     oracleSession?.Observe(commandName, result);
                     OracleEngine.PersistFindings(project, yamlPath, oracleEval);
@@ -1191,11 +1208,12 @@ public sealed class FuzzEngine
                     var mutatorLabel = jokerTrick is null
                         ? $"{commandName}/{mutator.Name}"
                         : $"{commandName}/joker:{jokerTrick.TrickName}";
-                    var payloadHash = InputHash.StackHash(payload);
                     var expectedInputPath = Path.Combine(crashesDir, $"{project.Name}_{iterations}_{payloadHash}.bin");
                     var randallScore = oracleEval is { Score.Total: > 0 }
                         ? oracleEval.Score
                         : OracleScorer.CrashScore(result.Detail, newEdges);
+                    ObservationBus.Publish(ObservationEvents.Crash(
+                        runId, iterations, payloadHash, result.ExitCode, result.Detail, newEdges, project.Name));
 
                     var savedResult = crashStore.SaveEx(
                         project.Name,
