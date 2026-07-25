@@ -169,7 +169,7 @@ Doctor check `winafl` confirms `tools/winafl/afl-fuzz.exe` after you build in Vi
 | **Scream** (`debuggerMode: wait`) | First-party second-chance minidump | **Wired** | UI **Wait** / `debuggerMode: wait` (preferred over ProcDump) |
 | **WinDbg Preview** | Dump / live analysis | **Wired** | `debuggerMode`, open-on-crash — install via `scripts/install-debuggers.ps1` (winget `Microsoft.WinDbg`) |
 | **WinDbg (classic) / cdb** | Attach / open dump / wait fallback | **Wired** | Same installer → SDK Debugging Tools (`windbg.exe` / `cdb.exe`) |
-| **WinDbg TTD** | Time-travel for hard crashes | **External** | Record/replay outside Randfuzz |
+| **WinDbg TTD** | Time-travel for hard crashes | **External + stub hint** | Record/replay in WinDbg Preview; Randfuzz `fuzz.rewindScream` writes operator hint only |
 | **LiveKD** | Kernel debug without reboot | **External** | Run interactively when investigating drivers |
 | **DebugView** | OutputDebugString / app debug spew | **Wired** | `fuzz.debugViewCapture: true` → `tools/Dbgview.exe` → `debugview.log` |
 | **Strings** | Inspect crashing / corpus inputs | **Wired** | `fuzz.stringsOnCrash: true` / UI checkbox → `tools/strings64.exe` → `*_strings.txt` beside crash `.bin` |
@@ -477,6 +477,29 @@ Artifacts land in `data/runs/<runId>/` and `data/crashes/<project>/` on the fuzz
 | **Bundles** crash packs (optional include linked run journals) | **Open Folder** button |
 
 Open the run folder on the fuzz host (path printed as `Run journal: ...` at start) or unzip a crash pack that included runs.
+
+---
+
+## WinDbg TTD — Rewind Scream (stub)
+
+Randfuzz does **not** capture Time Travel Debugging (TTD) traces during fuzz. For hard-to-repro screams, enable the Magician stub:
+
+```yaml
+fuzz:
+  rewindScream: true   # writes data/crashes/<project>/_magician/rewind_scream_hint.md on crash
+magician:
+  enabled: true
+  allowRewindScream: true
+```
+
+On each new crash the Magician appends a `rewindScream` spell with operator steps:
+
+1. Reproduce with the saved `.bin` input (or replay harness).
+2. In **WinDbg Preview**, attach and record: `!tt.record` … reproduce … `!tt.stop`.
+3. Open the Randfuzz dump with metadata: `randall debug open -i <crash-guid> --kind windbg-preview`.
+4. In the trace, use `!tt` and `g-` to rewind toward the fault.
+
+Pair TTD with Scream minidumps, `{guid}_corruption_chain.json`, and `{guid}_debugger_observation.json` under `data/crashes/<project>/`. See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md).
 
 ---
 

@@ -347,4 +347,9 @@ public sealed class FuzzConfig
     /// Stub flag — see docs/SANITIZER_COVERAGE.md. Does not disable existing stalk backends.
     /// </summary>
     public bool SanitizerCoverage { get; set; }
+    /// <summary>
+    /// Stub: when true, Magician logs a rewindScream hint on crash (TTD record/replay is external).
+    /// Does not capture TTD traces — see docs/RECORDING.md.
+    /// </summary>
+    public bool RewindScream { get; set; }
 }

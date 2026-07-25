@@ -17,7 +17,8 @@ public static class FaultSignalMapper
         string? rppTag = null,
         string? targetDetail = null,
         int? exitCode = null,
-        DebuggerObservation? debugger = null)
+        DebuggerObservation? debugger = null,
+        CrashCorruptionChainDto? corruptionChain = null)
     {
         var signals = new List<FaultSignal>();
 
@@ -64,6 +65,27 @@ public static class FaultSignalMapper
             var dbg = FromDebugger(debugger);
             if (dbg is not null)
                 signals.Add(dbg);
+        }
+
+        if (corruptionChain is { Ok: true, PatternDepthBytes: not null })
+        {
+            signals.Add(new FaultSignal(
+                FaultSignalKind.AccessViolation,
+                corruptionChain.Confidence switch
+                {
+                    "HIGH" => 0.9,
+                    "MEDIUM" => 0.75,
+                    "LOW" => 0.6,
+                    _ => 0.55,
+                },
+                corruptionChain.Confidence is "HIGH" ? "critical" : "high",
+                FaultSignalSource.CrashTriage,
+                Truncate(corruptionChain.Summary, 160),
+                Truncate(
+                    $"input+{corruptionChain.PatternDepthBytes}" +
+                    (corruptionChain.SuspectedMutator is not null ? $" · {corruptionChain.SuspectedMutator}" : "") +
+                    (corruptionChain.PatternNote is not null ? $" · {corruptionChain.PatternNote}" : ""),
+                    240)));
         }
 
         if (!string.IsNullOrWhiteSpace(rppTag))

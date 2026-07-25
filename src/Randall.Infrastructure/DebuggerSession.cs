@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using Randall.Contracts;
+using Randall.Infrastructure.Rop;
 
 namespace Randall.Infrastructure;
 
@@ -12,7 +13,7 @@ public static class DebuggerSession
 {
     private static readonly ConcurrentDictionary<string, int> OpenDumpProcesses = new(StringComparer.OrdinalIgnoreCase);
 
-    public static DebuggerLaunchResultDto OpenDump(string dumpPath, string kind = DebuggerTools.KindAuto)
+    public static DebuggerLaunchResultDto OpenDump(string dumpPath, string kind = DebuggerTools.KindAuto, Guid? crashId = null)
     {
         dumpPath = Path.GetFullPath(dumpPath);
         if (!File.Exists(dumpPath))
@@ -26,19 +27,24 @@ public static class DebuggerSession
         if (exe is null)
             return Fail(resolvedKind, "No WinDbg / WinDbg Preview / cdb found. Install Debugging Tools for Windows or WinDbg Preview.");
 
+        var cfScript = crashId is { } id
+            ? RandfuzzDbgWalk.TryWriteOpenScript(id)
+            : null;
+
         var symArgs = OperatingSystem.IsWindows() ? DebuggerTools.FormatSymbolCommandLineArgs() : "";
-        var args = string.IsNullOrEmpty(symArgs)
-            ? $"-z \"{dumpPath}\""
-            : $"{symArgs} -z \"{dumpPath}\"";
+        var args = BuildOpenArgs(symArgs, dumpPath, cfScript);
         try
         {
             // Fire-and-forget: never block the fuzz loop waiting on a debugger console/GUI.
             var proc = Process.Start(DebuggerTools.BuildDetachedStartInfo(exe, args));
             if (proc?.Id is { } pid)
                 OpenDumpProcesses[dumpPath] = pid;
+            var msg = cfScript is not null
+                ? $"Opened dump in {resolvedKind} with Randfuzz metadata script: {dumpPath}"
+                : $"Opened dump in {resolvedKind}: {dumpPath}";
             return new DebuggerLaunchResultDto(
                 true, resolvedKind, exe, proc?.Id, dumpPath,
-                $"Opened dump in {resolvedKind}: {dumpPath}");
+                msg);
         }
         catch (Exception ex)
         {
@@ -56,7 +62,7 @@ public static class DebuggerSession
         if (string.IsNullOrWhiteSpace(dump) || !File.Exists(dump))
             return Fail(kind, "No minidump for this crash — replay/fuzz with dump capture first.");
 
-        return OpenDump(dump, kind);
+        return OpenDump(dump, kind, crashId);
     }
 
     public static DebuggerLaunchResultDto Attach(int pid, string kind = DebuggerTools.KindAuto, bool go = true)
@@ -291,6 +297,17 @@ public static class DebuggerSession
         || name.Equals("cdb", StringComparison.OrdinalIgnoreCase)
         || name.Equals("WinDbgX", StringComparison.OrdinalIgnoreCase)
         || name.Equals("DbgX.Shell", StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildOpenArgs(string symArgs, string dumpPath, string? cfScript)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(symArgs))
+            parts.Add(symArgs);
+        if (!string.IsNullOrWhiteSpace(cfScript))
+            parts.Add($"-cf \"{cfScript}\"");
+        parts.Add($"-z \"{dumpPath}\"");
+        return string.Join(' ', parts);
+    }
 }
 
 /// <summary>Headless wait handle — Scream watcher, ProcDump, or cdb.</summary>

@@ -34,6 +34,19 @@ Code: `Randall.Infrastructure.Magician` (`MagicianEngine`, `JokerEngine`).
 | `summonJoker` | Call the **Joker** — encore of chaotic random tricks |
 | `capitalizeJoker` | (automatic) After a Joker crash — corpus + energy + army |
 | `playJokerCard` | Queue a legendary Joker Card draw from the deck |
+| `rewindScream` | (stub) On crash, write TTD record/replay hint — **no TTD capture** |
+
+### Rewind Scream (TTD stub)
+
+When `fuzz.rewindScream: true`, the Magician logs a `rewindScream` spell after each crash with WinDbg Preview TTD operator steps. Randfuzz does not record traces — see [RECORDING.md#windbg-ttd--rewind-scream-stub](RECORDING.md#windbg-ttd--rewind-scream-stub).
+
+```yaml
+fuzz:
+  rewindScream: true
+magician:
+  enabled: true
+  allowRewindScream: true
+```
 
 ## Joker
 

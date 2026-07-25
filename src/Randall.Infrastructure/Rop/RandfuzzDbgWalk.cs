@@ -141,6 +141,59 @@ public static class RandfuzzDbgWalk
         return report;
     }
 
+    /// <summary>
+    /// Write a WinDbg <c>-cf</c> script beside the crash with Randfuzz metadata (corruption chain, investigator, walk hint).
+    /// </summary>
+    public static string? TryWriteOpenScript(Guid crashId, string? repoRoot = null)
+    {
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var detail = CrashCatalog.GetDetail(crashId, repoRoot);
+        if (detail is null)
+            return null;
+
+        var crashesDir = Path.GetDirectoryName(detail.Summary.InputPath);
+        if (crashesDir is null)
+            return null;
+
+        var chain = CorruptionChainBuilder.TryRead(CorruptionChainBuilder.PathFor(crashesDir, crashId));
+        var scriptDir = ScriptsDir(repoRoot).Replace('\\', '/');
+        var lines = new List<string>
+        {
+            DebuggerTools.FormatSympathScriptCommand(),
+            $".echo === RANDFUZZ OPEN {crashId:N} ===",
+            $".echo Project: {detail.Summary.Project}",
+        };
+
+        if (chain is { Ok: true })
+        {
+            lines.Add($".echo Corruption chain [{chain.Confidence}]: {chain.Summary}");
+            if (!string.IsNullOrWhiteSpace(chain.SuspectedMutator))
+                lines.Add($".echo Mutator: {chain.SuspectedMutator}");
+            if (chain.PatternDepthBytes is int depth)
+                lines.Add($".echo Pattern depth: input+{depth}");
+        }
+
+        if (detail.DebuggerObservation?.Diagnosis is { } diag)
+            lines.Add($".echo Investigator: {diag.Replace("\"", "'", StringComparison.Ordinal)}");
+
+        lines.Add(".echo === registers / stack ===");
+        lines.Add("r");
+        lines.Add("k");
+        lines.Add("lm");
+        lines.Add($".echo Full walk: $$>a< {scriptDir}/rf_walk.txt");
+
+        var path = Path.Combine(crashesDir, $"{crashId:N}_windbg_open.txt");
+        try
+        {
+            File.WriteAllText(path, string.Join(Environment.NewLine, lines));
+            return path;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public static string FormatScriptHelp(string? repoRoot = null)
     {
         var dir = ScriptsDir(repoRoot);

@@ -130,7 +130,11 @@ public sealed record CrashIntelligenceDto(
     /// <summary>Scream Investigator diagnosis (CDB sensor).</summary>
     string? DebuggerDiagnosis = null,
     /// <summary>Debugger-aware exploitability hint (HIGH/MEDIUM/LOW).</summary>
-    string? DebuggerExploitability = null);
+    string? DebuggerExploitability = null,
+    /// <summary>Research-only input→fault attribution summary when corruption chain exists.</summary>
+    string? CorruptionChainSummary = null,
+    /// <summary>HIGH / MEDIUM / LOW / UNKNOWN from corruption chain builder.</summary>
+    string? CorruptionConfidence = null);
 
 /// <summary>In-process observation collector for a single fuzz run.</summary>
 public sealed class ObservationBus

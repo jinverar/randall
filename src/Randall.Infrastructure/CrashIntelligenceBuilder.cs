@@ -16,7 +16,8 @@ public static class CrashIntelligenceBuilder
         CdbTriageDto? cdb = null,
         bool pageHeapEnabled = false,
         string? rppTag = null,
-        DebuggerObservation? debugger = null)
+        DebuggerObservation? debugger = null,
+        CrashCorruptionChainDto? corruptionChain = null)
     {
         var clusterKey = triage?.ClusterKey ?? summary.ClusterKey;
         var clusterMembers = string.IsNullOrWhiteSpace(clusterKey)
@@ -58,10 +59,12 @@ public static class CrashIntelligenceBuilder
             triage, analysis, cdb, sidecar, pageHeapEnabled, rppTag ?? summary.TriageTag,
             sidecar?.TargetDetail,
             int.TryParse(summary.TargetExitCode, out var exitEc) ? exitEc : sidecar?.ExitCode,
-            debugger);
+            debugger,
+            corruptionChain);
         var primaryFault = FaultSignalMapper.Primary(faultSignals);
         var frontierHint = BuildFrontierHint(summary.Project, triage, CrashCatalog.FindRepoRoot());
-        var canisterContext = BuildCanisterContext(triage, function, oracleScore, frontierHint, debugger);
+        var canisterContext = BuildCanisterContext(
+            triage, function, oracleScore, frontierHint, debugger, corruptionChain);
 
         return new CrashIntelligenceDto(
             severity,
@@ -83,7 +86,9 @@ public static class CrashIntelligenceBuilder
             canisterContext,
             frontierHint,
             debugger?.Diagnosis,
-            debugger?.ExploitabilityHint);
+            debugger?.ExploitabilityHint,
+            corruptionChain?.Summary,
+            corruptionChain?.Confidence);
     }
 
     public static CrashSummaryDto WithListIntelligence(
@@ -125,7 +130,8 @@ public static class CrashIntelligenceBuilder
         string? function,
         OracleScore? oracleScore,
         string? frontierHint,
-        DebuggerObservation? debugger = null)
+        DebuggerObservation? debugger = null,
+        CrashCorruptionChainDto? corruptionChain = null)
     {
         var parts = new List<string>();
         var rip = debugger?.Rip ?? triage?.Rip ?? triage?.StaticFunction?.PcAddress;
@@ -137,6 +143,10 @@ public static class CrashIntelligenceBuilder
             parts.Add(debugger.Access.ToString().ToLowerInvariant() + " AV");
         if (debugger?.SuspectedInputInfluence is "HIGH" or "MEDIUM")
             parts.Add($"input {debugger.SuspectedInputInfluence.ToLowerInvariant()}");
+        if (corruptionChain is { Ok: true, PatternDepthBytes: not null })
+            parts.Add($"pattern @ +{corruptionChain.PatternDepthBytes}");
+        if (corruptionChain is { Ok: true, Confidence: "HIGH" or "MEDIUM" })
+            parts.Add($"chain {corruptionChain.Confidence.ToLowerInvariant()}");
         if (oracleScore is { Total: > 0 })
             parts.Add($"oracle {oracleScore.Total}");
         if (!string.IsNullOrWhiteSpace(frontierHint))

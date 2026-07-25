@@ -10,7 +10,8 @@ public static class CrashTriage
         CrashSidecarDto? sidecar,
         CrashSummaryDto? summary = null,
         byte[]? payload = null,
-        string? exploitableClassification = null)
+        string? exploitableClassification = null,
+        DebuggerObservation? debugger = null)
     {
         var codeHint = analysis?.ExceptionHint
             ?? sidecar?.ExceptionHint
@@ -28,7 +29,7 @@ public static class CrashTriage
         var stackSmashed = LooksLikeStackSmash(analysis?.ExceptionCode, codeHint, rsp, rip);
         var severity = ScoreSeverity(crashClass, ipControlled, stackSmashed, analysis?.Ok == true, exploitableClassification);
         var summaryText = BuildSummary(crashClass, severity, fault, module, ipControlled, stackSmashed);
-        var clusterKey = BuildClusterKey(summary?.Project ?? "?", crashClass, fault, module);
+        var clusterKey = BuildClusterKey(summary?.Project ?? "?", crashClass, fault, module, debugger);
         var (depth, depthNote) = FindPatternDepth(payload, rip, fault, rsp);
 
         return new CrashTriageDto(
@@ -111,11 +112,36 @@ public static class CrashTriage
         return -1;
     }
 
-    public static string BuildClusterKey(string project, string crashClass, string? fault, string? module)
+    public static string BuildClusterKey(
+        string project,
+        string crashClass,
+        string? fault,
+        string? module,
+        DebuggerObservation? debugger = null)
     {
         var pc = NormalizePc(fault) ?? "no-pc";
         var mod = string.IsNullOrWhiteSpace(module) ? "unk" : Path.GetFileName(module).ToLowerInvariant();
-        return $"{project}:{crashClass}:{mod}:{pc}";
+        var key = $"{project}:{crashClass}:{mod}:{pc}";
+        if (debugger is not { Ok: true })
+            return key;
+
+        if (debugger.Access is not DebuggerAccessKind.Unknown)
+            key += $":{debugger.Access.ToString().ToLowerInvariant()}";
+
+        if (!string.IsNullOrWhiteSpace(debugger.FaultingFunction))
+        {
+            var fnMod = string.IsNullOrWhiteSpace(debugger.FaultingModule)
+                ? "unk"
+                : Path.GetFileName(debugger.FaultingModule).ToLowerInvariant();
+            key += $":{fnMod}!{debugger.FaultingFunction.ToLowerInvariant()}";
+        }
+        else if (!string.IsNullOrWhiteSpace(debugger.StackHash))
+        {
+            var sh = debugger.StackHash.Length > 8 ? debugger.StackHash[..8] : debugger.StackHash;
+            key += $":sh{sh.ToLowerInvariant()}";
+        }
+
+        return key;
     }
 
     private static string ClassifyClass(string? exceptionCode, string hint, string? fault, string? rip)

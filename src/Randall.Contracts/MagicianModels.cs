@@ -50,6 +50,9 @@ public sealed class MagicianConfig
     public bool CapitalizeJokerCrashes { get; set; } = true;
 
     public bool AllowPlayJokerCard { get; set; } = true;
+
+    /// <summary>Magician may log rewindScream hints when <see cref="FuzzConfig.RewindScream"/> is on.</summary>
+    public bool AllowRewindScream { get; set; } = true;
 }
 
 /// <summary>

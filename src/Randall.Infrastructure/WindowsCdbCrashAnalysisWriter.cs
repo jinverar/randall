@@ -160,9 +160,10 @@ public static partial class WindowsCdbCrashAnalysisWriter
         var triagePath = WriteSidecar(crashesDir, crashId, sidecar with { TriageJsonPath = TriagePathFor(crashesDir, crashId) });
 
         // Same CDB session → structured DebuggerObservation (Scream Investigator).
+        DebuggerObservation? debuggerObs = null;
         try
         {
-            ScreamInvestigator.PersistFromCdbBlocks(
+            debuggerObs = ScreamInvestigator.PersistFromCdbBlocks(
                 crashesDir,
                 crashId,
                 dumpPath,
@@ -179,6 +180,31 @@ public static partial class WindowsCdbCrashAnalysisWriter
         catch
         {
             /* observation is best-effort */
+        }
+
+        try
+        {
+            byte[]? payload = null;
+            if (crashSidecar?.InputPath is { } inputPath && File.Exists(inputPath))
+            {
+                try { payload = File.ReadAllBytes(inputPath); }
+                catch { /* ignore */ }
+            }
+
+            var triage = CrashTriage.Classify(
+                null, crashSidecar, null, payload, sidecar.ExploitableClassification, debuggerObs);
+            CorruptionChainBuilder.PersistForCrash(
+                crashesDir,
+                crashId,
+                crashSidecar?.Project ?? "?",
+                crashSidecar,
+                debuggerObs,
+                triage,
+                payload);
+        }
+        catch
+        {
+            /* corruption chain is best-effort */
         }
 
         var summary = BuildSummary(sidecar);

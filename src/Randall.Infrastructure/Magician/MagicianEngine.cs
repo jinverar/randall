@@ -28,6 +28,7 @@ public static class MagicianEngine
         "summonJoker",
         "playJokerCard",
         "capitalizeJoker",
+        "rewindScream",
     ];
 
     public static bool IsEnabled(ProjectConfig project) =>
@@ -201,6 +202,69 @@ public static class MagicianEngine
         };
     }
 
+    /// <summary>
+    /// Stub hook when <see cref="FuzzConfig.RewindScream"/> is on — logs TTD record/replay hint (no capture).
+    /// See docs/RECORDING.md#windbg-ttd-rewind-scream-stub.
+    /// </summary>
+    public static MagicianCastResult? RewindScreamOnCrash(
+        ProjectConfig project,
+        string yamlPath,
+        Guid crashId,
+        string? dumpPath,
+        IFuzzProgressSink? progress)
+    {
+        if (!project.Fuzz.RewindScream)
+            return null;
+
+        var cfg = GetConfig(project);
+        if (cfg is not { Enabled: true, AllowRewindScream: true })
+            return null;
+
+        project.Magician ??= cfg;
+        var dir = Path.Combine(
+            ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir),
+            "_magician");
+        Directory.CreateDirectory(dir);
+        var hintPath = Path.Combine(dir, "rewind_scream_hint.md");
+        var sb = new StringBuilder();
+        sb.AppendLine("# Rewind Scream (TTD stub)");
+        sb.AppendLine();
+        sb.AppendLine("Randfuzz does **not** capture Time Travel Debugging traces. Use WinDbg Preview TTD externally:");
+        sb.AppendLine();
+        sb.AppendLine($"Crash: `{crashId:N}` · project `{project.Name}`");
+        if (!string.IsNullOrWhiteSpace(dumpPath))
+            sb.AppendLine($"Dump: `{dumpPath}`");
+        sb.AppendLine();
+        sb.AppendLine("```powershell");
+        sb.AppendLine("# 1) Reproduce with a known input, then record (WinDbg Preview):");
+        sb.AppendLine("#    .attach <pid>  then  !tt.record  … reproduce …  !tt.stop");
+        sb.AppendLine($"randall debug open -i {crashId:N} --kind windbg-preview");
+        sb.AppendLine("# 2) In the trace:  !tt  then  g-  to rewind toward the fault");
+        sb.AppendLine("```");
+        sb.AppendLine();
+        sb.AppendLine("Pair with Scream minidump + corruption chain sidecars under `data/crashes/<project>/`.");
+        File.WriteAllText(hintPath, sb.ToString());
+
+        var spell = new MagicianSpellDto(
+            Guid.NewGuid().ToString("N")[..12],
+            project.Name,
+            "rewindScream",
+            "ttd",
+            "Crash saved — external TTD record/replay hint (stub)",
+            null,
+            null,
+            0,
+            hintPath,
+            DateTimeOffset.UtcNow);
+        if (cfg.PersistSpells)
+            new MagicianSpellStore(dir).Append(spell);
+
+        FuzzAnalystLog.Info(progress,
+            $"Magician rewindScream stub → {hintPath} (TTD is external — see docs/RECORDING.md)", 0);
+
+        return new MagicianCastResult([spell], [], [], 0, false, false, "rewindScream→ttd");
+    }
+
     /// <summary>Manual / CLI cast for an explicit need (knight, army, bots, joker, …).</summary>
     public static MagicianCastResult CastNeed(
         ProjectConfig project,
@@ -316,6 +380,7 @@ public static class MagicianEngine
         sb.AppendLine("| summonJoker | joker | Call the Joker — boost chaotic random tricks (encore) |");
         sb.AppendLine("| capitalizeJoker | joker | (auto) After Joker crash — energy + army + corpus |");
         sb.AppendLine("| playJokerCard | joker | Queue a legendary Joker Card draw from the deck |");
+        sb.AppendLine("| rewindScream | ttd | (stub) Write TTD record/replay hint on crash — no capture |");
         sb.AppendLine();
         sb.AppendLine("Oracle need → spell map: dictionary→dictionaryBoost; energy→energyBless;");
         sb.AppendLine("hunter→summonHunter; knight→summonKnight; army→summonArmy; bots→summonBots;");
@@ -483,6 +548,10 @@ public static class MagicianEngine
             }
             case "capitalizeJoker":
                 return (true, "joker", "capitalize is automatic on Joker crashes during fuzz");
+            case "rewindScream":
+                if (!GetConfig(project).AllowRewindScream || !project.Fuzz.RewindScream)
+                    return (false, null, "rewindScream disabled — set fuzz.rewindScream: true");
+                return (true, "ttd", "rewindScream stub armed — hint written on next crash");
             default:
                 return (false, null, $"unknown spell {spellId}");
         }

@@ -65,8 +65,10 @@ public static class CrashCatalog
                     c.MiniDumpPath, c.TargetExitCode, c.TriageTag, c.SidecarPath, c.RunId, c.At);
                 var cdbSidecar = WindowsCdbCrashAnalysisWriter.TryRead(
                     WindowsCdbCrashAnalysisWriter.TriagePathFor(dir, c.Id));
+                var debugger = ScreamInvestigator.TryRead(
+                    ScreamInvestigator.ObservationPathFor(dir, c.Id));
                 var triage = CrashTriage.Classify(
-                    analysis, sidecar, summary, null, cdbSidecar?.ExploitableClassification);
+                    analysis, sidecar, summary, null, cdbSidecar?.ExploitableClassification, debugger);
                 var staticFn = CrashStaticFunctionMapper.TryMapFromCrash(
                     projectName, analysis, triage, repoRoot);
                 if (staticFn is not null)
@@ -100,8 +102,6 @@ public static class CrashCatalog
                     triage.IpLooksControlled,
                     staticFn is not null ? CrashStaticFunctionMapper.FormatOneLine(staticFn) : null);
 
-                var debugger = ScreamInvestigator.TryRead(
-                    ScreamInvestigator.ObservationPathFor(dir, c.Id));
                 projectRows.Add((enrichedSummary, triage, sidecar, analysis, MapCdbTriage(cdbSidecar), inputLength, debugger));
             }
 
@@ -118,7 +118,8 @@ public static class CrashCatalog
                     row.Cdb,
                     pageHeapEnabled,
                     row.Summary.TriageTag,
-                    row.Debugger);
+                    row.Debugger,
+                    CorruptionChainBuilder.TryRead(CorruptionChainBuilder.PathFor(dir, row.Summary.Id)));
                 results.Add(CrashIntelligenceBuilder.WithListIntelligence(row.Summary, intelligence));
             }
         }
@@ -198,15 +199,17 @@ public static class CrashCatalog
                     : null);
             var cdbSidecar = WindowsCdbCrashAnalysisWriter.TryRead(
                 WindowsCdbCrashAnalysisWriter.TriagePathFor(crashesDir, summary.Id));
+            var debugger = ScreamInvestigator.TryRead(
+                ScreamInvestigator.ObservationPathFor(crashesDir, summary.Id));
             var triage = CrashTriage.Classify(
-                analysis, sidecar, summary, bytes, cdbSidecar?.ExploitableClassification);
+                analysis, sidecar, summary, bytes, cdbSidecar?.ExploitableClassification, debugger);
             var staticFn = CrashStaticFunctionMapper.TryMapFromCrash(
                 summary.Project, analysis, triage, repoRoot);
             if (staticFn is not null)
                 triage = triage with { StaticFunction = staticFn };
             var cdbTriage = MapCdbTriage(cdbSidecar);
-            var debugger = ScreamInvestigator.TryRead(
-                ScreamInvestigator.ObservationPathFor(crashesDir, summary.Id));
+            var corruptionChain = CorruptionChainBuilder.TryRead(
+                CorruptionChainBuilder.PathFor(crashesDir, summary.Id));
             var pageHeapEnabled = TryResolvePageHeap(sidecar, repoRoot);
             var projectSummaries = ListAll(repoRoot).Where(x => x.Project == summary.Project).ToList();
             var intelligence = CrashIntelligenceBuilder.Build(
@@ -219,7 +222,8 @@ public static class CrashCatalog
                 cdbTriage,
                 pageHeapEnabled,
                 summary.TriageTag,
-                debugger);
+                debugger,
+                corruptionChain);
             return new CrashDetailDto(
                 CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
                 bytes.Length,
@@ -230,7 +234,8 @@ public static class CrashCatalog
                 triage,
                 cdbTriage,
                 intelligence,
-                debugger);
+                debugger,
+                corruptionChain);
         }
         return null;
     }

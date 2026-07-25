@@ -1743,11 +1743,26 @@ public sealed class FuzzEngine
                                     {
                                         Console.WriteLine($"  scream investigator: {inv.Error}");
                                     }
+
+                                    var corruption = CorruptionChainBuilder.TryRead(
+                                        CorruptionChainBuilder.PathFor(crashesDir, saved.Id));
+                                    if (corruption is { Ok: true })
+                                    {
+                                        Console.WriteLine($"  corruption chain [{corruption.Confidence}]: {corruption.Summary}");
+                                        FuzzAnalystLog.Info(progress,
+                                            $"[corruption-chain] {corruption.Summary}", iterations);
+                                    }
                                 }
                                 catch (Exception cdbEx)
                                 {
                                     Console.WriteLine($"  cdb triage skipped: {cdbEx.Message}");
                                 }
+                            }
+
+                            if (project.Fuzz.RewindScream)
+                            {
+                                _ = MagicianEngine.RewindScreamOnCrash(
+                                    project, yamlPath, saved.Id, saved.MiniDumpPath, progress);
                             }
 
                             try

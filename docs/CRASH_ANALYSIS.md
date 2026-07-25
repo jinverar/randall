@@ -31,8 +31,9 @@ When `fuzz.cdbAnalyzeCrash: true` (default, requires `autoAnalyzeCrash`), Randfu
 | `<guid>_exploitable.txt` | `!exploitable` output when **msec.dll** is available |
 | `<guid>_cdb_triage.json` | Parsed summary + paths |
 | `<guid>_debugger_observation.json` | **Scream Investigator** — structured `DebuggerObservation` (access type, fault address class, stack hash, diagnosis, exploitability hint, input-influence guess) |
+| `<guid>_corruption_chain.json` | **Corruption chain** — research-only input→mutation→fault attribution (lineage + pattern depth + debugger evidence) |
 
-`DebuggerObservation` feeds FaultSignals, ScreamScore bonuses, and the Crashes Investigation UI (“Scream Investigator” line). WinDbg remains the human “open the dump” button.
+`DebuggerObservation` feeds FaultSignals, ScreamScore bonuses, and the Crashes Investigation UI (“Scream Investigator” line). When pattern depth or debugger evidence exists, `CrashCorruptionChainDto` is fused into scream intelligence and canister context. WinDbg remains the human “open the dump” button — Randfuzz passes `-cf` with metadata when opening by crash GUID (see [WinDbg open script](#windbg-open-with-randfuzz-metadata)).
 
 Soft-fails when cdb is missing (install `scripts/install-debuggers.ps1`). Does not block the fuzz loop — ~90–120s timeout. Randfuzz passes `-y` (local cache + Microsoft symbol server) and runs `.sympath` before probes; see [WinDbg symbols](#windbg-symbols) below.
 
@@ -85,6 +86,18 @@ mkdir C:\Symbols -Force
 | **WinDbg Preview** | Interactive walk (`Both` mode, Crashes → WinDbg buttons, `randall debug open`) |
 
 Re-opening the same dump from Randfuzz skips a second GUI launch if the prior WinDbg for that dump is still running.
+
+## WinDbg open with Randfuzz metadata
+
+When you open a crash by GUID (`randall debug open -i <guid>`, Crashes → WinDbg, or `POST /api/debug/open`), Randfuzz writes `{guid}_windbg_open.txt` beside the canister and passes **`-cf`** to WinDbg Preview / classic WinDbg:
+
+- Symbol path (`.sympath+` — same defaults as headless cdb)
+- Project / crash GUID echo lines
+- Corruption chain summary + mutator / pattern depth (when `{guid}_corruption_chain.json` exists)
+- Scream Investigator diagnosis (when `{guid}_debugger_observation.json` exists)
+- Auto `r` / `k` / `lm`, plus a pointer to `tools/randfuzzdbg/scripts/rf_walk.txt`
+
+Research triage only — no exploit automation. See `RandfuzzDbgWalk` / `randall windbg walk -i <guid>`.
 
 ## AeDebug + WER (opt-in)
 

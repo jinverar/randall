@@ -45,9 +45,10 @@ public static class CrashCluster
     private static CrashTriageDto LoadTriage(CrashSummaryDto crash, string? repoRoot)
     {
         CrashAnalysisDto? analysis = null;
+        string? crashesDir = null;
         try
         {
-            var crashesDir = Path.GetDirectoryName(crash.InputPath);
+            crashesDir = Path.GetDirectoryName(crash.InputPath);
             if (crashesDir is not null)
             {
                 var analysisPath = CrashAnalysisWriter.AnalysisPathFor(crashesDir, crash.Id);
@@ -63,7 +64,21 @@ public static class CrashCluster
         }
 
         var sidecar = CrashSidecarWriter.TryRead(crash.SidecarPath);
-        return CrashTriage.Classify(analysis, sidecar, crash);
+        DebuggerObservation? debugger = null;
+        if (crashesDir is not null)
+        {
+            debugger = ScreamInvestigator.TryRead(
+                ScreamInvestigator.ObservationPathFor(crashesDir, crash.Id));
+        }
+
+        byte[]? payload = null;
+        if (File.Exists(crash.InputPath))
+        {
+            try { payload = File.ReadAllBytes(crash.InputPath); }
+            catch { /* ignore */ }
+        }
+
+        return CrashTriage.Classify(analysis, sidecar, crash, payload, debugger: debugger);
     }
 
     private static int LengthBucket(CrashSummaryDto crash)

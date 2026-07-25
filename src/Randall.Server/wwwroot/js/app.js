@@ -2823,6 +2823,7 @@ function renderCrashDetail(detail, title) {
   const t = detail.triage;
   const cdb = detail.cdbTriage;
   const dbg = detail.debuggerObservation;
+  const chain = detail.corruptionChain;
   const regs = a?.registers;
   const dump = detail.summary.miniDumpPath || a?.dumpPath || '';
   const windbgCmd = dump ? `windbg -z "${dump}"` : '';
@@ -2877,6 +2878,14 @@ function renderCrashDetail(detail, title) {
         ${dbg.suspectedInputInfluence && dbg.suspectedInputInfluence !== 'UNKNOWN' ? `<span class="hint-inline">input ${escapeAttr(dbg.suspectedInputInfluence)}</span> · ` : ''}
         ${dbg.stackHash ? `<span class="hint-inline">stack ${escapeAttr(dbg.stackHash)}</span>` : ''}
       </p>` : ''}
+      ${chain?.ok ? `<div class="triage-box corruption-chain-box">
+        <h4>Corruption chain <span class="hint-inline">[${escapeAttr(chain.confidence)}]</span></h4>
+        <p class="hint">${escapeAttr(chain.summary)}</p>
+        ${chain.steps?.length ? `<ol class="corruption-chain-steps">${chain.steps.map((s) =>
+          `<li><code>${escapeAttr(s.kind)}</code> ${escapeAttr(s.label)}${s.detail ? ` — <span class="hint-inline">${escapeAttr(s.detail)}</span>` : ''}</li>`
+        ).join('')}</ol>` : ''}
+        ${chain.suspectedMutator ? `<p class="hint">Mutator <code>${escapeAttr(chain.suspectedMutator)}</code>${chain.suspectedField ? ` · field <code>${escapeAttr(chain.suspectedField)}</code>` : ''}</p>` : ''}
+      </div>` : ''}
       <p class="crash-why-detail"><code>${escapeAttr(why)}</code>
         ${a?.faultAddress ? ` @ <code>${escapeAttr(a.faultAddress)}</code>` : ''}
         ${a?.faultModule ? ` in <code>${escapeAttr(a.faultModule)}</code>` : ''}
@@ -2894,6 +2903,7 @@ function renderCrashDetail(detail, title) {
           ${intel.coverageDelta != null ? `<dt>Coverage Δ</dt><dd>+${intel.coverageDelta} edges</dd>` : ''}
           ${intel.function ? `<dt>Function</dt><dd><code>${escapeAttr(intel.function)}</code></dd>` : ''}
           ${intel.offset != null ? `<dt>Offset</dt><dd><code>${intel.offset}</code> bytes in input</dd>` : ''}
+          ${intel.corruptionChainSummary ? `<dt>Corruption chain</dt><dd><span class="severity-${(intel.corruptionConfidence || 'low').toLowerCase()}">${escapeAttr(intel.corruptionConfidence || '')}</span> — ${escapeAttr(intel.corruptionChainSummary)}</dd>` : ''}
           ${intel.oracleScore?.total != null ? `<dt>Oracle</dt><dd><span class="scream-intel-oracle">${intel.oracleScore.total}</span>${intel.oracleScore.summary ? ` — ${escapeAttr(intel.oracleScore.summary)}` : ''}</dd>` : ''}
           <dt>Repro</dt><dd>${intel.reproducible ? 'ready' : 'needs sidecar/input'}</dd>
           <dt>Minimized</dt><dd>${intel.minimized ? 'yes (shortest in cluster)' : 'no'}</dd>
