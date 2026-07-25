@@ -65,7 +65,10 @@ public sealed record CaseProjectProfileDto(
     int DictionaryCount,
     string ConfigPath,
     string Tip,
-    string Description);
+    string Description,
+    bool OraclesEnabled = false,
+    bool MagicianEnabled = false,
+    bool JokerEnabled = false);
 
 public sealed record CaseMutatorsRequest(
     string Project,

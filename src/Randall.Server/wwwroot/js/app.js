@@ -720,6 +720,32 @@ async function loadTargets() {
   return targets;
 }
 
+function syncFuzzSemanticControls(profile) {
+  const oracle = document.getElementById('fuzz-oracle');
+  const magician = document.getElementById('fuzz-magician');
+  const joker = document.getElementById('fuzz-joker');
+  if (!oracle || !magician || !joker) return;
+  oracle.checked = !!profile?.oraclesEnabled;
+  magician.checked = !!profile?.magicianEnabled;
+  joker.checked = !!profile?.jokerEnabled;
+  refreshSemanticOrderHint();
+}
+
+function refreshSemanticOrderHint() {
+  const hint = document.getElementById('fuzz-semantic-order-hint');
+  if (!hint) return;
+  const oracle = document.getElementById('fuzz-oracle')?.checked;
+  const magician = document.getElementById('fuzz-magician')?.checked;
+  const joker = document.getElementById('fuzz-joker')?.checked;
+  const parts = [];
+  if (magician && !oracle)
+    parts.push('Magician auto-cast works best with Oracle on (blessOnStart still runs).');
+  if (joker && !magician)
+    parts.push('Joker can run solo; Magician watches and capitalizes when enabled.');
+  hint.textContent = parts.join(' ');
+  hint.classList.toggle('hidden', parts.length === 0);
+}
+
 async function refreshFuzzTargetTip() {
   const tip = document.getElementById('fuzz-target-tip');
   const sel = document.getElementById('fuzz-target');
@@ -728,6 +754,7 @@ async function refreshFuzzTargetTip() {
   if (!name) return;
   try {
     const p = await api.get(`/api/case/project/${encodeURIComponent(name)}`);
+    syncFuzzSemanticControls(p);
     tip.textContent = p.hasLocalExecutable
       ? `Local: ${p.executable?.split(/[/\\]/).pop()} · mutators: ${(p.mutators || []).join(', ') || 'default'}`
       : `Remote ${p.kind.toUpperCase()} → ${p.host}:${p.port} (no local exe) · ${p.tip}`;
@@ -738,6 +765,10 @@ async function refreshFuzzTargetTip() {
 
 document.getElementById('fuzz-target')?.addEventListener('change', () => {
   refreshFuzzTargetTip().catch(() => {});
+});
+
+['fuzz-oracle', 'fuzz-magician', 'fuzz-joker'].forEach((id) => {
+  document.getElementById(id)?.addEventListener('change', refreshSemanticOrderHint);
 });
 
 function statusClass(status) {
@@ -4491,6 +4522,9 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
       debugViewCapture: document.getElementById('fuzz-debugview')?.checked === true,
       sysinternalsSnapshots: document.getElementById('fuzz-sysinternals-snap')?.checked === true,
       stringsOnCrash: document.getElementById('fuzz-strings-crash')?.checked === true,
+      oraclesEnabled: document.getElementById('fuzz-oracle')?.checked === true,
+      magicianEnabled: document.getElementById('fuzz-magician')?.checked === true,
+      jokerEnabled: document.getElementById('fuzz-joker')?.checked === true,
     });
     appendLog('Session accepted…');
   } catch (err) {

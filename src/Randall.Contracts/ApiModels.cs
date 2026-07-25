@@ -95,7 +95,13 @@ public sealed record FuzzStartRequest(
     bool? EtwCapture = null,
     bool? DebugViewCapture = null,
     bool? SysinternalsSnapshots = null,
-    bool? StringsOnCrash = null);
+    bool? StringsOnCrash = null,
+    /// <summary>Override <c>oracles.enabled</c> for this run only (does not rewrite YAML).</summary>
+    bool? OraclesEnabled = null,
+    /// <summary>Override <c>magician.enabled</c> for this run only (does not rewrite YAML).</summary>
+    bool? MagicianEnabled = null,
+    /// <summary>Override <c>joker.enabled</c> for this run only (does not rewrite YAML).</summary>
+    bool? JokerEnabled = null);
 
 public sealed record FuzzSessionStatusDto(
     bool Running,

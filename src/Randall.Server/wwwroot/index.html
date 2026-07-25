@@ -392,6 +392,28 @@
             <input type="checkbox" id="fuzz-coverage" />
             Coverage-guided (file targets + DynamoRIO)
           </label>
+          <fieldset class="fuzz-semantic-stack">
+            <legend class="hint">Semantic stack</legend>
+            <label class="checkbox" title="Hybrid semantic rules — judgment only (docs/ORACLES.md)">
+              <input type="checkbox" id="fuzz-oracle" />
+              Oracle — semantic judgment
+            </label>
+            <label class="checkbox" title="Spells and summons when Oracle needs help (docs/MAGICIAN.md)">
+              <input type="checkbox" id="fuzz-magician" />
+              Magician — spells &amp; summons
+            </label>
+            <label class="checkbox" title="Chaotic random tricks (docs/MAGICIAN.md#joker)">
+              <input type="checkbox" id="fuzz-joker" />
+              Joker — chaotic tricks
+            </label>
+            <p id="fuzz-semantic-order-hint" class="hint hidden"></p>
+            <p class="hint">
+              Order: Oracle → Magician → Joker ·
+              <button type="button" class="linkish" data-help="ORACLES.md">Oracles</button>
+              ·
+              <button type="button" class="linkish" data-help="MAGICIAN.md">Magician &amp; Joker</button>
+            </p>
+          </fieldset>
           <label data-platform-scope="windows">
             Debugger
             <select id="fuzz-debugger">

@@ -38,6 +38,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                     var project = ProjectLoader.Load(yamlPath);
                     if (request.MaxIterations is > 0)
                         project.Fuzz.MaxIterations = request.MaxIterations.Value;
+                    ApplySemanticStackOverrides(project, request);
 
                     var progress = new MultiplexFuzzProgressSink(sink, UpdateFromEvent, UpdatePid);
                     progress.OnStarted(project.Name, project.Kind);
@@ -139,6 +140,29 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
             }, token);
 
             return true;
+        }
+    }
+
+    private static void ApplySemanticStackOverrides(ProjectConfig project, FuzzStartRequest request)
+    {
+        if (request.OraclesEnabled is bool oracles)
+        {
+            project.Oracles ??= new OracleConfig();
+            project.Oracles.Enabled = oracles;
+        }
+
+        if (request.MagicianEnabled is bool magician)
+        {
+            project.Magician ??= new MagicianConfig();
+            project.Magician.Enabled = magician;
+            if (magician)
+                project.Magician.AutoCastOnOracle = true;
+        }
+
+        if (request.JokerEnabled is bool joker)
+        {
+            project.Joker ??= new JokerConfig();
+            project.Joker.Enabled = joker;
         }
     }
 

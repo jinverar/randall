@@ -62,7 +62,10 @@ public static class CaseRecipeStore
             dictTokens.Count,
             target.ConfigPath,
             tip,
-            project.Description);
+            project.Description,
+            project.Oracles is { Enabled: true },
+            project.Magician is { Enabled: true },
+            project.Joker is { Enabled: true } || (project.Joker?.EncoreIterations > 0));
     }
 
     public static IReadOnlyList<CaseSeedInfoDto> ListSeeds(ProjectConfig project, string configPath)
