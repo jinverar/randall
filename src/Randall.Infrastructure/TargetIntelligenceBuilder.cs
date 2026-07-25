@@ -36,12 +36,13 @@ public static class TargetIntelligenceBuilder
         }
     }
 
-    public static TargetIntelligenceDto Build(string project, string? repoRoot = null, bool persist = true)
+    public static TargetIntelligenceDto Build(string project, string? repoRoot = null, bool persist = true, BrainMemoryStateDto? brainMemory = null)
     {
         if (string.IsNullOrWhiteSpace(project))
             throw new ArgumentException("project required");
 
         repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        brainMemory ??= BrainMemoryDecay.TryLoad(project, repoRoot);
 
         var analysis = GhidraAnalysisBridge.TryLoad(project, repoRoot);
         var frontier = FrontierEngine.TryLoad(project, repoRoot);
@@ -66,6 +67,8 @@ public static class TargetIntelligenceBuilder
         var oracleDto = BuildOracleStats(cfg, yaml, oracleFindings);
 
         var summary = BuildSummary(staticDto, frontierDto, crashDto, oracleDto, dynamicDto);
+        if (brainMemory?.MemoryConfidence is < 0.999)
+            summary += $" · brain memory {brainMemory.MemoryConfidence:P0}";
         var dto = new TargetIntelligenceDto(
             project,
             DateTime.UtcNow.ToString("o"),
@@ -75,7 +78,10 @@ public static class TargetIntelligenceBuilder
             frontierDto,
             crashDto,
             oracleDto,
-            campaigns);
+            campaigns,
+            brainMemory?.TargetBinaryHash,
+            brainMemory?.MemoryConfidence ?? 1.0,
+            brainMemory?.DecayMessage);
 
         if (persist)
         {

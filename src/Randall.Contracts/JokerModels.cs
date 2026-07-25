@@ -30,6 +30,15 @@ public sealed class JokerConfig
 
     /// <summary>Chance while Magician encore is active (default 0.55).</summary>
     public double EncoreChance { get; set; } = 0.55;
+
+    public bool DeckEnabled { get; set; } = true;
+    public double ChaosWeight { get; set; } = 70;
+    public double RemixWeight { get; set; } = 20;
+    public double ReplayWeight { get; set; } = 10;
+    public double LegendaryScoreThreshold { get; set; } = 50;
+    public int LegendaryMinProductiveUses { get; set; } = 2;
+    public int DeckDrawQueue { get; set; }
+    public bool DeckDrawLegendary { get; set; }
 }
 
 /// <summary>One chaotic trick the Joker played (watched by the Magician).</summary>

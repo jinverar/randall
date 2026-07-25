@@ -125,7 +125,10 @@ public static class StalkIntelligenceBuilder
             || hints is not null
             || oracleFindings.Count > 0
             || analysis?.ChangedFunctions is { Count: > 0 };
+        var memory = BrainMemoryDecay.TryLoad(project, repoRoot);
         var summary = BuildSummary(frontier, hints, oracleFindings.Count, targets, mutators.Count);
+        if (memory?.MemoryConfidence is < 0.999)
+            summary += $" · brain memory {memory.MemoryConfidence:P0}";
         var emptyHint =
             "No stalk brain yet — export Ghidra → randall-analysis.json, run fuzz with coverage, " +
             "then `randall stalk frontier -p <project>`. Scare Doors appear after coverage layers.";
@@ -152,7 +155,9 @@ public static class StalkIntelligenceBuilder
             chainBias,
             commandStrip,
             targetProfile,
-            lastBrain);
+            lastBrain,
+            memory?.MemoryConfidence ?? 1.0,
+            memory?.DecayMessage);
     }
 
     private static string LabelForFrontier(FrontierBranchDto f) =>

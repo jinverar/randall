@@ -61,6 +61,12 @@ public sealed class FuzzEngine
         corpus.Load();
 
         var mutators = LoadMutators(project, yamlPath, corpus, seeds);
+
+        var repoRoot = CrashCatalog.FindRepoRoot();
+        var brainMemory = BrainMemoryDecay.Ensure(project, yamlPath, repoRoot);
+        if (brainMemory.LogLine is not null)
+            Console.WriteLine(brainMemory.LogLine);
+
         var mutatorCredit = new MutatorCreditTracker(
             Path.Combine(corpusDir, "mutator_credit.txt"),
             project.Fuzz.MutatorCredit);
@@ -70,7 +76,6 @@ public sealed class FuzzEngine
         var lineageByHash = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         string? lastPrimaryMutator = null;
 
-        var repoRoot = CrashCatalog.FindRepoRoot();
         BrainDecisionStore.Clear();
         var brain = new RandallBrain();
         var brainSignals = brain.LoadSignals(project.Name, repoRoot);
@@ -504,6 +509,14 @@ public sealed class FuzzEngine
                 $"integer={ocfg.Integer.Count} structure={ocfg.Structure.Count} resource={ocfg.Resource.Count}");
         }
 
+        JokerCardDeck? jokerDeck = null;
+        if (JokerEngine.IsEnabled(project) || project.Joker?.DeckEnabled == true)
+        {
+            var mageDir = Path.Combine(crashesDir, "_magician");
+            Directory.CreateDirectory(mageDir);
+            jokerDeck = new JokerCardDeck(JokerCardDeck.DefaultPath(mageDir));
+        }
+
         try
         {
             var screamGoal = project.Fuzz.ScreamScoreGoal;
@@ -537,7 +550,7 @@ public sealed class FuzzEngine
 
                 if (JokerEngine.ShouldPlay(project, rng) && mutators.Count > 0)
                 {
-                    jokerTrick = JokerEngine.StartTrick(project, mutators, rng);
+                    jokerTrick = JokerEngine.StartTrick(project, mutators, rng, jokerDeck);
                     mutator = jokerTrick.PrimaryMutator;
                     if (jokerTrick.FlowBiasOverride is double fb)
                         iterFlowBias = fb;
@@ -556,8 +569,7 @@ public sealed class FuzzEngine
                 }
                 else if (brainActive && huntDecision is { Active: true })
                 {
-                    mutator = brain.PickMutator(
-                        huntDecision, mutators, mutatorCredit, rng, mutatorChainTracker, lastPrimaryMutator);
+                    mutator = brain.PickMutator(huntDecision, mutators, mutatorCredit, rng);
                 }
                 else
                 {
@@ -782,7 +794,7 @@ public sealed class FuzzEngine
                     mutatorCredit.Record(mutator.Name, 0, uniqueCrash: false);
                     mutatorChainTracker.RecordLineage(fullLineageChain, newEdges: 0, uniqueCrash: false);
                     lastPrimaryMutator = mutator.Name;
-                    RecordScareDoorProgress(project.Name, repoRoot, iterations, mutator.Name, parentInputHash, 0, false, coverage.TotalEdges);
+                    RecordScareDoorProgress(project.Name, repoRoot ?? "", iterations, mutator.Name, parentInputHash, 0, false, coverage.TotalEdges);
                     continue;
                 }
 
@@ -1666,8 +1678,15 @@ public sealed class FuzzEngine
                 mutatorCredit.RecordWithChain(mutator.Name, mutatorChain, newEdges, uniqueCrashThisIter);
                 mutatorChainTracker.RecordLineage(fullLineageChain, newEdges, uniqueCrashThisIter);
                 lastPrimaryMutator = mutator.Name;
+                if (jokerTrick is not null && jokerDeck is not null)
+                {
+                    var oracleDelta = oracleEval is { Findings.Count: > 0 } ? oracleEval.Score.Total : 0;
+                    jokerDeck.RecordOutcome(project, jokerTrick,
+                        new JokerTrickOutcome(newEdges, uniqueCrashThisIter, newCoverage, oracleDelta, result.Crashed),
+                        jokerTrick.PlayMode ?? "chaos");
+                }
                 RecordScareDoorProgress(
-                    project.Name, repoRoot, iterations, mutator.Name, parentInputHash,
+                    project.Name, repoRoot ?? "", iterations, mutator.Name, parentInputHash,
                     newEdges, newCoverage, coverage.TotalEdges);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
