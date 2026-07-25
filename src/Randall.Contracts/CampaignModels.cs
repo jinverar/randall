@@ -38,7 +38,11 @@ public sealed record CampaignStatusDto(
     int CompletedRuns,
     int TotalRuns,
     int TotalCrashes,
-    string? LastMessage);
+    string? LastMessage,
+    /// <summary>Profile currently fuzzing inside the campaign (if running).</summary>
+    string? CurrentProject = null,
+    /// <summary>All profile names scheduled in this campaign run.</summary>
+    IReadOnlyList<string>? Projects = null);
 
 public sealed record CampaignStartRequest(string CampaignPath);
 

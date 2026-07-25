@@ -121,11 +121,35 @@ public sealed class CampaignSessionManager(FuzzLiveLogBuffer liveLog)
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
     private Task? _task;
-    private CampaignStatusDto _status = new(false, "idle", null, 0, 0, 0, null);
+    private CampaignStatusDto _status = new(false, "idle", null, 0, 0, 0, null, null, null);
 
     public CampaignStatusDto Status
     {
         get { lock (_gate) return _status; }
+    }
+
+    private static IReadOnlyList<string> ResolveCampaignProjectNames(CampaignConfig campaign, string campaignYamlPath)
+    {
+        var repoRoot = CrashCatalog.FindRepoRoot()
+            ?? Path.GetDirectoryName(Path.GetFullPath(campaignYamlPath))
+            ?? Directory.GetCurrentDirectory();
+        var names = new List<string>();
+        foreach (var run in campaign.Runs)
+        {
+            try
+            {
+                var projectPath = Path.IsPathRooted(run.Project)
+                    ? run.Project
+                    : Path.GetFullPath(Path.Combine(repoRoot, run.Project));
+                names.Add(ProjectLoader.Load(projectPath).Name);
+            }
+            catch
+            {
+                names.Add(Path.GetFileNameWithoutExtension(run.Project));
+            }
+        }
+
+        return names;
     }
 
     public bool Start(string campaignPath, IFuzzProgressSink? sink = null)
@@ -140,20 +164,31 @@ public sealed class CampaignSessionManager(FuzzLiveLogBuffer liveLog)
             var token = _cts.Token;
             var fullPath = Path.GetFullPath(campaignPath);
             var campaign = CampaignLoader.Load(fullPath);
-            _status = new CampaignStatusDto(true, "running", fullPath, 0, campaign.Runs.Count, 0, "Starting…");
+            var projectNames = ResolveCampaignProjectNames(campaign, fullPath);
+            _status = new CampaignStatusDto(
+                true, "running", fullPath, 0, campaign.Runs.Count, 0, "Starting…", null, projectNames);
+
+            var trackingSink = new CampaignProgressSink(sink, project =>
+            {
+                lock (_gate)
+                {
+                    _status = _status with { CurrentProject = project, LastMessage = $"Running {project}…" };
+                }
+            });
 
             _task = Task.Run(async () =>
             {
                 try
                 {
                     var runner = new CampaignRunner();
-                    var result = await runner.RunAsync(campaign, fullPath, sink, token);
+                    var result = await runner.RunAsync(campaign, fullPath, trackingSink, token);
                     lock (_gate)
                     {
                         _status = _status with
                         {
                             Running = false,
                             Phase = "completed",
+                            CurrentProject = null,
                             CompletedRuns = result.Runs.Count,
                             TotalCrashes = result.TotalCrashes,
                             LastMessage = $"Done — {result.TotalCrashes} crashes across {result.Runs.Count} runs",
@@ -164,14 +199,26 @@ public sealed class CampaignSessionManager(FuzzLiveLogBuffer liveLog)
                 {
                     lock (_gate)
                     {
-                        _status = _status with { Running = false, Phase = "stopped", LastMessage = "Cancelled" };
+                        _status = _status with
+                        {
+                            Running = false,
+                            Phase = "stopped",
+                            CurrentProject = null,
+                            LastMessage = "Cancelled",
+                        };
                     }
                 }
                 catch (Exception ex)
                 {
                     lock (_gate)
                     {
-                        _status = _status with { Running = false, Phase = "error", LastMessage = ex.Message };
+                        _status = _status with
+                        {
+                            Running = false,
+                            Phase = "error",
+                            CurrentProject = null,
+                            LastMessage = ex.Message,
+                        };
                     }
                 }
             }, token);
@@ -191,4 +238,20 @@ public sealed class CampaignSessionManager(FuzzLiveLogBuffer liveLog)
             return true;
         }
     }
+}
+
+internal sealed class CampaignProgressSink(IFuzzProgressSink? inner, Action<string> onProject) : IFuzzProgressSink
+{
+    public void OnStarted(string project, string kind)
+    {
+        onProject(project);
+        inner?.OnStarted(project, kind);
+    }
+
+    public void OnTargetPid(int? pid) => inner?.OnTargetPid(pid);
+    public void OnIteration(FuzzIterationEvent iteration) => inner?.OnIteration(iteration);
+    public void OnLog(FuzzLogEvent entry) => inner?.OnLog(entry);
+    public void OnCompleted(FuzzRunResult result) => inner?.OnCompleted(result);
+    public void OnStopped(string reason) => inner?.OnStopped(reason);
+    public void OnError(string message) => inner?.OnError(message);
 }

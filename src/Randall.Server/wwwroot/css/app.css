@@ -4296,6 +4296,150 @@ html[data-theme="light"] .scream-canister-liquid {
   filter: blur(3px);
 }
 
+.scream-canister-mist .mist-wisp.branch {
+  width: 14%;
+  height: 36%;
+  border-radius: 35% 65% 55% 45%;
+  filter: blur(2px);
+  clip-path: polygon(50% 0%, 80% 22%, 100% 45%, 72% 52%, 88% 100%, 50% 78%, 12% 100%, 28% 52%, 0% 45%, 20% 22%);
+}
+
+.scream-canister-mist .mist-wisp.wall-slam {
+  width: 9%;
+  height: 34%;
+  border-radius: 20% 80% 25% 75%;
+  filter: blur(1.5px);
+}
+
+.scream-canister-mist.sinister .mist-glow {
+  opacity: 0.28;
+}
+
+.scream-canister-mist.is-live-mist.sinister .mist-glow {
+  opacity: 0.42;
+}
+
+.scream-canister-mist .mist-live-steam {
+  position: absolute;
+  left: 50%;
+  bottom: 4%;
+  width: 38%;
+  height: 46%;
+  transform: translateX(-50%);
+  background: linear-gradient(0deg, rgba(255, 255, 255, 0.55), rgba(255, 220, 160, 0.15) 55%, transparent);
+  filter: blur(3px);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.scream-canister-gauge.gauge-live .scream-canister-gauge-needle {
+  filter: drop-shadow(0 0 4px rgba(255, 180, 60, 0.85));
+}
+
+html[data-scream-anim="on"] .scream-canister-gauge.gauge-live .scream-canister-gauge-needle {
+  animation: gauge-live-wobble 1.6s ease-in-out infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist.sinister .mist-wisp.branch {
+  animation-name: mist-branch-curl;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist.sinister .mist-wisp.wall-slam {
+  animation-name: mist-wall-slam;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist.is-live-mist .mist-live-steam {
+  animation: mist-live-steam 2.4s ease-in-out infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist.sinister.tone-purple .mist-glyph,
+html[data-scream-anim="on"] .scream-canister-mist.sinister.tone-red .mist-glyph {
+  animation: mist-glyph-flash var(--gl, 4s) ease-in-out infinite;
+}
+
+html[data-scream-anim="on"] .scream-canister-mist.sinister.intensity-turbulent .mist-warn-led,
+html[data-scream-anim="on"] .scream-canister-mist.sinister.intensity-max .mist-warn-led {
+  animation: mist-warn-blink 0.42s steps(2, end) infinite;
+  opacity: 1;
+}
+
+html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.sinister.tone-red.intensity-swirl),
+html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.sinister.tone-red.intensity-turbulent),
+html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.sinister.tone-red.intensity-max),
+html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.sinister.tone-purple.intensity-swirl),
+html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.sinister.tone-purple.intensity-turbulent),
+html[data-scream-anim="on"] .scream-canister-porthole:has(.scream-canister-mist.sinister.tone-purple.intensity-max) {
+  animation: mist-glass-hit 2.2s ease-in-out infinite;
+}
+
+@keyframes mist-branch-curl {
+  0%, 100% {
+    transform: translate(-50%, -50%) translate(0, 0) scale(0.78) rotate(-6deg);
+    opacity: 0.5;
+  }
+  20% {
+    transform: translate(-50%, -50%) translate(calc(var(--d1x, 0) * 1.2), calc(var(--d1y, -12px) * 1.1)) scale(1.05) rotate(12deg);
+    opacity: 0.92;
+  }
+  45% {
+    transform: translate(-50%, -50%) translate(calc(var(--d2x, 0) * 0.9), calc(var(--d2y, -24px) * 1.05)) scale(1.12) rotate(-10deg);
+    opacity: 0.88;
+  }
+  68% {
+    transform: translate(calc(-50% + 24%), -50%) scale(1.08) rotate(8deg);
+    opacity: 0.95;
+  }
+  82% {
+    transform: translate(calc(-50% - 24%), -50%) scale(1.06) rotate(-8deg);
+    opacity: 0.9;
+  }
+}
+
+@keyframes mist-wall-slam {
+  0%, 100% {
+    transform: translate(-50%, -50%) translate(0, 0) scale(0.85);
+    opacity: 0.45;
+  }
+  14% {
+    transform: translate(calc(-50% - 32%), -50%) scale(1.08);
+    opacity: 0.98;
+  }
+  28% {
+    transform: translate(-50%, calc(-50% - 6px)) scale(1.12);
+    opacity: 0.82;
+  }
+  42% {
+    transform: translate(calc(-50% + 32%), -50%) scale(1.08);
+    opacity: 0.98;
+  }
+  58% {
+    transform: translate(calc(-50% - 18%), calc(-50% - 10px)) scale(1.05);
+    opacity: 0.88;
+  }
+  72% {
+    transform: translate(calc(-50% + 18%), calc(-50% - 10px)) scale(1.05);
+    opacity: 0.88;
+  }
+}
+
+@keyframes mist-glyph-flash {
+  0%, 58%, 100% { opacity: 0; filter: blur(5px); transform: translate(-50%, -50%) scale(0.8); }
+  68% { opacity: 0.95; filter: blur(0); transform: translate(-50%, -50%) scale(1.05); }
+  78% { opacity: 0.55; filter: blur(1px); transform: translate(-50%, -58%) scale(1.08); }
+  88% { opacity: 0; filter: blur(4px); transform: translate(-50%, -62%) scale(0.92); }
+}
+
+@keyframes mist-live-steam {
+  0%, 100% { opacity: 0.15; transform: translateX(-50%) scaleY(0.75); }
+  50% { opacity: 0.72; transform: translateX(-50%) scaleY(1.08); }
+}
+
+@keyframes gauge-live-wobble {
+  0%, 100% { transform: rotate(var(--gauge, 0deg)); }
+  35% { transform: rotate(calc(var(--gauge, 0deg) + 6deg)); }
+  65% { transform: rotate(calc(var(--gauge, 0deg) - 5deg)); }
+}
+
 .scream-canister-mist.tone-green .mist-wisp {
   background: radial-gradient(ellipse at 40% 60%, rgba(90, 230, 130, 0.62), rgba(18, 70, 38, 0.12) 72%);
 }
@@ -5007,6 +5151,8 @@ html[data-scream-anim="on"] .scream-harvest-ambience.anim .amb {
   .scream-canister-mist .mist-glyph,
   .scream-canister-mist .mist-tendril,
   .scream-canister-mist .mist-warn-led,
+  .scream-canister-mist .mist-live-steam,
+  .scream-canister-gauge.gauge-live .scream-canister-gauge-needle,
   .scream-canister.just-bottled .scream-canister-vessel,
   .scream-canister[data-mist-intensity="max"].filling > .scream-canister-vessel {
     animation: none !important;

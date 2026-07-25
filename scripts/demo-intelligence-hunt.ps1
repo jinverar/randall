@@ -5,9 +5,10 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\demo-intelligence-hunt.ps1
 #   powershell -ExecutionPolicy Bypass -File .\scripts\demo-intelligence-hunt.ps1 -Project harness-demo
 #   powershell -ExecutionPolicy Bypass -File .\scripts\demo-intelligence-hunt.ps1 -SkipBuild -Iterations 30
+#   powershell -ExecutionPolicy Bypass -File .\scripts\demo-intelligence-hunt.ps1 -Project vulnserver
 [CmdletBinding()]
 param(
-    [ValidateSet("file-text", "harness-demo")]
+    [ValidateSet("file-text", "harness-demo", "vulnserver")]
     [string]$Project = "file-text",
     [switch]$SkipBuild,
     [int]$Iterations = 50
@@ -79,6 +80,16 @@ function Get-AnalyzeBinary {
             }
             return $null
         }
+        "vulnserver" {
+            $candidates = @(
+                (Join-Path $Root "targets\vulnserver\randall-vulnserver.exe"),
+                (Join-Path $Root "targets\vulnserver\vulnserver.exe")
+            )
+            foreach ($p in $candidates) {
+                if (Test-Path $p) { return $p }
+            }
+            return $null
+        }
         default { return $null }
     }
 }
@@ -116,6 +127,15 @@ if (-not $SkipBuild) {
         } else {
             Add-Step "build file-text" "fail" "gcc missing? scripts\install-gcc.ps1"
             Write-HuntLog "[!] file-text build failed — fuzz may skip if binary missing" "Warn"
+        }
+    } elseif ($Project -eq "vulnserver") {
+        $buildScript = Join-Path $PSScriptRoot "build-lab-targets.ps1"
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $buildScript vulnserver
+        if ($LASTEXITCODE -eq 0) {
+            Add-Step "build vulnserver" "ok" "targets\vulnserver\randall-vulnserver.exe"
+        } else {
+            Add-Step "build vulnserver" "fail" "scripts\build-lab-targets.ps1 vulnserver"
+            Write-HuntLog "[!] vulnserver build failed — fuzz may skip if binary missing" "Warn"
         }
     } else {
         & dotnet build (Join-Path $Root "targets\Randall.HarnessDemo") -c Release --nologo
@@ -176,6 +196,8 @@ $fuzzArgs = @(
 if ($Project -eq "file-text") {
     $fuzzArgs += @("--debugger", "wait")
     Write-HuntLog "Using --debugger wait (Scream) for native file-text target" "Cyan"
+} elseif ($Project -eq "vulnserver") {
+    Write-HuntLog "vulnserver: TCP lab target — brain on; Crashes harvest uses profile name '$Project' (YAML name:, not filename)" "Cyan"
 } else {
     Write-HuntLog "harness-demo: in-process — Scream wait not applicable; brain still active" "Cyan"
 }
@@ -228,8 +250,9 @@ Write-HuntLog ""
 Write-HuntLog "======== next (Scare Floor) ========" "Cyan"
 Write-HuntLog "  1. dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000"
 Write-HuntLog "  2. Open Fuzz → Scare Floor for project '$Project'"
-Write-HuntLog "  3. Look for **Brain** (lastBrainDecision / Why? terms) and **Scare Doors** (gray frontier rows)"
-Write-HuntLog "  4. CLI: randall stalk frontier -p $Project  ·  GET /api/fuzz/brain?project=$Project"
+Write-HuntLog "  3. Crashes → Scream canisters: Live only (on while fuzzing) bottles by YAML profile name — e.g. file-text not file_text"
+Write-HuntLog "  4. Look for **Brain** (lastBrainDecision / Why? terms) and **Scare Doors** (gray frontier rows)"
+Write-HuntLog "  5. CLI: randall stalk frontier -p $Project  ·  GET /api/fuzz/brain?project=$Project"
 Write-HuntLog ""
 Write-HuntLog "Docs: docs\ROADMAP_INTELLIGENCE.md · docs\FUZZING.md#randallbrain-closed-loop-hunt-steering" "Cyan"
 

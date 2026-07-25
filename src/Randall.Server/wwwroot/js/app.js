@@ -185,6 +185,26 @@ function isFuzzSessionActive(s) {
   return phase === 'starting' || phase === 'running' || phase === 'stopping';
 }
 
+function isCampaignSessionActive(s) {
+  if (!s?.running) return false;
+  const phase = (s.phase || '').toLowerCase();
+  return phase === 'running' || phase === 'starting' || phase === 'stopping';
+}
+
+/** Resolve YAML profile name from config path (matches /api/targets name when loaded). */
+function projectNameFromConfigPath(configPath) {
+  if (!configPath) return null;
+  const sel = document.getElementById('fuzz-target');
+  if (sel) {
+    const opt = [...sel.options].find((o) => o.value === configPath);
+    if (opt?.dataset?.name) return opt.dataset.name;
+  }
+  const base = String(configPath).replace(/\\/g, '/').split('/').pop()?.replace(/\.ya?ml$/i, '');
+  return base || null;
+}
+
+let campaignStatusCache = null;
+
 function applyFuzzSessionStatus(s) {
   if (!s) return;
   const active = isFuzzSessionActive(s);
@@ -217,7 +237,12 @@ function applyFuzzSessionStatus(s) {
 }
 
 async function syncFuzzSession({ fetchLogs = true } = {}) {
-  const s = await api.get('/api/fuzz/status');
+  const [s, campaign] = await Promise.all([
+    api.get('/api/fuzz/status'),
+    api.get('/api/campaign/status').catch(() => null),
+  ]);
+  campaignStatusCache = campaign;
+  syncHarvestLiveFromStatus(s, campaign);
   applyFuzzSessionStatus(s);
   if (fetchLogs) {
     try {
@@ -899,17 +924,13 @@ async function fetchBrainDecision(project) {
 }
 
 function renderScareFloorCanisters(project) {
-  const all = harvestState.all || crashState.all || [];
-  const filtered = project
-    ? all.filter((c) => (c.project || '') === project)
-    : all;
   renderScreamCanisters({
     rackId: 'scare-canister-rack',
     statusId: 'scare-harvest-status',
     pressureId: 'scare-harvest-pressure',
     compact: true,
     mode: 'projects',
-    crashes: filtered,
+    filterContext: getHarvestFilterContext({ scareProject: project || '', respectScareProject: !!project }),
   });
 }
 
@@ -957,12 +978,15 @@ async function refreshScareFloorBrain(opts = {}) {
   }
 
   try {
-    const [fuzzStatus, intel, brainDecision] = await Promise.all([
+    const [fuzzStatus, campaign, intel, brainDecision] = await Promise.all([
       api.get('/api/fuzz/status').catch(() => null),
+      api.get('/api/campaign/status').catch(() => null),
       api.get(`/api/stalking/${encodeURIComponent(project)}/intelligence`),
       fetchBrainDecision(project),
     ]);
 
+    campaignStatusCache = campaign;
+    syncHarvestLiveFromStatus(fuzzStatus, campaign);
     if (summaryEl) summaryEl.textContent = intel.summary || intel.emptyHint || '';
 
     const stripHtml = renderScareBrainStrip(intel.commandStrip, fuzzStatus, brainDecision);
@@ -3793,8 +3817,116 @@ let harvestState = {
   prevFillById: {},
   mode: 'projects', // projects | severity
   liveProject: null,
+  liveProjects: new Set(),
+  fuzzSessionActive: false,
+  liveOnly: true,
+  showIdle: false,
+  liveOnlyUserSet: false,
   seenProjects: new Set(),
 };
+
+function getHarvestFilterContext(opts = {}) {
+  const crashProjectFilter = opts.respectCrashFilter
+    ? (document.getElementById('crash-filter')?.value || '')
+    : (opts.crashProjectFilter ?? '');
+  const scareProject = opts.respectScareProject
+    ? (opts.scareProject ?? document.getElementById('case-project')?.value ?? '')
+    : '';
+  return {
+    fuzzActive: !!harvestState.fuzzSessionActive,
+    liveOnly: !!harvestState.fuzzSessionActive && harvestState.liveOnly,
+    showIdle: !harvestState.fuzzSessionActive && harvestState.showIdle,
+    liveProjects: harvestState.liveProjects || new Set(),
+    crashProjectFilter,
+    scareProject,
+  };
+}
+
+function filterHarvestCrashPool(all, ctx) {
+  let pool = all || [];
+  if (ctx.scareProject) {
+    pool = pool.filter((c) => crashProjectName(c) === ctx.scareProject);
+  } else if (ctx.crashProjectFilter) {
+    pool = pool.filter((c) => crashProjectName(c) === ctx.crashProjectFilter);
+  }
+  if (ctx.liveOnly && ctx.liveProjects.size > 0) {
+    pool = pool.filter((c) => ctx.liveProjects.has(crashProjectName(c)));
+  }
+  return pool;
+}
+
+function syncHarvestToggleUi() {
+  const liveEl = document.getElementById('scream-harvest-live-only');
+  const idleEl = document.getElementById('scream-harvest-show-idle');
+  if (liveEl) liveEl.checked = harvestState.liveOnly;
+  if (idleEl) idleEl.checked = harvestState.showIdle;
+}
+
+function updateHarvestToggleVisibility() {
+  const liveWrap = document.getElementById('scream-harvest-live-wrap');
+  const idleWrap = document.getElementById('scream-harvest-idle-wrap');
+  if (liveWrap) liveWrap.hidden = !harvestState.fuzzSessionActive;
+  if (idleWrap) idleWrap.hidden = harvestState.fuzzSessionActive;
+}
+
+function loadHarvestFilterPrefs() {
+  try {
+    const liveOnly = localStorage.getItem('randfuzz.harvestLiveOnly');
+    const showIdle = localStorage.getItem('randfuzz.harvestShowIdle');
+    if (liveOnly === '0') {
+      harvestState.liveOnly = false;
+      harvestState.liveOnlyUserSet = true;
+    } else if (liveOnly === '1') {
+      harvestState.liveOnly = true;
+      harvestState.liveOnlyUserSet = true;
+    }
+    if (showIdle === '1') harvestState.showIdle = true;
+  } catch { /* ignore */ }
+}
+
+function persistHarvestFilterPrefs() {
+  try {
+    localStorage.setItem('randfuzz.harvestLiveOnly', harvestState.liveOnly ? '1' : '0');
+    localStorage.setItem('randfuzz.harvestShowIdle', harvestState.showIdle ? '1' : '0');
+  } catch { /* ignore */ }
+}
+
+function syncHarvestLiveFromStatus(fuzzStatus, campaignStatus) {
+  const fuzzActive = isFuzzSessionActive(fuzzStatus);
+  const campaignRunning = isCampaignSessionActive(campaignStatus);
+  const wasActive = !!harvestState.fuzzSessionActive;
+  harvestState.fuzzSessionActive = fuzzActive || campaignRunning;
+
+  const projects = new Set();
+  if (fuzzActive) {
+    const p = fuzzStatus?.project || projectNameFromConfigPath(fuzzStatus?.configPath);
+    if (p) projects.add(p);
+  }
+  if (campaignRunning) {
+    if (campaignStatus?.currentProject) {
+      projects.add(campaignStatus.currentProject);
+    } else {
+      for (const p of campaignStatus?.projects || []) {
+        if (p) projects.add(p);
+      }
+    }
+  }
+  if (harvestState.liveProject) projects.add(harvestState.liveProject);
+
+  harvestState.liveProjects = projects;
+  if (projects.size === 1) {
+    harvestState.liveProject = [...projects][0];
+  } else if (!harvestState.fuzzSessionActive) {
+    harvestState.liveProject = null;
+    harvestState.liveProjects = new Set();
+  }
+
+  if (harvestState.fuzzSessionActive && !wasActive && !harvestState.liveOnlyUserSet) {
+    harvestState.liveOnly = true;
+  }
+  syncHarvestToggleUi();
+  updateHarvestToggleVisibility();
+}
 
 function harvestUniqueCount(crashes) {
   const keys = new Set();
@@ -3841,17 +3973,20 @@ function flashScreamBottled(detail = '', { ipControlled = false } = {}) {
   toast._hide = setTimeout(() => toast.classList.remove('show', 'eip-capture'), ipControlled ? 5200 : 3200);
 }
 
-function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
+function buildHarvestSlots(all, { compact = false, mode = 'projects', filterContext = null } = {}) {
+  const ctx = filterContext || getHarvestFilterContext({ respectCrashFilter: true });
+  const pool = filterHarvestCrashPool(all, ctx);
+
   if (mode === 'severity') {
     const bySev = { critical: 0, high: 0, medium: 0, low: 0 };
     let ipHits = 0;
-    for (const c of all) {
+    for (const c of pool) {
       const s = crashSev(c);
       if (bySev[s] != null) bySev[s] += 1;
       else bySev.low += 1;
       if (crashIpControlled(c)) ipHits += 1;
     }
-    const unique = harvestUniqueCount(all);
+    const unique = harvestUniqueCount(pool);
     const mood = scoreHarvestMood({ unique, critical: bySev.critical, ipCount: ipHits });
     return [
       {
@@ -3899,18 +4034,23 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
 
   // One canister per test/project (Target profile)
   const byProject = new Map();
-  for (const c of all) {
+  for (const c of pool) {
     const p = crashProjectName(c);
     markHarvestProjectSeen(p);
     if (!byProject.has(p)) byProject.set(p, []);
     byProject.get(p).push(c);
   }
 
-  if (harvestState.liveProject) markHarvestProjectSeen(harvestState.liveProject);
+  for (const name of harvestState.liveProjects || []) {
+    markHarvestProjectSeen(name);
+  }
 
-  // Clean / laughter canisters: fuzz targets we've seen that never screamed
-  for (const name of harvestState.seenProjects || []) {
-    if (!byProject.has(name)) byProject.set(name, []);
+  // Clean / laughter canisters: historical idle targets (opt-in when not live-filtering)
+  const showLaughterHistory = !ctx.liveOnly && (ctx.showIdle || ctx.fuzzActive);
+  if (showLaughterHistory) {
+    for (const name of harvestState.seenProjects || []) {
+      if (!byProject.has(name)) byProject.set(name, []);
+    }
   }
 
   let names = [...byProject.keys()].sort((a, b) => {
@@ -3933,14 +4073,34 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
     return a.localeCompare(b);
   });
 
-  if (harvestState.liveProject && !byProject.has(harvestState.liveProject)) {
-    names = [harvestState.liveProject, ...names];
-    byProject.set(harvestState.liveProject, []);
+  // Idle rack: hide zero-scream canisters unless Show idle
+  if (!ctx.fuzzActive && !ctx.showIdle) {
+    names = names.filter((n) => harvestUniqueCount(byProject.get(n) || []) > 0);
   }
 
-  // Keep the live fuzz target first so its canister stays on-camera during campaigns.
-  if (harvestState.liveProject && names.includes(harvestState.liveProject)) {
-    names = [harvestState.liveProject, ...names.filter((n) => n !== harvestState.liveProject)];
+  // Live hunt: only active session profile(s) — keep empty laughter for live targets
+  if (ctx.liveOnly && ctx.liveProjects.size > 0) {
+    for (const lp of ctx.liveProjects) {
+      if (!byProject.has(lp)) byProject.set(lp, []);
+    }
+    names = [...ctx.liveProjects].filter((n) => byProject.has(n));
+    for (const n of names) {
+      if (!byProject.has(n)) byProject.set(n, []);
+    }
+  } else if (ctx.liveProjects.size > 0) {
+    for (const lp of ctx.liveProjects) {
+      if (!byProject.has(lp)) {
+        byProject.set(lp, []);
+        if (!names.includes(lp)) names.unshift(lp);
+      }
+    }
+  }
+
+  // Keep live fuzz target(s) first so active canisters stay on-camera
+  if (ctx.liveProjects.size > 0) {
+    const liveFirst = [...ctx.liveProjects].filter((n) => names.includes(n));
+    const rest = names.filter((n) => !ctx.liveProjects.has(n));
+    names = [...liveFirst, ...rest];
   }
 
   if (compact) names = names.slice(0, 5);
@@ -3971,7 +4131,7 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
     const critical = harvestCriticalCount(list);
     const mood = scoreHarvestMood({ unique, critical, ipCount });
     const ipControlled = ipCount > 0;
-    const live = harvestState.liveProject && name === harvestState.liveProject;
+    const live = harvestState.liveProjects.has(name);
     const staticHint = list.find((c) => c.staticFunctionSummary)?.staticFunctionSummary || '';
     const canisterCtx = list.find((c) => c.canisterContext)?.canisterContext || '';
     const hotCrash = list.find(screamHot);
@@ -4057,17 +4217,28 @@ function canisterMistIntensity(pct) {
   return 'max';
 }
 
+function isSinisterMist(mood, slot = {}) {
+  const tone = canisterMistTone(mood, slot);
+  return !!slot.screamHot || !!slot.live || mood === 'toxic' || mood === 'virulent' || mood === 'eip'
+    || tone === 'purple' || tone === 'red';
+}
+
 function canisterMistHtml(slot, pct, mood, { compact = false } = {}) {
   if (document.documentElement.getAttribute('data-scream-anim') !== 'on') return '';
   const tone = canisterMistTone(mood, slot);
   const intensity = canisterMistIntensity(pct);
   if (tone === 'none' || intensity === 'idle') return '';
 
+  const sinister = isSinisterMist(mood, slot);
   const wispBudget = compact
-    ? { tiny: 1, light: 2, swirl: 3, turbulent: 4, max: 4 }
-    : { tiny: 2, light: 3, swirl: 5, turbulent: 7, max: 8 };
+    ? (sinister
+      ? { tiny: 2, light: 3, swirl: 4, turbulent: 5, max: 6 }
+      : { tiny: 1, light: 2, swirl: 3, turbulent: 4, max: 4 })
+    : (sinister
+      ? { tiny: 3, light: 5, swirl: 8, turbulent: 10, max: 12 }
+      : { tiny: 2, light: 3, swirl: 5, turbulent: 7, max: 8 });
   const n = wispBudget[intensity] || 2;
-  const rand = mistRand(`${slot.id}|${tone}|${intensity}`);
+  const rand = mistRand(`${slot.id}|${tone}|${intensity}|${slot.live ? 'live' : ''}`);
   const wisps = [];
 
   for (let i = 0; i < n; i++) {
@@ -4077,12 +4248,14 @@ function canisterMistHtml(slot, pct, mood, { compact = false } = {}) {
     const d1y = Math.round(-28 + rand() * -6);
     const d2x = Math.round(-14 + rand() * 28);
     const d2y = Math.round(-42 + rand() * -8);
-    const wd = (2.6 + rand() * 2.8).toFixed(2);
+    const wd = (2.2 + rand() * (sinister ? 2.4 : 2.8)).toFixed(2);
     const wl = (rand() * 2.4).toFixed(2);
     let kind = '';
-    if (tone === 'yellow' && rand() > 0.62) kind = ' ribbon';
-    else if (tone === 'red' && rand() > 0.55) kind = ' bolt';
-    else if (tone === 'purple' && rand() > 0.45) kind = ' shape';
+    if (sinister && (tone === 'red' || tone === 'purple') && rand() > 0.38) kind = ' branch';
+    else if (tone === 'yellow' && rand() > (sinister ? 0.48 : 0.62)) kind = ' ribbon';
+    else if (tone === 'red' && rand() > (sinister ? 0.38 : 0.55)) kind = ' bolt';
+    else if (tone === 'purple' && rand() > (sinister ? 0.32 : 0.45)) kind = ' shape';
+    else if (sinister && tone === 'red' && rand() > 0.55) kind = ' wall-slam';
     const rev = tone === 'purple' && rand() > 0.5 ? ' reverse' : '';
     wisps.push(
       `<span class="mist-wisp${kind}${rev}" style="--mx:${mx}%;--my:${my}%;--d1x:${d1x}px;--d1y:${d1y}px;--d2x:${d2x}px;--d2y:${d2y}px;--wd:${wd}s;--wl:${wl}s"></span>`,
@@ -4091,35 +4264,45 @@ function canisterMistHtml(slot, pct, mood, { compact = false } = {}) {
 
   let sparks = '';
   if ((tone === 'yellow' || tone === 'red') && intensity !== 'tiny') {
-    const sn = compact ? (tone === 'red' ? 2 : 1) : (tone === 'red' ? 4 : 2);
+    const sn = compact
+      ? (tone === 'red' ? (sinister ? 3 : 2) : (sinister ? 2 : 1))
+      : (tone === 'red' ? (sinister ? 5 : 4) : (sinister ? 3 : 2));
     const bits = [];
     for (let i = 0; i < sn; i++) {
       bits.push(
-        `<span class="mist-spark" style="--sx:${Math.round(rand() * 100)}%;--sy:${Math.round(38 + rand() * 52)}%;--sd:${(0.55 + rand() * 0.9).toFixed(2)}s;--sl:${(rand() * 2.2).toFixed(2)}s"></span>`,
+        `<span class="mist-spark" style="--sx:${Math.round(rand() * 100)}%;--sy:${Math.round(38 + rand() * 52)}%;--sd:${(0.45 + rand() * 0.75).toFixed(2)}s;--sl:${(rand() * 2.2).toFixed(2)}s"></span>`,
       );
     }
     sparks = `<div class="mist-sparks">${bits.join('')}</div>`;
   }
 
   let glyph = '';
-  if (!compact && intensity !== 'tiny') {
-    const glyphs = ['0xC0000005', 'RIP', 'ACCESS_VIOLATION', 'SIGSEGV', 'EIP'];
+  const glyphChance = sinister ? 0.55 : 1;
+  if (intensity !== 'tiny' && rand() <= glyphChance) {
+    const glyphs = tone === 'purple'
+      ? ['0xDEAD', 'RIP', 'HOT', '???', 'SIGSEGV']
+      : ['0xC0000005', 'RIP', 'ACCESS_VIOLATION', 'SIGSEGV', 'EIP'];
     const pick = glyphs[Math.floor(rand() * glyphs.length)];
-    glyph = `<span class="mist-glyph" style="--gl:${(3.5 + rand() * 4.5).toFixed(1)}s">${pick}</span>`;
+    glyph = `<span class="mist-glyph${sinister ? ' sinister' : ''}" style="--gl:${(2.8 + rand() * (sinister ? 3.2 : 4.5)).toFixed(1)}s">${pick}</span>`;
   }
 
-  const tendril = tone === 'green' && !compact && intensity !== 'tiny'
+  const tendril = tone === 'green' && !compact && intensity !== 'tiny' && !sinister
     ? '<span class="mist-tendril"></span>'
     : '';
 
-  return `<div class="scream-canister-mist tone-${tone} intensity-${intensity}" data-tone="${tone}" data-intensity="${intensity}" aria-hidden="true">
+  const steam = slot.live && sinister
+    ? '<span class="mist-live-steam" aria-hidden="true"></span>'
+    : '';
+
+  return `<div class="scream-canister-mist tone-${tone} intensity-${intensity}${sinister ? ' sinister' : ''}${slot.live ? ' is-live-mist' : ''}" data-tone="${tone}" data-intensity="${intensity}" aria-hidden="true">
     <div class="mist-wisps">${wisps.join('')}</div>
     ${sparks}
     ${glyph}
     ${tendril}
+    ${steam}
     <div class="mist-glow"></div>
     <div class="mist-flash"></div>
-    ${intensity === 'max' ? '<span class="mist-warn-led a"></span><span class="mist-warn-led b"></span>' : ''}
+    ${intensity === 'max' || (sinister && intensity === 'turbulent') ? '<span class="mist-warn-led a"></span><span class="mist-warn-led b"></span>' : ''}
   </div>`;
 }
 
@@ -4252,16 +4435,19 @@ function renderScreamCanisters(opts = {}) {
     return;
   }
   const mode = opts.mode || harvestState.mode || 'projects';
+  const filterContext = opts.filterContext
+    || getHarvestFilterContext({ respectCrashFilter: rackId === 'scream-canister-rack' });
   const rack = document.getElementById(rackId);
   const status = document.getElementById(statusId);
   const pressure = document.getElementById(pressureId);
   if (!rack) return;
 
-  const all = opts.crashes || harvestState.all || crashState.all || [];
+  const source = opts.crashes || harvestState.all || crashState.all || [];
+  const all = filterHarvestCrashPool(source, filterContext);
   const unique = harvestUniqueCount(all);
   const ipHits = harvestIpControlCount(all);
   const criticalHits = harvestCriticalCount(all);
-  const slots = buildHarvestSlots(all, { compact, mode });
+  const slots = buildHarvestSlots(source, { compact, mode, filterContext });
   const floorMood = slots.reduce(
     (best, s) => (moodRank(s.mood) > moodRank(best) ? s.mood : best),
     scoreHarvestMood({ unique, critical: criticalHits, ipCount: ipHits }),
@@ -4276,11 +4462,19 @@ function renderScreamCanisters(opts = {}) {
   }
 
   if (status) {
-    const projects = new Set(slots.map((s) => s.project).filter(Boolean));
-    if (!all.length && ![...harvestState.seenProjects || []].length) {
+    const liveNames = [...(filterContext.liveProjects || [])];
+    if (filterContext.liveOnly && liveNames.length) {
+      status.textContent = ipHits > 0
+        ? `Live hunt · ${liveNames.join(', ')} · ${ipHits} EIP seal`
+        : `Live hunt · ${liveNames.join(', ')} · ${unique} unique`;
+    } else if (!source.length && ![...harvestState.seenProjects || []].length) {
       status.textContent = compact
         ? 'Scare floor quiet — laughter waiting.'
         : 'Scare floor quiet — start a fuzz run; clean tests stay on laughter.';
+    } else if (!filterContext.showIdle && !filterContext.fuzzActive && !unique) {
+      status.textContent = compact
+        ? 'No screams bottled — toggle Show idle for clean tests.'
+        : 'No screams in view — enable Show idle to see laughter canisters.';
     } else if (ipHits > 0) {
       status.textContent = `${slots.length} canister${slots.length === 1 ? '' : 's'} · ${ipHits} EIP seal · floor ${floorMood}`;
     } else {
@@ -4370,7 +4564,7 @@ function renderScreamCanisters(opts = {}) {
           <div class="scream-canister-liquid"></div>
           ${mist}
         </div>
-        <div class="scream-canister-gauge" aria-hidden="true" title="Harvest pressure">
+        <div class="scream-canister-gauge${s.live ? ' gauge-live' : ''}" aria-hidden="true" title="Harvest pressure">
           <span class="scream-canister-gauge-needle"></span>
         </div>
         <div class="scream-canister-capture-fx" aria-hidden="true"><div class="mist-tube"></div></div>
@@ -4466,12 +4660,14 @@ function paintHarvestViewsNow() {
     statusId: 'scream-harvest-status',
     pressureId: 'scream-harvest-pressure',
     mode: harvestState.mode,
+    filterContext: getHarvestFilterContext({ respectCrashFilter: true }),
   });
   renderScreamCanisters({
     rackId: 'dash-canister-rack',
     statusId: 'dash-harvest-status',
     compact: true,
     mode: 'projects',
+    filterContext: getHarvestFilterContext(),
   });
   // Compact rack on the Fuzz campaign so canisters stay visible while live-logging.
   renderScreamCanisters({
@@ -4480,17 +4676,17 @@ function paintHarvestViewsNow() {
     pressureId: 'fuzz-harvest-pressure',
     compact: true,
     mode: 'projects',
+    filterContext: getHarvestFilterContext(),
   });
   const scareProject = document.getElementById('case-project')?.value;
   if (scareProject && !document.getElementById('fuzz-tab-cases')?.classList.contains('hidden')) {
-    const filtered = (harvestState.all || []).filter((c) => (c.project || '') === scareProject);
     renderScreamCanisters({
       rackId: 'scare-canister-rack',
       statusId: 'scare-harvest-status',
       pressureId: 'scare-harvest-pressure',
       compact: true,
       mode: 'projects',
-      crashes: filtered,
+      filterContext: getHarvestFilterContext({ scareProject, respectScareProject: true }),
     });
   }
 }
@@ -4589,6 +4785,7 @@ async function loadCrashes(project = '') {
 
 document.getElementById('crash-filter')?.addEventListener('change', (e) => {
   loadCrashes(e.target.value);
+  paintHarvestViews();
 });
 document.getElementById('crash-sev-filter')?.addEventListener('change', () => paintCrashInvestigate());
 document.getElementById('crash-sort')?.addEventListener('change', () => paintCrashInvestigate());
@@ -4719,8 +4916,22 @@ document.getElementById('scream-harvest-anim')?.addEventListener('change', async
   try { await api.put('/api/ui/prefs', { screamAnimations: animOn }); } catch { /* localStorage still restores */ }
 });
 
+document.getElementById('scream-harvest-live-only')?.addEventListener('change', (e) => {
+  harvestState.liveOnly = !!e.target.checked;
+  harvestState.liveOnlyUserSet = true;
+  persistHarvestFilterPrefs();
+  paintHarvestViews();
+});
+
+document.getElementById('scream-harvest-show-idle')?.addEventListener('change', (e) => {
+  harvestState.showIdle = !!e.target.checked;
+  persistHarvestFilterPrefs();
+  paintHarvestViews();
+});
+
 async function initScreamHarvestPrefs() {
   loadSeenHarvestProjects();
+  loadHarvestFilterPrefs();
   let cansOn = true;
   let animOn = false;
   try {
@@ -4737,6 +4948,16 @@ async function initScreamHarvestPrefs() {
     if (typeof prefs?.screamAnimations === 'boolean') animOn = prefs.screamAnimations;
   } catch { /* keep local defaults */ }
   applyScreamHarvestPrefs({ canisters: cansOn, animations: animOn, persist: true });
+  syncHarvestToggleUi();
+  updateHarvestToggleVisibility();
+  try {
+    const [fuzz, campaign] = await Promise.all([
+      api.get('/api/fuzz/status').catch(() => null),
+      api.get('/api/campaign/status').catch(() => null),
+    ]);
+    campaignStatusCache = campaign;
+    syncHarvestLiveFromStatus(fuzz, campaign);
+  } catch { /* poll will retry */ }
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -4761,7 +4982,12 @@ async function connectHub() {
     startBtn.disabled = true;
     stopBtn.disabled = false;
     stalkProject = e.project || stalkProject;
-    harvestState.liveProject = e.project || stalkProject || null;
+    if (e.project) {
+      harvestState.liveProject = e.project;
+      if (!harvestState.liveProjects) harvestState.liveProjects = new Set();
+      harvestState.liveProjects.add(e.project);
+      harvestState.fuzzSessionActive = true;
+    }
     markHarvestProjectSeen(harvestState.liveProject);
     stalkServerTimeline = [];
     stalkLiveTimeline = [];
@@ -4823,6 +5049,8 @@ async function connectHub() {
     startBtn.disabled = false;
     stopBtn.disabled = true;
     harvestState.liveProject = null;
+    harvestState.liveProjects = new Set();
+    harvestState.fuzzSessionActive = false;
     resolveCrashIdForIteration(-1).finally(() => {
       loadDashboard({
         applyWidgets: stalkFollowLive,
@@ -4839,6 +5067,8 @@ async function connectHub() {
     startBtn.disabled = false;
     stopBtn.disabled = true;
     harvestState.liveProject = null;
+    harvestState.liveProjects = new Set();
+    harvestState.fuzzSessionActive = false;
     paintHarvestViews();
     loadDashboard({ applyWidgets: stalkFollowLive, force: stalkFollowLive }).catch(() => {});
   });
@@ -5674,7 +5904,12 @@ document.getElementById('proxy-to-scare-session')?.addEventListener('click', asy
 
 async function pollStatus() {
   try {
-    const s = await api.get('/api/fuzz/status');
+    const [s, campaign] = await Promise.all([
+      api.get('/api/fuzz/status'),
+      api.get('/api/campaign/status').catch(() => null),
+    ]);
+    campaignStatusCache = campaign;
+    syncHarvestLiveFromStatus(s, campaign);
     applyFuzzSessionStatus(s);
     if (isFuzzSessionActive(s)) {
       stalkPollTick += 1;

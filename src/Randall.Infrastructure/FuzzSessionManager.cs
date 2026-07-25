@@ -8,7 +8,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
     private Task? _task;
-    private FuzzSessionStatusDto _status = new(false, "idle", null, 0, 0, 0, 0, null, null);
+    private FuzzSessionStatusDto _status = new(false, "idle", null, 0, 0, 0, 0, null, null, null, null, null);
 
     public FuzzSessionStatusDto Status
     {
@@ -28,7 +28,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
             var dbgMode = request.DebuggerMode;
             _status = new FuzzSessionStatusDto(
                 true, "starting", request.ConfigPath, 0, 0, 0, 0, request.CoverageGuided, null,
-                null, dbgMode);
+                null, dbgMode, null);
 
             _task = Task.Run(async () =>
             {
@@ -36,6 +36,10 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                 {
                     var yamlPath = Path.GetFullPath(request.ConfigPath);
                     var project = ProjectLoader.Load(yamlPath);
+                    lock (_gate)
+                    {
+                        _status = _status with { Project = project.Name };
+                    }
                     if (request.MaxIterations is > 0)
                         project.Fuzz.MaxIterations = request.MaxIterations.Value;
                     ApplySemanticStackOverrides(project, request);
@@ -73,6 +77,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                         {
                             Running = false,
                             Phase = "completed",
+                            Project = null,
                             Iterations = result.Iterations,
                             Crashes = result.CrashesFound,
                             CorpusAdded = result.CorpusAdded,
@@ -85,7 +90,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                     sink?.OnStopped("cancelled");
                     lock (_gate)
                     {
-                        _status = _status with { Running = false, Phase = "stopped", LastMessage = "Stopped by user" };
+                        _status = _status with { Running = false, Phase = "stopped", Project = null, LastMessage = "Stopped by user" };
                     }
                 }
                 catch (Exception ex) when (BenignRecorderPipeException.IsBenign(ex))
@@ -104,6 +109,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                         {
                             Running = false,
                             Phase = partial.Iterations > 0 ? "completed" : "error",
+                            Project = null,
                             LastMessage = partial.Iterations > 0
                                 ? early
                                     ? $"Done — {partial.Iterations} iterations (stopped early — hub/recorder noise: {ex.Message})"
@@ -134,6 +140,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                         {
                             Running = false,
                             Phase = "error",
+                            Project = null,
                             LastMessage = ex.Message,
                         };
                     }
