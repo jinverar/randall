@@ -687,6 +687,107 @@ function initRecipeCatalog() {
   });
 }
 
+// —— Scare Floor brain (Randall thinks): frontier + static map + oracle hints ——
+function scareBrainKindLabel(kind) {
+  if (kind === 'frontier') return 'gray door';
+  if (kind === 'oracle') return 'oracle';
+  return 'static';
+}
+
+function renderScareBrainTerms(breakdown) {
+  if (!breakdown?.terms?.length) {
+    return '<p class="hint">No score breakdown — run stalk frontier or export Ghidra analysis for explainable terms.</p>';
+  }
+  const rows = breakdown.terms.map((t) =>
+    `<li><span>${escapeAttr(t.label)}${t.detail ? ` <span class="hint">(${escapeAttr(t.detail)})</span>` : ''}</span>` +
+    `<span class="scare-brain-term-pts">+${t.points}</span></li>`).join('');
+  const total = breakdown.total != null ? `<p class="hint">Total <strong>${breakdown.total}</strong>${breakdown.summary ? ` — ${escapeAttr(breakdown.summary)}` : ''}</p>` : '';
+  return `${total}<ul class="scare-brain-terms">${rows}</ul>`;
+}
+
+function renderScareBrainTarget(t, index) {
+  const kind = scareBrainKindLabel(t.kind);
+  const addr = t.address ? ` · <code>${escapeAttr(t.address)}</code>` : '';
+  const whyId = `scare-brain-why-${index}`;
+  const hasBreakdown = !!(t.scoreBreakdown?.terms?.length);
+  return `<div class="scare-brain-row" data-brain-id="${escapeAttr(t.id)}">
+    <span class="scare-brain-score" title="Rank score">${t.score}</span>
+    <div class="scare-brain-main">
+      <div class="scare-brain-label">${escapeAttr(t.label)}
+        <span class="scare-brain-kind kind-${escapeAttr(t.kind)}">${escapeAttr(kind)}</span>${addr}
+      </div>
+      <p class="scare-brain-detail">${escapeAttr(t.detail || '')}</p>
+    </div>
+    <button type="button" class="scare-brain-why" id="${whyId}" data-brain-why="${index}" aria-expanded="false" ${hasBreakdown ? '' : 'disabled title="No breakdown yet"'}>Why?</button>
+    <div class="scare-brain-breakdown hidden" id="${whyId}-panel" role="region" aria-labelledby="${whyId}">
+      ${renderScareBrainTerms(t.scoreBreakdown)}
+    </div>
+  </div>`;
+}
+
+async function refreshScareFloorBrain() {
+  const project = document.getElementById('case-project')?.value;
+  const summaryEl = document.getElementById('scare-brain-summary');
+  const targetsEl = document.getElementById('scare-brain-targets');
+  const footEl = document.getElementById('scare-brain-foot');
+  if (!targetsEl) return;
+
+  if (!project) {
+    if (summaryEl) summaryEl.textContent = 'Pick a project to see gray doors, static priorities, and oracle hints.';
+    targetsEl.innerHTML = '<p class="hint scare-brain-empty">Select <strong>Working on project</strong> below — Randall reads <code>data/stalk/&lt;project&gt;/</code> on disk.</p>';
+    footEl?.classList.add('hidden');
+    return;
+  }
+
+  targetsEl.innerHTML = '<p class="hint scare-brain-empty">Thinking…</p>';
+  try {
+    const intel = await api.get(`/api/stalking/${encodeURIComponent(project)}/intelligence`);
+    if (summaryEl) summaryEl.textContent = intel.summary || intel.emptyHint || '';
+
+    if (!intel.hasData || !(intel.targets || []).length) {
+      targetsEl.innerHTML = `<p class="hint scare-brain-empty">${escapeAttr(intel.emptyHint || 'No stalk intelligence yet.')}</p>`;
+      footEl?.classList.add('hidden');
+      return;
+    }
+
+    const targets = intel.targets || [];
+    targetsEl.innerHTML = targets.map((t, i) => renderScareBrainTarget(t, i)).join('');
+    targetsEl.querySelectorAll('[data-brain-why]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const panel = document.getElementById(`${btn.id}-panel`);
+        if (!panel) return;
+        const open = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+        panel.classList.toggle('hidden', open);
+      });
+    });
+
+    if (footEl) {
+      const parts = [];
+      if (intel.frontierSummary) parts.push(`Frontier: ${intel.frontierSummary}`);
+      if (intel.coverageGapSummary) parts.push(intel.coverageGapSummary);
+      const muts = intel.topMutators || [];
+      if (muts.length) {
+        const chips = muts.map((m) =>
+          `<span class="scare-brain-mut-chip" title="score ${m.score} · ${m.newEdges} edges">${escapeAttr(m.name)}</span>`).join('');
+        parts.push(`Mutator credit${intel.mutatorBiasEnabled ? '' : ' (bias off)'}: <span class="scare-brain-mutators">${chips}</span>`);
+      }
+      if (parts.length) {
+        footEl.innerHTML = parts.join('<br/>');
+        footEl.classList.remove('hidden');
+      } else {
+        footEl.classList.add('hidden');
+      }
+    }
+  } catch (err) {
+    if (summaryEl) summaryEl.textContent = 'Could not load stalk intelligence.';
+    targetsEl.innerHTML = `<p class="hint scare-brain-empty">${escapeAttr(err.message)}</p>`;
+    footEl?.classList.add('hidden');
+  }
+}
+
+document.getElementById('scare-brain-refresh')?.addEventListener('click', () => refreshScareFloorBrain().catch(() => {}));
+
 let stalkProject = null;
 /** Server/history timeline from last /api/stalk payload (persists across live ticks). */
 let stalkServerTimeline = [];
@@ -5638,6 +5739,7 @@ async function loadCaseBuilder() {
   await refreshCaseProject();
   await refreshCasePacks();
   await loadRecipeCatalog();
+  await refreshScareFloorBrain();
   renderCaseSteps();
 }
 
@@ -6140,6 +6242,7 @@ async function refreshCaseProject() {
   renderCaseMutators(p);
   renderCaseSeedList(p.seeds || []);
   await refreshCaseRecipes(name);
+  await refreshScareFloorBrain();
 }
 
 async function refreshCaseRecipes(project) {

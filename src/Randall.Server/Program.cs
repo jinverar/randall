@@ -686,6 +686,20 @@ app.MapGet("/api/stalking/{project}/map", (string project, int? limit, string? b
     }
 });
 
+app.MapGet("/api/stalking/{project}/intelligence", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        return Results.Ok(StalkIntelligenceBuilder.Build(project));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapPost("/api/stalking/{project}/inventory", (string project, StalkInventoryImportBody body) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))
