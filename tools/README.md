@@ -17,6 +17,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-debuggers.ps1
 # Umbrella (gcc + DynamoRIO + recording + debuggers):
 scripts\install-lab-tools.cmd
 # Skip debuggers:     ...\install-lab-tools.ps1 -SkipDebuggers
+# Optional Ghidra RE:  ...\install-lab-tools.ps1 -Ghidra
 # Build all vuln labs:
 scripts\build-all-lab-targets.cmd
 ```
@@ -238,6 +239,32 @@ dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml --pla
 Web UI **Dashboard** should show **DynamoRIO: Ready** (not Missing).
 
 See also [README.md](../README.md#optional--dynamorio-coverage-guided-stalking), [docs/INSTALL_LINUX.md](../docs/INSTALL_LINUX.md), and [docs/FUZZING.md](../docs/FUZZING.md).
+
+## Ghidra (optional RE GUI)
+
+Randfuzz ships **Script Manager Python importers** in committed `tools/ghidra/` (`RandfuzzImportEdges.py`, `RandfuzzImportLayers.py`). The Ghidra application itself is optional and large (~560 MB).
+
+| Piece | Path | Install |
+|-------|------|---------|
+| Randfuzz scripts | `tools/ghidra/` (in git) | Already in clone — add directory in Script Manager |
+| Ghidra app | `tools/ghidra-app/ghidraRun.bat` | `scripts/install-ghidra.ps1` (needs **JDK 21**) |
+
+```powershell
+# Standalone (downloads Ghidra + tries winget JDK 21)
+powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1
+
+# Via umbrella (opt-in — not default)
+powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra
+
+# Skip download
+powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1 -Skip
+```
+
+Manual: [Ghidra releases](https://github.com/NationalSecurityAgency/ghidra/releases) → asset `ghidra_*_PUBLIC_*.zip` (not Source code) → extract/rename to `tools\ghidra-app` so `ghidraRun.bat` exists. JDK: `winget install Microsoft.OpenJDK.21`.
+
+**Linux:** install Ghidra + JDK 21 from your distro or extract under `tools/ghidra-app/`; set `GHIDRA_INSTALL_DIR` if needed. Doctor checks `ghidra` / `java` on all hosts.
+
+Workflow: [docs/GHIDRA_INTEGRATION.md](../docs/GHIDRA_INTEGRATION.md) · [HOWTO_STALK_IDA_GHIDRA.md](../docs/HOWTO_STALK_IDA_GHIDRA.md).
 
 ## RandfuzzDbg (WinDbg Preview)
 

@@ -5,6 +5,22 @@ First-class coverage stalking inside Ghidra — **this is the primary integratio
 
 ## Install
 
+### Ghidra application (optional)
+
+The Ghidra GUI is **not** required to generate export scripts — only to color blocks interactively.
+
+**Windows** — idempotent installer (large download, JDK 21):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1
+```
+
+Target: `tools/ghidra-app/ghidraRun.bat` (gitignored). Randfuzz Python importers stay in **this** folder (`tools/ghidra/`).
+
+**Linux** — install from your package manager or extract a [PUBLIC release zip](https://github.com/NationalSecurityAgency/ghidra/releases) under `tools/ghidra-app/`.
+
+### Script Manager (required for coloring)
+
 1. Open Ghidra → **Window → Script Manager**
 2. **Script Directories** (toolbar) → add this folder: `tools/ghidra` from the Randfuzz repo  
    (or copy `*.py` into your user scripts directory)

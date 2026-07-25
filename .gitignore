@@ -23,6 +23,8 @@ data/
 logs/
 tools/dynamorio/
 tools/DynamoRIO-*/
+tools/ghidra-app/
+tools/ghidra_*PUBLIC*/
 tools/mingw64/
 tools/*.exe
 tools/API Monitor/

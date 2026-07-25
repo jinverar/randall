@@ -258,6 +258,28 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-winafl.ps1
 
 Clone into `tools/winafl`; build `afl-fuzz.exe` in Visual Studio. Requires DynamoRIO (`install-dynamorio.ps1`). Doctor check: `winafl`.
 
+### 5f. Ghidra (optional RE GUI)
+
+Not part of the default umbrella install (large download). Randfuzz **scripts** live in committed `tools/ghidra/`; the Ghidra **app** installs to gitignored `tools/ghidra-app/`.
+
+```powershell
+# Standalone (~560 MB + JDK 21 via winget when missing)
+powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1
+
+# With other lab tools (opt-in)
+powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra
+```
+
+| Requirement | Notes |
+|-------------|--------|
+| **JDK 21** | Ghidra 12.x — `winget install Microsoft.OpenJDK.21` or let `install-ghidra.ps1` try |
+| **Ghidra zip** | From [releases](https://github.com/NationalSecurityAgency/ghidra/releases) → `ghidra_*_PUBLIC_*.zip` |
+| **Script Manager** | Add repo folder `tools\ghidra\` for Randfuzz importers |
+
+Doctor checks: `ghidra`, `java`. See [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md).
+
+**Linux:** install Ghidra + OpenJDK 21 via package manager, or extract under `tools/ghidra-app/` and export `GHIDRA_INSTALL_DIR`.
+
 ---
 
 ## 6. Build lab targets

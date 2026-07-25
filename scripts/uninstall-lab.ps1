@@ -230,6 +230,7 @@ function Get-RemovalPlan {
     if (-not $KeepTools) {
         $toolsDir = Join-Path $Root "tools"
         $items.Add(@{ Kind = "dir";  Path = (Join-Path $toolsDir "dynamorio");    Label = "tools\dynamorio (DynamoRIO)" })
+        $items.Add(@{ Kind = "dir";  Path = (Join-Path $toolsDir "ghidra-app");  Label = "tools\ghidra-app (Ghidra RE GUI)" })
         $items.Add(@{ Kind = "glob"; Path = $toolsDir; Filter = "DynamoRIO-*";     Label = "tools\DynamoRIO-* (versioned extract)" })
         $items.Add(@{ Kind = "dir";  Path = (Join-Path $toolsDir "mingw64");      Label = "tools\mingw64 (WinLibs gcc)" })
         $items.Add(@{ Kind = "dir";  Path = (Join-Path $toolsDir "API Monitor"); Label = "tools\API Monitor" })

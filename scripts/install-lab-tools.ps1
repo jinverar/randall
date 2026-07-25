@@ -7,6 +7,7 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SkipDebuggers
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SysinternalsOnly
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SkipGcc -SkipDynamoRio -SkipFrida
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra   # optional RE (~560 MB)
 [CmdletBinding()]
 param(
     [switch]$Force,
@@ -18,7 +19,9 @@ param(
     [switch]$IncludeFrida,
     [switch]$SkipFrida,
     [switch]$SkipApiMonitor,
-    [switch]$SkipPython
+    [switch]$SkipPython,
+    # Optional: Ghidra RE GUI (~560 MB + JDK 21). Not part of default lab install.
+    [switch]$Ghidra
 )
 
 $ErrorActionPreference = "Stop"
@@ -134,6 +137,15 @@ if (-not $SkipDebuggers -and -not $SysinternalsOnly) {
 } else {
     Write-Host ""
     Write-Host "======== Debuggers ======== (skipped)" -ForegroundColor DarkGray
+}
+
+if ($Ghidra -and -not $SysinternalsOnly) {
+    $ghArgs = @()
+    if ($Force) { $ghArgs += "-Force" }
+    Invoke-Step -Name "Ghidra (optional RE)" -ScriptPath (Join-Path $Scripts "install-ghidra.ps1") -ScriptArgs $ghArgs
+} else {
+    Write-Host ""
+    Write-Host "======== Ghidra (optional RE) ======== (skipped — pass -Ghidra to install ~560 MB)" -ForegroundColor DarkGray
 }
 
 Write-Host ""

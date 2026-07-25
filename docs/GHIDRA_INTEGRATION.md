@@ -72,6 +72,25 @@ Repo folder [`tools/ghidra/`](../tools/ghidra/README.md):
 
 Add that directory in Script Manager → Script Directories.
 
+### Install Ghidra (optional app)
+
+Randfuzz does **not** require the Ghidra GUI to fuzz or export `.py` scripts. For interactive RE:
+
+**Windows**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1
+# or: ...\install-lab-tools.ps1 -Ghidra
+```
+
+Installs to `tools/ghidra-app/` (gitignored). Needs **JDK 21** (`winget install Microsoft.OpenJDK.21`). Manual: [Ghidra releases](https://github.com/NationalSecurityAgency/ghidra/releases) → `ghidra_*_PUBLIC_*.zip`.
+
+**Linux**
+
+Install Ghidra + JDK 21 from your distro, or extract the PUBLIC zip under `tools/ghidra-app/` and set `GHIDRA_INSTALL_DIR` if needed.
+
+Doctor: `randall doctor` reports `ghidra` and `java` readiness.
+
 ---
 
 ## What the scripts do (engine)

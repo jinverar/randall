@@ -228,6 +228,16 @@ public static class LabDoctor
                 ? dr.DrrunPath!
                 : $"Not found — coverage-guided stalking disabled ({DynamoRioRunner.InstallHint})");
 
+        var ghidra = GhidraTools.Discover(CrashCatalog.FindRepoRoot());
+        Add("ghidra", ghidra.IsGhidraAvailable ? "ok" : "warn",
+            ghidra.IsGhidraAvailable
+                ? $"{ghidra.GhidraRunPath} · Script Manager → {ghidra.ScriptsDir ?? "tools/ghidra/"}"
+                : $"optional RE GUI — {GhidraTools.InstallHint} · Randfuzz scripts: tools/ghidra/");
+        Add("java", ghidra.IsJavaAvailable ? "ok" : "warn",
+            ghidra.IsJavaAvailable
+                ? (ghidra.JavaHome is not null ? $"JAVA_HOME / JDK → {ghidra.JavaHome}" : "java on PATH")
+                : "JDK 21 recommended for Ghidra — winget Microsoft.OpenJDK.21 or scripts/install-ghidra.ps1");
+
         var stalkMode = (project.Fuzz.StalkMode ?? "auto").Trim().ToLowerInvariant();
         var native = new NativeStalkRunner();
         if (stalkMode == "external" && !dr.IsAvailable)
