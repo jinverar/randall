@@ -2,6 +2,15 @@
 
 When a crash saves a Windows minidump, Randall extracts triage fields without opening WinDbg manually.
 
+## How to capture dumps (Debugger vs ProcDump)
+
+| Goal | Fuzz → Debugger | ProcDump on crash |
+|------|-----------------|-------------------|
+| Minidumps for Investigator / `!analyze` / WinDbg | **Wait** or **Both** | **Off** |
+| No Scream; dump on unhandled exception only | **None** | **On** (optional) |
+
+Windows allows **one** debugger attach. Scream (Wait/Both) and ProcDump `-e` both attach — leaving both on means ProcDump is skipped and dumps can end up empty (`unk:no-pc`). Details: [RECORDING.md — ProcDump vs Scream](RECORDING.md#procdump-vs-scream).
+
 ## Auto-analyze on crash
 
 With `fuzz.autoAnalyzeCrash: true` (default), each new crash writes:

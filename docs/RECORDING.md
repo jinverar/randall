@@ -408,7 +408,17 @@ dotnet run --project src/Randall.Cli -- doctor -c projects/local/myapp.yaml
 
 ## ProcDump vs Scream
 
-Only **one** debugger can attach. Prefer **Scream** (`debuggerMode: wait`). Use `procdumpOnCrash` when you want ProcDump `-e -ma` **instead** (`debuggerMode: none`). If Scream/attach is already on, ProcDump arm is skipped with a warning.
+On Windows, **only one debugger can attach** to a process at a time. Scream / Debugger Wait / Attach / Both and ProcDump `-e` are alternate dump paths — do not stack them.
+
+| Goal | Debugger mode | ProcDump on crash |
+|------|---------------|-------------------|
+| Best dumps + Investigator / CDB / WinDbg | **Wait** or **Both** | **Off** |
+| Live WinDbg attach | **Attach** | **Off** |
+| Opportunistic dump without Scream | **None** | **On** (optional) |
+
+Prefer **Scream** (`debuggerMode: wait` or `both`). Use `procdumpOnCrash` only when you want ProcDump `-e -ma` **instead** (`debuggerMode: none`). If Scream/attach is already on, ProcDump arm is skipped with a warning — you may still see empty placeholder dumps if both were armed poorly.
+
+The Fuzz UI shows a one-time info dialog if you enable ProcDump while Debugger is not None (with a “Don't show again” option).
 
 ---
 

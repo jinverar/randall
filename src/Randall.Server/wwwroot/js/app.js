@@ -5358,21 +5358,108 @@ function initRecordingProfiles() {
       return;
     }
     applyRecordingProfile(name);
+    maybeWarnDebuggerProcdumpConflict();
   });
 
   for (const id of Object.values(RECORDING_CHECKBOX_IDS)) {
-    document.getElementById(id)?.addEventListener('change', syncRecordingProfileFromCheckboxes);
+    document.getElementById(id)?.addEventListener('change', () => {
+      syncRecordingProfileFromCheckboxes();
+      if (id === 'fuzz-procdump') maybeWarnDebuggerProcdumpConflict();
+    });
   }
 
   document.getElementById('fuzz-recording-select-all')?.addEventListener('click', () => {
     setAllRecordingFlags(true);
+    maybeWarnDebuggerProcdumpConflict();
   });
   document.getElementById('fuzz-recording-clear')?.addEventListener('click', () => {
     setAllRecordingFlags(false);
   });
 }
 
+const DBG_PROCDUMP_DISMISS_KEY = 'randfuzz.dismissDbgProcdumpConflict';
+
+function debuggerModeUsesAttach() {
+  const mode = (document.getElementById('fuzz-debugger')?.value || 'none').toLowerCase();
+  return mode === 'wait' || mode === 'attach' || mode === 'both';
+}
+
+function isDebuggerProcdumpConflict() {
+  return debuggerModeUsesAttach() && document.getElementById('fuzz-procdump')?.checked === true;
+}
+
+function hideDebuggerProcdumpConflictModal() {
+  const modal = document.getElementById('dbg-procdump-conflict-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  modal.hidden = true;
+}
+
+function persistDebuggerProcdumpDismissIfChecked() {
+  const dont = document.getElementById('dbg-procdump-conflict-dont-show');
+  if (dont?.checked) {
+    try { localStorage.setItem(DBG_PROCDUMP_DISMISS_KEY, '1'); } catch { /* ignore */ }
+  }
+}
+
+function showDebuggerProcdumpConflictModal() {
+  const modal = document.getElementById('dbg-procdump-conflict-modal');
+  if (!modal) return;
+  const dont = document.getElementById('dbg-procdump-conflict-dont-show');
+  if (dont) dont.checked = false;
+  modal.hidden = false;
+  modal.classList.remove('hidden');
+  document.getElementById('dbg-procdump-conflict-ok')?.focus();
+}
+
+function maybeWarnDebuggerProcdumpConflict() {
+  if (!isDebuggerProcdumpConflict()) return;
+  try {
+    if (localStorage.getItem(DBG_PROCDUMP_DISMISS_KEY) === '1') return;
+  } catch { /* ignore */ }
+  showDebuggerProcdumpConflictModal();
+}
+
+function initDebuggerProcdumpConflictDialog() {
+  const modal = document.getElementById('dbg-procdump-conflict-modal');
+  if (!modal) return;
+
+  document.getElementById('fuzz-debugger')?.addEventListener('change', maybeWarnDebuggerProcdumpConflict);
+
+  modal.querySelectorAll('[data-dbg-procdump-dismiss]').forEach((el) => {
+    el.addEventListener('click', () => {
+      persistDebuggerProcdumpDismissIfChecked();
+      hideDebuggerProcdumpConflictModal();
+    });
+  });
+
+  document.getElementById('dbg-procdump-turn-off')?.addEventListener('click', () => {
+    const pd = document.getElementById('fuzz-procdump');
+    if (pd) {
+      applyingRecordingProfile = true;
+      pd.checked = false;
+      applyingRecordingProfile = false;
+      syncRecordingProfileFromCheckboxes();
+    }
+    persistDebuggerProcdumpDismissIfChecked();
+    hideDebuggerProcdumpConflictModal();
+  });
+
+  document.getElementById('dbg-procdump-keep-both')?.addEventListener('click', () => {
+    persistDebuggerProcdumpDismissIfChecked();
+    hideDebuggerProcdumpConflictModal();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+      persistDebuggerProcdumpDismissIfChecked();
+      hideDebuggerProcdumpConflictModal();
+    }
+  });
+}
+
 initRecordingProfiles();
+initDebuggerProcdumpConflictDialog();
 
 document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
   e.preventDefault();

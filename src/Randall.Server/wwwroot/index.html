@@ -445,6 +445,12 @@
             <details class="fuzz-debugger-setup" id="fuzz-debugger-setup">
               <summary>Debugger setup</summary>
               <p class="hint">
+                <strong>Scream / Wait / Both</strong> attach as the process debugger and write minidumps for Investigator + WinDbg.
+                <strong>ProcDump on crash</strong> also attaches as a debugger — Windows allows only one. Prefer Scream; leave ProcDump off
+                when Debugger is not None.
+                <button type="button" class="linkish" data-help="RECORDING.md#procdump-vs-scream">Help</button>
+              </p>
+              <p class="hint">
                 WinDbg may sit idle at 0% CPU while fetching PDBs from the symbol server — first open can take minutes.
               </p>
               <p class="hint">
@@ -516,7 +522,7 @@
               <input type="checkbox" id="fuzz-tcpvcon" />
               TCPVCon
             </label>
-            <label class="checkbox" title="ProcDump -e -ma on crash — skipped if Scream/debugger already attached">
+            <label class="checkbox" title="ProcDump -e -ma on crash — use only when Debugger mode is None (conflicts with Scream/attach)">
               <input type="checkbox" id="fuzz-procdump" />
               ProcDump on crash
             </label>
@@ -1488,7 +1494,39 @@
     </section>
   </main>
 
+  <div id="dbg-procdump-conflict-modal" class="rf-modal hidden" role="dialog" aria-modal="true"
+       aria-labelledby="dbg-procdump-conflict-title" hidden>
+    <div class="rf-modal-backdrop" data-dbg-procdump-dismiss></div>
+    <div class="rf-modal-card panel">
+      <h2 id="dbg-procdump-conflict-title">Debugger and ProcDump conflict</h2>
+      <p>
+        On Windows, <strong>only one debugger can attach</strong> to the target at a time.
+      </p>
+      <ul class="rf-modal-list">
+        <li><strong>Debugger Wait / Attach / Both</strong> — Scream (or WinDbg) holds the debug slot and writes minidumps for Investigator / CDB / WinDbg.</li>
+        <li><strong>ProcDump on crash</strong> — also attaches as a debugger (<code>-e</code>). If Scream is already attached, ProcDump is skipped (or you get empty dumps / no PC).</li>
+      </ul>
+      <p class="hint">
+        Recommended: keep <strong>Debugger = Wait or Both</strong> and leave <strong>ProcDump off</strong>.
+        Use ProcDump only when Debugger mode is <strong>None</strong>.
+      </p>
+      <p class="hint">
+        Details:
+        <button type="button" class="linkish" data-help="RECORDING.md#procdump-vs-scream" data-dbg-procdump-dismiss>RECORDING.md — ProcDump vs Scream</button>
+      </p>
+      <label class="checkbox rf-modal-dismiss-opt">
+        <input type="checkbox" id="dbg-procdump-conflict-dont-show" />
+        Don't show this again
+      </label>
+      <div class="btn-row rf-modal-actions">
+        <button type="button" class="btn" id="dbg-procdump-keep-both">Keep both</button>
+        <button type="button" class="btn" id="dbg-procdump-turn-off">Turn off ProcDump</button>
+        <button type="button" class="btn primary" id="dbg-procdump-conflict-ok" data-dbg-procdump-dismiss>Got it</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=scare-floor-c2-1"></script>
+  <script type="module" src="/js/app.js?v=dbg-procdump-warn-1"></script>
 </body>
 </html>

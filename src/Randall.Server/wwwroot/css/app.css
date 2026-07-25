@@ -5396,3 +5396,58 @@ html:not([data-scream-anim="on"]) .scream-canister-liquid {
   /* Still show fill level instantly — no rise animation. */
   transition: none !important;
 }
+
+/* —— Info modal (debugger / ProcDump conflict, etc.) —— */
+.rf-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+.rf-modal.hidden,
+.rf-modal[hidden] {
+  display: none !important;
+}
+.rf-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.rf-modal-card {
+  position: relative;
+  z-index: 1;
+  max-width: 32rem;
+  width: min(32rem, 100%);
+  padding: 1.25rem 1.35rem 1.1rem;
+  box-shadow: 0 12px 40px var(--shadow);
+}
+.rf-modal-card h2 {
+  margin: 0 0 0.65rem;
+  font-size: 1.15rem;
+}
+.rf-modal-card p {
+  margin: 0 0 0.75rem;
+  line-height: 1.45;
+}
+.rf-modal-list {
+  margin: 0 0 0.85rem;
+  padding-left: 1.2rem;
+  line-height: 1.45;
+}
+.rf-modal-list li + li {
+  margin-top: 0.4rem;
+}
+.rf-modal-dismiss-opt {
+  margin: 0.85rem 0 0.65rem;
+}
+.rf-modal-actions {
+  margin-top: 0.35rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
