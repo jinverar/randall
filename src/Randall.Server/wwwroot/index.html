@@ -414,85 +414,96 @@
               <button type="button" class="linkish" data-help="MAGICIAN.md">Magician &amp; Joker</button>
             </p>
           </fieldset>
-          <label data-platform-scope="windows">
-            Debugger
-            <select id="fuzz-debugger">
-              <option value="none">None — no dump capture</option>
-              <option value="wait">Wait — Scream dump on exception</option>
-              <option value="attach">Attach — WinDbg / Preview live</option>
-              <option value="both">Both — Scream wait + open dump after crash</option>
-            </select>
-          </label>
-          <label data-platform-scope="windows">
-            Debugger kind
-            <select id="fuzz-debugger-kind">
-              <option value="auto">Auto</option>
-              <option value="windbg-preview">WinDbg Preview</option>
-              <option value="windbg">WinDbg classic</option>
-              <option value="cdb">cdb</option>
-            </select>
-          </label>
-          <label class="checkbox" data-platform-scope="windows">
-            <input type="checkbox" id="fuzz-open-on-crash" />
-            Open dump in debugger after crash
-          </label>
-          <label class="checkbox" data-platform-scope="windows" title="Headless cdb !analyze -v (+ !exploitable when msec.dll present) — needs cdb; on by default with autoAnalyzeCrash">
-            <input type="checkbox" id="fuzz-cdb-analyze" checked />
-            cdb !analyze on crash dump
-          </label>
-          <p class="hint" data-platform-scope="windows">
-            WinDbg may sit idle at 0% CPU while fetching PDBs from the symbol server — first open can take minutes.
-            Cache: <code>C:\Symbols</code> or set
-            <code>_NT_SYMBOL_PATH=srv*C:\Symbols*https://msdl.microsoft.com/download/symbols</code>.
-            <button type="button" class="linkish" data-help="CRASH_ANALYSIS.md#windbg-symbols">Help</button>
-          </p>
-          <p class="hint" data-platform-scope="windows">
-            System-wide crash capture (AeDebug, WER) is opt-in:
-            <code>scripts\setup-windows-crash-capture.ps1</code> (Admin) ·
-            <button type="button" class="linkish" data-help="CRASH_ANALYSIS.md#aedebug-wer">Help</button>
-          </p>
-          <label data-platform-scope="windows">
-            Recording profile
-            <select id="fuzz-recording-profile" title="Presets for observation bookends — Debugger wait is separate">
-              <option value="off">Off</option>
-              <option value="first-triage" selected>First triage (recommended)</option>
-              <option value="parser-re">Parser / RE</option>
-              <option value="network">Network / protocol</option>
-              <option value="deep-dive">Deep dive</option>
-              <option value="custom">Custom</option>
-            </select>
-          </label>
-          <p id="fuzz-recording-hint" class="hint">
-            Artifacts → <code>data/runs/…</code>
-            · <strong>Stop</strong> ends the run and stops captures
-            · See <button type="button" class="linkish" data-help="RECORDING.md">Help → Recording</button>
-          </p>
-          <p id="fuzz-recording-elev" class="hint fuzz-recording-elev hidden" data-platform-scope="windows">
-            Network / Deep dive enable pktmon (+ ETW on Deep dive) — <strong>needs Admin</strong> for pktmon/ETW; tshark needs Npcap (admin often required).
-          </p>
-          <details class="fuzz-re-companions" id="fuzz-re-companions" data-platform-scope="windows">
-            <summary>RE companions</summary>
-            <p id="fuzz-re-companions-note" class="hint fuzz-re-note hidden">
-              Start API Monitor / Frida on the target PID after Target Runtime starts — Randfuzz does not inject these yet.
+          <fieldset class="fuzz-debugger-stack" data-platform-scope="windows">
+            <legend class="hint">Debugger</legend>
+            <label>
+              Mode
+              <select id="fuzz-debugger" title="Scream wait captures minidumps on exception — independent of recording profile">
+                <option value="none">None — no dump capture</option>
+                <option value="wait">Wait — Scream dump on exception</option>
+                <option value="attach">Attach — WinDbg / Preview live</option>
+                <option value="both">Both — Scream wait + open dump after crash</option>
+              </select>
+            </label>
+            <label>
+              Kind
+              <select id="fuzz-debugger-kind" title="Which debugger opens dumps — Auto picks Preview when installed">
+                <option value="auto">Auto</option>
+                <option value="windbg-preview">WinDbg Preview</option>
+                <option value="windbg">WinDbg classic</option>
+                <option value="cdb">cdb</option>
+              </select>
+            </label>
+            <label class="checkbox" title="Launch debugger on the minidump after Scream wait captures it">
+              <input type="checkbox" id="fuzz-open-on-crash" />
+              Open dump in debugger after crash
+            </label>
+            <label class="checkbox" title="Headless cdb !analyze -v (+ !exploitable when msec.dll present) — needs cdb; on by default with autoAnalyzeCrash">
+              <input type="checkbox" id="fuzz-cdb-analyze" checked />
+              cdb !analyze on crash dump
+            </label>
+            <details class="fuzz-debugger-setup" id="fuzz-debugger-setup">
+              <summary>Debugger setup</summary>
+              <p class="hint">
+                WinDbg may sit idle at 0% CPU while fetching PDBs from the symbol server — first open can take minutes.
+              </p>
+              <p class="hint">
+                Cache: <code>C:\Symbols</code> or set
+                <code>_NT_SYMBOL_PATH=srv*C:\Symbols*https://msdl.microsoft.com/download/symbols</code>.
+                <button type="button" class="linkish" data-help="CRASH_ANALYSIS.md#windbg-symbols">Help</button>
+              </p>
+              <p class="hint">
+                System-wide crash capture (AeDebug, WER) is opt-in:
+                <code>scripts\setup-windows-crash-capture.ps1</code> (Admin) ·
+                <button type="button" class="linkish" data-help="CRASH_ANALYSIS.md#aedebug-wer">Help</button>
+              </p>
+            </details>
+          </fieldset>
+          <fieldset class="fuzz-recording-stack" data-platform-scope="windows">
+            <legend class="hint">Recording</legend>
+            <label>
+              Profile
+              <select id="fuzz-recording-profile" title="Presets for observation bookends — Debugger wait is separate">
+                <option value="off">Off</option>
+                <option value="first-triage" selected>First triage (recommended)</option>
+                <option value="parser-re">Parser / RE</option>
+                <option value="network">Network / protocol</option>
+                <option value="deep-dive">Deep dive</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <p id="fuzz-recording-hint" class="hint fuzz-control-hint">
+              Artifacts → <code>data/runs/…</code> · Stop ends captures ·
+              <button type="button" class="linkish" data-help="RECORDING.md">Help</button>
             </p>
-            <div class="fuzz-re-item">
-              <strong>API Monitor</strong>
-              <p>
-                Hooks Windows APIs and shows parameters, return values, and structures
-                (CreateFile, RegSetValueEx, …). For parser RE, often more informative than Procmon’s high-level FS/Reg view.
+            <p id="fuzz-recording-elev" class="hint fuzz-recording-elev fuzz-control-hint hidden"
+               title="Network / Deep dive enable pktmon (+ ETW on Deep dive) — needs Admin for pktmon/ETW; tshark needs Npcap (admin often required).">
+              pktmon/ETW need Admin · tshark needs Npcap.
+            </p>
+            <details class="fuzz-re-companions" id="fuzz-re-companions">
+              <summary>RE companions</summary>
+              <p id="fuzz-re-companions-note" class="hint fuzz-re-note hidden">
+                Start API Monitor / Frida on the target PID after Target Runtime starts — Randfuzz does not inject these yet.
               </p>
-              <button type="button" class="linkish" data-help="RECORDING.md#api-monitor-frida">Open in Help</button>
-            </div>
-            <div class="fuzz-re-item">
-              <strong>Frida</strong>
-              <p>
-                Dynamic instrumentation: hook any function, dump buffers, log APIs — without recompiling the target.
-              </p>
-              <button type="button" class="linkish" data-help="RECORDING.md#api-monitor-frida">Open in Help</button>
-            </div>
-          </details>
-          <details class="fuzz-recording-advanced" id="fuzz-recording-advanced" data-platform-scope="windows">
-            <summary>Advanced recording options</summary>
+              <div class="fuzz-re-item">
+                <strong>API Monitor</strong>
+                <p class="hint fuzz-re-summary"
+                   title="Hooks Windows APIs and shows parameters, return values, and structures (CreateFile, RegSetValueEx, …). For parser RE, often more informative than Procmon’s high-level FS/Reg view.">
+                  API hooks + params — start manually on target PID.
+                </p>
+                <button type="button" class="linkish" data-help="RECORDING.md#api-monitor-frida">Open in Help</button>
+              </div>
+              <div class="fuzz-re-item">
+                <strong>Frida</strong>
+                <p class="hint fuzz-re-summary"
+                   title="Dynamic instrumentation: hook any function, dump buffers, log APIs — without recompiling the target.">
+                  Hook functions &amp; buffers — start manually on target PID.
+                </p>
+                <button type="button" class="linkish" data-help="RECORDING.md#api-monitor-frida">Open in Help</button>
+              </div>
+            </details>
+            <details class="fuzz-recording-advanced" id="fuzz-recording-advanced">
+              <summary>Advanced recording options</summary>
             <div class="btn-row fuzz-recording-advanced-actions">
               <button type="button" class="btn" id="fuzz-recording-select-all" title="Enable all advanced recording options">Select all</button>
               <button type="button" class="btn" id="fuzz-recording-clear" title="Disable all advanced recording options">Clear</button>
@@ -534,6 +545,7 @@
               Strings on crash
             </label>
           </details>
+          </fieldset>
           <details class="fuzz-recording-advanced" id="fuzz-linux-observation" data-platform-scope="linux" open>
             <summary>Linux observation toolchain <span id="fuzz-linux-ready" class="tool-count"></span></summary>
             <p class="hint">
@@ -563,7 +575,7 @@
               — <code>randall exploit guide</code> uses gdb/GEF + pwntools.
             </p>
           </details>
-          <div class="btn-row">
+          <div class="btn-row fuzz-actions-row">
             <button type="submit" class="btn primary" id="fuzz-start">Start</button>
             <button type="button" class="btn" id="fuzz-stop" title="Stop fuzz — also stops Procmon, DebugView, WPR, pktmon, tshark, ProcDump">Stop</button>
             <button type="button" class="btn" id="fuzz-stop-recorders" title="Kill orphaned Procmon/DebugView/ProcDump/tshark and cancel WPR/pktmon (if tools were left running)">Stop recording</button>
