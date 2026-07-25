@@ -93,6 +93,12 @@ const logEl = document.getElementById('fuzz-log');
 const statusEl = document.getElementById('fuzz-status');
 const startBtn = document.getElementById('fuzz-start');
 const stopBtn = document.getElementById('fuzz-stop');
+const attachDbgBtn = document.getElementById('fuzz-attach-dbg');
+
+/** Latest target PID from status poll or fuzzTargetPid hub event. */
+let fuzzTargetPidCache = null;
+/** Last /api/fuzz/status payload — drives attach-button enablement. */
+let fuzzStatusCache = null;
 
 /** Soft cap for in-memory live log (survives leaving the Fuzz view). */
 const LOG_BUFFER_MAX = 2000;
@@ -205,11 +211,53 @@ function projectNameFromConfigPath(configPath) {
 
 let campaignStatusCache = null;
 
+function applyAttachDbgButtonState(s) {
+  const btn = attachDbgBtn;
+  if (!btn) return;
+
+  const phase = (s?.phase || 'idle').toLowerCase();
+  const active = s ? isFuzzSessionActive(s) : false;
+  const pid = s?.targetPid ?? fuzzTargetPidCache;
+  if (s?.targetPid != null) fuzzTargetPidCache = s.targetPid;
+  if (!active && phase === 'idle') fuzzTargetPidCache = null;
+
+  const mode = (document.getElementById('fuzz-debugger')?.value || 'none').toLowerCase();
+  const kind = document.getElementById('fuzz-debugger-kind')?.value || 'auto';
+  const isWin = platformState.resolved === 'windows';
+
+  let disabled = false;
+  let title = 'Open WinDbg / Preview on the live fuzz target (not minidump capture)';
+
+  if (!isWin) {
+    disabled = true;
+    title = 'Live debugger attach is Windows-only (WinDbg). On Linux use gdb via CLI.';
+  } else if ((mode === 'wait' || mode === 'both') && active) {
+    disabled = true;
+    title = 'Scream (Debugger Wait/Both) already holds the debug slot for minidumps — only one debugger per process. Crashes tab gets dumps automatically.';
+  } else if (mode === 'attach' && active && pid) {
+    disabled = true;
+    title = 'Debugger Mode Attach already launched WinDbg when the target started.';
+  } else if (!pid) {
+    disabled = true;
+    title = active && phase === 'starting'
+      ? 'Waiting for target process PID… (Target Runtime is starting)'
+      : 'Start fuzz or a Target Runtime lab so a target PID exists.';
+  } else {
+    title = `Attach ${kind} to PID ${pid} (live debug). For crash minidumps set Debugger Mode to Wait or Both above — not this button.`;
+  }
+
+  btn.disabled = disabled;
+  btn.title = title;
+  btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+}
+
 function applyFuzzSessionStatus(s) {
   if (!s) return;
+  fuzzStatusCache = s;
   const active = isFuzzSessionActive(s);
   startBtn.disabled = active;
   stopBtn.disabled = !active;
+  applyAttachDbgButtonState(s);
 
   if (s.configPath) {
     const sel = document.getElementById('fuzz-target');
@@ -592,6 +640,7 @@ async function selectPlatform(name) {
   try { localStorage.setItem('randfuzz.platform', sel); } catch { /* ignore */ }
   setPlatformLabel();
   applyPlatformVisibility();
+  applyAttachDbgButtonState(fuzzStatusCache || { phase: 'idle', running: false });
   try { await api.put('/api/ui/prefs', { platform: sel }); } catch { /* localStorage still restores */ }
   return sel;
 }
@@ -5113,10 +5162,17 @@ async function connectHub() {
     } catch { /* poll will retry */ }
   });
 
+  hub.on('fuzzTargetPid', (e) => {
+    fuzzTargetPidCache = e?.pid ?? null;
+    applyAttachDbgButtonState(fuzzStatusCache || { phase: 'running', running: true, targetPid: fuzzTargetPidCache });
+  });
+
   hub.on('fuzzStarted', (e) => {
     setStatus(`Running ${e.project}…`);
     startBtn.disabled = true;
     stopBtn.disabled = false;
+    fuzzTargetPidCache = null;
+    applyAttachDbgButtonState({ phase: 'starting', running: true, project: e.project });
     stalkProject = e.project || stalkProject;
     if (e.project) {
       harvestState.liveProject = e.project;
@@ -5184,6 +5240,8 @@ async function connectHub() {
     setStatus('Completed');
     startBtn.disabled = false;
     stopBtn.disabled = true;
+    fuzzTargetPidCache = null;
+    applyAttachDbgButtonState({ phase: 'completed', running: false });
     harvestState.liveProject = null;
     harvestState.liveProjects = new Set();
     harvestState.fuzzSessionActive = false;
@@ -5202,6 +5260,8 @@ async function connectHub() {
     setStatus('Stopped');
     startBtn.disabled = false;
     stopBtn.disabled = true;
+    fuzzTargetPidCache = null;
+    applyAttachDbgButtonState({ phase: 'stopped', running: false });
     harvestState.liveProject = null;
     harvestState.liveProjects = new Set();
     harvestState.fuzzSessionActive = false;
@@ -5217,12 +5277,16 @@ async function connectHub() {
       setStatus('Completed');
       startBtn.disabled = false;
       stopBtn.disabled = true;
+      fuzzTargetPidCache = null;
+      applyAttachDbgButtonState({ phase: 'completed', running: false });
       return;
     }
     appendLogUnique(`Error!!!! ${msg}`, 'crash');
     setStatus('Error');
     startBtn.disabled = false;
     stopBtn.disabled = true;
+    fuzzTargetPidCache = null;
+    applyAttachDbgButtonState({ phase: 'error', running: false });
   });
 
   await hub.start();
@@ -5434,7 +5498,13 @@ function initDebuggerProcdumpConflictDialog() {
   const modal = document.getElementById('dbg-procdump-conflict-modal');
   if (!modal) return;
 
-  document.getElementById('fuzz-debugger')?.addEventListener('change', maybeWarnDebuggerProcdumpConflict);
+  document.getElementById('fuzz-debugger')?.addEventListener('change', () => {
+    maybeWarnDebuggerProcdumpConflict();
+    applyAttachDbgButtonState(fuzzStatusCache || { phase: 'idle', running: false });
+  });
+  document.getElementById('fuzz-debugger-kind')?.addEventListener('change', () => {
+    applyAttachDbgButtonState(fuzzStatusCache || { phase: 'idle', running: false });
+  });
 
   modal.querySelectorAll('[data-dbg-procdump-dismiss]').forEach((el) => {
     el.addEventListener('click', () => {
@@ -5476,12 +5546,13 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
   // New session only — never clear merely because the user left/returned to Fuzz.
   clearFuzzLog();
   try {
+    const debuggerMode = document.getElementById('fuzz-debugger').value;
     await api.post('/api/fuzz/start', {
       configPath: document.getElementById('fuzz-target').value,
       maxIterations: Number(document.getElementById('fuzz-iterations').value),
       dryRun: document.getElementById('fuzz-dry-run').checked,
       coverageGuided: document.getElementById('fuzz-coverage').checked,
-      debuggerMode: document.getElementById('fuzz-debugger').value,
+      debuggerMode,
       debuggerKind: document.getElementById('fuzz-debugger-kind').value,
       debuggerOpenOnCrash: document.getElementById('fuzz-open-on-crash').checked,
       cdbAnalyzeCrash: document.getElementById('fuzz-cdb-analyze')?.checked !== false,
@@ -5499,6 +5570,13 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
       jokerEnabled: document.getElementById('fuzz-joker')?.checked === true,
     });
     appendLog('Session accepted…');
+    if (debuggerMode === 'none') {
+      appendLog(
+        'Tip: Debugger Mode is None — no minidumps on crash. Set Debugger to Wait or Both (above) for Scream dumps; Attach debugger only opens live WinDbg.',
+        'warn',
+      );
+    }
+    applyAttachDbgButtonState({ phase: 'starting', running: true, debuggerMode });
   } catch (err) {
     appendLog(err.message, 'crash');
   }
@@ -5539,12 +5617,19 @@ document.getElementById('fuzz-log-clear')?.addEventListener('click', () => {
 });
 
 document.getElementById('fuzz-attach-dbg')?.addEventListener('click', async () => {
+  if (attachDbgBtn?.disabled) return;
+  const kind = document.getElementById('fuzz-debugger-kind').value;
+  const configPath = document.getElementById('fuzz-target')?.value;
+  const project = fuzzStatusCache?.project || projectNameFromConfigPath(configPath);
+  const pid = fuzzTargetPidCache ?? fuzzStatusCache?.targetPid ?? null;
   try {
-    const kind = document.getElementById('fuzz-debugger-kind').value;
-    const r = await api.post('/api/debug/attach', { kind, go: true });
-    appendLog(r.message || `Attached ${kind}`, 'cov');
+    const r = await api.post('/api/debug/attach', { kind, go: true, pid, project });
+    const msg = r.message || `Attached ${kind} to PID ${r.pid ?? pid}`;
+    appendLog(msg, 'cov');
+    setStatus(msg);
   } catch (err) {
     appendLog(err.message, 'crash');
+    setStatus(`Attach failed: ${err.message}`);
   }
 });
 

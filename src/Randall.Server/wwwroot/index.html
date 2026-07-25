@@ -586,7 +586,8 @@
             <button type="button" class="btn" id="fuzz-stop" title="Stop fuzz — also stops Procmon, DebugView, WPR, pktmon, tshark, ProcDump">Stop</button>
             <button type="button" class="btn" id="fuzz-stop-recorders" title="Kill orphaned Procmon/DebugView/ProcDump/tshark and cancel WPR/pktmon (if tools were left running)">Stop recording</button>
             <button type="button" class="btn" id="fuzz-doctor">Doctor</button>
-            <button type="button" class="btn" id="fuzz-attach-dbg">Attach debugger</button>
+            <button type="button" class="btn" id="fuzz-attach-dbg"
+              title="Live WinDbg attach to target PID — for crash minidumps use Debugger Mode Wait or Both above">Attach debugger</button>
           </div>
           <div id="fuzz-doctor-result" class="status-box hidden"></div>
           <div id="fuzz-status" class="status-box">Idle</div>
