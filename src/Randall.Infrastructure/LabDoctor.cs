@@ -309,6 +309,14 @@ public static class LabDoctor
                 "frontier without full map — session/edge-gap mode only; export Ghidra for CFG gray doors");
         }
 
+        var memory = BrainMemoryDecay.TryLoad(project.Name, repoRoot);
+        if (memory?.MemoryConfidence is < 0.999)
+            Add("stalk:brain-memory", "warn", $"target binary changed — prior knowledge retained at {memory.MemoryConfidence:P0}" + (memory.DecayMessage is not null ? $" · {memory.DecayMessage}" : ""));
+        else if (!string.IsNullOrWhiteSpace(memory?.TargetBinaryHash))
+            Add("stalk:brain-memory", "ok", $"target fingerprint ok · sha256 {(memory.TargetBinaryHash.Length > 12 ? memory.TargetBinaryHash[..12] + "…" : memory.TargetBinaryHash)}");
+        else
+            Add("stalk:brain-memory", "warn", "no target binary fingerprint yet — recorded on first fuzz run with a resolvable executable");
+
         if (project.Fuzz.Brain)
         {
             if (!File.Exists(mapPath) && !File.Exists(frontierPath))

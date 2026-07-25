@@ -2690,6 +2690,17 @@ static int StalkIntel(string[] args)
                 Console.WriteLine($"  hunt journal: {dyn.HuntJournalEntries} entr(ies) → {TargetIntelligenceWriteBack.HuntJournalPath(project)}");
         }
 
+        if (profile.BrainMemoryConfidence is < 0.999 || !string.IsNullOrWhiteSpace(profile.TargetBinaryHash)) {
+            Console.WriteLine();
+            Console.WriteLine("Brain memory:");
+            if (!string.IsNullOrWhiteSpace(profile.TargetBinaryHash))
+                Console.WriteLine($"  target sha256: {profile.TargetBinaryHash}");
+            if (profile.BrainMemoryConfidence is < 0.999) {
+                Console.WriteLine($"  confidence: {profile.BrainMemoryConfidence:P0}");
+                if (!string.IsNullOrWhiteSpace(profile.BrainMemoryMessage)) Console.WriteLine($"  {profile.BrainMemoryMessage}");
+            } else Console.WriteLine("  confidence: 100% (fingerprint current)");
+        }
+
         var mapPath = GhidraAnalysisBridge.AnalysisPath(project);
         var frontierPath = FrontierEngine.FrontierPath(project);
         var intelPath = TargetIntelligenceBuilder.ProfilePath(project);

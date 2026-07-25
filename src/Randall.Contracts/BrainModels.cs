@@ -100,6 +100,8 @@ public sealed record NextHuntDecision(
             return "patchDelta";
         if (normalized.Contains("saturation"))
             return "duplicatePenalty";
+        if (normalized.Contains("memory confidence"))
+            return "memoryConfidence";
         return normalized.Replace(' ', '_');
     }
 
@@ -140,28 +142,18 @@ public sealed record BrainDecisionSnapshotDto(
     DateTimeOffset? PersistedAt,
     string? EmptyHint = null,
     /// <summary>Reviewer <c>RandallDecision</c> alias — inputId, score, reasons, actions.</summary>
-    RandallDecisionDto? Decision = null)
+    RandallDecisionDto? Decision = null,
+    double MemoryConfidence = 1.0,
+    string? MemoryMessage = null)
 {
     public static BrainDecisionSnapshotDto FromDecision(
         NextHuntDecision? decision,
         string project,
         bool enabled = true,
-        string? emptyHint = null) =>
+        string? emptyHint = null,
+        double memoryConfidence = 1.0,
+        string? memoryMessage = null) =>
         decision is null
-            ? new BrainDecisionSnapshotDto(
-                project,
-                enabled,
-                false,
-                null,
-                null,
-                emptyHint,
-                null)
-            : new BrainDecisionSnapshotDto(
-                project,
-                enabled,
-                decision.Active,
-                decision,
-                decision.At,
-                emptyHint,
-                decision.ToRandallDecision());
+            ? new BrainDecisionSnapshotDto(project, enabled, false, null, null, emptyHint, null, memoryConfidence, memoryMessage)
+            : new BrainDecisionSnapshotDto(project, enabled, decision.Active, decision, decision.At, emptyHint, decision.ToRandallDecision(), memoryConfidence, memoryMessage);
 }

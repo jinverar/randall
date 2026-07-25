@@ -111,6 +111,22 @@ public sealed class MutatorCreditTracker
         File.WriteAllLines(_persistPath, lines);
     }
 
+    public static void ApplyMemoryDecay(string persistPath, double factor)
+    {
+        if (factor >= 0.999 || !File.Exists(persistPath)) return;
+        var lines = new List<string>();
+        foreach (var line in File.ReadAllLines(persistPath))
+        {
+            if (string.IsNullOrWhiteSpace(line) || line.TrimStart().StartsWith('#')) { lines.Add(line); continue; }
+            if (!TryParsePersistLine(line, out var entry)) { lines.Add(line); continue; }
+            entry.Score = Math.Round(entry.Score * factor, 2);
+            entry.NewEdges = (int)Math.Round(entry.NewEdges * factor);
+            entry.UniqueCrashes = (int)Math.Max(0, Math.Round(entry.UniqueCrashes * factor));
+            lines.Add(FormatPersistLine(entry));
+        }
+        File.WriteAllLines(persistPath, lines);
+    }
+
     public void WriteRunJson(string runDir)
     {
         Directory.CreateDirectory(runDir);

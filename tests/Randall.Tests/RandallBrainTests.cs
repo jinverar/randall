@@ -89,6 +89,40 @@ public class RandallBrainTests
         }
     }
 
+
+    [Fact]
+    public void Decide_UsesProductiveChainHintForPreferredMutator()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "brain-chain";
+            WriteStaticMap(root, project, fuzzPriority: 55);
+
+            var brain = new RandallBrain();
+            var signals = brain.LoadSignals(project, root);
+            var mutators = BuiltInMutators.Create(
+                ["dictionary", "integer", "splice", "havoc", "bitflip"], seed: 42);
+            var credit = new List<MutatorCreditRowDto>
+            {
+                new("dictionary", 10, 5, 0, 50, 8),
+            };
+            var chains = new List<MutatorChainRowDto>
+            {
+                new(["dictionary", "integer", "splice"], 3, 4, 1, 90, 7, "dictionary→integer→splice"),
+            };
+            var decision = brain.Decide(project, signals, credit, mutators, iteration: 2, chainRows: chains);
+
+            Assert.True(decision.Active);
+            Assert.Contains(decision.WhyTerms, t => t.Label == "mutator chain");
+            Assert.Contains(decision.WhyTerms, t => t.Detail == "dictionary→integer→splice");
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
     [Fact]
     public void Decide_SaturatedScreamClusters_DeprioritizedInTerms()
     {

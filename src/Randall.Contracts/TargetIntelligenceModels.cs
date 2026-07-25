@@ -13,7 +13,10 @@ public sealed record TargetIntelligenceDto(
     TargetIntelligenceFrontierDto? Frontier,
     TargetIntelligenceCrashDto? Crashes,
     TargetIntelligenceOracleDto? Oracles,
-    IReadOnlyList<TargetIntelligenceCampaignDto> RecentCampaigns);
+    IReadOnlyList<TargetIntelligenceCampaignDto> RecentCampaigns,
+    string? TargetBinaryHash = null,
+    double BrainMemoryConfidence = 1.0,
+    string? BrainMemoryMessage = null);
 
 public sealed record TargetIntelligenceStaticDto(
     string? Binary,

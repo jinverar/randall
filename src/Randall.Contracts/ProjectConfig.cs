@@ -248,6 +248,7 @@ public sealed class FuzzConfig
     /// when picking the next seed/mutator/energy. Soft no-op when stalk artifacts are empty.
     /// </summary>
     public bool Brain { get; set; } = true;
+    public bool BrainMemoryDecay { get; set; } = true;
     /// <summary>
     /// Stop the fuzz run when max project scream score or hot/purple scream count reaches this threshold.
     /// 0 = disabled. Hot = novelty ≥70 and (oracle ≥40 or first-in-cluster). See docs/CRASH_LOGGING.md.

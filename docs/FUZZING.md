@@ -76,6 +76,8 @@ When `fuzz.mutatorCredit: true` (default), Randall tracks which **mutators** pro
 
 **Selection bias:** each mutator gets roulette weight `max(1, floor(score / runs) + 1)`. Cold mutators stay at weight 1 (exploration never drops to zero). Joker and exhaustive modes still override selection when active.
 
+**Joker Card deck:** when `joker.deckEnabled: true`, productive Joker tricks are scored into `data/crashes/<project>/_magician/joker_deck.json`. Draws use 70/20/10 chaos/remix/replay roulette (see [MAGICIAN.md#joker](MAGICIAN.md#joker)).
+
 **Persistence**
 
 - Cross-run: `data/corpus/<target>/mutator_credit.txt`
@@ -159,6 +161,15 @@ External docs may refer to a central **`RandallDecision`** object. On disk and A
 | `actions.retainFocus` | `active` |
 
 Endpoints: `GET /api/fuzz/brain?project=<name>` · Scare Floor **lastBrainDecision** · `data/stalk/<project>/brain_last.json`.
+
+### Brain memory decay (target binary fingerprint)
+
+When `fuzz.brainMemoryDecay: true` (default), Randfuzz SHA-256 fingerprints the target executable at fuzz start. If the hash changes, prior knowledge is retained at **61% confidence** and mutator credit / chains / frontier scores are scaled. Console: `Target changed. Prior knowledge retained: 61%. Revalidating Scare Doors.`
+
+```yaml
+fuzz:
+  brainMemoryDecay: false
+```
 
 ## Session flows (stateful TCP)
 
