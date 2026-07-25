@@ -219,6 +219,28 @@ Manual: [WinDbg download](https://aka.ms/windbg/download) · [Windows SDK](https
 
 Doctor probes `debugger:windbg-preview`, `debugger:windbg`, `debugger:cdb` (paths match `DebuggerTools`).
 
+### 5d. Opt-in crash capture (AeDebug + WER)
+
+Not run automatically by `install-lab-tools.ps1`. For system-wide post-mortem debugging and silent WER dialogs:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-crash-capture.ps1 -WhatIf
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-crash-capture.ps1          # Admin
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-windows-crash-capture.ps1 -LocalDumps
+```
+
+Registers classic **windbg -I** AeDebug, `DontShowUI=1`, optional WER LocalDumps under `data/wer-dumps`. During Randfuzz campaigns, prefer **Scream** (`fuzz.debuggerMode: wait`) — see [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md).
+
+### 5e. WinAFL companion (external)
+
+Optional external coverage grinder — Randfuzz does not embed WinAFL:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-winafl.ps1
+```
+
+Clone into `tools/winafl`; build `afl-fuzz.exe` in Visual Studio. Requires DynamoRIO (`install-dynamorio.ps1`). Doctor check: `winafl`.
+
 ---
 
 ## 6. Build lab targets

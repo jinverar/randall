@@ -436,6 +436,15 @@
             <input type="checkbox" id="fuzz-open-on-crash" />
             Open dump in debugger after crash
           </label>
+          <label class="checkbox" data-platform-scope="windows" title="Headless cdb !analyze -v (+ !exploitable when msec.dll present) — needs cdb; on by default with autoAnalyzeCrash">
+            <input type="checkbox" id="fuzz-cdb-analyze" checked />
+            cdb !analyze on crash dump
+          </label>
+          <p class="hint" data-platform-scope="windows">
+            System-wide crash capture (AeDebug, WER) is opt-in:
+            <code>scripts\setup-windows-crash-capture.ps1</code> (Admin) ·
+            <button type="button" class="linkish" data-help="CRASH_ANALYSIS.md#aedebug-wer">Help</button>
+          </p>
           <label data-platform-scope="windows">
             Recording profile
             <select id="fuzz-recording-profile" title="Presets for observation bookends — Debugger wait is separate">

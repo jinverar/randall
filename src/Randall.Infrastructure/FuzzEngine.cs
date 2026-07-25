@@ -128,6 +128,7 @@ public sealed class FuzzEngine
         var wantDebugView = options.DebugViewCapture ?? project.Fuzz.DebugViewCapture;
         var wantSysinternalsSnap = options.SysinternalsSnapshots ?? project.Fuzz.SysinternalsSnapshots;
         var wantStringsOnCrash = options.StringsOnCrash ?? project.Fuzz.StringsOnCrash;
+        var wantCdbAnalyze = options.CdbAnalyzeCrash ?? project.Fuzz.CdbAnalyzeCrash;
         string? runDir = journal?.RunDirectory;
         if (!dryRun && (wantProcmon || wantTcpvcon || wantPktmon || wantTshark || wantEtw || wantDebugView || wantSysinternalsSnap))
         {
@@ -1404,6 +1405,25 @@ public sealed class FuzzEngine
                             else
                             {
                                 Console.WriteLine($"  analysis skipped: {analysis.Error}");
+                            }
+
+                            if (wantCdbAnalyze && OperatingSystem.IsWindows())
+                            {
+                                try
+                                {
+                                    var cdb = WindowsCdbCrashAnalysisWriter.Analyze(
+                                        crashesDir, saved.Id, saved.MiniDumpPath);
+                                    Console.WriteLine($"  cdb triage: {cdb.SummaryLine}");
+                                    if (cdb.Sidecar.AnalyzeTextPath is not null)
+                                        Console.WriteLine($"  !analyze → {cdb.Sidecar.AnalyzeTextPath}");
+                                    if (cdb.Sidecar.ExploitableTextPath is not null)
+                                        Console.WriteLine($"  !exploitable → {cdb.Sidecar.ExploitableTextPath}");
+                                    FuzzAnalystLog.Info(progress, $"[cdb] {cdb.SummaryLine}", iterations);
+                                }
+                                catch (Exception cdbEx)
+                                {
+                                    Console.WriteLine($"  cdb triage skipped: {cdbEx.Message}");
+                                }
                             }
 
                             try

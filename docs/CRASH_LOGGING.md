@@ -99,7 +99,9 @@ Dump type includes thread info for register/exception recovery in WinDbg:
 !analyze -v
 ```
 
-Randall does **not** yet extract registers, disassembly, or stack hex into JSON — open the `.dmp` or use a future `randall crash analyze` command.
+With `fuzz.autoAnalyzeCrash` + `fuzz.cdbAnalyzeCrash` (default), Randfuzz runs headless cdb `!analyze -v` automatically and saves `<guid>_analyze.txt` (plus `!exploitable` when msec.dll is present). See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md).
+
+Randall also extracts registers/fault PC into `*_analysis.json` via dbghelp without opening WinDbg.
 
 ## Export bundle
 

@@ -81,7 +81,7 @@ static void PrintHelp()
           randall doctor -c <project>     Preflight lab checks before fuzzing
           randall notify test -c <project|campaign>   Test Discord/email channels
           randall graph -c <project>        Validate sessionGraph + print Mermaid
-          randall analyze -i <crash-guid>   Minidump triage (registers, fault PC)
+          randall analyze -i <crash-guid>   Minidump triage (registers, fault PC; --cdb for !analyze)
           randall heaptriage --exe <path> [--input f] [--core f] [--no-harden] [-- args…]
                                             Linux heap crash triage (tcache/UAF/overflow classifier)
           randall checksec --exe <path>     ELF exploit-mitigation report (NX/canary/PIE/RELRO/FORTIFY) + ASLR state
@@ -2087,6 +2087,7 @@ static int RunAnalyze(string[] args)
     Guid? id = null;
     string? dumpPath = null;
     var json = false;
+    var cdbAnalyze = false;
     for (var i = 0; i < args.Length; i++)
     {
         if (args[i] is "-i" or "--id" && i + 1 < args.Length && Guid.TryParse(args[i + 1], out var g))
@@ -2100,6 +2101,8 @@ static int RunAnalyze(string[] args)
         }
         else if (args[i] is "--json")
             json = true;
+        else if (args[i] is "--cdb")
+            cdbAnalyze = true;
     }
 
     CrashAnalysisDto? analysis = null;
@@ -2132,9 +2135,31 @@ static int RunAnalyze(string[] args)
     }
     else
     {
-        Console.Error.WriteLine("Usage: randall analyze -i <crash-guid> [--json]");
-        Console.Error.WriteLine("       randall analyze -d path/to/crash.dmp [--json]");
+        Console.Error.WriteLine("Usage: randall analyze -i <crash-guid> [--json] [--cdb]");
+        Console.Error.WriteLine("       randall analyze -d path/to/crash.dmp [--json] [--cdb]");
         return 1;
+    }
+
+    if (cdbAnalyze && OperatingSystem.IsWindows())
+    {
+        var targetDump = dumpPath ?? detail?.Summary.MiniDumpPath ?? analysis?.DumpPath;
+        if (string.IsNullOrWhiteSpace(targetDump) || !File.Exists(targetDump))
+        {
+            Console.Error.WriteLine("No minidump path for --cdb analysis.");
+        }
+        else
+        {
+            var outDir = id is not null && detail is not null
+                ? Path.GetDirectoryName(detail.Summary.InputPath)!
+                : Path.GetDirectoryName(targetDump)!;
+            var crashGuid = id ?? Guid.NewGuid();
+            var cdb = WindowsCdbCrashAnalysisWriter.Analyze(outDir, crashGuid, targetDump);
+            Console.WriteLine($"cdb: {cdb.SummaryLine}");
+            if (cdb.Sidecar.AnalyzeTextPath is not null)
+                Console.WriteLine($"  !analyze → {cdb.Sidecar.AnalyzeTextPath}");
+            if (cdb.Sidecar.ExploitableTextPath is not null)
+                Console.WriteLine($"  !exploitable → {cdb.Sidecar.ExploitableTextPath}");
+        }
     }
 
     if (json)

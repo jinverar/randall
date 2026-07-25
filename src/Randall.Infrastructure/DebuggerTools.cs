@@ -114,6 +114,87 @@ public static class DebuggerTools
         KitDebugger("cdb.exe"),
         EnvPath("CDB_PATH"));
 
+    /// <summary>
+    /// Microsoft Exploitability Index extension (<c>!exploitable</c>). Optional — soft-skip when absent.
+    /// Drop <c>msec.dll</c> into <c>tools/windbg-ext/</c> or set <c>MSEC_DLL_PATH</c>.
+    /// </summary>
+    public static string? FindMsecDll()
+    {
+        var direct = FirstExisting(
+            EnvPath("MSEC_DLL_PATH"),
+            RepoTool("windbg-ext/msec.dll"),
+            RepoTool("msec.dll"));
+        if (direct is not null)
+            return direct;
+
+        var cdb = FindCdb();
+        if (cdb is not null)
+        {
+            var dir = Path.GetDirectoryName(cdb);
+            if (dir is not null)
+            {
+                foreach (var sub in new[] { "winext", "winext\\msec", "Ext" })
+                {
+                    var p = Path.Combine(dir, sub, "msec.dll");
+                    if (File.Exists(p))
+                        return p;
+                }
+            }
+        }
+
+        foreach (var kits in new[]
+                 {
+                     @"C:\Program Files\Windows Kits\10\Debuggers",
+                     @"C:\Program Files (x86)\Windows Kits\10\Debuggers",
+                 })
+        {
+            if (!Directory.Exists(kits))
+                continue;
+            foreach (var dir in Directory.EnumerateDirectories(kits))
+            {
+                foreach (var sub in new[] { "winext", "winext\\msec" })
+                {
+                    var p = Path.Combine(dir, sub, "msec.dll");
+                    if (File.Exists(p))
+                        return p;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>External WinAFL companion — not the Randfuzz engine.</summary>
+    public static string? FindWinAflFuzz()
+    {
+        var home = EnvPath("WINAFL_HOME");
+        return FirstExisting(
+            RepoTool("winafl/afl-fuzz.exe"),
+            RepoTool("winafl/build/Release/afl-fuzz.exe"),
+            home is not null ? Path.Combine(home, "afl-fuzz.exe") : null,
+            @"C:\tools\winafl\afl-fuzz.exe");
+    }
+
+    /// <summary>True when classic AeDebug post-mortem debugger is registered.</summary>
+    public static (bool Configured, string? DebuggerCommand) ProbeAeDebug()
+    {
+        if (!OperatingSystem.IsWindows())
+            return (false, null);
+        try
+        {
+            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AeDebug");
+            var cmd = key?.GetValue("Debugger") as string;
+            var auto = key?.GetValue("Auto");
+            var on = auto is int a && a == 1 && !string.IsNullOrWhiteSpace(cmd);
+            return (on, cmd);
+        }
+        catch
+        {
+            return (false, null);
+        }
+    }
+
     public static string? FindProcDump() => FirstExisting(
         FromPath("procdump.exe"),
         FromPath("procdump64.exe"),

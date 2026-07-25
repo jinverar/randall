@@ -61,7 +61,10 @@ public static class CrashCatalog
                 var summary = new CrashSummaryDto(
                     c.Id, c.Project, c.Iteration, c.Mutator, c.InputHash, c.InputPath,
                     c.MiniDumpPath, c.TargetExitCode, c.TriageTag, c.SidecarPath, c.RunId, c.At);
-                var triage = CrashTriage.Classify(analysis, sidecar, summary);
+                var cdbSidecar = WindowsCdbCrashAnalysisWriter.TryRead(
+                    WindowsCdbCrashAnalysisWriter.TriagePathFor(dir, c.Id));
+                var triage = CrashTriage.Classify(
+                    analysis, sidecar, summary, null, cdbSidecar?.ExploitableClassification);
 
                 results.Add(new CrashSummaryDto(
                     c.Id,
@@ -132,11 +135,28 @@ public static class CrashCatalog
                 ?? (summary.MiniDumpPath is not null
                     ? CrashAnalysisWriter.AnalyzeDump(summary.MiniDumpPath)
                     : null);
-            var triage = CrashTriage.Classify(analysis, sidecar, summary, bytes);
-            return new CrashDetailDto(summary, bytes.Length, hex, ascii, sidecar, analysis, triage);
+            var cdbSidecar = WindowsCdbCrashAnalysisWriter.TryRead(
+                WindowsCdbCrashAnalysisWriter.TriagePathFor(crashesDir, summary.Id));
+            var triage = CrashTriage.Classify(
+                analysis, sidecar, summary, bytes, cdbSidecar?.ExploitableClassification);
+            var cdbTriage = MapCdbTriage(cdbSidecar);
+            return new CrashDetailDto(summary, bytes.Length, hex, ascii, sidecar, analysis, triage, cdbTriage);
         }
         return null;
     }
+
+    internal static CdbTriageDto? MapCdbTriage(WindowsCdbCrashAnalysisWriter.CdbTriageSidecar? s) =>
+        s is null
+            ? null
+            : new CdbTriageDto(
+                s.Ok,
+                s.ExploitableClassification,
+                s.ExploitableDescription,
+                s.AnalyzeTextPath,
+                s.ExploitableTextPath,
+                s.TriageJsonPath,
+                s.MsecAvailable,
+                s.Error);
 
     internal static string BuildAsciiPreview(ReadOnlySpan<byte> bytes, int previewLen)
     {

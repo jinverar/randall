@@ -136,7 +136,13 @@ wpr -start FileIO.light -start Registry.light -start DiskIO.light -start Network
 wpr -stop data\runs\<id>\manual-etw.etl "Randfuzz manual"
 ```
 
-**WinAFL + TinyInst / Lighthouse** — External coverage pipeline; use when you want AFL-style Windows fuzzing or BB highlighting in a disassembler. Randfuzz’s DynamoRIO path stays the in-product coverageGuided option.
+**WinAFL + TinyInst / Lighthouse** — External coverage pipeline; use when you want AFL-style Windows fuzzing or BB highlighting in a disassembler. Randfuzz’s DynamoRIO path stays the in-product coverageGuided option. Install companion:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-winafl.ps1
+```
+
+Doctor check `winafl` confirms `tools/winafl/afl-fuzz.exe` after you build in Visual Studio. See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md#winafl-companion-external).
 
 ---
 

@@ -14,6 +14,7 @@ public static class DoctorCheckPlatform
     {
         "procmon", "tcpvcon", "procdump", "procdumpOnCrash", "pktmon", "etw",
         "debugView", "sysinternalsSnapshots", "strings", "stringsOnCrash", "debuggerMode",
+        "cdbAnalyze", "msec", "aedebug", "winafl",
     };
 
     /// <summary>Classifies a check id. Prefixes (<c>debugger:</c>, <c>linux:</c>) are handled first.</summary>

@@ -9,7 +9,8 @@ public static class CrashTriage
         CrashAnalysisDto? analysis,
         CrashSidecarDto? sidecar,
         CrashSummaryDto? summary = null,
-        byte[]? payload = null)
+        byte[]? payload = null,
+        string? exploitableClassification = null)
     {
         var codeHint = analysis?.ExceptionHint
             ?? sidecar?.ExceptionHint
@@ -25,7 +26,7 @@ public static class CrashTriage
         var crashClass = ClassifyClass(analysis?.ExceptionCode, codeHint, fault, rip);
         var ipControlled = LooksLikeIpControl(fault, rip, module);
         var stackSmashed = LooksLikeStackSmash(analysis?.ExceptionCode, codeHint, rsp, rip);
-        var severity = ScoreSeverity(crashClass, ipControlled, stackSmashed, analysis?.Ok == true);
+        var severity = ScoreSeverity(crashClass, ipControlled, stackSmashed, analysis?.Ok == true, exploitableClassification);
         var summaryText = BuildSummary(crashClass, severity, fault, module, ipControlled, stackSmashed);
         var clusterKey = BuildClusterKey(summary?.Project ?? "?", crashClass, fault, module);
         var (depth, depthNote) = FindPatternDepth(payload, rip, fault, rsp);
@@ -194,8 +195,18 @@ public static class CrashTriage
         return false;
     }
 
-    private static string ScoreSeverity(string crashClass, bool ipControlled, bool stackSmashed, bool analyzed)
+    private static string ScoreSeverity(
+        string crashClass,
+        bool ipControlled,
+        bool stackSmashed,
+        bool analyzed,
+        string? exploitableClassification = null)
     {
+        var exp = (exploitableClassification ?? "").ToUpperInvariant();
+        if (exp is "EXPLOITABLE" or "PROBABLY_EXPLOITABLE")
+            return "critical";
+        if (exp is "PROBABLY_NOT_EXPLOITABLE" or "NOT_EXPLOITABLE")
+            return analyzed ? "medium" : "low";
         if (ipControlled || crashClass is "stack_buffer_overrun" or "illegal_instruction")
             return "critical";
         if (stackSmashed || crashClass is "access_violation" or "stack_overflow")

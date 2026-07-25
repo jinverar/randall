@@ -456,6 +456,44 @@ public static class LabDoctor
             Add($"debugger:{t.Id}", t.Available ? "ok" : "warn",
                 t.Available ? (t.Path ?? t.Name) : $"{t.Name} not found");
         }
+
+        if (OperatingSystem.IsWindows())
+        {
+            var cdb = DebuggerTools.FindCdb();
+            if (project.Fuzz.AutoAnalyzeCrash && project.Fuzz.CdbAnalyzeCrash)
+            {
+                Add("cdbAnalyze", cdb is not null ? "ok" : "warn",
+                    cdb is not null
+                        ? $"{cdb} — auto !analyze -v on crash dumps (fuzz.cdbAnalyzeCrash)"
+                        : "cdbAnalyzeCrash enabled but cdb missing — scripts/install-debuggers.ps1");
+            }
+            else
+            {
+                Add("cdbAnalyze", cdb is not null ? "ok" : "warn",
+                    cdb is not null
+                        ? $"{cdb} (set fuzz.autoAnalyzeCrash + fuzz.cdbAnalyzeCrash: true)"
+                        : "cdb not found — optional !analyze triage (scripts/install-debuggers.ps1)");
+            }
+
+            var msec = DebuggerTools.FindMsecDll();
+            Add("msec", msec is not null ? "ok" : "warn",
+                msec is not null
+                    ? $"{msec} — !exploitable available on crash dumps"
+                    : "msec.dll not found — !exploitable skipped; drop tools/windbg-ext/msec.dll or set MSEC_DLL_PATH");
+
+            var (aeOn, aeCmd) = DebuggerTools.ProbeAeDebug();
+            Add("aedebug", aeOn ? "ok" : "warn",
+                aeOn
+                    ? $"AeDebug registered → {aeCmd}"
+                    : "AeDebug not configured — opt-in: scripts/setup-windows-crash-capture.ps1 (Admin; Scream preferred during fuzz)");
+
+            var winafl = DebuggerTools.FindWinAflFuzz();
+            Add("winafl", winafl is not null ? "ok" : "warn",
+                winafl is not null
+                    ? $"{winafl} — external WinAFL companion (not Randfuzz engine)"
+                    : "WinAFL not built — optional: scripts/install-winafl.ps1 (external coverage grinder)");
+        }
+
         if (!string.IsNullOrWhiteSpace(project.Fuzz.DebuggerMode) &&
             !project.Fuzz.DebuggerMode.Equals("none", StringComparison.OrdinalIgnoreCase))
         {
@@ -636,6 +674,8 @@ public static class LabDoctor
         lines.Add($"Crashes land in data/crashes/{report.Project}/");
         lines.Add("After a scream: randall scream walk -i <crash-guid> --goal auto");
         lines.Add("First-crash file labs: docs/MATURITY.md · docs/WINDBG_FUZZ_PKG.md");
+        if (OperatingSystem.IsWindows())
+            lines.Add("Optional system crash capture (Admin): scripts/setup-windows-crash-capture.ps1");
         return lines;
     }
 }

@@ -96,6 +96,7 @@ public sealed record FuzzStartRequest(
     bool? DebugViewCapture = null,
     bool? SysinternalsSnapshots = null,
     bool? StringsOnCrash = null,
+    bool? CdbAnalyzeCrash = null,
     /// <summary>Override <c>oracles.enabled</c> for this run only (does not rewrite YAML).</summary>
     bool? OraclesEnabled = null,
     /// <summary>Override <c>magician.enabled</c> for this run only (does not rewrite YAML).</summary>

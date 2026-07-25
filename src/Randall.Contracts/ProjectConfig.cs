@@ -272,6 +272,11 @@ public sealed class FuzzConfig
     /// <summary>Write *_analysis.json from minidump when a crash is saved.</summary>
     public bool AutoAnalyzeCrash { get; set; } = true;
     /// <summary>
+    /// When <see cref="AutoAnalyzeCrash"/> is on (Windows), run headless cdb <c>!analyze -v</c>
+    /// and optional <c>!exploitable</c> (needs msec.dll). Writes <c>*_analyze.txt</c>.
+    /// </summary>
+    public bool CdbAnalyzeCrash { get; set; } = true;
+    /// <summary>
     /// Debugger integration: none | attach | wait.
     /// attach = launch WinDbg/Preview on the long-lived target PID (with g).
     /// wait = ProcDump/cdb headless dump-on-exception, then auto-analyze.

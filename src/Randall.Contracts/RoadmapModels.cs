@@ -35,6 +35,16 @@ public sealed record CrashSummaryDto(
     /// <summary>True when triage thinks EIP/RIP / fault PC looks attacker-controlled (ASCII pattern, non-image, etc.).</summary>
     bool IpLooksControlled = false);
 
+public sealed record CdbTriageDto(
+    bool Ok,
+    string? ExploitableClassification,
+    string? ExploitableDescription,
+    string? AnalyzeTextPath,
+    string? ExploitableTextPath,
+    string? TriageJsonPath,
+    bool MsecAvailable,
+    string? Error);
+
 public sealed record CrashDetailDto(
     CrashSummaryDto Summary,
     int InputLength,
@@ -42,7 +52,8 @@ public sealed record CrashDetailDto(
     string AsciiPreview,
     CrashSidecarDto? Sidecar,
     CrashAnalysisDto? Analysis,
-    CrashTriageDto? Triage = null);
+    CrashTriageDto? Triage = null,
+    CdbTriageDto? CdbTriage = null);
 
 public sealed record SessionGraphReportDto(
     string Project,

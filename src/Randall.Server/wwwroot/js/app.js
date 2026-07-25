@@ -2301,6 +2301,7 @@ function renderCrashDetail(detail, title) {
   const s = detail.sidecar;
   const a = detail.analysis;
   const t = detail.triage;
+  const cdb = detail.cdbTriage;
   const regs = a?.registers;
   const why = t?.exceptionHint
     || s?.exceptionHint
@@ -2350,6 +2351,9 @@ function renderCrashDetail(detail, title) {
       <p><code>${escapeAttr(t.class || '')}</code>${t.clusterKey ? ` · <code title="cluster key">${escapeAttr(t.clusterKey)}</code>` : ''}</p>
       ${t.ipLooksControlled ? '<p class="severity-critical">IP looks controlled / non-image</p>' : ''}
       ${t.stackLooksSmashed ? '<p class="severity-high">Stack smash signals</p>' : ''}
+      ${cdb?.exploitableClassification ? `<p class="severity-${(cdb.exploitableClassification || '').toLowerCase().includes('not') ? 'medium' : 'critical'}">!exploitable: <code>${escapeAttr(cdb.exploitableClassification)}</code></p>` : ''}
+      ${cdb?.analyzeTextPath ? `<p class="hint">!analyze log: <code>${escapeAttr(cdb.analyzeTextPath)}</code></p>` : ''}
+      ${cdb?.error && !cdb?.ok ? `<p class="hint">${escapeAttr(cdb.error)}</p>` : ''}
       ${t.patternDepthBytes != null ? `<p>Pattern depth: <code>offset ${t.patternDepthBytes}</code>${t.patternNote ? ` — ${escapeAttr(t.patternNote)}` : ''}</p>` : ''}
       ${!dump ? '<p class="hint">No minidump on this hit — severity may under-rank without PC.</p>' : ''}
     </div>` : ''}
@@ -4513,6 +4517,7 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
       debuggerMode: document.getElementById('fuzz-debugger').value,
       debuggerKind: document.getElementById('fuzz-debugger-kind').value,
       debuggerOpenOnCrash: document.getElementById('fuzz-open-on-crash').checked,
+      cdbAnalyzeCrash: document.getElementById('fuzz-cdb-analyze')?.checked !== false,
       procmonCapture: document.getElementById('fuzz-procmon')?.checked === true,
       tcpvconCapture: document.getElementById('fuzz-tcpvcon')?.checked === true,
       procdumpOnCrash: document.getElementById('fuzz-procdump')?.checked === true,

@@ -54,5 +54,6 @@ public sealed record FuzzRunOptions(
     bool? DebugViewCapture = null,
     bool? SysinternalsSnapshots = null,
     bool? StringsOnCrash = null,
+    bool? CdbAnalyzeCrash = null,
     /// <summary>Extra Oracle / Magician / Joker / coverage / INTEL console detail.</summary>
     bool Verbose = false);
