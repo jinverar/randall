@@ -45,37 +45,56 @@ public static class MiniDumpWriter
         if (process.HasExited && !allowExited)
             return null;
 
+        string? path = null;
         try
         {
             TryEnableDebugPrivilege();
             Directory.CreateDirectory(dumpsDir);
-            var path = Path.Combine(dumpsDir, $"{baseName}.dmp");
-            using var file = File.Open(path, FileMode.Create, FileAccess.Write, FileShare.None);
+            path = Path.Combine(dumpsDir, $"{baseName}.dmp");
 
             var pid = process.Id;
             var handle = process.HasExited
-                ? OpenProcess(ProcessQueryInformation | ProcessVmRead, false, pid)
+                ? OpenProcessExited(pid)
                 : process.Handle;
 
             if (handle == IntPtr.Zero)
+            {
+                RemoveEmptyDump(path);
+                if (process.HasExited && allowExited)
+                    return TryWriteDumpForPid(pid, dumpsDir, baseName, allowExited: true, dumpType);
                 return null;
+            }
 
+            using var file = File.Open(path, FileMode.Create, FileAccess.Write, FileShare.None);
             var owned = process.HasExited;
             try
             {
+                var type = dumpType ?? MiniDumpType;
                 var ok = MiniDumpWriteDump(
                     handle,
                     (uint)pid,
                     file.SafeFileHandle,
-                    dumpType ?? MiniDumpType,
+                    type,
                     IntPtr.Zero,
                     IntPtr.Zero,
                     IntPtr.Zero);
+                if ((!ok || file.Length == 0) && type != MiniDumpTypeLight)
+                {
+                    file.SetLength(0);
+                    ok = MiniDumpWriteDump(
+                        handle, (uint)pid, file.SafeFileHandle, MiniDumpTypeLight,
+                        IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+                }
+
                 if (!ok || file.Length == 0)
                 {
-                    try { File.Delete(path); } catch { /* ignore */ }
+                    RemoveEmptyDump(path);
+                    path = null;
+                    if (process.HasExited && allowExited)
+                        return TryWriteDumpForPid(pid, dumpsDir, baseName, allowExited: true, dumpType);
                     return null;
                 }
+
                 return path;
             }
             finally
@@ -86,6 +105,8 @@ public static class MiniDumpWriter
         }
         catch
         {
+            if (path is not null)
+                RemoveEmptyDump(path);
             return null;
         }
     }
@@ -270,6 +291,26 @@ public static class MiniDumpWriter
         public IntPtr ExceptionPointers;
         [MarshalAs(UnmanagedType.Bool)]
         public bool ClientPointers;
+    }
+
+    private static IntPtr OpenProcessExited(int pid)
+    {
+        var access = ProcessQueryInformation | ProcessQueryLimitedInformation | ProcessVmRead |
+                     ProcessVmOperation | ProcessDupHandle;
+        var handle = OpenProcess(access, false, pid);
+        return handle != IntPtr.Zero
+            ? handle
+            : OpenProcess(ProcessQueryInformation | ProcessVmRead, false, pid);
+    }
+
+    private static void RemoveEmptyDump(string path)
+    {
+        try
+        {
+            if (File.Exists(path) && new FileInfo(path).Length == 0)
+                File.Delete(path);
+        }
+        catch { /* ignore */ }
     }
 
     private static void TryEnableDebugPrivilege()

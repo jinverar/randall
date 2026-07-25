@@ -2251,7 +2251,7 @@ function shortFault(c) {
   return f;
 }
 
-async function loadCrashMemoryLens(crashId) {
+async function loadCrashMemoryLens(crashId, hasDump = false) {
   const status = document.getElementById('crash-memory-status');
   const body = document.getElementById('crash-memory-body');
   const conf = document.getElementById('crash-memory-conf');
@@ -2260,8 +2260,17 @@ async function loadCrashMemoryLens(crashId) {
     const m = await api.get(`/api/crashes/${crashId}/memory`);
     if (conf) conf.textContent = m.confidence ? `— ${m.confidence}` : '';
     if (status) {
-      status.textContent = m.ok ? '' : (m.error || 'Lens unavailable');
-      status.classList.toggle('hidden', !!m.ok && (m.summaryLines || []).length > 0);
+      if (m.ok) {
+        status.textContent = '';
+        status.classList.toggle('hidden', (m.summaryLines || []).length > 0);
+      } else if (!hasDump) {
+        status.textContent =
+          'No dump captured — set Debugger to Scream wait or Both on the Fuzz tab and re-fuzz on the Target Runtime box. (Scream canisters are harvest UI only, not dump attach.)';
+        status.classList.remove('hidden');
+      } else {
+        status.textContent = m.error || 'Lens unavailable';
+        status.classList.remove('hidden');
+      }
     }
     const lines = (m.summaryLines || []).map((l) => `<p class="memory-summary-line">${escapeAttr(l)}</p>`).join('');
     const patterns = (m.patternHits || []).slice(0, 8).map((p) =>
@@ -2355,7 +2364,7 @@ function renderCrashDetail(detail, title) {
       ${cdb?.analyzeTextPath ? `<p class="hint">!analyze log: <code>${escapeAttr(cdb.analyzeTextPath)}</code></p>` : ''}
       ${cdb?.error && !cdb?.ok ? `<p class="hint">${escapeAttr(cdb.error)}</p>` : ''}
       ${t.patternDepthBytes != null ? `<p>Pattern depth: <code>offset ${t.patternDepthBytes}</code>${t.patternNote ? ` — ${escapeAttr(t.patternNote)}` : ''}</p>` : ''}
-      ${!dump ? '<p class="hint">No minidump on this hit — severity may under-rank without PC.</p>' : ''}
+      ${!dump ? '<p class="hint">No minidump on this hit — set Debugger to Scream wait or Both and re-fuzz for Memory lens / ROP walks. Canisters are UI harvest only.</p>' : ''}
     </div>` : ''}
     <dl class="crash-meta-dl">
       <dt>Project</dt><dd>${escapeAttr(detail.summary.project)}</dd>
@@ -2384,7 +2393,7 @@ function renderCrashDetail(detail, title) {
     </div>
     <div class="triage-box" id="crash-rop-box">
       <h4>ROP Studio / RandfuzzDbg <span class="hint-inline">lab sketches — no payloads</span></h4>
-      <p class="hint" id="crash-rop-status">Gadget catalog + WinDbg walk for this scream.</p>
+      <p class="hint" id="crash-rop-status">Post-crash lab steps (Walk / Stack Lens / ROP) — run manually; not created during fuzz.</p>
       <div id="crash-rop-body" class="hint"></div>
       <div class="btn-row wrap" style="margin-top:0.5rem; align-items:center; gap:0.5rem">
         <label class="hint" for="crash-rop-goal">Goal
@@ -2424,7 +2433,7 @@ function renderCrashDetail(detail, title) {
     </div>
     <p id="export-result" class="empty"></p>`;
 
-  loadCrashMemoryLens(detail.summary.id).catch(() => {});
+  loadCrashMemoryLens(detail.summary.id, !!dump).catch(() => {});
   loadCrashRopSidecars(detail.summary.id).catch(() => {});
 
   async function loadCrashRopSidecars(id) {
@@ -2500,7 +2509,11 @@ function renderCrashDetail(detail, title) {
         parts.push(`<p class="hint">Modules: ${side.walk.moduleCandidates.map((m) => escapeAttr(m.split(/[\\\\/]/).pop())).join(', ')}</p>`);
       }
       if (parts.length) body.innerHTML = parts.join('');
-      else if (status) status.textContent = side.summaryLine || 'No ROP / Scream Walk sidecars yet';
+      else if (status) {
+        status.textContent = dump
+          ? (side.summaryLine || 'No ROP / Scream Walk sidecars yet — click Walk this scream or Stack Lens')
+          : (side.summaryLine || 'No dump — enable Scream wait/Both and re-fuzz, then Walk this scream');
+      }
     } catch {
       /* no sidecars yet */
     }

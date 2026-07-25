@@ -29,11 +29,18 @@ public static class MemoryLensAnalyzer
     public static MemoryLensReportDto AnalyzeDump(string? dumpPath, CrashAnalysisDto? analysis = null, int? pid = null)
     {
         analysis ??= string.IsNullOrWhiteSpace(dumpPath) ? null : MiniDumpAnalyzer.Analyze(dumpPath);
-        if (string.IsNullOrWhiteSpace(dumpPath) || !File.Exists(dumpPath))
+        if (string.IsNullOrWhiteSpace(dumpPath) || !File.Exists(dumpPath) ||
+            new FileInfo(dumpPath).Length == 0)
         {
             if (analysis is { Ok: true })
                 return FromAnalysisOnly(analysis, dumpPath, pid);
-            return Fail(dumpPath, pid, "minidump not found");
+            if (string.IsNullOrWhiteSpace(dumpPath))
+            {
+                return Fail(dumpPath, pid,
+                    "no dump captured — fuzz with Debugger = Scream wait or Both (Target Runtime on the fuzz box); optional procdumpOnCrash when debugger is None");
+            }
+
+            return Fail(dumpPath, pid, "minidump file missing or empty — re-fuzz with Scream wait/Both");
         }
 
         try

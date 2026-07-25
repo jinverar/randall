@@ -110,6 +110,32 @@ public static class CrashCatalog
             .ToList();
     }
 
+    /// <summary>First non-empty dump path on the crash record (summary, analysis, sidecar).</summary>
+    public static string? ResolveDumpPath(CrashDetailDto detail)
+    {
+        foreach (var candidate in new[]
+                 {
+                     detail.Summary.MiniDumpPath,
+                     detail.Analysis?.DumpPath,
+                     detail.Sidecar?.MiniDumpPath,
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+                continue;
+            try
+            {
+                if (File.Exists(candidate) && new FileInfo(candidate).Length > 0)
+                    return candidate;
+            }
+            catch
+            {
+                /* ignore */
+            }
+        }
+
+        return null;
+    }
+
     public static CrashDetailDto? GetDetail(Guid id, string? repoRoot = null)
     {
         foreach (var summary in ListAll(repoRoot))

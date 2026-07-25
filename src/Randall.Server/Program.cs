@@ -413,7 +413,7 @@ app.MapGet("/api/crashes/{id:guid}/memory", (Guid id) =>
     if (existing is not null)
         return Results.Ok(existing);
 
-    var dump = detail.Summary.MiniDumpPath ?? detail.Analysis?.DumpPath;
+    var dump = CrashCatalog.ResolveDumpPath(detail);
     var report = MemoryLensAnalyzer.AnalyzeDump(dump, detail.Analysis);
     if (report.Ok || !string.IsNullOrWhiteSpace(dump))
         MemoryLensWriter.Write(crashesDir, id, report);
