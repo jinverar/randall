@@ -11,6 +11,8 @@ public static class DebuggerTools
     public const string KindWinDbgPreview = "windbg-preview";
     public const string KindCdb = "cdb";
 
+    private const string DefaultMsSymbolServer = "https://msdl.microsoft.com/download/symbols";
+
     public static DebuggerToolsDto Probe()
     {
         var windbg = FindWinDbg();
@@ -33,10 +35,74 @@ public static class DebuggerTools
         };
 
         var preferredGui = preview ?? windbg;
+        string? symbolPath = null;
+        string? symbolCache = null;
+        if (OperatingSystem.IsWindows())
+        {
+            symbolPath = GetEffectiveSymbolPath();
+            symbolCache = GetSymbolCacheDirectory();
+        }
+
         return new DebuggerToolsDto(
             tools,
             preferredGui is null ? null : (preview is not null ? KindWinDbgPreview : KindWinDbg),
-            "scream");
+            "scream",
+            symbolPath,
+            symbolCache);
+    }
+
+    /// <summary>Local PDB cache directory (created on demand).</summary>
+    public static string GetSymbolCacheDirectory()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("RANDFUZZ_SYMBOL_CACHE");
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+            return Path.GetFullPath(fromEnv.Trim());
+
+        var classic = @"C:\Symbols";
+        if (Directory.Exists(classic))
+            return classic;
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Randfuzz", "Symbols");
+    }
+
+    /// <summary>
+    /// Symbol path for WinDbg/cdb: honors <c>_NT_SYMBOL_PATH</c>, else
+    /// <c>srv*&lt;cache&gt;*https://msdl.microsoft.com/download/symbols</c>.
+    /// Set <c>RANDFUZZ_NO_MS_SYMBOL_SERVER=1</c> for cache-only (offline).
+    /// </summary>
+    public static string GetEffectiveSymbolPath(bool includeMsSymbolServer = true)
+    {
+        var nt = Environment.GetEnvironmentVariable("_NT_SYMBOL_PATH");
+        if (!string.IsNullOrWhiteSpace(nt))
+            return nt.Trim();
+
+        var cache = GetSymbolCacheDirectory();
+        try { Directory.CreateDirectory(cache); } catch { /* best effort */ }
+
+        var offline = string.Equals(
+            Environment.GetEnvironmentVariable("RANDFUZZ_NO_MS_SYMBOL_SERVER"),
+            "1",
+            StringComparison.OrdinalIgnoreCase);
+        if (offline || !includeMsSymbolServer)
+            return cache;
+
+        return $"srv*{cache}*{DefaultMsSymbolServer}";
+    }
+
+    /// <summary><c>-y</c> and <c>-snul</c> args for cdb / WinDbg launches.</summary>
+    public static string FormatSymbolCommandLineArgs()
+    {
+        var path = GetEffectiveSymbolPath().Replace("\"", "\\\"");
+        return $"-y \"{path}\" -snul";
+    }
+
+    /// <summary>Debugger script prefix: set symbol path before <c>!analyze</c>.</summary>
+    public static string FormatSympathScriptCommand()
+    {
+        var path = GetEffectiveSymbolPath().Replace("\"", "\\\"");
+        return $".sympath \"{path}\"";
     }
 
     public static string? ResolveGuiPath(string kind)

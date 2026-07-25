@@ -151,9 +151,10 @@ public static class RandfuzzDbgWalk
         sb.AppendLine();
         sb.AppendLine("WinDbg Preview:");
         sb.AppendLine("  1) randall debug open -i <crash-guid> --kind windbg-preview");
+        sb.AppendLine("     (Randfuzz passes -y with local cache + MS symbol server)");
         sb.AppendLine($"  2) $$>a< {Path.Combine(dir, "rf_walk.txt").Replace('\\', '/')}");
         sb.AppendLine();
-        sb.AppendLine("Extension DLL (Windows lab build): tools/randfuzzdbg/README.md");
+        sb.AppendLine("Symbols: docs/CRASH_ANALYSIS.md#windbg-symbols");
         return sb.ToString();
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Randall.Contracts;
 
@@ -9,22 +10,32 @@ namespace Randall.Infrastructure;
 /// </summary>
 public static class DebuggerSession
 {
+    private static readonly ConcurrentDictionary<string, int> OpenDumpProcesses = new(StringComparer.OrdinalIgnoreCase);
+
     public static DebuggerLaunchResultDto OpenDump(string dumpPath, string kind = DebuggerTools.KindAuto)
     {
         dumpPath = Path.GetFullPath(dumpPath);
         if (!File.Exists(dumpPath))
             return Fail(kind, $"Dump not found: {dumpPath}");
 
+        if (TryReuseOpenDump(dumpPath, out var existing))
+            return existing!;
+
         var resolvedKind = DebuggerTools.ResolveGuiKind(kind);
         var exe = DebuggerTools.ResolveGuiPath(resolvedKind);
         if (exe is null)
             return Fail(resolvedKind, "No WinDbg / WinDbg Preview / cdb found. Install Debugging Tools for Windows or WinDbg Preview.");
 
-        var args = $"-z \"{dumpPath}\"";
+        var symArgs = OperatingSystem.IsWindows() ? DebuggerTools.FormatSymbolCommandLineArgs() : "";
+        var args = string.IsNullOrEmpty(symArgs)
+            ? $"-z \"{dumpPath}\""
+            : $"{symArgs} -z \"{dumpPath}\"";
         try
         {
             // Fire-and-forget: never block the fuzz loop waiting on a debugger console/GUI.
             var proc = Process.Start(DebuggerTools.BuildDetachedStartInfo(exe, args));
+            if (proc?.Id is { } pid)
+                OpenDumpProcesses[dumpPath] = pid;
             return new DebuggerLaunchResultDto(
                 true, resolvedKind, exe, proc?.Id, dumpPath,
                 $"Opened dump in {resolvedKind}: {dumpPath}");
@@ -68,7 +79,10 @@ public static class DebuggerSession
 
         // -c "g" resumes so fuzzing can continue until the next break/crash.
         var cmd = go ? "-c \"g\"" : "";
-        var args = $"-p {pid} {cmd}".Trim();
+        var symArgs = OperatingSystem.IsWindows() ? DebuggerTools.FormatSymbolCommandLineArgs() : "";
+        var args = string.IsNullOrEmpty(symArgs)
+            ? $"-p {pid} {cmd}".Trim()
+            : $"{symArgs} -p {pid} {cmd}".Trim();
         try
         {
             var gui = resolvedKind is not DebuggerTools.KindCdb;
@@ -181,6 +195,8 @@ public static class DebuggerSession
             qd
             """);
         var args = $"-p {pid} -cf \"{scriptPath}\"";
+        if (OperatingSystem.IsWindows())
+            args = $"{DebuggerTools.FormatSymbolCommandLineArgs()} {args}";
         var psi = new ProcessStartInfo
         {
             FileName = cdb,
@@ -232,6 +248,49 @@ public static class DebuggerSession
         string? dumpPath = null,
         int? pid = null) =>
         new(false, kind, path, pid, dumpPath, message);
+
+    private static bool TryReuseOpenDump(string dumpPath, out DebuggerLaunchResultDto? result)
+    {
+        result = null;
+        if (!OpenDumpProcesses.TryGetValue(dumpPath, out var pid))
+            return false;
+
+        try
+        {
+            using var proc = Process.GetProcessById(pid);
+            if (proc.HasExited)
+            {
+                OpenDumpProcesses.TryRemove(dumpPath, out _);
+                return false;
+            }
+
+            var name = proc.ProcessName;
+            if (!IsDebuggerProcessName(name))
+            {
+                OpenDumpProcesses.TryRemove(dumpPath, out _);
+                return false;
+            }
+
+            string? exePath = null;
+            try { exePath = proc.MainModule?.FileName; } catch { /* elevated / UWP */ }
+
+            result = new DebuggerLaunchResultDto(
+                true, "reuse", exePath, pid, dumpPath,
+                $"Dump already open in {name} (PID {pid}) — close it or End task to reopen");
+            return true;
+        }
+        catch
+        {
+            OpenDumpProcesses.TryRemove(dumpPath, out _);
+            return false;
+        }
+    }
+
+    private static bool IsDebuggerProcessName(string name) =>
+        name.Equals("windbg", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("cdb", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("WinDbgX", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("DbgX.Shell", StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>Headless wait handle — Scream watcher, ProcDump, or cdb.</summary>

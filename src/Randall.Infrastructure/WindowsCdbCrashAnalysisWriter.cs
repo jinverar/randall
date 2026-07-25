@@ -168,6 +168,7 @@ public static partial class WindowsCdbCrashAnalysisWriter
     {
         var lines = new List<string>
         {
+            DebuggerTools.FormatSympathScriptCommand(),
             ".echo RANDFUZZ_ANALYZE_BEGIN",
             "!analyze -v",
             ".echo RANDFUZZ_ANALYZE_END",
@@ -186,10 +187,11 @@ public static partial class WindowsCdbCrashAnalysisWriter
 
     private static (string Text, bool TimedOut) RunCdb(string cdb, string dumpPath, string script, int timeoutMs)
     {
+        var symArgs = DebuggerTools.FormatSymbolCommandLineArgs();
         var psi = new ProcessStartInfo
         {
             FileName = cdb,
-            Arguments = $"-z \"{dumpPath}\" -c \"{script.Replace("\"", "\\\"")}\"",
+            Arguments = $"{symArgs} -z \"{dumpPath}\" -c \"{script.Replace("\"", "\\\"")}\"",
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

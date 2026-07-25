@@ -22,7 +22,7 @@ When `fuzz.cdbAnalyzeCrash: true` (default, requires `autoAnalyzeCrash`), Randfu
 | `<guid>_exploitable.txt` | `!exploitable` output when **msec.dll** is available |
 | `<guid>_cdb_triage.json` | Parsed summary + paths |
 
-Soft-fails when cdb is missing (install `scripts/install-debuggers.ps1`). Does not block the fuzz loop — 90s timeout.
+Soft-fails when cdb is missing (install `scripts/install-debuggers.ps1`). Does not block the fuzz loop — 90s timeout. Randfuzz passes `-y` (local cache + Microsoft symbol server) and runs `.sympath` before `!analyze`; see [WinDbg symbols](#windbg-symbols) below.
 
 **msec.dll** (Microsoft Exploitability Index extension) is optional:
 
@@ -39,6 +39,40 @@ fuzz:
 ```
 
 UI: Fuzz tab → **cdb !analyze on crash dump** (Windows).
+
+## WinDbg symbols
+
+Idle **Symbolic Debugger for Windows** / WinDbg Preview processes (0% CPU, ~15–30 MB) are usually waiting on PDB downloads from `msdl.microsoft.com`, not hung.
+
+Randfuzz sets a default symbol path when launching WinDbg Preview, classic WinDbg, or headless **cdb**:
+
+| Mechanism | Value |
+|-----------|--------|
+| Env (wins) | `_NT_SYMBOL_PATH` if already set |
+| Default | `srv*C:\Symbols*https://msdl.microsoft.com/download/symbols` |
+| Cache override | `RANDFUZZ_SYMBOL_CACHE=C:\path\to\cache` |
+| Offline / no MS server | `RANDFUZZ_NO_MS_SYMBOL_SERVER=1` (cache dir only) |
+
+**Recommended (persistent, all debuggers):**
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "_NT_SYMBOL_PATH",
+  "srv*C:\Symbols*https://msdl.microsoft.com/download/symbols",
+  "User")
+mkdir C:\Symbols -Force
+```
+
+**Kill stuck symbol waiters:** Task Manager → end **WinDbg** / **WinDbgX** / **cdb** (or `taskkill /IM WinDbgX.exe /F`). Fuzzing continues — GUI open is fire-and-forget; headless cdb triage times out after 90s.
+
+**cdb vs WinDbg Preview:**
+
+| Use | When |
+|-----|------|
+| **cdb** (headless) | Auto `!analyze` on every crash — no windows, 90s cap, writes `*_analyze.txt` |
+| **WinDbg Preview** | Interactive walk (`Both` mode, Crashes → WinDbg buttons, `randall debug open`) |
+
+Re-opening the same dump from Randfuzz skips a second GUI launch if the prior WinDbg for that dump is still running.
 
 ## AeDebug + WER (opt-in)
 

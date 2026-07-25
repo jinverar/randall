@@ -11,7 +11,9 @@ public sealed record DebuggerToolDto(
 public sealed record DebuggerToolsDto(
     IReadOnlyList<DebuggerToolDto> Tools,
     string? PreferredGui,
-    string? PreferredWait);
+    string? PreferredWait,
+    string? SymbolPath = null,
+    string? SymbolCache = null);
 
 public sealed record DebuggerOpenRequest(
     Guid? CrashId = null,

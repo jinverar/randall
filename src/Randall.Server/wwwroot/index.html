@@ -441,6 +441,12 @@
             cdb !analyze on crash dump
           </label>
           <p class="hint" data-platform-scope="windows">
+            WinDbg may sit idle at 0% CPU while fetching PDBs from the symbol server — first open can take minutes.
+            Cache: <code>C:\Symbols</code> or set
+            <code>_NT_SYMBOL_PATH=srv*C:\Symbols*https://msdl.microsoft.com/download/symbols</code>.
+            <button type="button" class="linkish" data-help="CRASH_ANALYSIS.md#windbg-symbols">Help</button>
+          </p>
+          <p class="hint" data-platform-scope="windows">
             System-wide crash capture (AeDebug, WER) is opt-in:
             <code>scripts\setup-windows-crash-capture.ps1</code> (Admin) ·
             <button type="button" class="linkish" data-help="CRASH_ANALYSIS.md#aedebug-wer">Help</button>

@@ -217,7 +217,24 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-debuggers.ps1
 
 Manual: [WinDbg download](https://aka.ms/windbg/download) · [Windows SDK](https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/) (select only **Debugging Tools for Windows**). Soft-fails print these links.
 
-Doctor probes `debugger:windbg-preview`, `debugger:windbg`, `debugger:cdb` (paths match `DebuggerTools`).
+Doctor probes `debugger:windbg-preview`, `debugger:windbg`, `debugger:cdb` (paths match `DebuggerTools`). `GET /api/debug/tools` also reports the effective symbol path.
+
+### Symbol path (PDB cache)
+
+WinDbg and cdb need symbols for rich stacks and `!analyze`. Without a cache, each dump open may block on Microsoft’s symbol server (Task Manager shows idle WinDbg at 0% CPU).
+
+Randfuzz passes `-y` on launch and `.sympath` in headless cdb scripts. Defaults match [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md#windbg-symbols):
+
+```powershell
+# Recommended persistent setup (User env)
+[Environment]::SetEnvironmentVariable(
+  "_NT_SYMBOL_PATH",
+  "srv*C:\Symbols*https://msdl.microsoft.com/download/symbols",
+  "User")
+mkdir C:\Symbols -Force
+```
+
+Offline lab: `RANDFUZZ_NO_MS_SYMBOL_SERVER=1` (cache directory only).
 
 ### 5d. Opt-in crash capture (AeDebug + WER)
 

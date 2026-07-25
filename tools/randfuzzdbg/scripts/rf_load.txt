@@ -1,4 +1,7 @@
 $$ RandfuzzDbg load hints
+$$ Symbol path (see docs/CRASH_ANALYSIS.md#windbg-symbols):
+$$   .sympath srv*C:\Symbols*https://msdl.microsoft.com/download/symbols
+$$   .reload /f /i
 $$ After building RandfuzzDbg.dll (see tools/randfuzzdbg/README.md):
 $$   .load C:\path\to\RandfuzzDbg.dll
 $$   !rf.help
