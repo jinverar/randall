@@ -49,6 +49,7 @@ public static class CrashCatalog
                 continue;
 
             var store = new CrashStore(dir);
+            var projectRows = new List<(CrashSummaryDto Summary, CrashTriageDto Triage, CrashSidecarDto? Sidecar, int InputLength)>();
             foreach (var c in store.List())
             {
                 var analysisPath = CrashAnalysisWriter.AnalysisPathFor(dir, c.Id);
@@ -67,8 +68,17 @@ public static class CrashCatalog
                     analysis, sidecar, summary, null, cdbSidecar?.ExploitableClassification);
                 var staticFn = CrashStaticFunctionMapper.TryMapFromCrash(
                     projectName, analysis, triage, repoRoot);
+                if (staticFn is not null)
+                    triage = triage with { StaticFunction = staticFn };
 
-                results.Add(new CrashSummaryDto(
+                var inputLength = 0;
+                if (File.Exists(c.InputPath))
+                {
+                    try { inputLength = (int)new FileInfo(c.InputPath).Length; }
+                    catch { /* ignore */ }
+                }
+
+                var enrichedSummary = new CrashSummaryDto(
                     c.Id,
                     c.Project,
                     c.Iteration,
@@ -87,7 +97,17 @@ public static class CrashCatalog
                     triage.ExceptionHint ?? hint,
                     triage.ClusterKey,
                     triage.IpLooksControlled,
-                    staticFn is not null ? CrashStaticFunctionMapper.FormatOneLine(staticFn) : null));
+                    staticFn is not null ? CrashStaticFunctionMapper.FormatOneLine(staticFn) : null);
+
+                projectRows.Add((enrichedSummary, triage, sidecar, inputLength));
+            }
+
+            var projectSummaries = projectRows.Select(r => r.Summary).ToList();
+            foreach (var row in projectRows)
+            {
+                var intelligence = CrashIntelligenceBuilder.Build(
+                    row.Summary, row.Triage, row.Sidecar, row.InputLength, projectSummaries);
+                results.Add(CrashIntelligenceBuilder.WithListIntelligence(row.Summary, intelligence));
             }
         }
 
@@ -173,7 +193,19 @@ public static class CrashCatalog
             if (staticFn is not null)
                 triage = triage with { StaticFunction = staticFn };
             var cdbTriage = MapCdbTriage(cdbSidecar);
-            return new CrashDetailDto(summary, bytes.Length, hex, ascii, sidecar, analysis, triage, cdbTriage);
+            var projectSummaries = ListAll(repoRoot).Where(x => x.Project == summary.Project).ToList();
+            var intelligence = CrashIntelligenceBuilder.Build(
+                summary, triage, sidecar, bytes.Length, projectSummaries);
+            return new CrashDetailDto(
+                CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
+                bytes.Length,
+                hex,
+                ascii,
+                sidecar,
+                analysis,
+                triage,
+                cdbTriage,
+                intelligence);
         }
         return null;
     }

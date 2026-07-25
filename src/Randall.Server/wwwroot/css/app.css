@@ -2409,6 +2409,53 @@ tr.mutate-row td { background: #2a2218; }
   /* Do not sticky — it covered payload/triage while scrolling. */
 }
 
+.crash-why.scream-hot,
+.scream-intel-box.scream-hot {
+  border-color: color-mix(in srgb, var(--stalk-purple) 45%, var(--border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--stalk-purple) 25%, transparent);
+}
+
+.scream-intel-box {
+  margin-top: 0.65rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--stalk-purple) 30%, var(--border));
+  background: color-mix(in srgb, var(--stalk-purple) 6%, var(--panel));
+}
+
+.scream-intel-box h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.82rem;
+  color: var(--stalk-purple);
+}
+
+.scream-intel-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.65rem;
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.scream-intel-dl dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.scream-intel-dl dd {
+  margin: 0;
+}
+
+.scream-intel-meter {
+  color: var(--stalk-purple);
+  font-weight: 700;
+}
+
+.scream-intel-oracle {
+  color: var(--warn);
+  font-weight: 700;
+}
+
 .crash-why-head {
   display: flex;
   align-items: center;

@@ -35,7 +35,15 @@ public sealed record CrashSummaryDto(
     /// <summary>True when triage thinks EIP/RIP / fault PC looks attacker-controlled (ASCII pattern, non-image, etc.).</summary>
     bool IpLooksControlled = false,
     /// <summary>One-line static map when Ghidra analysis or PE exports resolve the fault PC.</summary>
-    string? StaticFunctionSummary = null);
+    string? StaticFunctionSummary = null,
+    /// <summary>Unified scream rank for Investigation sorting (0+).</summary>
+    int ScreamScore = 0,
+    /// <summary>0–100 novelty from cluster + coverage + oracle signal.</summary>
+    int Novelty = 0,
+    /// <summary>Randall oracle score total when known.</summary>
+    int? OracleScoreTotal = null,
+    /// <summary>How many crashes share this cluster key in the project.</summary>
+    int SeenCount = 0);
 
 public sealed record CdbTriageDto(
     bool Ok,
@@ -55,7 +63,8 @@ public sealed record CrashDetailDto(
     CrashSidecarDto? Sidecar,
     CrashAnalysisDto? Analysis,
     CrashTriageDto? Triage = null,
-    CdbTriageDto? CdbTriage = null);
+    CdbTriageDto? CdbTriage = null,
+    CrashIntelligenceDto? Intelligence = null);
 
 public sealed record SessionGraphReportDto(
     string Project,

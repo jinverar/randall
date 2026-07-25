@@ -651,6 +651,23 @@ app.MapGet("/api/stalking/{project}/missed", (string project, int? limit, FuzzSe
     }
 });
 
+app.MapGet("/api/stalking/{project}/frontier", (string project, int? limit, FuzzSessionManager sessions) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        var cached = FrontierEngine.TryLoad(project);
+        if (cached is not null && cached.Frontiers.Count > 0)
+            return Results.Ok(cached);
+        return Results.Ok(FrontierEngine.Score(project, limit: limit ?? 40, liveStatus: sessions.Status));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/stalking/{project}/map", (string project, int? limit, string? binary, FuzzSessionManager sessions) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

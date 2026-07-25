@@ -46,3 +46,23 @@ Resolves the binary from (in order): `--binary`, `-c` YAML `target.executable`, 
 
 For colored BB deep dives: [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md).
 For the PDF-style loop: [HOWTO_STALK_IDA_GHIDRA.md](HOWTO_STALK_IDA_GHIDRA.md).
+
+## Frontier engine (gray doors)
+
+When `randall-analysis.json` and coverage edges exist, Randall scores **unexplored CFG successors**
+(the gray branches between covered and missed blocks):
+
+```text
+FrontierScore ≈ CFGDistance × Rarity × UnseenSuccessorCount × SinkProximity
+```
+
+Persisted to `data/stalk/<project>/frontier.json`. Without Ghidra static map, session-graph forks
+and edge-gap heuristics still produce ranked frontiers.
+
+```bash
+randall stalk frontier -p <project> [--limit 40] [--json]
+randall oracles -p <project>          # also prints top gray doors when analysis exists
+```
+
+UI: **Stalking bugs → Missed blocks** shows a **Frontier** score column when `frontier.json` is present.
+API: `GET /api/stalking/{project}/frontier?limit=40`

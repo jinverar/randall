@@ -1989,10 +1989,17 @@ async function refreshStalkingMissed(project) {
   const blocksEl = document.getElementById('stalking-missed-blocks');
   if (!meta || !blocksEl) return;
   try {
-    const report = await api.get(`/api/stalking/${encodeURIComponent(project)}/missed?limit=60`);
+    const [report, frontier] = await Promise.all([
+      api.get(`/api/stalking/${encodeURIComponent(project)}/missed?limit=60`),
+      api.get(`/api/stalking/${encodeURIComponent(project)}/frontier?limit=60`).catch(() => null),
+    ]);
+    const scoreByKey = new Map(
+      (frontier?.frontiers || []).map((f) => [String(f.edgeKey || '').toLowerCase(), f.score]),
+    );
     meta.textContent = `— ${report.mode} · missed ${report.missedCount} · hit ${report.hitCount}` +
-      (report.inventoryCount ? ` · inventory ${report.inventoryCount}` : '');
-    hint.textContent = report.workflowHint || report.summary || '';
+      (report.inventoryCount ? ` · inventory ${report.inventoryCount}` : '') +
+      (frontier?.frontierCount ? ` · frontier ${frontier.frontierCount}` : '');
+    hint.textContent = (frontier?.summary || report.workflowHint || report.summary || '');
     catsEl.innerHTML = (report.categories || []).length
       ? (report.categories || []).map((c) => `
           <span class="stalk-missed-cat" title="${escapeAttr(c.description || '')}">
@@ -2014,13 +2021,19 @@ async function refreshStalkingMissed(project) {
 
     const blocks = report.blocks || [];
     blocksEl.innerHTML = blocks.length
-      ? `<table><thead><tr><th>Category</th><th>Module</th><th>Address</th><th>Why missed</th><th>Best tip</th></tr></thead><tbody>
+      ? `<table><thead><tr><th>Category</th><th>Module</th><th>Address</th><th>Frontier</th><th>Why missed</th><th>Best tip</th></tr></thead><tbody>
           ${blocks.map((b) => {
             const tip = (b.ideas && b.ideas[0]) ? b.ideas[0].title : '—';
+            const edgeKey = String(b.edgeKey || `${b.module || ''}:${b.address || ''}`).toLowerCase();
+            const fScore = scoreByKey.get(edgeKey);
+            const frontierCell = fScore != null
+              ? `<strong title="gray-door score">${fScore}</strong>`
+              : '<span class="hex">—</span>';
             return `<tr>
               <td><span class="badge miss-${b.category || ''}">${escapeAttr(b.category || '')}</span></td>
               <td>${escapeAttr(b.module || '')}</td>
               <td><code>${escapeAttr(b.address || '')}</code></td>
+              <td>${frontierCell}</td>
               <td>${escapeAttr(b.whyMissed || '')}</td>
               <td>${escapeAttr(tip)}</td>
             </tr>`;
@@ -2226,6 +2239,7 @@ function clusterCountFor(crash) {
 }
 
 function scoreCrash(c) {
+  if ((c.screamScore ?? 0) > 0) return c.screamScore;
   const n = clusterCountFor(c);
   const sev = SEV_RANK[crashSev(c)] || 0;
   const unique = n <= 1 ? 18 : n <= 3 ? 12 : n <= 10 ? 6 : n <= 40 ? 2 : 0;
@@ -2234,7 +2248,20 @@ function scoreCrash(c) {
   const ageHrs = Math.max(0, (Date.now() - new Date(c.observedAt).getTime()) / 3600000);
   const freshness = ageHrs < 1 ? 5 : ageHrs < 6 ? 3 : ageHrs < 24 ? 1 : 0;
   const mutatorBonus = /arith|havoc|expand|splice/i.test(c.mutator || '') ? 2 : 0;
-  return sev * 12 + unique + hasPc + hasDump + freshness + mutatorBonus;
+  const noveltyBonus = (c.novelty ?? 0) >= 70 ? 8 : 0;
+  const oracleBonus = (c.oracleScoreTotal ?? 0) >= 40 ? 6 : 0;
+  return sev * 12 + unique + hasPc + hasDump + freshness + mutatorBonus + noveltyBonus + oracleBonus;
+}
+
+function crashSeenCount(c) {
+  return c?.seenCount > 0 ? c.seenCount : clusterCountFor(c);
+}
+
+function screamHot(c) {
+  const novelty = c?.novelty ?? 0;
+  const oracle = c?.oracleScoreTotal ?? 0;
+  const seen = crashSeenCount(c);
+  return novelty >= 70 && (oracle >= 40 || seen <= 1);
 }
 
 function shortMutator(m) {
@@ -2325,18 +2352,26 @@ function renderCrashDetail(detail, title) {
   const cluster = clusterMetaFor(detail.summary);
   const clusterN = cluster?.count || clusterCountFor(detail.summary);
   const score = scoreCrash(detail.summary);
+  const intel = detail.intelligence;
+  const intelScore = intel?.screamScore ?? score;
+  const intelHot = intel
+    ? (intel.novelty >= 70 && ((intel.oracleScore?.total ?? 0) >= 40 || intel.seenCount <= 1))
+    : screamHot(detail.summary);
   if (metaEl) {
+    const intelBits = intel
+      ? ` · novelty ${intel.novelty}${intel.oracleScore?.total != null ? ` · oracle ${intel.oracleScore.total}` : ''}`
+      : '';
     metaEl.textContent = cluster
-      ? `score ${score} · ${clusterN}× in cluster`
-      : `score ${score}`;
+      ? `score ${intelScore}${intelBits} · ${clusterN}× in cluster`
+      : `score ${intelScore}${intelBits}`;
   }
 
   box.innerHTML = `
-    <div class="crash-why">
+    <div class="crash-why${intelHot ? ' scream-hot' : ''}">
       <div class="crash-why-head">
         <span class="severity-${sev} crash-sev-pill">${sev}</span>
         <h3>${escapeAttr(title)}</h3>
-        <span class="crash-score-badge" title="Triage score">★ ${score}</span>
+        <span class="crash-score-badge" title="Scream intelligence score">★ ${intelScore}</span>
       </div>
       <p class="crash-why-line">Why it crashed</p>
       <p class="crash-why-detail"><code>${escapeAttr(why)}</code>
@@ -2346,6 +2381,23 @@ function renderCrashDetail(detail, title) {
       </p>
       ${t?.summary ? `<p class="hint">${escapeAttr(t.summary)}</p>` : ''}
       ${t?.staticFunction ? `<p class="severity-high">Static: <code>${escapeAttr(t.staticFunction.functionName)}${escapeAttr(t.staticFunction.offset)}</code> (${escapeAttr(t.staticFunction.source)})${t.staticFunction.instructionHint ? ` — ${escapeAttr(t.staticFunction.instructionHint)}` : ''}</p>` : (detail.summary.staticFunctionSummary ? `<p class="hint">Static: <code>${escapeAttr(detail.summary.staticFunctionSummary)}</code></p>` : '')}
+      ${intel ? `<div class="scream-intel-box${intelHot ? ' scream-hot' : ''}">
+        <h4>Scream intelligence</h4>
+        <dl class="scream-intel-dl">
+          <dt>Severity</dt><dd><span class="severity-${intel.severity}">${escapeAttr(intel.severity)}</span></dd>
+          <dt>Novelty</dt><dd><span class="scream-intel-meter">${intel.novelty}</span>/100</dd>
+          <dt>Cluster</dt><dd><code title="${escapeAttr(intel.clusterKey || '')}">${intel.seenCount}×</code>${intel.clusterKey ? ` · <code>${escapeAttr(intel.clusterKey.slice(0, 48))}${intel.clusterKey.length > 48 ? '…' : ''}</code>` : ''}</dd>
+          ${intel.coverageDelta != null ? `<dt>Coverage Δ</dt><dd>+${intel.coverageDelta} edges</dd>` : ''}
+          ${intel.function ? `<dt>Function</dt><dd><code>${escapeAttr(intel.function)}</code></dd>` : ''}
+          ${intel.offset != null ? `<dt>Offset</dt><dd><code>${intel.offset}</code> bytes in input</dd>` : ''}
+          ${intel.oracleScore?.total != null ? `<dt>Oracle</dt><dd><span class="scream-intel-oracle">${intel.oracleScore.total}</span>${intel.oracleScore.summary ? ` — ${escapeAttr(intel.oracleScore.summary)}` : ''}</dd>` : ''}
+          <dt>Repro</dt><dd>${intel.reproducible ? 'ready' : 'needs sidecar/input'}</dd>
+          <dt>Minimized</dt><dd>${intel.minimized ? 'yes (shortest in cluster)' : 'no'}</dd>
+          <dt>First seen</dt><dd>${new Date(intel.firstSeen).toLocaleString()}</dd>
+        </dl>
+        ${intel.lineage?.mutatorChain?.length ? `<p class="label">Lineage <span class="hint-inline">${intel.lineage.partial ? 'partial' : 'full'}</span></p>
+          <p class="hint"><code>${escapeAttr(intel.lineage.mutatorChain.join(' → '))}</code></p>` : ''}
+      </div>` : ''}
       <div class="crash-why-actions">
         ${cluster ? `<button type="button" class="btn" id="crash-filter-cluster-btn">Browse ${clusterN}× cluster</button>` : ''}
         <button type="button" class="btn" id="crash-next-unique-inline">Next unique</button>
@@ -3500,6 +3552,11 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
     const ipControlled = ipCount > 0;
     const live = harvestState.liveProject && name === harvestState.liveProject;
     const staticHint = list.find((c) => c.staticFunctionSummary)?.staticFunctionSummary || '';
+    const hotCrash = list.find(screamHot);
+    const screamHotSlot = !!hotCrash;
+    const intelHint = hotCrash
+      ? `novelty ${hotCrash.novelty ?? '—'} · oracle ${hotCrash.oracleScoreTotal ?? '—'}`
+      : '';
     const cls = [
       'harvest',
       `mood-${mood}`,
@@ -3516,7 +3573,9 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
       cls,
       title: ipControlled
         ? `${name} — EIP/RIP controlled (${ipCount}) · sealed`
-        : staticHint
+        : intelHint
+          ? `${name} — ${intelHint} · ${unique} unique`
+          : staticHint
           ? `${name} — ${staticHint} · ${unique} unique`
           : `${name} — ${screamCaptionForMood(mood)} · ${unique} unique`,
       hue: moodHue(mood, projectCanisterHue(name)),
@@ -3526,6 +3585,7 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
       critical,
       mood,
       scream: screamCaptionForMood(mood),
+      screamHot: screamHotSlot,
     };
   });
 }
@@ -3554,6 +3614,7 @@ function mistRand(seed) {
  *   red    — virulent, EIP, or toxic+critical — exploitable lightning
  */
 function canisterMistTone(mood, slot = {}) {
+  if (slot.screamHot) return 'purple';
   const count = slot.count || 0;
   if (mood === 'laughter' || count <= 0) return 'none';
   if (mood === 'eip' || mood === 'virulent') return 'red';

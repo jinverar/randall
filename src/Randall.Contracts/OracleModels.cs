@@ -193,4 +193,6 @@ public sealed record OracleFindingDto(
     string? TransformationChain,
     string? CoverageSignature,
     int ReproductionCount,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    int? OracleScoreTotal = null,
+    IReadOnlyList<OracleScoreTerm>? OracleScoreTerms = null);
