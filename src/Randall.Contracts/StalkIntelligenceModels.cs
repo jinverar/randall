@@ -17,9 +17,13 @@ public sealed record StalkIntelligenceDto(
     IReadOnlyList<StalkIntelligenceTargetDto> Targets,
     IReadOnlyList<MutatorCreditRowDto> TopMutators,
     bool MutatorBiasEnabled,
+    IReadOnlyList<MutatorChainRowDto> TopChains,
+    bool MutatorChainBiasEnabled,
     StalkCommandStripDto? CommandStrip = null,
     TargetIntelligenceDto? TargetProfile = null,
-    NextHuntDecision? LastBrainDecision = null);
+    NextHuntDecision? LastBrainDecision = null,
+    double BrainMemoryConfidence = 1.0,
+    string? BrainMemoryMessage = null);
 
 /// <summary>One ranked scare target with optional explainable score breakdown for the Why? control.</summary>
 public sealed record StalkIntelligenceTargetDto(

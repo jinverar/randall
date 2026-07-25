@@ -109,6 +109,29 @@ public sealed record MutatorCreditRunDto(
     bool BiasEnabled,
     IReadOnlyList<MutatorCreditRowDto> Mutators);
 
+public sealed record MutatorChainRowDto(
+    IReadOnlyList<string> Chain,
+    int Runs,
+    int NewEdges,
+    int UniqueCrashes,
+    double Score,
+    int SelectionWeight,
+    string DisplayLabel);
+
+public sealed record MutatorChainTransitionRowDto(
+    string From,
+    string To,
+    int Runs,
+    int NewEdges,
+    int UniqueCrashes,
+    double Score);
+
+public sealed record MutatorChainStoreDto(
+    bool BiasEnabled,
+    IReadOnlyList<MutatorChainRowDto> Pairs,
+    IReadOnlyList<MutatorChainRowDto> Triples,
+    IReadOnlyList<MutatorChainTransitionRowDto> Transitions);
+
 public sealed record RegisterSnapshotDto(
     string? Rip,
     string? Rsp,

@@ -64,6 +64,11 @@ public sealed class FuzzEngine
         var mutatorCredit = new MutatorCreditTracker(
             Path.Combine(corpusDir, "mutator_credit.txt"),
             project.Fuzz.MutatorCredit);
+        var mutatorChainTracker = new MutatorChainTracker(
+            Path.Combine(corpusDir, "mutator_chains.json"),
+            project.Fuzz.MutatorCredit);
+        var lineageByHash = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        string? lastPrimaryMutator = null;
 
         var repoRoot = CrashCatalog.FindRepoRoot();
         BrainDecisionStore.Clear();
@@ -521,7 +526,8 @@ public sealed class FuzzEngine
                         mutatorCredit.SnapshotRows(),
                         mutators,
                         iterations,
-                        repoRoot);
+                        repoRoot,
+                        chainRows: mutatorChainTracker.SnapshotRows());
                     brain.PersistLast(huntDecision, repoRoot);
                     if (verbose)
                     {
@@ -550,11 +556,12 @@ public sealed class FuzzEngine
                 }
                 else if (brainActive && huntDecision is { Active: true })
                 {
-                    mutator = brain.PickMutator(huntDecision, mutators, mutatorCredit, rng);
+                    mutator = brain.PickMutator(
+                        huntDecision, mutators, mutatorCredit, rng, mutatorChainTracker, lastPrimaryMutator);
                 }
                 else
                 {
-                    mutator = mutatorCredit.Pick(mutators, rng);
+                    mutator = mutatorChainTracker.BlendPick(mutators, mutatorCredit, lastPrimaryMutator, rng);
                 }
                 TargetRunner.TcpSendOptions? tcpOptions = null;
                 string commandName = "default";
@@ -748,6 +755,10 @@ public sealed class FuzzEngine
                             iterations);
                     }
                 }
+                var payloadHash = InputHash.StackHash(payload);
+                var fullLineageChain = LineageChainBuilder.BuildFromParent(
+                    parentInputHash, lineageByHash, mutatorChain);
+                lineageByHash[payloadHash] = fullLineageChain;
                 var sw = Stopwatch.StartNew();
                 string? iterTracePath = null;
 
@@ -769,6 +780,8 @@ public sealed class FuzzEngine
                         iterations, dryLabel, payload.Length, false, false, 0, corpus.SeenCount, coverage.TotalEdges, "dry-run")));
                     FuzzAnalystLog.Ok(progress, "Check OK: dry-run (not sent).", iterations);
                     mutatorCredit.Record(mutator.Name, 0, uniqueCrash: false);
+                    mutatorChainTracker.RecordLineage(fullLineageChain, newEdges: 0, uniqueCrash: false);
+                    lastPrimaryMutator = mutator.Name;
                     RecordScareDoorProgress(project.Name, repoRoot, iterations, mutator.Name, parentInputHash, 0, false, coverage.TotalEdges);
                     continue;
                 }
@@ -1002,7 +1015,7 @@ public sealed class FuzzEngine
                     corpusAdded++;
                 }
 
-                var payloadHash = InputHash.StackHash(payload);
+                payloadHash = InputHash.StackHash(payload);
                 if (result.PathHits is { Count: > 0 } hits)
                 {
                     var novelPaths = pathCoverage.Add(hits);
@@ -1651,6 +1664,8 @@ public sealed class FuzzEngine
                 }
 
                 mutatorCredit.RecordWithChain(mutator.Name, mutatorChain, newEdges, uniqueCrashThisIter);
+                mutatorChainTracker.RecordLineage(fullLineageChain, newEdges, uniqueCrashThisIter);
+                lastPrimaryMutator = mutator.Name;
                 RecordScareDoorProgress(
                     project.Name, repoRoot, iterations, mutator.Name, parentInputHash,
                     newEdges, newCoverage, coverage.TotalEdges);
@@ -1764,10 +1779,15 @@ public sealed class FuzzEngine
             try
             {
                 mutatorCredit.Save();
+                mutatorChainTracker.Save();
                 var statsDir = journal?.RunDirectory ?? runDir;
                 if (statsDir is not null)
+                {
                     mutatorCredit.WriteRunJson(statsDir);
+                    mutatorChainTracker.WriteRunJson(statsDir);
+                }
                 Console.WriteLine(mutatorCredit.FormatLeaderboard());
+                Console.WriteLine(mutatorChainTracker.FormatLeaderboard());
             }
             catch { /* ignore */ }
 

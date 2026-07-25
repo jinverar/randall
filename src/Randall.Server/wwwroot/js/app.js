@@ -1119,6 +1119,12 @@ async function refreshScareFloorBrain(opts = {}) {
           `<span class="scare-brain-mut-chip" title="score ${m.score} · ${m.newEdges} edges">${escapeAttr(m.name)}</span>`).join('');
         parts.push(`Mutator credit${intel.mutatorBiasEnabled ? '' : ' (bias off)'}: <span class="scare-brain-mutators">${chips}</span>`);
       }
+      const chains = intel.topChains || [];
+      if (chains.length) {
+        const chainChips = chains.slice(0, 6).map((c) =>
+          `<span class="scare-brain-mut-chip" title="score ${c.score} · ${c.newEdges} edges">${escapeAttr(c.displayLabel || (c.chain || []).join('→'))}</span>`).join('');
+        parts.push(`Top chains${intel.mutatorChainBiasEnabled ? '' : ' (bias off)'}: <span class="scare-brain-mutators">${chainChips}</span>`);
+      }
       if (parts.length) {
         footEl.innerHTML = parts.join('<br/>');
         footEl.classList.remove('hidden');

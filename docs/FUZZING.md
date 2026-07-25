@@ -89,6 +89,29 @@ fuzz:
   powerSchedule: true
 ```
 
+## Mutation-chain learning
+
+When `fuzz.mutatorCredit: true`, Randall also learns **productive mutator sequences** (pairs, triples, and P(next|previous) transitions) from crash lineage and the iteration journal. Cross-iteration ancestry is rebuilt from `parentInputHash` plus each iteration's `mutatorChain` (Joker wrappers are skipped for credit).
+
+| Signal | Score term |
+|--------|------------|
+| New coverage edges | +10 per edge (same as mutator credit) |
+| Unique crash | +100 per crash |
+
+**Bias (light — does not dominate single-mutator credit)**
+
+- ~12% of picks follow P(next|previous) when the prior mutator is known
+- Otherwise mutator-credit roulette with up to ~18% transition boost on the next operator
+- RandallBrain adds a Why? term for the top chain and may hint the chain tail as `PreferredMutator` when mutator credit also ranks the chain head
+
+**Persistence**
+
+- Cross-run: `data/corpus/<target>/mutator_chains.json` (`pairs`, `triples`, `transitions`, `biasEnabled`)
+- Per run (when execution log is on): `data/runs/<runId>/mutator_chains.json`
+- End-of-run CLI leaderboard lists top pair/triple chains
+
+Scare Floor intelligence shows **Top chains** chips when data exists. Toggled with the same `fuzz.mutatorCredit` flag (no separate YAML knob).
+
 ## RandallBrain (closed-loop hunt steering)
 
 When `fuzz.brain: true` (default), Randall fuses stalk intelligence into **every iteration** — seed corpus bias, mutator pick, and corpus energy — producing an explainable **NextHuntDecision** with Why? terms.
@@ -99,6 +122,7 @@ When `fuzz.brain: true` (default), Randall fuses stalk intelligence into **every
 | `randall-analysis.json` fuzzPriority | Static/patch targets; prefers `dictionary` / `havoc` |
 | Oracle findings JSONL | Boosts semantic hunts; prefers `interesting` / `boundary` |
 | Mutator credit | Blends with brain mutator preference (62% brain / 38% credit) |
+| Mutator chains | Light P(next|previous) bias; top pair/triple in Why? terms |
 | Scream clusters | Hot unique screams boost focus; saturated clusters get negative Why? terms |
 
 **Behavior**

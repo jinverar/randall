@@ -24,6 +24,8 @@ public static class StalkIntelligenceBuilder
         var hints = GhidraAnalysisOracleHints.TryBuild(project, repoRoot);
         var oracleFindings = LoadRecentOracleFindings(project, repoRoot, 6);
         var (mutators, mutatorBias) = TryLoadLatestMutatorCredits(project, repoRoot);
+        var (chains, chainBias) = TryLoadMutatorChains(project, repoRoot);
+        var (chains, chainBias) = TryLoadMutatorChains(project, repoRoot);
 
         var targets = new List<StalkIntelligenceTargetDto>();
 
@@ -124,7 +126,10 @@ public static class StalkIntelligenceBuilder
             || hints is not null
             || oracleFindings.Count > 0
             || analysis?.ChangedFunctions is { Count: > 0 };
+        var memory = BrainMemoryDecay.TryLoad(project, repoRoot);
         var summary = BuildSummary(frontier, hints, oracleFindings.Count, targets, mutators.Count);
+        if (memory?.MemoryConfidence is < 0.999)
+            summary += $" · brain memory {memory.MemoryConfidence:P0}";
         var emptyHint =
             "No stalk brain yet — export Ghidra → randall-analysis.json, run fuzz with coverage, " +
             "then `randall stalk frontier -p <project>`. Scare Doors appear after coverage layers.";
@@ -147,9 +152,13 @@ public static class StalkIntelligenceBuilder
             targets,
             mutators.Take(5).ToList(),
             mutatorBias,
+            chains.Take(8).ToList(),
+            chainBias,
             commandStrip,
             targetProfile,
-            lastBrain);
+            lastBrain,
+            memory?.MemoryConfidence ?? 1.0,
+            memory?.DecayMessage);
     }
 
     private static string LabelForFrontier(FrontierBranchDto f) =>
@@ -454,6 +463,35 @@ public static class StalkIntelligenceBuilder
             var dto = JsonSerializer.Deserialize<MutatorCreditRunDto>(
                 File.ReadAllText(Path.Combine(bestRunDir, "mutator_stats.json")), JsonOptions);
             return (dto?.Mutators ?? [], dto?.BiasEnabled ?? cfg.Fuzz.MutatorCredit);
+        }
+        catch
+        {
+            return ([], true);
+        }
+    }
+
+    private static (IReadOnlyList<MutatorChainRowDto> Rows, bool BiasEnabled) TryLoadMutatorChains(
+        string project,
+        string repoRoot)
+    {
+        var yaml = FindProjectYaml(repoRoot, project);
+        if (yaml is null)
+            return ([], true);
+
+        try
+        {
+            var cfg = ProjectLoader.Load(yaml);
+            var corpusDir = ProjectLoader.ResolvePath(yaml, cfg.Fuzz.CorpusDir);
+            var path = Path.Combine(corpusDir, "mutator_chains.json");
+            if (!File.Exists(path))
+                return ([], cfg.Fuzz.MutatorCredit);
+
+            var dto = JsonSerializer.Deserialize<MutatorChainStoreDto>(File.ReadAllText(path), JsonOptions);
+            if (dto is null)
+                return ([], cfg.Fuzz.MutatorCredit);
+
+            var rows = dto.Pairs.Concat(dto.Triples).OrderByDescending(r => r.Score).ThenByDescending(r => r.NewEdges).ToList();
+            return (rows, dto.BiasEnabled);
         }
         catch
         {

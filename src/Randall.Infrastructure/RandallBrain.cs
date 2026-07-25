@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Text.Json;
 using Randall.Contracts;
 using Randall.Core;
@@ -85,7 +85,8 @@ public sealed class RandallBrain
         IReadOnlyList<MutatorCreditRowDto> mutatorRows,
         IReadOnlyList<IMutator> mutators,
         int iteration,
-        string? repoRoot = null)
+        string? repoRoot = null,
+        IReadOnlyList<MutatorChainRowDto>? chainRows = null)
     {
         if (!signals.HasData)
             return NextHuntDecision.Inactive(project, iteration);
@@ -102,7 +103,7 @@ public sealed class RandallBrain
         var top = candidates[0];
         var why = new List<OracleScoreTerm>(top.Terms);
 
-        var preferredMutator = ResolvePreferredMutator(top, mutatorRows, signals, mutators);
+        var preferredMutator = ResolvePreferredMutator(top, mutatorRows, signals, mutators, chainRows);
         if (preferredMutator is not null)
             why.Add(new OracleScoreTerm("mutator pick", 6, preferredMutator));
 
@@ -123,16 +124,23 @@ public sealed class RandallBrain
                 $"{lead.Name} weight={lead.SelectionWeight}"));
         }
 
+        if (chainRows is { Count: > 0 })
+        {
+            var topChain = chainRows[0];
+            why.Add(new OracleScoreTerm("mutator chain", Math.Min(8, topChain.SelectionWeight),
+                topChain.DisplayLabel));
+        }
+
         var corpusBias = ResolveCorpusBias(top, signals);
         var energyBoost = ResolveEnergyBoost(top, signals);
 
         var total = Math.Clamp(why.Sum(t => t.Points), 0, 100);
         var breakdown = new OracleScore(total, why, top.Detail);
         var summary =
-            $"Randall thinks: {top.Kind} → {top.Label} [{top.Score}]" +
-            (focus is not null ? " · pinned focus" : "") +
-            (preferredMutator is not null ? $" · mutator={preferredMutator}" : "") +
-            $" · corpus={corpusBias:P0} energy+{energyBoost}";
+            $"Randall thinks: {top.Kind} ΓåÆ {top.Label} [{top.Score}]" +
+            (focus is not null ? " ┬╖ pinned focus" : "") +
+            (preferredMutator is not null ? $" ┬╖ mutator={preferredMutator}" : "") +
+            $" ┬╖ corpus={corpusBias:P0} energy+{energyBoost}";
 
         return new NextHuntDecision(
             iteration,
@@ -169,7 +177,7 @@ public sealed class RandallBrain
         if (preferred is null)
             return credit.Pick(mutators, rng);
 
-        // 62% brain preference, 38% credit roulette — keeps exploration alive.
+        // 62% brain preference, 38% credit roulette ΓÇö keeps exploration alive.
         if (rng.NextDouble() < 0.62)
             return preferred;
         return credit.Pick(mutators, rng);
@@ -316,17 +324,17 @@ public sealed class RandallBrain
     public static string FormatVerbose(NextHuntDecision decision)
     {
         if (!decision.Active)
-            return $"Brain: idle — {decision.Summary}";
+            return $"Brain: idle ΓÇö {decision.Summary}";
 
         var terms = decision.WhyTerms.Count == 0
             ? decision.ScoreBreakdown.Summary
-            : string.Join(" · ", decision.WhyTerms.Select(t =>
+            : string.Join(" ┬╖ ", decision.WhyTerms.Select(t =>
                 t.Points >= 0 ? $"+{t.Points} {t.Label}" : $"{t.Points} {t.Label}"));
 
         return
             $"Brain: {decision.FocusKind} {decision.FocusLabel} [{decision.FocusScore}] " +
             $"mutator={(decision.PreferredMutator ?? "credit")} " +
-            $"corpus={decision.CorpusPriorityBias:P0} energy+{decision.RecommendedEnergyBoost} — {terms}";
+            $"corpus={decision.CorpusPriorityBias:P0} energy+{decision.RecommendedEnergyBoost} ΓÇö {terms}";
     }
 
     internal static IReadOnlyList<HuntCandidate> BuildCandidates(
@@ -358,7 +366,7 @@ public sealed class RandallBrain
                     "static",
                     fn.Name,
                     fn.FuzzPriority,
-                    $"priority {fn.FuzzPriority}/100 · {fn.UncoveredBlockCount} uncovered BB(s)",
+                    $"priority {fn.FuzzPriority}/100 ┬╖ {fn.UncoveredBlockCount} uncovered BB(s)",
                     BuildStaticTerms(fn, signals.Analysis)));
             }
 
@@ -368,7 +376,7 @@ public sealed class RandallBrain
                     "patch",
                     fn.Name,
                     ScoreChangedFunction(fn),
-                    $"{fn.ChangeKind} · priority Δ{fn.FuzzPriorityDelta:+0;-0}",
+                    $"{fn.ChangeKind} ┬╖ priority ╬ö{fn.FuzzPriorityDelta:+0;-0}",
                     BuildPatchTerms(fn)));
             }
         }
@@ -380,7 +388,7 @@ public sealed class RandallBrain
                 "oracle",
                 finding.RuleId,
                 score,
-                $"{finding.RuleClass} · {finding.Severity}",
+                $"{finding.RuleClass} ┬╖ {finding.Severity}",
                 BuildOracleTerms(finding, score)));
         }
 
@@ -393,7 +401,7 @@ public sealed class RandallBrain
                 "scream",
                 scream.Function ?? scream.ClusterKey,
                 scream.ScreamScore,
-                $"novelty {scream.Novelty}/100 · seen×{scream.SeenCount}",
+                $"novelty {scream.Novelty}/100 ┬╖ seen├ù{scream.SeenCount}",
                 BuildScreamTerms(scream)));
         }
 
@@ -424,12 +432,28 @@ public sealed class RandallBrain
         HuntCandidate top,
         IReadOnlyList<MutatorCreditRowDto> mutatorRows,
         Signals signals,
-        IReadOnlyList<IMutator> mutators)
+        IReadOnlyList<IMutator> mutators,
+        IReadOnlyList<MutatorChainRowDto>? chainRows = null)
     {
         if (top.Kind == "mutator")
             return ResolveMutatorName(mutators, top.Label);
 
         var creditLead = mutatorRows.FirstOrDefault();
+        if (creditLead is not null && chainRows is { Count: > 0 })
+        {
+            var chainHint = chainRows
+                .Where(c => c.Chain.Count >= 2
+                            && c.Chain[0].Equals(creditLead.Name, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(c => c.Score)
+                .FirstOrDefault();
+            if (chainHint is not null)
+            {
+                var chainNext = ResolveMutatorName(mutators, chainHint.Chain[^1]);
+                if (chainNext is not null && creditLead.SelectionWeight >= 3)
+                    return chainNext;
+            }
+        }
+
         if (creditLead is not null && creditLead.SelectionWeight >= 5 && top.Score <= creditLead.SelectionWeight * 8)
             return ResolveMutatorName(mutators, creditLead.Name);
 
@@ -509,7 +533,7 @@ public sealed class RandallBrain
         bool hasData)
     {
         if (!hasData)
-            return "no stalk/scream signals — brain will no-op";
+            return "no stalk/scream signals ΓÇö brain will no-op";
 
         var parts = new List<string>();
         if (frontier?.FrontierCount > 0)
@@ -521,7 +545,7 @@ public sealed class RandallBrain
         var hot = screams.Count(s => !s.Saturated && s.ScreamScore >= 40);
         if (hot > 0)
             parts.Add($"{hot} hot scream(s)");
-        return string.Join(" · ", parts);
+        return string.Join(" ┬╖ ", parts);
     }
 
     private static IReadOnlyList<ScreamClusterSignal> LoadScreamSignals(string project, string repoRoot)
@@ -571,11 +595,11 @@ public sealed class RandallBrain
     private static string LabelFrontier(FrontierBranchDto f) =>
         f.Kind switch
         {
-            "session-fork" => $"Session fork → {f.ToAddress}",
-            "edge-gap" => $"Edge gap → {f.ToAddress}",
+            "session-fork" => $"Session fork ΓåÆ {f.ToAddress}",
+            "edge-gap" => $"Edge gap ΓåÆ {f.ToAddress}",
             _ => string.IsNullOrWhiteSpace(f.FunctionName)
-                ? $"Unopened door → {f.ToAddress}"
-                : $"{f.FunctionName} → {f.ToAddress}",
+                ? $"Unopened door ΓåÆ {f.ToAddress}"
+                : $"{f.FunctionName} ΓåÆ {f.ToAddress}",
         };
 
     internal static List<HuntCandidate> ApplyFocusPreference(
@@ -702,7 +726,7 @@ public sealed class RandallBrain
     [
         new("scream score", Math.Min(40, scream.ScreamScore / 2), $"{scream.ScreamScore}"),
         new("novelty", Math.Min(20, scream.Novelty / 5), $"{scream.Novelty}/100"),
-        new("cluster size", scream.SeenCount <= 1 ? 12 : -Math.Min(10, scream.SeenCount), $"seen×{scream.SeenCount}"),
+        new("cluster size", scream.SeenCount <= 1 ? 12 : -Math.Min(10, scream.SeenCount), $"seen├ù{scream.SeenCount}"),
     ];
 
     private static int ScoreChangedFunction(RandallAnalysisChangedFunctionDto fn) =>
