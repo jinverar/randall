@@ -152,12 +152,17 @@ public sealed class ScreamWatcher : IDisposable
                             break;
 
                         case Native.ExitProcessDebugEvent:
+                        {
+                            var exitCode = ReadExitProcessCode(eventBuf);
                             ContinueDebugEvent(processId, threadId, Native.DbgContinue);
                             Phase = "target-exited";
-                            // If we never saw an exception, still finish (selftest will FAIL clearly).
                             _ready.TrySetResult(_sawInitialBreakpoint);
-                            _done.TrySetResult(ExistingDumpOrNull());
+                            if (IsCrashProcessExit(exitCode) && !_done.Task.IsCompleted)
+                                CaptureOnProcessExit(exitCode);
+                            else
+                                _done.TrySetResult(ExistingDumpOrNull());
                             return;
+                        }
 
                         case Native.OutputDebugStringEvent:
                         case Native.CreateThreadDebugEvent:
@@ -252,6 +257,70 @@ public sealed class ScreamWatcher : IDisposable
         return (Native.DbgContinue, false);
     }
 
+    /// <summary>
+    /// Lab targets (.NET <c>Environment.Exit(NTSTATUS)</c>, etc.) often terminate without a
+    /// second-chance SEH event — capture a post-mortem minidump on crash-shaped exit codes.
+    /// </summary>
+    internal static bool IsCrashProcessExit(uint exitCode)
+    {
+        if (exitCode is 0)
+            return false;
+        return TargetRunner.IsCrashExitCode(unchecked((int)exitCode));
+    }
+
+    private static uint ReadExitProcessCode(byte[] eventBuf)
+    {
+        var union = IntPtr.Size == 8 ? 16 : 12;
+        // EXIT_PROCESS_DEBUG_INFO: HANDLE hProcess; DWORD dwExitCode;
+        var exitOffset = union + (IntPtr.Size == 8 ? 8 : 4);
+        return exitOffset + 4 <= eventBuf.Length
+            ? BitConverter.ToUInt32(eventBuf, exitOffset)
+            : 0;
+    }
+
+    private void CaptureOnProcessExit(uint exitCode)
+    {
+        Phase = "dumping-exit";
+        ExceptionInfo = new ScreamExceptionInfo(
+            exitCode,
+            WindowsExceptionHints.DescribeCode(exitCode) ?? $"exit 0x{exitCode:X8}",
+            "0x0",
+            0,
+            null,
+            _wow64,
+            "process-exit");
+
+        var dumpsDir = Path.GetDirectoryName(_dumpPath)!;
+        var baseName = Path.GetFileNameWithoutExtension(_dumpPath);
+        var path = TryFallbackDump(dumpsDir, baseName);
+
+        if (path is not null &&
+            !string.Equals(path, _dumpPath, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                File.Move(path, _dumpPath, overwrite: true);
+                path = _dumpPath;
+            }
+            catch
+            {
+                /* keep path */
+            }
+        }
+
+        var finalPath = path is not null && File.Exists(path) && new FileInfo(path).Length > 0
+            ? path
+            : ExistingDumpOrNull();
+        Phase = finalPath is null ? "dump-failed" : "dumped";
+        if (finalPath is null)
+        {
+            LastError ??= $"crash exit 0x{exitCode:X8} but minidump write failed";
+            CrashDumpPaths.TryDeleteEmpty(_dumpPath);
+        }
+
+        _done.TrySetResult(finalPath);
+    }
+
     private void CaptureAndKill(
         byte[] eventBuf,
         int union,
@@ -303,7 +372,11 @@ public sealed class ScreamWatcher : IDisposable
             : ExistingDumpOrNull();
         Phase = finalPath is null ? "dump-failed" : "dumped";
         if (finalPath is null)
+        {
             LastError ??= $"{reason} seen but minidump write failed";
+            CrashDumpPaths.TryDeleteEmpty(_dumpPath);
+        }
+
         _done.TrySetResult(finalPath);
     }
 
@@ -448,6 +521,7 @@ public sealed class ScreamWatcher : IDisposable
         _cts.Dispose();
         _attached.TrySetResult(false);
         _ready.TrySetResult(false);
+        CrashDumpPaths.TryDeleteEmpty(_dumpPath);
         _done.TrySetResult(ExistingDumpOrNull());
     }
 

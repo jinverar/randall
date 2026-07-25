@@ -120,6 +120,26 @@ public sealed class FuzzEngine
                              ProjectKinds.IsTcpLike(project) &&
                              !string.IsNullOrWhiteSpace(project.Target.Executable);
 
+        // Labs UI (or a prior Target Runtime) often already owns the listen port. Fighting that
+        // with per-iteration drrun respawn + WaitUntilFree looks "stuck" (5s/iter silence) until
+        // Ctrl+C cancels the wait — then the next Start appears to "kick start" fuzzing.
+        var fuzzExistingListener = false;
+        if (useCoverageTcp && project.Transport.Port > 0)
+        {
+            var listenHost = string.IsNullOrWhiteSpace(project.Transport.Host)
+                ? "127.0.0.1"
+                : project.Transport.Host;
+            if (PortReadiness.Probe(listenHost, project.Transport.Port, project.Kind))
+            {
+                useCoverageTcp = false;
+                fuzzExistingListener = true;
+                FuzzAnalystLog.Warn(options.Progress,
+                    $"Coverage-TCP respawn disabled — {listenHost}:{project.Transport.Port} already accepting " +
+                    "(lab/target running). Fuzzing the existing listener. Uncheck Coverage-guided or stop the lab " +
+                    "to spawn DynamoRIO-instrumented copies per case.");
+            }
+        }
+
         var progress = options.Progress;
         progress?.OnStarted(project.Name, project.Kind);
         if (brainActive)
@@ -316,15 +336,41 @@ public sealed class FuzzEngine
         else if (!useCoverageTcp && project.Target.LongLived &&
             (ProjectKinds.IsTcpLike(project) || ProjectKinds.IsUdp(project)))
         {
-            FuzzAnalystLog.Step(progress, "Starting target (Target Runtime)");
             runtime = new TargetRuntimeBridge(project, yamlPath);
-            var (proc, st) = await runtime.StartAsync(cancellationToken);
-            if (!st.Ok && !st.Running)
-                throw new InvalidOperationException($"Target Runtime start failed: {st.Message}");
+            Process? proc = null;
+            TargetRuntimeStatusDto? st = null;
+            if (fuzzExistingListener)
+            {
+                proc = TryAdoptPortListener(project, targetExeResolved);
+                if (proc is not null)
+                {
+                    FuzzAnalystLog.Info(progress,
+                        $"Adopted lab listener PID {proc.Id} on {project.Transport.Host}:{project.Transport.Port} " +
+                        "(Scream will attach — stop orphan labs to avoid wrong PID)");
+                }
+            }
+
+            if (proc is null)
+            {
+                FuzzAnalystLog.Step(progress, "Starting target (Target Runtime)");
+                (proc, st) = await runtime.StartAsync(cancellationToken);
+                if (!st.Ok && !st.Running)
+                {
+                    proc = TryAdoptPortListener(project, targetExeResolved);
+                    if (proc is null)
+                        throw new InvalidOperationException($"Target Runtime start failed: {st.Message}");
+                    FuzzAnalystLog.Warn(progress,
+                        $"Target Runtime start failed ({st.Message}); adopted listener PID {proc.Id}");
+                }
+                else
+                {
+                    FuzzAnalystLog.Info(progress, runtime.IsRemote
+                        ? $"Target Runtime (agent {runtime.AgentUrl}): {st!.Message}"
+                        : $"Target Runtime (local): {st!.Message}");
+                }
+            }
+
             longLived = proc;
-            FuzzAnalystLog.Info(progress, runtime.IsRemote
-                ? $"Target Runtime (agent {runtime.AgentUrl}): {st.Message}"
-                : $"Target Runtime (local): {st.Message}");
             if (runtime.IsRemote)
                 FuzzAnalystLog.Info(progress, "Debugger attach skipped on remote agent (dumps stay on agent host)");
             else
@@ -346,6 +392,8 @@ public sealed class FuzzEngine
             {
                 await Task.Delay(300 + attempt * 400, cancellationToken);
                 (proc, rst) = await runtime.RestartAsync(cancellationToken);
+                if (rst is { Ok: false } && rst.Message.Contains("No runtime slot", StringComparison.OrdinalIgnoreCase))
+                    (proc, rst) = await runtime.StartAsync(cancellationToken);
                 if (rst.Ok && (runtime.IsRemote || proc is { HasExited: false }))
                     break;
                 FuzzAnalystLog.Warn(progress,
@@ -425,6 +473,9 @@ public sealed class FuzzEngine
                         : $"  scream attach/ready failed: {scream.LastError ?? scream.Phase}");
                     if (!attached)
                     {
+                        FuzzAnalystLog.Warn(progress,
+                            $"Scream attach/ready failed: {scream.LastError ?? scream.Phase} — " +
+                            "dumps will be empty; close other debuggers or run elevated");
                         debuggerWait.Dispose();
                         debuggerWait = null;
                     }
@@ -458,14 +509,58 @@ public sealed class FuzzEngine
             }
         }
 
+        static Process? TryAdoptPortListener(ProjectConfig project, string? targetExe)
+        {
+            if (!OperatingSystem.IsWindows() || project.Transport.Port <= 0)
+                return null;
+
+            var wantName = string.IsNullOrWhiteSpace(targetExe)
+                ? null
+                : Path.GetFileNameWithoutExtension(targetExe);
+            foreach (var pid in ProcessTreeKill.FindListeningPids(project.Transport.Port, project.Kind))
+            {
+                try
+                {
+                    var proc = Process.GetProcessById(pid);
+                    if (proc.HasExited)
+                        continue;
+                    if (wantName is not null &&
+                        !proc.ProcessName.Equals(wantName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    return proc;
+                }
+                catch
+                {
+                    /* try next pid */
+                }
+            }
+
+            foreach (var pid in ProcessTreeKill.FindListeningPids(project.Transport.Port, project.Kind))
+            {
+                try
+                {
+                    var proc = Process.GetProcessById(pid);
+                    if (!proc.HasExited)
+                        return proc;
+                }
+                catch
+                {
+                    /* ignore */
+                }
+            }
+
+            return null;
+        }
+
         async Task<string?> TakeWaitDumpAsync(string? existingDump)
         {
+            existingDump = CrashDumpPaths.Sanitize(existingDump);
             if (debuggerWait is null)
                 return existingDump;
             try
             {
-                var dump = await DebuggerSession.WaitForDumpAsync(
-                    debuggerWait, Math.Max(project.Target.TimeoutMs, 5000), cancellationToken);
+                var dump = CrashDumpPaths.Sanitize(await DebuggerSession.WaitForDumpAsync(
+                    debuggerWait, Math.Max(project.Target.TimeoutMs, 5000), cancellationToken));
                 if (dump is not null)
                 {
                     Console.WriteLine($"  debugger dump: {dump}");
@@ -481,6 +576,11 @@ public sealed class FuzzEngine
             {
                 Console.WriteLine($"  debugger wait: {ex.Message}");
             }
+
+            if (debuggerWait.Scream?.ExceptionInfo is not null && existingDump is null)
+                FuzzAnalystLog.Warn(progress,
+                    "Scream saw a crash but minidump write failed — check SeDebug / close other debuggers");
+
             return existingDump;
         }
 
@@ -810,30 +910,84 @@ public sealed class FuzzEngine
                     // DynamoRIO teardown can leave the listen port busy briefly — wait before respawn.
                     if (covPort > 0)
                     {
-                        await PortReadiness.WaitUntilFreeAsync(
+                        if (iterations <= 1 || iterations % 10 == 0)
+                        {
+                            FuzzAnalystLog.Info(progress,
+                                $"Coverage-TCP: waiting for {covHost}:{covPort} to free before drrun spawn…",
+                                iterations);
+                        }
+
+                        var freed = await PortReadiness.WaitUntilFreeAsync(
                             covHost, covPort, project.Kind, TimeSpan.FromSeconds(5), cancellationToken);
+                        if (!freed && PortReadiness.Probe(covHost, covPort, project.Kind))
+                        {
+                            // Listener reappeared / never left (lab). Stop fighting it mid-campaign.
+                            useCoverageTcp = false;
+                            FuzzAnalystLog.Warn(progress,
+                                $"Coverage-TCP: {covHost}:{covPort} still accepting — switching to existing listener " +
+                                "(no more per-case drrun respawn)",
+                                iterations);
+                            if (runtime is null && project.Target.LongLived)
+                            {
+                                try
+                                {
+                                    runtime = new TargetRuntimeBridge(project, yamlPath);
+                                    var adopted = TryAdoptPortListener(project, targetExeResolved);
+                                    if (adopted is not null)
+                                    {
+                                        longLived = adopted;
+                                        FuzzAnalystLog.Info(progress,
+                                            $"Adopted lab listener PID {adopted.Id}", iterations);
+                                    }
+                                    else
+                                    {
+                                        var (proc, st) = await runtime.StartAsync(cancellationToken);
+                                        if (st.Ok || st.Running)
+                                        {
+                                            longLived = proc;
+                                            FuzzAnalystLog.Info(progress,
+                                                $"Adopted Target Runtime: {st.Message}", iterations);
+                                        }
+                                    }
+
+                                    if (longLived is not null && !runtime.IsRemote)
+                                        await ArmDebuggerAsync(longLived);
+                                }
+                                catch (Exception ex)
+                                {
+                                    FuzzAnalystLog.Warn(progress,
+                                        $"Could not adopt Target Runtime: {ex.Message}", iterations);
+                                }
+                            }
+                        }
                     }
 
-                    longLived = stalk.StartLongLivedTarget(project, yamlPath, traceDir);
-                    if (longLived is null)
+                    if (useCoverageTcp)
                     {
-                        FuzzAnalystLog.Warn(progress,
-                            "Coverage TCP spawn failed — drrun did not start the target",
-                            iterations);
-                        continue;
-                    }
+                        longLived = stalk.StartLongLivedTarget(project, yamlPath, traceDir);
+                        if (longLived is null)
+                        {
+                            FuzzAnalystLog.Warn(progress,
+                                "Coverage TCP spawn failed — drrun did not start the target",
+                                iterations);
+                            continue;
+                        }
 
-                    // Cold drrun+drcov often needs >500ms before accept(); poll instead of sleeping.
-                    var ready = covPort <= 0 || await PortReadiness.WaitAsync(
-                        covHost, covPort, project.Kind, TimeSpan.FromSeconds(10), cancellationToken);
-                    if (!ready)
-                    {
-                        FuzzAnalystLog.Warn(progress,
-                            $"Coverage TCP spawn: {covHost}:{covPort} not accepting within 10s",
-                            iterations);
-                        await stalk.StopLongLivedAsync(longLived, cancellationToken);
-                        longLived = null;
-                        continue;
+                        // Cold drrun+drcov often needs >500ms before accept(); poll instead of sleeping.
+                        var ready = covPort <= 0 || await PortReadiness.WaitAsync(
+                            covHost, covPort, project.Kind, TimeSpan.FromSeconds(10), cancellationToken);
+                        if (!ready)
+                        {
+                            FuzzAnalystLog.Warn(progress,
+                                $"Coverage TCP spawn: {covHost}:{covPort} not accepting within 10s",
+                                iterations);
+                            await stalk.StopLongLivedAsync(longLived, cancellationToken);
+                            longLived = null;
+                            continue;
+                        }
+
+                        if (longLived is not null && (runtime is null || !runtime.IsRemote))
+                            await ArmDebuggerAsync(longLived);
                     }
                 }
 

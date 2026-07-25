@@ -278,6 +278,7 @@ public static class TargetRunner
             dumpPath = CrashDumpWriter.TryWrite(
                 server, dumpsDir, $"tcp_{server.Id}_{DateTime.UtcNow:yyyyMMdd_HHmmssfff}",
                 allowExited: true);
+            dumpPath = CrashDumpPaths.Sanitize(dumpPath);
         }
 
         var detail = DescribeServerExit(exitCode);

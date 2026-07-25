@@ -73,7 +73,9 @@ public static class CrashIntelAdvisor
         }
 
         if (exit is 139 or unchecked((int)0xC0000005))
-            findings.Add("signal shape looks like SIGSEGV / ACCESS_VIOLATION — capture a core before restarts eat evidence");
+            findings.Add(OperatingSystem.IsWindows()
+                ? "ACCESS_VIOLATION-shaped exit — fuzz with Scream wait/both so a .dmp is captured before restart"
+                : "signal shape looks like SIGSEGV / ACCESS_VIOLATION — capture a core before restarts eat evidence");
         else if (exit is 134)
             findings.Add("exit 134 (SIGABRT) — often heap arena / assert; prefer heaptriage + ASan rebuild");
         else if (exit is not null)
@@ -123,7 +125,15 @@ public static class CrashIntelAdvisor
 
         // —— Exploit-test recommendations (probes, not payloads) ——
         tests.Add("Reproduce once with the saved .bin before mutating further (dedupe / confirm stability).");
-        tests.Add("Enable core dumps (`ulimit -c unlimited`) and re-replay so GDB has a core to inspect.");
+        if (OperatingSystem.IsWindows())
+        {
+            tests.Add("Fuzz debugger: Scream wait or Both (Scream + open dump) — not live WinDbg attach during fuzz (only one debugger).");
+            tests.Add("After crash: `randall analyze -d <dump.dmp>` or open in WinDbg Preview (`randall debug open -d …`).");
+        }
+        else
+        {
+            tests.Add("Enable core dumps (`ulimit -c unlimited`) and re-replay so GDB has a core to inspect.");
+        }
         tests.Add("Run checksec on the target — NX/canary/PIE/RELRO change which tests are informative.");
         tests.Add("Replace the crashing field with a cyclic pattern (`randall pattern create`) and re-replay; ask whether RIP/saved-return holds pattern bytes.");
         tests.Add("If length fields were mutated: binary-search the minimal length that still crashes (stability + depth).");
@@ -137,35 +147,64 @@ public static class CrashIntelAdvisor
         // —— Recipe recommendations (Scare Floor / better crash cases) ——
         recipes.AddRange(BuildRecipeRecommendations(project, commandName, mutatorName, payload.Length));
 
-        // —— GDB command pack ——
+        // —— Debugger command pack (GDB on Linux, WinDbg/cdb on Windows) ——
         var exe = exePath is { Length: > 0 } ? Sh(exePath) : "<target-exe>";
-        var core = "<core-or-dump>";
-        var enh = LinuxToolPaths.FindGdbEnhancement()?.Kind ?? "gdb";
-        gdb.Add($"{enh} -q {exe} {core}");
-        gdb.Add("set pagination off");
-        gdb.Add("bt full");
-        gdb.Add("info registers");
-        gdb.Add("x/32gx $rsp");
-        gdb.Add("x/16i $pc");
-        gdb.Add("info proc mappings");
-        gdb.Add("# gef/pwndbg: context · telescope $rsp 32 · pattern search <value>");
-        gdb.Add($"# live attach (if still hung): {enh} -q -p <pid>  then  generate-core-file");
-        if (kind is "tcp" or "udp")
+        var dump = "<core-or-dump>";
+        if (OperatingSystem.IsWindows())
         {
-            gdb.Add($"# replay under gdb: {enh} -q --args {exe} -p {transport.Port} --host 127.0.0.1");
-            gdb.Add("# then: run · (from another shell) send the .bin · bt when it stops");
+            gdb.Add($"windbg -z {dump}   # or WinDbg Preview / `randall debug open -d {dump}`");
+            gdb.Add(".symfix+ ; .reload");
+            gdb.Add("!analyze -v");
+            gdb.Add("k");
+            gdb.Add("r");
+            gdb.Add("u @rip");
+            gdb.Add("dps @rsp L20");
+            gdb.Add("# cdb headless: cdb -z dump.dmp -c \"!analyze -v; k; q\"");
+            gdb.Add($"# live (after fuzz, not during): randall debug attach -p <pid> --kind cdb");
+            if (kind is "tcp" or "udp")
+                gdb.Add($"# replay: start {exe} with lab args, send .bin, break on exit");
+        }
+        else
+        {
+            var enh = LinuxToolPaths.FindGdbEnhancement()?.Kind ?? "gdb";
+            gdb.Add($"{enh} -q {exe} {dump}");
+            gdb.Add("set pagination off");
+            gdb.Add("bt full");
+            gdb.Add("info registers");
+            gdb.Add("x/32gx $rsp");
+            gdb.Add("x/16i $pc");
+            gdb.Add("info proc mappings");
+            gdb.Add("# gef/pwndbg: context · telescope $rsp 32 · pattern search <value>");
+            gdb.Add($"# live attach (if still hung): {enh} -q -p <pid>  then  generate-core-file");
+            if (kind is "tcp" or "udp")
+            {
+                gdb.Add($"# replay under gdb: {enh} -q --args {exe} -p {transport.Port} --host 127.0.0.1");
+                gdb.Add("# then: run · (from another shell) send the .bin · bt when it stops");
+            }
         }
 
         // —— Next CLI ——
         next.Add($"randall replay -c {RelProject(project)} -i {Sh(FindInputHint(project, payload))}");
         next.Add($"randall checksec --exe {exe}");
-        next.Add($"randall heaptriage --exe {exe} --core {core}");
+        if (OperatingSystem.IsWindows())
+        {
+            next.Add($"randall analyze -d {dump}");
+            next.Add($"randall debug open -d {dump}");
+        }
+        else
+        {
+            next.Add($"randall heaptriage --exe {exe} --core {dump}");
+        }
         next.Add($"randall pattern create -l {Math.Clamp(payload.Length * 2, 200, 800)}");
         next.Add($"randall stalk map -p {project.Name} -c {RelProject(project)}");
         next.Add($"randall case recipes -p {project.Name}");
         next.Add($"randall scream walk -i {idHint} --goal auto");
-        next.Add($"randall gdb walk -i {idHint}");
-        next.Add($"randall exploit guide --exe {exe} --core {core}");
+        if (OperatingSystem.IsWindows())
+            next.Add($"randall debug walk -i {idHint}");
+        else
+            next.Add($"randall gdb walk -i {idHint}");
+        if (OperatingSystem.IsLinux())
+            next.Add($"randall exploit guide --exe {exe} --core {dump}");
         next.Add($"randall crashes pack -p {project.Name}");
         if (project.Oracles is not { Enabled: true })
             next.Add("# optional deepen: set oracles.enabled + magician.enabled (+ joker) in YAML, then re-fuzz");
@@ -271,7 +310,7 @@ public static class CrashIntelAdvisor
         sb.AppendLine("EXPLOIT-TEST RECOMMENDATIONS (probes — not payloads)");
         foreach (var t in intel.ExploitTestRecommendations)
             sb.AppendLine($"  → {t}");
-        sb.AppendLine("GDB COMMANDS");
+        sb.AppendLine(OperatingSystem.IsWindows() ? "DEBUGGER (WinDbg/cdb/Scream)" : "GDB COMMANDS");
         foreach (var g in intel.GdbCommands)
             sb.AppendLine($"  $ {g}");
         sb.AppendLine("NEXT CLI");

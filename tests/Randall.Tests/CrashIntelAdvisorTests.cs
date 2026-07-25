@@ -38,10 +38,23 @@ public class CrashIntelAdvisorTests
         Assert.Contains(intel.CoverageNotes, c => c.Contains("coverageGuided", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(intel.CoverageNotes, c => c.Contains("stalk map", StringComparison.OrdinalIgnoreCase) || c.Contains("reverse engineering", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(intel.Findings, f => f.Contains("oracle:", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(intel.GdbCommands, g => g.Contains("bt full", StringComparison.Ordinal));
-        Assert.Contains(intel.GdbCommands, g => g.Contains("info registers", StringComparison.Ordinal));
+        Assert.Contains(intel.GdbCommands, g => g.Contains("bt full", StringComparison.Ordinal) || g.Contains("!analyze", StringComparison.Ordinal));
+        Assert.Contains(intel.GdbCommands, g => g.Contains("info registers", StringComparison.Ordinal) || g.Contains(" r", StringComparison.Ordinal));
         Assert.Contains(intel.NextCliCommands, c => c.Contains("scream walk", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(intel.NextCliCommands, c => c.Contains("stalk map", StringComparison.OrdinalIgnoreCase));
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.DoesNotContain(intel.ExploitTestRecommendations, r =>
+                r.Contains("ulimit", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(intel.ExploitTestRecommendations, r =>
+                r.Contains("Scream", StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            Assert.Contains(intel.ExploitTestRecommendations, r =>
+                r.Contains("ulimit", StringComparison.OrdinalIgnoreCase));
+        }
+
         Assert.DoesNotContain(intel.ExploitTestRecommendations, r =>
             r.Contains("shellcode", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("Triage", intel.Disclaimer, StringComparison.OrdinalIgnoreCase);
@@ -52,7 +65,8 @@ public class CrashIntelAdvisorTests
         Assert.Contains("RECIPE RECOMMENDATIONS", text);
         Assert.Contains("COVERAGE / DEPTH", text);
         Assert.Contains("EXPLOIT-TEST RECOMMENDATIONS", text);
-        Assert.Contains("GDB COMMANDS", text);
+        Assert.True(text.Contains("GDB COMMANDS", StringComparison.Ordinal) ||
+                    text.Contains("DEBUGGER (WinDbg", StringComparison.Ordinal));
         Assert.Contains("NEXT CLI", text);
     }
 
@@ -76,7 +90,9 @@ public class CrashIntelAdvisorTests
             var path = CrashIntelAdvisor.WriteIntelFiles(dir, id, "demo", 1, "DEADBEEF", intel);
             Assert.True(File.Exists(path));
             Assert.True(File.Exists(Path.Combine(dir, $"{id:N}_intel.txt")));
-            Assert.Contains("GDB COMMANDS", File.ReadAllText(path));
+            var text = File.ReadAllText(path);
+            Assert.True(text.Contains("GDB COMMANDS", StringComparison.Ordinal) ||
+                        text.Contains("DEBUGGER (WinDbg", StringComparison.Ordinal));
         }
         finally
         {
