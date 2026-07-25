@@ -37,7 +37,7 @@ I don't just throw bytes at parsers and hope. I **camouflage** valid-looking tra
 | 🌐 **Web apps too** | `kind: http|https` — see [WEB_FUZZ.md](docs/WEB_FUZZ.md) |
 | 🎬 **ReelDeck file lab** | Media player/studio `.rndl` — fuzz → path-stalk → deepen ([REELDECK.md](docs/REELDECK.md)) |
 
-Full parody mapping: [docs/LORE.md](docs/LORE.md) · Honest unfinished map: [docs/MATURITY.md](docs/MATURITY.md)
+Full parody mapping: [docs/LORE.md](docs/LORE.md) · Honest unfinished map: [docs/MATURITY.md](docs/MATURITY.md) · Intelligence Loop roadmap: [docs/ROADMAP_INTELLIGENCE.md](docs/ROADMAP_INTELLIGENCE.md)
 
 > *Stalk code paths. Scream on crash.*
 
