@@ -551,22 +551,115 @@ body.nav-collapsed .nav-reopen { display: flex; }
   50% { box-shadow: 0 0 12px 2px color-mix(in srgb, var(--stalk-purple) 25%, transparent); }
 }
 .scare-brain-title-block { flex: 1; min-width: 0; }
+.scare-brain-c2 {
+  margin: 0.35rem 0 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--stalk-purple, #9333ea) 10%, var(--panel)), color-mix(in srgb, var(--stalk-blue) 8%, var(--panel)));
+  border: 1px solid color-mix(in srgb, var(--stalk-purple, #9333ea) 28%, var(--stalk-border));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
+}
+.scare-brain-c2.hidden { display: none; }
 .scare-brain-strip {
-  display: flex; flex-wrap: wrap; gap: 0.45rem; margin: 0.35rem 0 0.5rem;
-  padding: 0.45rem 0.55rem; border-radius: 8px;
-  background: color-mix(in srgb, var(--stalk-blue) 8%, var(--panel));
-  border: 1px solid color-mix(in srgb, var(--stalk-blue) 22%, var(--stalk-border));
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
 }
 .scare-brain-strip.hidden { display: none; }
+.scare-brain-decision {
+  margin: 0.45rem 0 0;
+  padding: 0.4rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--stalk-bright, var(--text));
+  background: color-mix(in srgb, var(--stalk-purple, #9333ea) 12%, var(--code-bg));
+  border-left: 3px solid var(--stalk-purple, #a855f7);
+}
+.scare-brain-decision.hidden { display: none; }
+.scare-brain-decision strong { color: var(--stalk-purple, #c084fc); }
 .scare-brain-chip {
-  font-size: 0.74rem; padding: 0.18rem 0.45rem; border-radius: 999px;
+  font-size: 0.72rem; padding: 0.16rem 0.42rem; border-radius: 999px;
   border: 1px solid var(--stalk-border); background: var(--bg);
   font-family: var(--mono); color: var(--stalk-bright, var(--text));
 }
 .scare-brain-chip strong { color: var(--stalk-green); font-weight: 600; }
+.scare-brain-chip.chip-live {
+  border-color: color-mix(in srgb, var(--stalk-green) 45%, var(--stalk-border));
+  background: color-mix(in srgb, var(--stalk-green) 10%, var(--bg));
+}
+.scare-brain-chip.chip-phase {
+  text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.62rem;
+  color: var(--stalk-blue);
+}
 .scare-brain-chip.mood-toxic { border-color: color-mix(in srgb, #d97706 45%, var(--stalk-border)); }
 .scare-brain-chip.mood-virulent { border-color: color-mix(in srgb, #dc2626 45%, var(--stalk-border)); }
 .scare-brain-chip.mood-eip { border-color: color-mix(in srgb, #9333ea 50%, var(--stalk-border)); }
+.scare-brain-factory-head {
+  margin: 0.65rem 0 0.35rem;
+  padding-top: 0.55rem;
+  border-top: 1px dashed color-mix(in srgb, var(--stalk-purple, #9333ea) 25%, var(--stalk-border));
+}
+.scare-brain-factory-head h3 { margin: 0 0 0.2rem; font-size: 0.92rem; }
+.scare-brain-factory-head .hint { margin: 0; font-size: 0.76rem; }
+.scare-brain-empty-block { margin: 0; }
+.scare-brain-cli-steps {
+  margin: 0.35rem 0 0;
+  padding-left: 1.15rem;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+.scare-brain-cli-steps code {
+  font-size: 0.72rem;
+  word-break: break-all;
+}
+.scare-brain-covbar {
+  height: 5px;
+  margin: 0.35rem 0 0.25rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--stalk-border) 70%, transparent);
+  overflow: hidden;
+}
+.scare-brain-covbar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--stalk-green), color-mix(in srgb, var(--stalk-green) 70%, var(--stalk-blue)));
+  transition: width 0.35s ease;
+}
+.scare-brain-covbar-fill.kind-frontier {
+  background: linear-gradient(90deg, var(--stalk-blue), color-mix(in srgb, var(--stalk-purple, #9333ea) 55%, var(--stalk-blue)));
+}
+.scare-brain-covbar-fill.kind-oracle {
+  background: linear-gradient(90deg, var(--stalk-red), #d97706);
+}
+.scare-brain-covbar-fill.kind-patch {
+  background: linear-gradient(90deg, var(--stalk-purple, #a855f7), var(--stalk-blue));
+}
+.scream-harvest-scare {
+  margin: 0.5rem 0 0.65rem;
+  padding: 0.55rem 0.65rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--stalk-purple, #9333ea) 22%, var(--stalk-border));
+  background: color-mix(in srgb, var(--stalk-purple, #9333ea) 5%, var(--panel));
+}
+.scream-canister-rack-scare {
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 0.45rem;
+  max-height: 11rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+@media (max-width: 640px) {
+  .scare-brain-head { flex-wrap: wrap; gap: 0.5rem; }
+  .scare-brain-row {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto auto;
+  }
+  .scare-brain-why { grid-column: 2; justify-self: start; }
+  .scare-brain-breakdown { grid-column: 1 / -1; }
+  .scream-canister-rack-scare { max-height: 9rem; }
+  .scare-brain-c2 { padding: 0.45rem; }
+}
 .scare-brain-target-intel {
   margin: 0 0 0.55rem; padding: 0.5rem 0.6rem; border-radius: 8px;
   border: 1px dashed color-mix(in srgb, var(--stalk-purple, #9333ea) 35%, var(--stalk-border));
@@ -2630,6 +2723,18 @@ tr.mutate-row td { background: #2a2218; }
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+.crash-primary-fault {
+  margin: 0.35rem 0 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+.crash-findings {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
 }
 .crash-why-detail {
   margin: 0.3rem 0 0;

@@ -21,6 +21,18 @@ const api = {
     }
     return raw;
   },
+  getOptional: async (path) => {
+    let r;
+    try {
+      r = await fetch(path, { headers: api.headers() });
+    } catch {
+      return null;
+    }
+    if (r.status === 404) return null;
+    const data = await r.json().catch(() => null);
+    if (!r.ok) return null;
+    return data;
+  },
   get: async (path) => {
     let r;
     try {
@@ -687,7 +699,14 @@ function initRecipeCatalog() {
   });
 }
 
-// —— Scare Floor brain (Randall thinks): frontier + static map + oracle hints ——
+// —— Scare Floor command center (Randall thinks): C2 strip + factory map + canisters ——
+const scareBrainState = {
+  pollTimer: null,
+  lastStatus: null,
+  lastStatusAt: 0,
+  execPerSec: null,
+};
+
 function scareBrainKindLabel(kind) {
   if (kind === 'frontier') return 'gray door';
   if (kind === 'oracle') return 'oracle';
@@ -695,30 +714,103 @@ function scareBrainKindLabel(kind) {
   return 'static';
 }
 
-function renderScareBrainStrip(strip) {
-  if (!strip) return '';
-  const chips = [];
-  if (strip.coveragePercent != null) {
-    const bb = strip.totalBlocks != null && strip.coveredBlocks != null
-      ? ` (${strip.coveredBlocks}/${strip.totalBlocks} BBs)` : '';
-    chips.push(`<span class="scare-brain-chip">coverage <strong>${strip.coveragePercent}%</strong>${escapeAttr(bb)}</span>`);
-  }
-  if (strip.frontierCount != null) {
-    chips.push(`<span class="scare-brain-chip">frontiers <strong>${strip.frontierCount}</strong></span>`);
-  }
-  const moods = strip.canisterMoods || {};
-  const moodOrder = ['eip', 'virulent', 'toxic', 'watching', 'laughter'];
-  moodOrder.forEach((m) => {
-    const n = moods[m];
-    if (n > 0) {
-      const cls = m === 'toxic' ? ' mood-toxic' : m === 'virulent' ? ' mood-virulent' : m === 'eip' ? ' mood-eip' : '';
-      chips.push(`<span class="scare-brain-chip${cls}">${escapeAttr(m)} <strong>${n}</strong></span>`);
+function scareBrainExecRate(fuzzStatus) {
+  const now = Date.now();
+  const prev = scareBrainState.lastStatus;
+  const prevAt = scareBrainState.lastStatusAt;
+  scareBrainState.lastStatus = fuzzStatus;
+  scareBrainState.lastStatusAt = now;
+  if (!fuzzStatus?.running || !prev?.running) return scareBrainState.execPerSec;
+  const dt = (now - prevAt) / 1000;
+  if (dt < 0.35) return scareBrainState.execPerSec;
+  const di = (fuzzStatus.iterations || 0) - (prev.iterations || 0);
+  if (di <= 0) return scareBrainState.execPerSec;
+  scareBrainState.execPerSec = Math.round((di / dt) * 10) / 10;
+  return scareBrainState.execPerSec;
+}
+
+function scareBrainDecisionLine(brain) {
+  if (!brain) return '';
+  if (brain.lastDecision?.summary) return brain.lastDecision.summary;
+  if (typeof brain.lastDecision === 'string') return brain.lastDecision;
+  return brain.summary || brain.line || brain.message || brain.decision || '';
+}
+
+function scareBrainBarPct(t) {
+  const terms = t.scoreBreakdown?.terms || [];
+  for (const term of terms) {
+    const m = (term.detail || '').match(/(\d+(?:\.\d+)?)\s*%/);
+    if (m && /coverage|priority|covered/i.test(`${term.label} ${term.detail}`)) {
+      return Math.min(100, Math.max(4, parseFloat(m[1])));
     }
-  });
-  if (strip.differentialEnabled) {
-    chips.push('<span class="scare-brain-chip" title="oracles.differential armed">diff oracle <strong>on</strong></span>');
   }
-  return chips.length ? chips.join('') : '';
+  return Math.min(100, Math.max(6, t.score || 0));
+}
+
+function scareBrainEmptyBlock(project, hint) {
+  const yaml = `projects/${project}.yaml`;
+  return `<div class="scare-brain-empty-block">
+    <p class="hint scare-brain-empty">${escapeAttr(hint || `No stalk intelligence yet for ${project}.`)}</p>
+    <p class="hint">Populate the command center:</p>
+    <ol class="scare-brain-cli-steps">
+      <li><code>randall stalk ghidra-analyze -p ${escapeAttr(project)} -c ${escapeAttr(yaml)}</code> <span class="hint-inline">(or export <code>randall-analysis.json</code> manually)</span></li>
+      <li><code>randall fuzz -c ${escapeAttr(yaml)} --max-iterations 500</code></li>
+      <li><code>randall stalk frontier -p ${escapeAttr(project)}</code></li>
+      <li><code>randall stalk intel -p ${escapeAttr(project)} --refresh</code></li>
+    </ol>
+  </div>`;
+}
+
+function renderScareBrainStrip(strip, fuzzStatus, brainDecision) {
+  const chips = [];
+  const running = fuzzStatus?.running && (fuzzStatus.phase || '').toLowerCase() === 'running';
+  const phase = (fuzzStatus?.phase || 'idle').toLowerCase();
+  if (fuzzStatus) {
+    if (running) {
+      const rate = scareBrainExecRate(fuzzStatus);
+      if (rate != null && rate > 0) {
+        chips.push(`<span class="scare-brain-chip chip-live">exec/s <strong>${rate}</strong></span>`);
+      } else if (fuzzStatus.iterations > 0) {
+        chips.push(`<span class="scare-brain-chip chip-live">iter <strong>${fuzzStatus.iterations}</strong></span>`);
+      }
+    } else if (fuzzStatus.iterations > 0) {
+      chips.push(`<span class="scare-brain-chip">iters <strong>${fuzzStatus.iterations}</strong></span>`);
+    }
+    if (phase !== 'idle') {
+      chips.push(`<span class="scare-brain-chip chip-phase" title="${escapeAttr(fuzzStatus.lastMessage || '')}">${escapeAttr(phase)}</span>`);
+    }
+    if (fuzzStatus.coverageEdges > 0) {
+      chips.push(`<span class="scare-brain-chip">edges <strong>${fuzzStatus.coverageEdges}</strong></span>`);
+    }
+  }
+  if (strip) {
+    if (strip.coveragePercent != null) {
+      const bb = strip.totalBlocks != null && strip.coveredBlocks != null
+        ? ` (${strip.coveredBlocks}/${strip.totalBlocks} BBs)` : '';
+      chips.push(`<span class="scare-brain-chip">coverage <strong>${strip.coveragePercent}%</strong>${escapeAttr(bb)}</span>`);
+    }
+    if (strip.frontierCount != null) {
+      chips.push(`<span class="scare-brain-chip">frontiers <strong>${strip.frontierCount}</strong></span>`);
+    }
+    const moods = strip.canisterMoods || {};
+    const moodOrder = ['eip', 'virulent', 'toxic', 'watching', 'laughter'];
+    moodOrder.forEach((m) => {
+      const n = moods[m];
+      if (n > 0) {
+        const cls = m === 'toxic' ? ' mood-toxic' : m === 'virulent' ? ' mood-virulent' : m === 'eip' ? ' mood-eip' : '';
+        chips.push(`<span class="scare-brain-chip${cls}">${escapeAttr(m)} <strong>${n}</strong></span>`);
+      }
+    });
+    if (strip.differentialEnabled) {
+      chips.push('<span class="scare-brain-chip" title="oracles.differential armed">diff oracle <strong>on</strong></span>');
+    }
+  }
+  if (brainDecision?.lastDecision?.iteration != null && !chips.some((c) => c.includes('iter'))) {
+    chips.push(`<span class="scare-brain-chip">brain iter <strong>${brainDecision.lastDecision.iteration}</strong></span>`);
+  } else if (brainDecision?.iteration != null && !chips.some((c) => c.includes('iter'))) {
+    chips.push(`<span class="scare-brain-chip">brain iter <strong>${brainDecision.iteration}</strong></span>`);
+  }
+  return chips.join('');
 }
 
 function renderScareBrainTargetIntel(profile) {
@@ -763,11 +855,15 @@ function renderScareBrainTarget(t, index) {
   const addr = t.address ? ` · <code>${escapeAttr(t.address)}</code>` : '';
   const whyId = `scare-brain-why-${index}`;
   const hasBreakdown = !!(t.scoreBreakdown?.terms?.length);
+  const barPct = scareBrainBarPct(t);
   return `<div class="scare-brain-row" data-brain-id="${escapeAttr(t.id)}">
     <span class="scare-brain-score" title="Rank score">${t.score}</span>
     <div class="scare-brain-main">
       <div class="scare-brain-label">${escapeAttr(t.label)}
         <span class="scare-brain-kind kind-${escapeAttr(t.kind)}">${escapeAttr(kind)}</span>${addr}
+      </div>
+      <div class="scare-brain-covbar" role="meter" aria-valuenow="${barPct}" aria-valuemin="0" aria-valuemax="100" title="Coverage / priority signal">
+        <span class="scare-brain-covbar-fill kind-${escapeAttr(t.kind)}" style="width:${barPct}%"></span>
       </div>
       <p class="scare-brain-detail">${escapeAttr(t.detail || '')}</p>
     </div>
@@ -778,49 +874,119 @@ function renderScareBrainTarget(t, index) {
   </div>`;
 }
 
-async function refreshScareFloorBrain() {
+async function fetchBrainDecision(project) {
+  let snap = await api.getOptional(`/api/stalking/${encodeURIComponent(project)}/brain-decision`);
+  if (snap) return snap;
+  return api.getOptional(`/api/fuzz/brain?project=${encodeURIComponent(project)}`);
+}
+
+function renderScareFloorCanisters(project) {
+  const all = harvestState.all || crashState.all || [];
+  const filtered = project
+    ? all.filter((c) => (c.project || '') === project)
+    : all;
+  renderScreamCanisters({
+    rackId: 'scare-canister-rack',
+    statusId: 'scare-harvest-status',
+    pressureId: 'scare-harvest-pressure',
+    compact: true,
+    mode: 'projects',
+    crashes: filtered,
+  });
+}
+
+function startScareBrainPoll() {
+  stopScareBrainPoll();
+  scareBrainState.pollTimer = setInterval(() => {
+    if (document.getElementById('fuzz-tab-cases')?.classList.contains('hidden')) return;
+    refreshScareFloorBrain({ quiet: true }).catch(() => {});
+  }, 4500);
+}
+
+function stopScareBrainPoll() {
+  if (scareBrainState.pollTimer) {
+    clearInterval(scareBrainState.pollTimer);
+    scareBrainState.pollTimer = null;
+  }
+}
+
+async function refreshScareFloorBrain(opts = {}) {
   const project = document.getElementById('case-project')?.value;
   const summaryEl = document.getElementById('scare-brain-summary');
+  const c2El = document.getElementById('scare-brain-c2');
   const stripEl = document.getElementById('scare-brain-strip');
+  const decisionEl = document.getElementById('scare-brain-decision');
   const targetIntelEl = document.getElementById('scare-brain-target-intel');
   const targetsEl = document.getElementById('scare-brain-targets');
   const footEl = document.getElementById('scare-brain-foot');
   if (!targetsEl) return;
 
   if (!project) {
+    stopScareBrainPoll();
     if (summaryEl) summaryEl.textContent = 'Pick a project to see gray doors, static priorities, and oracle hints.';
     targetsEl.innerHTML = '<p class="hint scare-brain-empty">Select <strong>Working on project</strong> below — Randall reads <code>data/stalk/&lt;project&gt;/</code> on disk.</p>';
-    stripEl?.classList.add('hidden');
+    c2El?.classList.add('hidden');
     targetIntelEl?.classList.add('hidden');
     footEl?.classList.add('hidden');
+    renderScareFloorCanisters('');
     return;
   }
 
-  targetsEl.innerHTML = '<p class="hint scare-brain-empty">Thinking…</p>';
-  stripEl?.classList.add('hidden');
-  targetIntelEl?.classList.add('hidden');
+  if (!opts.quiet) {
+    targetsEl.innerHTML = '<p class="hint scare-brain-empty">Thinking…</p>';
+    c2El?.classList.add('hidden');
+    targetIntelEl?.classList.add('hidden');
+  }
+
   try {
-    const intel = await api.get(`/api/stalking/${encodeURIComponent(project)}/intelligence`);
+    const [fuzzStatus, intel, brainDecision] = await Promise.all([
+      api.get('/api/fuzz/status').catch(() => null),
+      api.get(`/api/stalking/${encodeURIComponent(project)}/intelligence`),
+      fetchBrainDecision(project),
+    ]);
+
     if (summaryEl) summaryEl.textContent = intel.summary || intel.emptyHint || '';
 
-    if (stripEl && intel.commandStrip) {
-      const stripHtml = renderScareBrainStrip(intel.commandStrip);
+    const stripHtml = renderScareBrainStrip(intel.commandStrip, fuzzStatus, brainDecision);
+    if (c2El && stripEl) {
       if (stripHtml) {
         stripEl.innerHTML = stripHtml;
-        stripEl.classList.remove('hidden');
+        c2El.classList.remove('hidden');
       } else {
-        stripEl.classList.add('hidden');
+        c2El.classList.add('hidden');
+      }
+    }
+
+    if (decisionEl) {
+      const line = scareBrainDecisionLine(brainDecision);
+      if (line) {
+        decisionEl.innerHTML = `<strong>Randall thinks:</strong> ${escapeAttr(line)}`;
+        decisionEl.classList.remove('hidden');
+      } else if (fuzzStatus?.running && fuzzStatus.lastMessage) {
+        decisionEl.innerHTML = `<strong>Randall thinks:</strong> ${escapeAttr(fuzzStatus.lastMessage)}`;
+        decisionEl.classList.remove('hidden');
+      } else {
+        decisionEl.classList.add('hidden');
+        decisionEl.textContent = '';
       }
     }
 
     if (targetIntelEl && intel.targetProfile) {
       targetIntelEl.innerHTML = renderScareBrainTargetIntel(intel.targetProfile);
       targetIntelEl.classList.remove('hidden');
+    } else {
+      targetIntelEl?.classList.add('hidden');
+    }
+
+    renderScareFloorCanisters(project);
+    if (!harvestState.all?.length) {
+      refreshHarvest({ projectFilter: project, immediate: true }).catch(() => {});
     }
 
     if (!intel.hasData || !(intel.targets || []).length) {
-      targetsEl.innerHTML = `<p class="hint scare-brain-empty">${escapeAttr(intel.emptyHint || 'No stalk intelligence yet.')}</p>`;
+      targetsEl.innerHTML = scareBrainEmptyBlock(project, intel.emptyHint);
       if (!intel.targetProfile) footEl?.classList.add('hidden');
+      startScareBrainPoll();
       return;
     }
 
@@ -853,14 +1019,21 @@ async function refreshScareFloorBrain() {
         footEl.classList.add('hidden');
       }
     }
+
+    startScareBrainPoll();
   } catch (err) {
     if (summaryEl) summaryEl.textContent = 'Could not load stalk intelligence.';
     targetsEl.innerHTML = `<p class="hint scare-brain-empty">${escapeAttr(err.message)}</p>`;
     footEl?.classList.add('hidden');
+    stopScareBrainPoll();
   }
 }
 
 document.getElementById('scare-brain-refresh')?.addEventListener('click', () => refreshScareFloorBrain().catch(() => {}));
+document.getElementById('scare-open-canisters')?.addEventListener('click', () => {
+  switchView('crashes');
+  document.getElementById('scream-harvest-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 
 let stalkProject = null;
 /** Server/history timeline from last /api/stalk payload (persists across live ticks). */
@@ -2445,7 +2618,24 @@ function shortMutator(m) {
   return parts.length > 2 ? parts.slice(-2).join('/') : m;
 }
 
+function faultKindLabel(kind) {
+  if (kind == null || kind === '') return '';
+  if (typeof kind === 'string') return kind;
+  const names = {
+    0: 'Unknown', 1: 'AccessViolation', 2: 'StackOverflow', 3: 'StackBufferOverrun',
+    4: 'HeapCorruption', 5: 'UseAfterFree', 6: 'Sanitizer', 7: 'PageHeap',
+    8: 'WerClassification', 9: 'OracleOnly', 10: 'Hang', 11: 'IllegalInstruction', 12: 'Other',
+  };
+  return names[kind] || String(kind);
+}
+
 function shortFault(c) {
+  const pf = c.primaryFaultSummary || c.primaryFaultKind || '';
+  if (pf) {
+    const kind = c.primaryFaultKind ? String(c.primaryFaultKind).replace(/([A-Z])/g, ' $1').trim() : pf;
+    if (kind.length <= 22) return kind;
+    return `${kind.slice(0, 20)}…`;
+  }
   const f = c.faultAddress || c.exceptionHint || '';
   if (!f) return '—';
   if (/ACCESS_VIOLATION/i.test(f)) return 'AV';
@@ -2529,6 +2719,7 @@ function renderCrashDetail(detail, title) {
   const score = scoreCrash(detail.summary);
   const intel = detail.intelligence;
   const intelScore = intel?.screamScore ?? score;
+  const primaryFault = intel?.primaryFault;
   const intelHot = intel
     ? (intel.novelty >= 70 && ((intel.oracleScore?.total ?? 0) >= 40 || intel.seenCount <= 1))
     : screamHot(detail.summary);
@@ -2549,6 +2740,13 @@ function renderCrashDetail(detail, title) {
         <span class="crash-score-badge" title="Scream intelligence score">★ ${intelScore}</span>
       </div>
       <p class="crash-why-line">Why it crashed</p>
+      ${primaryFault ? `<p class="crash-primary-fault severity-${(primaryFault.severity || sev).toLowerCase()}">
+        <span class="label">Primary fault</span>
+        <code>${escapeAttr(faultKindLabel(primaryFault.kind))}</code>
+        <span class="hint-inline">${escapeAttr(primaryFault.source || '')}</span>
+        · ${escapeAttr(primaryFault.summary || primaryFault.detail || '')}
+        ${primaryFault.confidence != null ? `<span class="hint-inline">(${(primaryFault.confidence * 100).toFixed(0)}%)</span>` : ''}
+      </p>` : ''}
       <p class="crash-why-detail"><code>${escapeAttr(why)}</code>
         ${a?.faultAddress ? ` @ <code>${escapeAttr(a.faultAddress)}</code>` : ''}
         ${a?.faultModule ? ` in <code>${escapeAttr(a.faultModule)}</code>` : ''}
@@ -2559,6 +2757,7 @@ function renderCrashDetail(detail, title) {
       ${intel ? `<div class="scream-intel-box${intelHot ? ' scream-hot' : ''}">
         <h4>Scream intelligence</h4>
         <dl class="scream-intel-dl">
+          ${primaryFault ? `<dt>Primary fault</dt><dd><code>${escapeAttr(primaryFault.kind || '')}</code> · ${escapeAttr(primaryFault.summary || primaryFault.detail || '')}</dd>` : ''}
           <dt>Severity</dt><dd><span class="severity-${intel.severity}">${escapeAttr(intel.severity)}</span></dd>
           <dt>Novelty</dt><dd><span class="scream-intel-meter">${intel.novelty}</span>/100</dd>
           <dt>Cluster</dt><dd><code title="${escapeAttr(intel.clusterKey || '')}">${intel.seenCount}×</code>${intel.clusterKey ? ` · <code>${escapeAttr(intel.clusterKey.slice(0, 48))}${intel.clusterKey.length > 48 ? '…' : ''}</code>` : ''}</dd>
@@ -2573,6 +2772,12 @@ function renderCrashDetail(detail, title) {
         ${intel.lineage?.mutatorChain?.length ? `<p class="label">Lineage <span class="hint-inline">${intel.lineage.partial ? 'partial' : 'journal-backed'}</span></p>
           <p class="hint"><code>${escapeAttr(intel.lineage.mutatorChain.join(' → '))}</code></p>
           ${intel.lineage.seedSource ? `<p class="hint">Seed <code>${escapeAttr(intel.lineage.seedSource)}</code>${intel.lineage.parentInputHash ? ` · parent <code>${escapeAttr(intel.lineage.parentInputHash.slice(0, 16))}…</code>` : ''}</p>` : ''}` : ''}
+      </div>` : ''}
+      ${s?.intel?.findings?.length ? `<div class="triage-box">
+        <h4>FINDINGS</h4>
+        <ul class="crash-findings">${s.intel.findings.map((f, i) =>
+          `<li class="${i === 0 && /^PRIMARY FAULT/i.test(f) ? 'severity-critical' : 'hint'}">${escapeAttr(f)}</li>`
+        ).join('')}</ul>
       </div>` : ''}
       <div class="crash-why-actions">
         ${cluster ? `<button type="button" class="btn" id="crash-filter-cluster-btn">Browse ${clusterN}× cluster</button>` : ''}
@@ -4235,6 +4440,18 @@ function paintHarvestViewsNow() {
     compact: true,
     mode: 'projects',
   });
+  const scareProject = document.getElementById('case-project')?.value;
+  if (scareProject && !document.getElementById('fuzz-tab-cases')?.classList.contains('hidden')) {
+    const filtered = (harvestState.all || []).filter((c) => (c.project || '') === scareProject);
+    renderScreamCanisters({
+      rackId: 'scare-canister-rack',
+      statusId: 'scare-harvest-status',
+      pressureId: 'scare-harvest-pressure',
+      compact: true,
+      mode: 'projects',
+      crashes: filtered,
+    });
+  }
 }
 
 async function refreshHarvest(opts = {}) {
@@ -5518,6 +5735,7 @@ document.querySelectorAll('.fuzz-subtab').forEach((btn) => {
     document.getElementById('fuzz-tab-cases')?.classList.toggle('hidden', tab !== 'cases');
     document.getElementById('fuzz-tab-labs')?.classList.toggle('hidden', tab !== 'labs');
     if (tab === 'cases') loadCaseBuilder().catch(() => {});
+    else stopScareBrainPoll();
     if (tab === 'labs') {
       persistLabsAgentUrl();
       refreshLabs().catch(() => {});

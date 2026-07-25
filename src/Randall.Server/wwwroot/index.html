@@ -21,7 +21,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=scare-floor-brain-2" />
+  <link rel="stylesheet" href="/css/app.css?v=scare-floor-c2-1" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -692,10 +692,30 @@
               <h2>Randall thinks <span class="hex">— campaign command</span></h2>
               <p class="hint" id="scare-brain-summary">Pick a project to see gray doors, static priorities, and oracle hints.</p>
             </div>
-            <button type="button" class="btn btn-sm" id="scare-brain-refresh" title="Refresh stalk intelligence">Refresh</button>
+            <button type="button" class="btn btn-sm" id="scare-brain-refresh" title="Refresh command center">Refresh</button>
           </div>
-          <div id="scare-brain-strip" class="scare-brain-strip hidden" aria-label="Campaign status strip"></div>
+          <div id="scare-brain-c2" class="scare-brain-c2 hidden" aria-label="Campaign C2 strip">
+            <div id="scare-brain-strip" class="scare-brain-strip" aria-label="Live campaign metrics"></div>
+            <p id="scare-brain-decision" class="scare-brain-decision hidden" aria-live="polite"></p>
+          </div>
+          <div class="scream-harvest scream-harvest-scare" id="scare-floor-canisters" aria-label="Project scream canisters">
+            <div class="scream-harvest-head scream-harvest-head-compact">
+              <div>
+                <h3 class="scream-harvest-title">Scream canisters</h3>
+                <p class="hint" id="scare-harvest-status">Bottled screams for this project — purple when hot.</p>
+              </div>
+              <div class="scream-harvest-controls">
+                <span class="scream-harvest-pressure" id="scare-harvest-pressure" title="Harvest pressure">—</span>
+                <button type="button" class="btn btn-sm" id="scare-open-canisters" title="Open full harvest rack on Crashes">Open rack</button>
+              </div>
+            </div>
+            <div class="scream-canister-rack scream-canister-rack-compact scream-canister-rack-scare" id="scare-canister-rack" role="list"></div>
+          </div>
           <div id="scare-brain-target-intel" class="scare-brain-target-intel hidden" aria-label="Target intelligence profile"></div>
+          <div class="scare-brain-factory-head">
+            <h3>Factory map <span class="hex">— gray doors &amp; priorities</span></h3>
+            <p class="hint">Ranked hunt targets with coverage bars — click <strong>Why?</strong> for score terms.</p>
+          </div>
           <div id="scare-brain-targets" class="scare-brain-targets" aria-live="polite">
             <p class="hint scare-brain-empty">Loading…</p>
           </div>
@@ -1449,6 +1469,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=scare-floor-brain-2"></script>
+  <script type="module" src="/js/app.js?v=scare-floor-c2-1"></script>
 </body>
 </html>
