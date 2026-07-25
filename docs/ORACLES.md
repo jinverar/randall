@@ -4,7 +4,7 @@ Coverage answers: *did this input reach new code or crash?*
 The **Oracle engine** answers: *did the target behave incorrectly while staying alive?*
 
 **Scope:** evaluate observations against rules → emit findings → optional corpus retain/boost → **request help** (`OracleNeedDto`) when Magician should intervene.  
-**Not in scope:** AI/human attribution or hunt planning (Bug Hunter); casting spells / summoning helpers (Magician — [MAGICIAN.md](MAGICIAN.md)).
+**Not in scope:** AI/human attribution or hunt planning (Bug Hunter); casting spells / summoning helpers (Magician — [MAGICIAN.md](MAGICIAN.md)). Joker Card deck credit (chaos/remix/replay) is owned by the Joker engine — see [MAGICIAN.md#joker-card-deck-702010](MAGICIAN.md#joker-card-deck-702010).
 
 ```text
 Bug Hunter suggests rules / focus     →     Oracle judges each run     →     Magician casts / summons

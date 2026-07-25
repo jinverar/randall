@@ -48,6 +48,8 @@ public sealed class MagicianConfig
 
     /// <summary>When the Joker finds a crash, Magician capitalizes (energy, army, corpus).</summary>
     public bool CapitalizeJokerCrashes { get; set; } = true;
+
+    public bool AllowPlayJokerCard { get; set; } = true;
 }
 
 /// <summary>

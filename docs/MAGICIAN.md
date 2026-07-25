@@ -33,25 +33,46 @@ Code: `Randall.Infrastructure.Magician` (`MagicianEngine`, `JokerEngine`).
 | `summonBots` | Write `bots_hint.md` for analysts (`randall ai seed` / `hunt`) — no live API on the hot path |
 | `summonJoker` | Call the **Joker** — encore of chaotic random tricks |
 | `capitalizeJoker` | (automatic) After a Joker crash — corpus + energy + army |
+| `playJokerCard` | Queue a legendary Joker Card draw from the deck |
 
 ## Joker
 
 The **Joker** is not the Magician. It throws **very random** fuzz decisions (stacked mutators, wild bytes, funny session-bias flips). The Magician can:
 
 1. **Summon** the Joker (`summonJoker` / `magician cast --need joker`)
-2. **Watch** every trick (`joker_watch.jsonl`)
-3. **Capitalize** when a trick crashes — keep the scream, bless energy, muster the army
+2. **Play a card** (`playJokerCard`) — queue a legendary deck draw for the next trick
+3. **Watch** every trick (`joker_watch.jsonl`)
+4. **Capitalize** when a trick crashes — keep the scream, bless energy, muster the army
+
+### Joker Card deck (70/20/10)
+
+When `joker.deckEnabled: true`, productive tricks are scored into `data/crashes/<project>/_magician/joker_deck.json`. Each deck draw uses weighted roulette:
+
+| Mode | Default weight | Behavior |
+|------|----------------|----------|
+| **chaos** | 70% | Fresh stacked mutators + wild bytes |
+| **remix** | 20% | Shuffle a known productive recipe |
+| **replay** | 10% | Replay a legendary card verbatim |
+
+Cards promote to **legendary** when cumulative score and productive uses cross `legendaryScoreThreshold` / `legendaryMinProductiveUses`. The Magician's `playJokerCard` spell forces the next draw into **replay** mode and prefers legendary cards.
 
 ```yaml
 joker:
   enabled: true
-  chance: 0.12          # base hijack rate
-  maxStack: 4           # stacked mutators per trick
+  chance: 0.12
+  deckEnabled: true
+  chaosWeight: 70
+  remixWeight: 20
+  replayWeight: 10
+  legendaryScoreThreshold: 50
+  legendaryMinProductiveUses: 2
+  maxStack: 4
   wildBytes: true
   flipSessionBias: true
 
 magician:
   allowSummonJoker: true
+  allowPlayJokerCard: true
   watchJoker: true
   capitalizeJokerCrashes: true
 ```

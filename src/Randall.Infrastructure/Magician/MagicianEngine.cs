@@ -26,6 +26,7 @@ public static class MagicianEngine
         "summonArmy",
         "summonBots",
         "summonJoker",
+        "playJokerCard",
         "capitalizeJoker",
     ];
 
@@ -466,6 +467,16 @@ public static class MagicianEngine
                 project.Joker.Chance = Math.Max(project.Joker.Chance, 0.12);
                 return (true, "joker",
                     $"Joker encore {project.Joker.EncoreIterations} iters @ chance≈{project.Joker.EncoreChance:0.00}");
+            }
+            case "playJokerCard":
+            {
+                if (!GetConfig(project).AllowPlayJokerCard)
+                    return (false, null, "playJokerCard disabled");
+                project.Joker ??= new JokerConfig { Enabled = true, DeckEnabled = true };
+                project.Joker.Enabled = true;
+                project.Joker.DeckEnabled = true;
+                JokerEngine.QueueDeckDraw(project, legendary: true);
+                return (true, "joker", "Magician queued legendary Joker Card draw");
             }
             case "capitalizeJoker":
                 return (true, "joker", "capitalize is automatic on Joker crashes during fuzz");

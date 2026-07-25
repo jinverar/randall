@@ -78,6 +78,8 @@ When `fuzz.mutatorCredit: true` (default), Randall tracks which **mutators** pro
 
 **Joker Card deck:** when `joker.deckEnabled: true`, productive Joker tricks are scored into `data/crashes/<project>/_magician/joker_deck.json`. Draws use 70/20/10 chaos/remix/replay roulette (see [MAGICIAN.md#joker](MAGICIAN.md#joker)).
 
+**Joker Card deck:** when `joker.deckEnabled: true`, productive Joker tricks are scored into `data/crashes/<project>/_magician/joker_deck.json`. Draws use 70/20/10 chaos/remix/replay roulette (see [MAGICIAN.md#joker](MAGICIAN.md#joker)).
+
 **Persistence**
 
 - Cross-run: `data/corpus/<target>/mutator_credit.txt`

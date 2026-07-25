@@ -12,6 +12,31 @@ This doc tracks the **Intelligence Loop** specifically. Feature-phase history (l
 
 ---
 
+## Four layers (who judges vs who acts)
+
+Randfuzz separates **judgment** from **intervention** so the loop stays explainable:
+
+| Layer | Role | Acts on target? | Primary artifact |
+|-------|------|-----------------|------------------|
+| **Brain** | Fuses frontier, static map, oracle/scream signals → `NextHuntDecision` (seed/mutator/energy pin) | Indirect (bias only) | `brain_last.json` · mutator credit · chains |
+| **Oracle** | Judges each run → findings + `OracleNeedDto` | **No** — requests help only | `oracle_findings.jsonl` |
+| **Magician** | Casts spells / summons when Oracle needs intervention; `playJokerCard` queues deck draws | **Yes** (campaign knobs) | `crashes/_magician/spells.jsonl` |
+| **Joker** | Exploration pressure — chaotic tricks + **70/20/10** deck (chaos/remix/replay) against over-exploitation | **Yes** (iteration hijack) | `joker_deck.json` · `joker_watch.jsonl` |
+
+**Closed loop:** Oracle need → Magician spell → feedback (scream / edges / Scare Door pressure) → Brain credit + chain learning + Joker card scoring.
+
+### Three timescales
+
+| Timescale | What updates | Examples |
+|-----------|--------------|----------|
+| **Per iteration** | Oracle eval, Joker trick, Magician auto-cast, Scare Door progress tick | Oracle score, door pressure, deck draw |
+| **Per campaign** | Mutator credit, A→B→C chains, brain last decision, joker deck | `mutator_credit.txt`, `mutator_chains.json` |
+| **Per target (binary)** | Brain memory fingerprint — 61% retention when executable hash changes | `brain_memory.json`, scaled credit/chains/frontier |
+
+See [ORACLES.md](ORACLES.md) · [MAGICIAN.md](MAGICIAN.md) · [FUZZING.md](FUZZING.md#brain-randall-thinks).
+
+---
+
 ## Vision
 
 ```text
@@ -46,6 +71,7 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | **Stalk map (in-Randall RE)** | PE/ELF strings, imports, hotspots on missed blocks | [STALK_MAP.md](STALK_MAP.md) — proximity, not full CFG |
 | **Frontier (gray doors)** | CFG/session fork scoring → `frontier.json` | `FrontierEngine` · `stalk frontier` |
 | **Mutator credit** | Bandit-lite productive-mutator bias + persistence | `MutatorCreditTracker` · `fuzz.mutatorCredit` (default on) |
+| **Joker Card deck** | 70/20/10 chaos/remix/replay recipe credit | `JokerCardDeck` · `joker.deckEnabled` · [MAGICIAN.md#joker](MAGICIAN.md#joker) |
 | **RandallBrain** | Closed-loop seed/mutator/energy fusion | `RandallBrain` · `fuzz.brain` (default on) · `GET /api/fuzz/brain` · `decision` alias (`inputId`/`score`/`reasons`/`actions`) |
 | **Scream Intelligence** | `CrashIntelligenceDto`, ScreamScore, novelty, lineage stub | [SCREAM_INTELLIGENCE.md](SCREAM_INTELLIGENCE.md) · Crashes / Investigation API |
 | **Scream canisters** | Mood thresholds, EIP/RIP seal, harvest rack | UI Crashes tab · [canisters README](assets/canisters/README.md) |
