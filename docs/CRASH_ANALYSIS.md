@@ -11,7 +11,7 @@ When a crash saves a Windows minidump, Randall extracts triage fields without op
 
 Windows allows **one** debugger attach. Scream (Wait/Both) and ProcDump `-e` both attach — leaving both on means ProcDump is skipped and dumps can end up empty (`unk:no-pc`). Details: [RECORDING.md — ProcDump vs Scream](RECORDING.md#procdump-vs-scream).
 
-Lab targets such as **VulnDrone** call `Environment.Exit(0xC0000005)` instead of raising SEH. Scream captures those on `ExitProcess` **before** continuing the debug event (otherwise the process is already gone and you get 0-byte `tcp_*.dmp` fallbacks). Prefer `scream_<pid>_*.dmp` over empty `tcp_<pid>_*.dmp` placeholders.
+Lab targets such as **VulnDrone** call `Environment.Exit(0xC0000005)` instead of raising SEH. Scream captures those on `ExitProcess` **before** continuing the debug event (otherwise the process is already gone and you get 0-byte `tcp_*.dmp` fallbacks). Under `DebugActiveProcess` attach, `dwExitCode` sits at **DEBUG_EVENT.u+0** (not after `hProcess` in the union); mis-parsing it as zero skips the dump. Prefer `scream_<pid>_*.dmp` over empty `tcp_<pid>_*.dmp` placeholders.
 
 ## Auto-analyze on crash
 

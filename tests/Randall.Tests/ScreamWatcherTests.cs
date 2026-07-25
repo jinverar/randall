@@ -17,17 +17,39 @@ public class ScreamWatcherTests
     }
 
     [Fact]
-    public void ReadExitProcessCode_ParsesExitCodeFromDebugEventUnion()
+    public void ReadExitProcessCode_ParsesEnvironmentExitAtUnionZero()
     {
-        // x64 DEBUG_EVENT: union @16; EXIT_PROCESS_DEBUG_INFO hProcess (8) + dwExitCode @24
+        // x64 DEBUG_EVENT: union @16; DebugActiveProcess attach puts dwExitCode @ union+0
+        // (not @ union+8 — that DWORD is zero for VulnDrone Environment.Exit crashes).
         var buf = new byte[64];
-        BitConverter.GetBytes(0xC0000005u).CopyTo(buf, 24);
-        var method = typeof(ScreamWatcher).GetMethod(
-            "ReadExitProcessCode",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-        Assert.NotNull(method);
-        var exit = (uint)(method!.Invoke(null, [buf]) ?? 0u);
-        Assert.Equal(0xC0000005u, exit);
+        BitConverter.GetBytes(0xC0000005u).CopyTo(buf, 16);
+        Assert.Equal(0xC0000005u, ScreamWatcher.ReadExitProcessCode(buf));
+        Assert.False(ScreamWatcher.IsCrashProcessExit(0));
+        Assert.True(ScreamWatcher.IsCrashProcessExit(ScreamWatcher.ReadExitProcessCode(buf)));
+    }
+
+    [Fact]
+    public void ReadExitProcessHandle_ParsesHandleAfterExitCode()
+    {
+        // Observed layout: dwExitCode @ union+0, hProcess @ union+8 (x64).
+        var buf = new byte[64];
+        BitConverter.GetBytes(0xC0000005u).CopyTo(buf, 16);
+        BitConverter.GetBytes(0x00007F40D1ED0010L).CopyTo(buf, 24);
+        Assert.Equal(0xC0000005u, ScreamWatcher.ReadExitProcessCode(buf));
+        Assert.Equal(new IntPtr(0x00007F40D1ED0010L), ScreamWatcher.ReadExitProcessHandle(buf));
+    }
+
+    [Fact]
+    public void ReadExitProcessCode_MatchesVulnDroneAttachProbeLayout()
+    {
+        // Raw union tail from VulnDrone Environment.Exit(0xC0000005) under DebugActiveProcess.
+        var raw = "29-01-00-00-05-00-00-C0-00-00-00-00-00-00-00-00-00-00-00-00-10-ED-D1-40-FE-7F-00-00";
+        var tail = raw.Split('-').Select(static b => Convert.ToByte(b, 16)).ToArray();
+        var buf = new byte[64];
+        Buffer.BlockCopy(tail, 0, buf, 12, tail.Length);
+        Assert.Equal(0xC0000005u, ScreamWatcher.ReadExitProcessCode(buf));
+        // Attach path: hProcess in the debug event is NULL (MSDN); dump falls back to OpenProcess.
+        Assert.Equal(IntPtr.Zero, ScreamWatcher.ReadExitProcessHandle(buf));
     }
 }
 

@@ -153,9 +153,8 @@ public sealed class ScreamWatcher : IDisposable
 
                         case Native.ExitProcessDebugEvent:
                         {
-                            var union = IntPtr.Size == 8 ? 16 : 12;
-                            var hProcess = ReadIntPtr(eventBuf, union);
                             var exitCode = ReadExitProcessCode(eventBuf);
+                            var hProcess = ReadExitProcessHandle(eventBuf);
                             Phase = "target-exited";
                             _ready.TrySetResult(_sawInitialBreakpoint);
                             // Dump BEFORE ContinueDebugEvent — after continue the process is gone
@@ -274,14 +273,27 @@ public sealed class ScreamWatcher : IDisposable
         return TargetRunner.IsCrashExitCode(unchecked((int)exitCode));
     }
 
-    private static uint ReadExitProcessCode(byte[] eventBuf)
+    /// <summary>
+    /// Parse <c>dwExitCode</c> from an <c>EXIT_PROCESS</c> debug event.
+    /// Under <c>DebugActiveProcess</c> attach the DWORD sits at union+0 (x64 offset 16),
+    /// not after <c>hProcess</c> as the C struct order suggests — see NativeStalkRunner.
+    /// </summary>
+    internal static uint ReadExitProcessCode(byte[] eventBuf)
     {
         var union = IntPtr.Size == 8 ? 16 : 12;
-        // EXIT_PROCESS_DEBUG_INFO: HANDLE hProcess; DWORD dwExitCode;
-        var exitOffset = union + (IntPtr.Size == 8 ? 8 : 4);
-        return exitOffset + 4 <= eventBuf.Length
-            ? BitConverter.ToUInt32(eventBuf, exitOffset)
+        return union + 4 <= eventBuf.Length
+            ? BitConverter.ToUInt32(eventBuf, union)
             : 0;
+    }
+
+    /// <summary>Process handle from <c>EXIT_PROCESS</c> debug event (union+8 on x64).</summary>
+    internal static IntPtr ReadExitProcessHandle(byte[] eventBuf)
+    {
+        var union = IntPtr.Size == 8 ? 16 : 12;
+        var handleOffset = union + (IntPtr.Size == 8 ? 8 : 4);
+        return handleOffset + IntPtr.Size <= eventBuf.Length
+            ? ReadIntPtr(eventBuf, handleOffset)
+            : IntPtr.Zero;
     }
 
     private void CaptureOnProcessExit(uint exitCode, uint threadId, IntPtr hProcess)
