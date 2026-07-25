@@ -111,6 +111,7 @@ static void PrintHelp()
           randall stalk ghidra-diff -p <project> --from baseline.json [--into current.json]  Patch-hunt merge
           randall stalk capture-binary -p <project> [-i seed] Dragon Dance binary drcov
           randall stalk map -p <project> [-c yaml] [--binary path]  In-app stalk map (strings/imports)
+          randall stalk frontier -p <project> [--limit N] [--json]  Score gray-door CFG branches
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall ghidra mcp ping|imports|callers   Optional live GhidraMCP Q&A (soft-fail)
           randall stalk from-crash -i <crash-guid> [--tag crash]
@@ -992,6 +993,18 @@ static int RunOracles(string[] args)
             {
                 Console.Write("  Sinks: ");
                 Console.WriteLine(string.Join(", ", hints.TopSinks.Take(4).Select(s => s.Name)));
+            }
+
+            var frontier = FrontierEngine.TryLoad(project, repo)
+                ?? FrontierEngine.Score(project, repo, limit: 20, persist: true);
+            if (frontier.Frontiers.Count > 0)
+            {
+                Console.WriteLine("  Top gray doors (frontier):");
+                foreach (var f in frontier.Frontiers.Take(5))
+                    Console.WriteLine(
+                        $"    [{f.Score}] {f.Kind} → {f.ToAddress}  " +
+                        $"(d={f.CfgDistance:0} r={f.Rarity:P0} succ={f.UnseenSuccessorCount})");
+                Console.WriteLine($"  Path: {FrontierEngine.FrontierPath(project, repo)}");
             }
             Console.WriteLine();
         }
@@ -2363,6 +2376,8 @@ static int RunStalk(string[] args)
                                             Binary drcov (no -dump_text) for Dragon Dance
               randall stalk map -p <project> [-c yaml] [--binary path] [--limit N]
                                             In-Randall stalk map: missed + PE/ELF strings/imports
+              randall stalk frontier -p <project> [--limit N] [--json] [--no-save]
+                                            Score gray-door CFG branches → frontier.json
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
               randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
             """);
@@ -2383,6 +2398,7 @@ static int RunStalk(string[] args)
         "ghidra-diff" or "diff" => StalkGhidraDiff(rest).GetAwaiter().GetResult(),
         "capture-binary" or "binary-drcov" or "dragon-dance" => StalkCaptureBinary(rest).GetAwaiter().GetResult(),
         "map" or "stalk-map" or "surface" => StalkMap(rest),
+        "frontier" or "frontiers" or "doors" => StalkFrontier(rest),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
         "bench" => StalkBench(rest),
@@ -2460,8 +2476,88 @@ static int StalkMap(string[] args)
             Console.WriteLine($"         {h.Block.WhyMissed}");
         }
 
+        var frontier = FrontierEngine.TryLoad(project);
+        if (frontier?.Frontiers.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Top gray doors (frontier):");
+            foreach (var f in frontier.Frontiers.Take(5))
+            {
+                var fn = string.IsNullOrWhiteSpace(f.FunctionName) ? "" : $" {f.FunctionName}";
+                Console.WriteLine(
+                    $"  [{f.Score}] {f.Kind}{fn} → {f.ToAddress}  " +
+                    $"(d={f.CfgDistance:0} r={f.Rarity:P0} succ={f.UnseenSuccessorCount})");
+            }
+            Console.WriteLine($"  Full list: randall stalk frontier -p {project}");
+        }
+
         Console.WriteLine();
         Console.WriteLine("Deep dive when needed: randall stalk ghidra-pack -p " + project);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
+static int StalkFrontier(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    var limit = 40;
+    var json = false;
+    var persist = true;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--limit" or "-n" && i + 1 < args.Length && int.TryParse(args[++i], out var n))
+            limit = n;
+        else if (args[i] is "--json")
+            json = true;
+        else if (args[i] is "--no-save")
+            persist = false;
+    }
+
+    try
+    {
+        var report = FrontierEngine.Score(project, limit: limit, persist: persist);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        Console.WriteLine($"Frontier: {report.Project} [{report.Mode}]");
+        Console.WriteLine($"  {report.Summary}");
+        Console.WriteLine($"  coverage blocks={report.CoverageBlockCount}  frontiers={report.FrontierCount}");
+        if (report.AnalysisPath is not null)
+            Console.WriteLine($"  analysis: {report.AnalysisPath}");
+        Console.WriteLine($"  saved: {FrontierEngine.FrontierPath(project)}");
+        Console.WriteLine($"  {report.WorkflowHint}");
+        Console.WriteLine();
+
+        if (report.Frontiers.Count == 0)
+        {
+            Console.WriteLine("No scored gray doors yet.");
+            return 0;
+        }
+
+        Console.WriteLine("Ranked gray doors (CFGDistance × Rarity × UnseenSucc × SinkProx):");
+        foreach (var f in report.Frontiers)
+        {
+            var from = string.IsNullOrWhiteSpace(f.FromAddress) ? "" : $"{f.FromAddress} → ";
+            var fn = string.IsNullOrWhiteSpace(f.FunctionName) ? "" : $" [{f.FunctionName}]";
+            Console.WriteLine(
+                $"  [{f.Score}] {f.Kind}{fn}  {from}{f.ToAddress}");
+            Console.WriteLine(
+                $"         d={f.CfgDistance:0}  r={f.Rarity:P0}  succ={f.UnseenSuccessorCount}  " +
+                $"sink={f.SinkProximity:P0}  {f.Detail}");
+        }
+
         return 0;
     }
     catch (Exception ex)

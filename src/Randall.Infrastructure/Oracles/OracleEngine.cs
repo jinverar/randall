@@ -17,12 +17,16 @@ public enum OracleSeverity
 
 public sealed record OracleEvalResult(
     OracleSeverity MaxSeverity,
-    int InterestingnessScore,
+    OracleScore Score,
     IReadOnlyList<OracleFindingDto> Findings,
     bool RetainInCorpus,
     int EnergyBoost,
     string Summary,
-    IReadOnlyList<OracleNeedDto> Needs);
+    IReadOnlyList<OracleNeedDto> Needs)
+{
+    /// <summary>Legacy alias for <see cref="Score"/>.Total.</summary>
+    public int InterestingnessScore => Score.Total;
+}
 
 /// <summary>
 /// Oracle engine — judgment, reporting, and foresight needs.
@@ -41,7 +45,7 @@ public static class OracleEngine
     {
         var cfg = obs.Project.Oracles ?? new OracleConfig { Enabled = false };
         if (!cfg.Enabled)
-            return new OracleEvalResult(OracleSeverity.None, 0, [], false, 0, "", []);
+            return new OracleEvalResult(OracleSeverity.None, OracleScore.Empty, [], false, 0, "", []);
 
         var findings = new List<OracleFindingDto>();
         EvaluateRuntime(obs, findings);
@@ -58,7 +62,7 @@ public static class OracleEngine
         foreach (var f in findings)
             max = Max(max, ParseSeverity(f.Severity));
 
-        var score = Score(obs, findings, max);
+        var score = OracleScorer.Score(obs, findings, max);
         var retain = max switch
         {
             OracleSeverity.Runtime => false, // crashes already handled
@@ -96,7 +100,13 @@ public static class OracleEngine
             "_oracles");
         var store = new OracleFindingStore(dir);
         foreach (var f in eval.Findings)
-            store.Append(f);
+        {
+            store.Append(f with
+            {
+                OracleScoreTotal = eval.Score.Total,
+                OracleScoreTerms = eval.Score.Terms,
+            });
+        }
     }
 
     private static void EvaluateRuntime(OracleObservation obs, List<OracleFindingDto> findings)
@@ -707,28 +717,6 @@ public static class OracleEngine
         {
             try { File.Delete(tmp); } catch { /* ignore */ }
         }
-    }
-
-    private static int Score(OracleObservation obs, List<OracleFindingDto> findings, OracleSeverity max)
-    {
-        var score = obs.NewEdges * 10;
-        foreach (var f in findings)
-        {
-            score += ParseSeverity(f.Severity) switch
-            {
-                OracleSeverity.Runtime => 100,
-                OracleSeverity.Violation => 100,
-                OracleSeverity.NearMiss => 12,
-                _ => 0,
-            };
-        }
-
-        // Output-shape signal: non-empty response with no prior expectation.
-        if (obs.Result.ResponseBytes is { Length: > 0 } && findings.Count == 0 && obs.NewEdges == 0)
-            score += 0;
-
-        _ = max;
-        return score;
     }
 
     private static OracleFindingDto MakeFinding(
