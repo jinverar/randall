@@ -51,7 +51,7 @@ public static class CrashIntelligenceBuilder
         var faultSignals = FaultSignalMapper.FromCrash(
             triage, analysis, cdb, sidecar, pageHeapEnabled, rppTag ?? summary.TriageTag);
         var primaryFault = FaultSignalMapper.Primary(faultSignals);
-        var frontierHint = BuildFrontierHint(summary.Project, triage, repoRoot);
+        var frontierHint = BuildFrontierHint(summary.Project, triage, CrashCatalog.FindRepoRoot());
         var canisterContext = BuildCanisterContext(triage, function, oracleScore, frontierHint);
 
         return new CrashIntelligenceDto(
@@ -212,22 +212,6 @@ public static class CrashIntelligenceBuilder
         return true;
     }
 
-    private static CrashLineageDto? BuildLineage(CrashSidecarDto? sidecar)
-    {
-        if (sidecar is null)
-            return null;
-
-        var chain = sidecar.MutatorChain;
-        if (chain is null || chain.Count == 0)
-            chain = string.IsNullOrWhiteSpace(sidecar.Mutator) ? [] : [sidecar.Mutator];
-
-        if (chain.Count == 0 && sidecar.ParentInputHash is null && sidecar.SeedSource is null)
-            return null;
-
-        return new CrashLineageDto(
-            chain,
-            sidecar.ParentInputHash,
-            sidecar.SeedSource,
-            Partial: true);
-    }
+    private static CrashLineageDto? BuildLineage(CrashSidecarDto? sidecar) =>
+        CrashLineageResolver.Resolve(sidecar);
 }
