@@ -52,7 +52,9 @@ public sealed record CrashSidecarDto(
     FuzzSnapshotDto FuzzSnapshot,
     DateTimeOffset ObservedAt,
     /// <summary>Analysis-oriented intel (exploit-test probes + GDB) — triage only, no payloads.</summary>
-    CrashIntelDto? Intel = null);
+    CrashIntelDto? Intel = null,
+    /// <summary>Unified Randall interestingness score at crash time (oracle + coverage terms).</summary>
+    OracleScore? RandallScore = null);
 
 /// <summary>
 /// Post-crash intelligence for analysts: what to probe next and which GDB commands to run.
@@ -92,6 +94,20 @@ public sealed record FuzzRunManifestDto(
     IReadOnlyList<HotEdgeDto>? HotEdges = null);
 
 public sealed record HotEdgeDto(string Edge, long HitCount);
+
+/// <summary>Per-mutator credit row (mutator_stats.json + leaderboard).</summary>
+public sealed record MutatorCreditRowDto(
+    string Name,
+    int Runs,
+    int NewEdges,
+    int UniqueCrashes,
+    double Score,
+    int SelectionWeight);
+
+/// <summary>Run-scoped mutator credit export under data/runs/&lt;runId&gt;/.</summary>
+public sealed record MutatorCreditRunDto(
+    bool BiasEnabled,
+    IReadOnlyList<MutatorCreditRowDto> Mutators);
 
 public sealed record RegisterSnapshotDto(
     string? Rip,
