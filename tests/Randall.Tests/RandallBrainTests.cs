@@ -302,6 +302,102 @@ public class RandallBrainTests
         }
     }
 
+    [Fact]
+    public void PersistFocus_WritesBrainFocusJson()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "brain-focus-persist";
+            var focus = RandallBrain.PersistFocus(
+                project,
+                "frontier",
+                "Unopened door → 0x401020",
+                "0x401020",
+                root);
+
+            var path = RandallBrain.FocusPath(project, root);
+            Assert.True(File.Exists(path));
+            var loaded = RandallBrain.TryLoadFocus(project, root);
+            Assert.NotNull(loaded);
+            Assert.Equal("frontier", loaded!.FocusKind);
+            Assert.Equal("Unopened door → 0x401020", loaded.FocusLabel);
+            Assert.Equal("0x401020", loaded.Address);
+            Assert.Equal(focus.SetAt, loaded.SetAt);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void Decide_PrefersPinnedFocus()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "brain-focus-decide";
+            WriteFrontier(root, project, score: 55);
+            WriteStaticMap(root, project, fuzzPriority: 91);
+            RandallBrain.PersistFocus(
+                project,
+                "frontier",
+                "parse_input → 0x401020",
+                "0x401020",
+                root);
+
+            var brain = new RandallBrain();
+            var signals = brain.LoadSignals(project, root);
+            var mutators = BuiltInMutators.Create(
+                ["bitflip", "havoc", "dictionary", "splice", "cyclic"], seed: 42);
+            var decision = brain.Decide(project, signals, [], mutators, iteration: 4, root);
+
+            Assert.True(decision.Active);
+            Assert.Equal("frontier", decision.FocusKind);
+            Assert.Contains("0x401020", decision.FocusLabel ?? "", StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(decision.WhyTerms, t =>
+                t.Label.Contains("pinned focus", StringComparison.OrdinalIgnoreCase));
+            Assert.True(
+                decision.Summary.Contains("pinned focus", StringComparison.OrdinalIgnoreCase),
+                decision.Summary);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void SortFactoryMap_AlmostOpenedWhenApproachCrossedExist()
+    {
+        var targets = new List<StalkIntelligenceTargetDto>
+        {
+            new("f:low", "frontier", "door-low", 90, "", "0x1", null, null, 2, 1),
+            new("f:high", "frontier", "door-high", 40, "", "0x2", null, null, 8, 0),
+            new("s:1", "static", "parse", 85, "", "0x3", "parse", null),
+        };
+
+        var sorted = StalkIntelligenceBuilder.SortFactoryMap(targets);
+
+        Assert.Equal("door-high", sorted[0].Label);
+        Assert.Equal("door-low", sorted[1].Label);
+    }
+
+    [Fact]
+    public void SortFactoryMap_FallsBackToScoreWithoutApproachCrossed()
+    {
+        var targets = new List<StalkIntelligenceTargetDto>
+        {
+            new("f:low", "frontier", "door-low", 40, "", "0x1", null, null),
+            new("f:high", "frontier", "door-high", 90, "", "0x2", null, null),
+        };
+
+        var sorted = StalkIntelligenceBuilder.SortFactoryMap(targets);
+
+        Assert.Equal("door-high", sorted[0].Label);
+    }
+
     private static void WriteRichFrontier(string root, string project, int count, int topScore)
     {
         var dir = Path.Combine(root, "data", "stalk", project);

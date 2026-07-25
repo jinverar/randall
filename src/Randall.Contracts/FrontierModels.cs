@@ -32,4 +32,8 @@ public sealed record FrontierBranchDto(
     string? FromAddress,
     string ToAddress,
     string? Module,
-    string Detail);
+    string Detail,
+    /// <summary>Layer hits on covered predecessor(s) — "almost opened" signal.</summary>
+    int ApproachCount = 0,
+    /// <summary>Layer hits on the unexplored successor — 0 means still unopened.</summary>
+    int CrossedCount = 0);

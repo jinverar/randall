@@ -653,9 +653,10 @@ body.nav-collapsed .nav-reopen { display: flex; }
   .scare-brain-head { flex-wrap: wrap; gap: 0.5rem; }
   .scare-brain-row {
     grid-template-columns: auto 1fr;
-    grid-template-rows: auto auto auto;
+    grid-template-rows: auto auto auto auto;
   }
   .scare-brain-why { grid-column: 2; justify-self: start; }
+  .scare-brain-hunt { grid-column: 2; justify-self: end; }
   .scare-brain-breakdown { grid-column: 1 / -1; }
   .scream-canister-rack-scare { max-height: 9rem; }
   .scare-brain-c2 { padding: 0.45rem; }
@@ -676,7 +677,7 @@ body.nav-collapsed .nav-reopen { display: flex; }
   font-size: 0.84rem; line-height: 1.45;
 }
 .scare-brain-row {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 0.55rem 0.65rem; align-items: start;
+  display: grid; grid-template-columns: auto 1fr auto auto; gap: 0.55rem 0.65rem; align-items: start;
   padding: 0.55rem 0.65rem; border: 1px solid var(--stalk-border); border-radius: 8px;
   background: color-mix(in srgb, var(--stalk-panel-bg) 92%, var(--stalk-purple) 4%);
 }
@@ -704,6 +705,21 @@ body.nav-collapsed .nav-reopen { display: flex; }
 }
 .scare-brain-why:hover, .scare-brain-why[aria-expanded="true"] {
   background: color-mix(in srgb, var(--stalk-purple) 14%, var(--btn-face)); border-color: var(--stalk-purple);
+}
+.scare-brain-hunt {
+  font-size: 0.72rem; padding: 0.2rem 0.5rem; border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--stalk-blue) 45%, var(--stalk-border));
+  background: color-mix(in srgb, var(--stalk-blue) 10%, var(--btn-face));
+  color: var(--stalk-blue); cursor: pointer; white-space: nowrap;
+}
+.scare-brain-hunt:hover, .scare-brain-hunt-active {
+  background: color-mix(in srgb, var(--stalk-blue) 22%, var(--btn-face));
+  border-color: var(--stalk-blue);
+}
+.scare-brain-hunt:disabled { opacity: 0.65; cursor: default; }
+.scare-brain-almost {
+  display: inline-block; margin-left: 0.35rem; font-size: 0.62rem;
+  color: var(--stalk-green); font-family: var(--mono);
 }
 .scare-brain-breakdown {
   grid-column: 1 / -1; margin: 0.15rem 0 0; padding: 0.45rem 0.55rem; border-radius: 6px;

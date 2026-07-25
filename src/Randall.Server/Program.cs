@@ -700,6 +700,60 @@ app.MapGet("/api/stalking/{project}/intelligence", (string project) =>
     }
 });
 
+app.MapGet("/api/stalking/{project}/brain-decision", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        var snapshot = RandallBrain.TryLoadSnapshot(project);
+        var focus = RandallBrain.TryLoadFocus(project);
+        if (snapshot is null && focus is null)
+        {
+            return Results.Ok(BrainDecisionSnapshotDto.FromDecision(
+                null,
+                project,
+                emptyHint:
+                "No brain decision yet — run fuzz with Scare Door/static/oracle signals or hunt a door from the factory map."));
+        }
+
+        return Results.Ok(new
+        {
+            snapshot?.Project,
+            snapshot?.Enabled,
+            snapshot?.HasSignals,
+            snapshot?.LastDecision,
+            snapshot?.PersistedAt,
+            snapshot?.EmptyHint,
+            snapshot?.Decision,
+            focus,
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/stalking/{project}/hunt", (string project, StalkHuntRequest body) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.BadRequest(new { error = "project not allowed" });
+    if (string.IsNullOrWhiteSpace(body.FocusKind))
+        return Results.BadRequest(new { error = "focusKind required" });
+    if (string.IsNullOrWhiteSpace(body.FocusLabel))
+        return Results.BadRequest(new { error = "focusLabel required" });
+    try
+    {
+        var focus = RandallBrain.PersistFocus(project, body.FocusKind, body.FocusLabel, body.Address);
+        return Results.Ok(new { ok = true, focus });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/stalking/{project}/target-intelligence", (string project, bool? refresh) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

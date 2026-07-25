@@ -173,6 +173,11 @@ public static class FrontierEngine
                 var rarity = ComputeRarity(predAddr, layers.Count, layerHits);
                 var score = ComputeFrontierScore(cfgDistance, rarity, Math.Max(1, unseenSucc), sinkProximity);
                 var edgeKey = $"{fn.Name}:{predAddr}->{block.Address}";
+                var approach = coveredPreds.Sum(p =>
+                    layerHits.GetValueOrDefault(NormalizeAddr(p)));
+                if (approach == 0)
+                    approach = layerHits.GetValueOrDefault(NormalizeAddr(predAddr));
+                var crossed = layerHits.GetValueOrDefault(NormalizeAddr(block.Address));
 
                 yield return new FrontierBranchDto(
                     edgeKey,
@@ -186,7 +191,9 @@ public static class FrontierEngine
                     predAddr,
                     block.Address,
                     null,
-                    $"Uncovered BB {cfgDistance} hop(s) from coverage; {unseenSucc} unseen successor(s); sink×{sinkProximity:P0}.");
+                    $"Uncovered BB {cfgDistance} hop(s) from coverage; {unseenSucc} unseen successor(s); sink×{sinkProximity:P0}.",
+                    approach,
+                    crossed);
             }
         }
     }

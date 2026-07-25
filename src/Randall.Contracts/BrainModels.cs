@@ -120,6 +120,17 @@ public sealed record NextHuntDecision(
             OracleScore.Empty);
 }
 
+/// <summary>
+/// User-pinned hunt focus from Scare Floor "Hunt this door" — read at brain <c>Decide</c>.
+/// Persisted at <c>data/stalk/&lt;project&gt;/brain_focus.json</c>.
+/// </summary>
+public sealed record BrainFocusDto(
+    string Project,
+    DateTimeOffset SetAt,
+    string FocusKind,
+    string FocusLabel,
+    string? Address = null);
+
 /// <summary>API payload for live or persisted brain state.</summary>
 public sealed record BrainDecisionSnapshotDto(
     string Project,

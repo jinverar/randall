@@ -708,7 +708,7 @@ const scareBrainState = {
 };
 
 function scareBrainKindLabel(kind) {
-  if (kind === 'frontier') return 'gray door';
+  if (kind === 'frontier') return 'Scare Door';
   if (kind === 'oracle') return 'oracle';
   if (kind === 'patch') return 'patch delta';
   return 'static';
@@ -795,7 +795,7 @@ function renderScareBrainStrip(strip, fuzzStatus, brainDecision) {
       chips.push(`<span class="scare-brain-chip">coverage <strong>${strip.coveragePercent}%</strong>${escapeAttr(bb)}</span>`);
     }
     if (strip.frontierCount != null) {
-      chips.push(`<span class="scare-brain-chip">frontiers <strong>${strip.frontierCount}</strong></span>`);
+      chips.push(`<span class="scare-brain-chip">Scare Doors <strong>${strip.frontierCount}</strong></span>`);
     }
     const moods = strip.canisterMoods || {};
     const moodOrder = ['eip', 'virulent', 'toxic', 'watching', 'laughter'];
@@ -861,11 +861,17 @@ function renderScareBrainTarget(t, index) {
   const whyId = `scare-brain-why-${index}`;
   const hasBreakdown = !!(t.scoreBreakdown?.terms?.length);
   const barPct = scareBrainBarPct(t);
+  const almost = (t.approachCount > 0 || t.crossedCount > 0)
+    ? `<span class="scare-brain-almost" title="Approach minus crossed">≈ open ${Math.max(0, (t.approachCount || 0) - (t.crossedCount || 0))}</span>`
+    : '';
+  const huntBtn = t.kind === 'frontier'
+    ? `<button type="button" class="scare-brain-hunt" data-hunt-kind="${escapeAttr(t.kind)}" data-hunt-label="${escapeAttr(t.label)}" data-hunt-address="${escapeAttr(t.address || '')}" title="Pin brain focus for next fuzz">Hunt this door</button>`
+    : '';
   return `<div class="scare-brain-row" data-brain-id="${escapeAttr(t.id)}">
     <span class="scare-brain-score" title="Rank score">${t.score}</span>
     <div class="scare-brain-main">
       <div class="scare-brain-label">${escapeAttr(t.label)}
-        <span class="scare-brain-kind kind-${escapeAttr(t.kind)}">${escapeAttr(kind)}</span>${addr}
+        <span class="scare-brain-kind kind-${escapeAttr(t.kind)}">${escapeAttr(kind)}</span>${addr}${almost}
       </div>
       <div class="scare-brain-covbar" role="meter" aria-valuenow="${barPct}" aria-valuemin="0" aria-valuemax="100" title="Coverage / priority signal">
         <span class="scare-brain-covbar-fill kind-${escapeAttr(t.kind)}" style="width:${barPct}%"></span>
@@ -873,10 +879,17 @@ function renderScareBrainTarget(t, index) {
       <p class="scare-brain-detail">${escapeAttr(t.detail || '')}</p>
     </div>
     <button type="button" class="scare-brain-why" id="${whyId}" data-brain-why="${index}" aria-expanded="false" ${hasBreakdown ? '' : 'disabled title="No breakdown yet"'}>Why?</button>
+    ${huntBtn}
     <div class="scare-brain-breakdown hidden" id="${whyId}-panel" role="region" aria-labelledby="${whyId}">
       ${renderScareBrainTerms(t.scoreBreakdown)}
     </div>
   </div>`;
+}
+
+async function huntScareDoor(project, kind, label, address) {
+  const body = { focusKind: kind, focusLabel: label };
+  if (address) body.address = address;
+  await api.post(`/api/stalking/${encodeURIComponent(project)}/hunt`, body);
 }
 
 async function fetchBrainDecision(project) {
@@ -928,7 +941,7 @@ async function refreshScareFloorBrain(opts = {}) {
 
   if (!project) {
     stopScareBrainPoll();
-    if (summaryEl) summaryEl.textContent = 'Pick a project to see gray doors, static priorities, and oracle hints.';
+    if (summaryEl) summaryEl.textContent = 'Pick a project to see Scare Doors, static priorities, and oracle hints.';
     targetsEl.innerHTML = '<p class="hint scare-brain-empty">Select <strong>Working on project</strong> below — Randall reads <code>data/stalk/&lt;project&gt;/</code> on disk.</p>';
     c2El?.classList.add('hidden');
     targetIntelEl?.classList.add('hidden');
@@ -1006,10 +1019,32 @@ async function refreshScareFloorBrain(opts = {}) {
         panel.classList.toggle('hidden', open);
       });
     });
+    targetsEl.querySelectorAll('.scare-brain-hunt').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const kind = btn.dataset.huntKind;
+        const label = btn.dataset.huntLabel;
+        const address = btn.dataset.huntAddress || undefined;
+        btn.disabled = true;
+        btn.textContent = 'Pinned…';
+        try {
+          await huntScareDoor(project, kind, label, address);
+          btn.textContent = 'Hunting';
+          btn.classList.add('scare-brain-hunt-active');
+          if (decisionEl) {
+            decisionEl.innerHTML = `<strong>Randall thinks:</strong> pinned hunt → ${escapeAttr(label)}`;
+            decisionEl.classList.remove('hidden');
+          }
+        } catch (err) {
+          btn.textContent = 'Hunt this door';
+          btn.disabled = false;
+          if (summaryEl) summaryEl.textContent = `Hunt pin failed: ${err.message}`;
+        }
+      });
+    });
 
     if (footEl) {
       const parts = [];
-      if (intel.frontierSummary) parts.push(`Frontier: ${intel.frontierSummary}`);
+      if (intel.frontierSummary) parts.push(`Scare Doors: ${intel.frontierSummary}`);
       if (intel.coverageGapSummary) parts.push(intel.coverageGapSummary);
       const muts = intel.topMutators || [];
       if (muts.length) {

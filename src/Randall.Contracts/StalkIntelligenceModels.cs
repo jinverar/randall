@@ -31,4 +31,12 @@ public sealed record StalkIntelligenceTargetDto(
     string Detail,
     string? Address,
     string? FunctionName,
-    OracleScore? ScoreBreakdown);
+    OracleScore? ScoreBreakdown,
+    int ApproachCount = 0,
+    int CrossedCount = 0);
+
+/// <summary>POST body for <c>/api/stalking/{project}/hunt</c> — pin brain focus for the next fuzz run.</summary>
+public sealed record StalkHuntRequest(
+    string FocusKind,
+    string FocusLabel,
+    string? Address = null);

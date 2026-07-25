@@ -39,7 +39,9 @@ public static class StalkIntelligenceBuilder
                     f.Detail,
                     f.ToAddress,
                     f.FunctionName,
-                    BuildFrontierScoreBreakdown(f)));
+                    BuildFrontierScoreBreakdown(f),
+                    f.ApproachCount,
+                    f.CrossedCount));
             }
         }
 
@@ -105,11 +107,7 @@ public static class StalkIntelligenceBuilder
                 BuildOracleScoreBreakdown(finding)));
         }
 
-        targets = targets
-            .OrderByDescending(t => t.Score)
-            .ThenBy(t => t.Label, StringComparer.OrdinalIgnoreCase)
-            .Take(10)
-            .ToList();
+        targets = SortFactoryMap(targets);
 
         var hasData = targets.Count > 0
             || (frontier?.FrontierCount ?? 0) > 0
@@ -119,7 +117,7 @@ public static class StalkIntelligenceBuilder
         var summary = BuildSummary(frontier, hints, oracleFindings.Count, targets, mutators.Count);
         var emptyHint =
             "No stalk brain yet — export Ghidra → randall-analysis.json, run fuzz with coverage, " +
-            "then `randall stalk frontier -p <project>`. Oracle hints appear after semantic fuzz runs.";
+            "then `randall stalk frontier -p <project>`. Scare Doors appear after coverage layers.";
 
         var commandStrip = TargetIntelligenceBuilder.BuildCommandStrip(project, repoRoot);
         var targetProfile = TargetIntelligenceBuilder.TryLoad(project, repoRoot)
@@ -150,9 +148,30 @@ public static class StalkIntelligenceBuilder
             "session-fork" => $"Session fork → {f.ToAddress}",
             "edge-gap" => $"Edge gap → {f.ToAddress}",
             _ => string.IsNullOrWhiteSpace(f.FunctionName)
-                ? $"Gray door → {f.ToAddress}"
+                ? $"Unopened door → {f.ToAddress}"
                 : $"{f.FunctionName} → {f.ToAddress}",
         };
+
+    internal static List<StalkIntelligenceTargetDto> SortFactoryMap(IReadOnlyList<StalkIntelligenceTargetDto> targets)
+    {
+        var list = targets.ToList();
+        var hasApproachCrossed = list.Any(t => t.ApproachCount > 0 || t.CrossedCount > 0);
+        list = hasApproachCrossed
+            ? list
+                .OrderByDescending(AlmostOpenedScore)
+                .ThenByDescending(t => t.Score)
+                .ThenBy(t => t.Label, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : list
+                .OrderByDescending(t => t.Score)
+                .ThenBy(t => t.Label, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        return list.Take(10).ToList();
+    }
+
+    internal static int AlmostOpenedScore(StalkIntelligenceTargetDto t) =>
+        Math.Max(0, t.ApproachCount - t.CrossedCount);
 
     private static string BuildStaticDetail(RandallAnalysisFunctionDto fn)
     {
@@ -201,6 +220,9 @@ public static class StalkIntelligenceBuilder
         if (f.UnseenSuccessorCount > 0)
             terms.Add(new OracleScoreTerm("unseen successors", Math.Min(12, f.UnseenSuccessorCount * 3),
                 $"{f.UnseenSuccessorCount}"));
+        if (f.ApproachCount > 0 || f.CrossedCount > 0)
+            terms.Add(new OracleScoreTerm("almost opened", Math.Min(20, Math.Max(0, f.ApproachCount - f.CrossedCount) * 3),
+                $"approach×{f.ApproachCount} crossed×{f.CrossedCount}"));
         if (f.SinkProximity > 0)
             terms.Add(new OracleScoreTerm("sink proximity", Math.Min(15, (int)Math.Round(f.SinkProximity * 15)),
                 $"{f.SinkProximity:P0}"));
@@ -348,12 +370,12 @@ public static class StalkIntelligenceBuilder
         {
             if (mutatorCreditRows > 0)
                 return "Mutator credit from recent runs — export Ghidra map or record coverage for ranked targets.";
-            return "Randall is waiting for stalk data — no gray doors or static map yet.";
+            return "Randall is waiting for stalk data — no Scare Doors or static map yet.";
         }
 
         var parts = new List<string>();
         if (frontier?.FrontierCount > 0)
-            parts.Add($"{frontier.FrontierCount} gray door(s)");
+            parts.Add($"{frontier.FrontierCount} Scare Door(s)");
         if (hints is not null)
             parts.Add(hints.Summary);
         if (hints is not null)

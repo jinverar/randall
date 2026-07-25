@@ -13,6 +13,7 @@ namespace Randall.Infrastructure;
 public sealed class RandallBrain
 {
     public const string LastDecisionFileName = "brain_last.json";
+    public const string FocusFileName = "brain_focus.json";
 
     private static readonly ConcurrentDictionary<string, (string Kind, string? Label, int Iteration)> LastJournaledBrain =
         new(StringComparer.OrdinalIgnoreCase);
@@ -56,6 +57,9 @@ public sealed class RandallBrain
     public static string LastDecisionPath(string project, string? repoRoot = null) =>
         Path.Combine(StalkCampaignStore.ProjectDir(project, repoRoot), LastDecisionFileName);
 
+    public static string FocusPath(string project, string? repoRoot = null) =>
+        Path.Combine(StalkCampaignStore.ProjectDir(project, repoRoot), FocusFileName);
+
     public Signals LoadSignals(string project, string? repoRoot = null)
     {
         repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
@@ -80,12 +84,18 @@ public sealed class RandallBrain
         Signals signals,
         IReadOnlyList<MutatorCreditRowDto> mutatorRows,
         IReadOnlyList<IMutator> mutators,
-        int iteration)
+        int iteration,
+        string? repoRoot = null)
     {
         if (!signals.HasData)
             return NextHuntDecision.Inactive(project, iteration);
 
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
         var candidates = BuildCandidates(signals, mutatorRows);
+        var focus = TryLoadFocus(project, repoRoot);
+        if (focus is not null)
+            candidates = ApplyFocusPreference(candidates, focus, signals);
+
         if (candidates.Count == 0)
             return NextHuntDecision.Inactive(project, iteration);
 
@@ -120,6 +130,7 @@ public sealed class RandallBrain
         var breakdown = new OracleScore(total, why, top.Detail);
         var summary =
             $"Randall thinks: {top.Kind} → {top.Label} [{top.Score}]" +
+            (focus is not null ? " · pinned focus" : "") +
             (preferredMutator is not null ? $" · mutator={preferredMutator}" : "") +
             $" · corpus={corpusBias:P0} energy+{energyBoost}";
 
@@ -222,6 +233,56 @@ public sealed class RandallBrain
 
         LastJournaledBrain[key] = (decision.FocusKind, decision.FocusLabel, decision.Iteration);
         return true;
+    }
+
+    public static BrainFocusDto PersistFocus(
+        string project,
+        string focusKind,
+        string focusLabel,
+        string? address = null,
+        string? repoRoot = null)
+    {
+        if (string.IsNullOrWhiteSpace(project))
+            throw new ArgumentException("project required");
+        if (string.IsNullOrWhiteSpace(focusKind))
+            throw new ArgumentException("focusKind required");
+        if (string.IsNullOrWhiteSpace(focusLabel))
+            throw new ArgumentException("focusLabel required");
+
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var focus = new BrainFocusDto(
+            project.Trim(),
+            DateTimeOffset.UtcNow,
+            focusKind.Trim(),
+            focusLabel.Trim(),
+            string.IsNullOrWhiteSpace(address) ? null : address.Trim());
+
+        var path = FocusPath(project, repoRoot);
+        var dir = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(dir))
+            Directory.CreateDirectory(dir);
+
+        File.WriteAllText(path, JsonSerializer.Serialize(focus, JsonOptions));
+        return focus;
+    }
+
+    public static BrainFocusDto? TryLoadFocus(string project, string? repoRoot = null)
+    {
+        if (string.IsNullOrWhiteSpace(project))
+            return null;
+
+        var path = FocusPath(project, repoRoot);
+        if (!File.Exists(path))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<BrainFocusDto>(File.ReadAllText(path), JsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public static BrainDecisionSnapshotDto? TryLoadSnapshot(string project, string? repoRoot = null)
@@ -452,7 +513,7 @@ public sealed class RandallBrain
 
         var parts = new List<string>();
         if (frontier?.FrontierCount > 0)
-            parts.Add($"{frontier.FrontierCount} gray door(s)");
+            parts.Add($"{frontier.FrontierCount} Scare Door(s)");
         if (hints is not null)
             parts.Add("static map");
         if (oracleCount > 0)
@@ -513,9 +574,68 @@ public sealed class RandallBrain
             "session-fork" => $"Session fork → {f.ToAddress}",
             "edge-gap" => $"Edge gap → {f.ToAddress}",
             _ => string.IsNullOrWhiteSpace(f.FunctionName)
-                ? $"Gray door → {f.ToAddress}"
+                ? $"Unopened door → {f.ToAddress}"
                 : $"{f.FunctionName} → {f.ToAddress}",
         };
+
+    internal static List<HuntCandidate> ApplyFocusPreference(
+        IReadOnlyList<HuntCandidate> candidates,
+        BrainFocusDto focus,
+        Signals signals)
+    {
+        var list = candidates.ToList();
+        var idx = list.FindIndex(c => MatchesFocus(c.Kind, c.Label, focus));
+        if (idx >= 0)
+        {
+            var match = list[idx];
+            var boosted = Math.Max(match.Score, list.Max(c => c.Score) + 8);
+            var terms = new List<OracleScoreTerm>(match.Terms)
+            {
+                new("pinned focus", 12, focus.FocusLabel),
+            };
+            list.RemoveAt(idx);
+            list.Insert(0, match with { Score = boosted, Terms = terms });
+            return list;
+        }
+
+        if (signals.Frontier?.Frontiers is { Count: > 0 } frontiers
+            && focus.FocusKind.Equals("frontier", StringComparison.OrdinalIgnoreCase))
+        {
+            var frontier = frontiers.FirstOrDefault(f =>
+                (!string.IsNullOrWhiteSpace(focus.Address)
+                 && f.ToAddress.Equals(focus.Address, StringComparison.OrdinalIgnoreCase))
+                || LabelFrontier(f).Equals(focus.FocusLabel, StringComparison.OrdinalIgnoreCase));
+
+            if (frontier is not null)
+            {
+                var richnessBoost = FrontierRichnessBoost(signals);
+                var score = Math.Max(
+                    frontier.Score + richnessBoost + 12,
+                    list.Count > 0 ? list.Max(c => c.Score) + 5 : frontier.Score + 12);
+                var terms = new List<OracleScoreTerm>(BuildFrontierTerms(frontier, richnessBoost))
+                {
+                    new("pinned focus", 12, focus.FocusLabel),
+                };
+                list.Insert(0, new HuntCandidate(
+                    "frontier",
+                    LabelFrontier(frontier),
+                    score,
+                    frontier.Detail,
+                    terms));
+            }
+        }
+
+        return list;
+    }
+
+    private static bool MatchesFocus(HuntCandidate candidate, BrainFocusDto focus) =>
+        MatchesFocus(candidate.Kind, candidate.Label, focus);
+
+    private static bool MatchesFocus(string kind, string label, BrainFocusDto focus) =>
+        kind.Equals(focus.FocusKind, StringComparison.OrdinalIgnoreCase)
+        && (label.Equals(focus.FocusLabel, StringComparison.OrdinalIgnoreCase)
+            || (!string.IsNullOrWhiteSpace(focus.Address)
+                && label.Contains(focus.Address, StringComparison.OrdinalIgnoreCase)));
 
     private static int FrontierRichnessBoost(Signals signals)
     {
