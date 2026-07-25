@@ -65,6 +65,30 @@ When `fuzz.powerSchedule: true` (default), Randall tracks **energy** per corpus 
 
 Corpus state: `data/corpus/<target>/corpus_energy.txt`
 
+## Mutator credit (bandit-lite)
+
+When `fuzz.mutatorCredit: true` (default), Randall tracks which **mutators** produce useful outcomes and softly biases random mutator selection toward them — similar in spirit to corpus energy, but for operators instead of seeds.
+
+| Signal | Score term |
+|--------|------------|
+| New coverage edges | +10 per edge |
+| Unique crash (deduped input) | +100 per crash |
+
+**Selection bias:** each mutator gets roulette weight `max(1, floor(score / runs) + 1)`. Cold mutators stay at weight 1 (exploration never drops to zero). Joker and exhaustive modes still override selection when active.
+
+**Persistence**
+
+- Cross-run: `data/corpus/<target>/mutator_credit.txt`
+- Per run (when execution log is on): `data/runs/<runId>/mutator_stats.json`
+
+At the end of every fuzz run the CLI prints a mutator leaderboard (runs, edges, unique crashes, score, selection weight). Disable bias but keep stats with `fuzz.mutatorCredit: false`.
+
+```yaml
+fuzz:
+  mutatorCredit: true
+  powerSchedule: true
+```
+
 ## Session flows (stateful TCP)
 
 Random single-command fuzzing misses bugs that need a **probe** first (banner, STAT, GMON keepalive):
