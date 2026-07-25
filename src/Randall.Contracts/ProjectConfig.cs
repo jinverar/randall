@@ -235,6 +235,12 @@ public sealed class FuzzConfig
     /// See docs/GHIDRA_INTEGRATION.md.
     /// </summary>
     public bool CaptureBinaryDrcov { get; set; }
+    /// <summary>
+    /// Soft corpus energy boost when novel drcov edges arrive while Ghidra static map
+    /// (<c>data/stalk/&lt;project&gt;/randall-analysis.json</c>) shows uncovered high-priority targets.
+    /// Does not rewrite mutators — nudges power schedule only. Disable with <c>false</c>.
+    /// </summary>
+    public bool GhidraStaticBias { get; set; } = true;
     /// <summary>AFL-style energy: favor corpus entries that found new coverage.</summary>
     public bool PowerSchedule { get; set; } = true;
     /// <summary>Max stacked mutation rounds for havoc mutator.</summary>

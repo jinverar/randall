@@ -903,6 +903,7 @@ public sealed class FuzzEngine
                         {
                             corpus.AddPriority(payload);
                             corpusAdded++;
+                            ApplyGhidraStaticBias(project, corpus, payload, newEdges, verbose, progress, iterations);
                         }
                     }
                 }
@@ -917,6 +918,7 @@ public sealed class FuzzEngine
                     {
                         corpus.AddPriority(payload);
                         corpusAdded++;
+                        ApplyGhidraStaticBias(project, corpus, payload, newEdges, verbose, progress, iterations);
                     }
 
                     // Dragon Dance sidecar: binary drcov (no -dump_text) on novel / crash
@@ -1768,6 +1770,32 @@ public sealed class FuzzEngine
                 $"  Joker: chance={JokerEngine.EffectiveChance(project):0.00} " +
                 $"maxStack={j?.MaxStack ?? 0} wildBytes={j?.WildBytes == true} " +
                 $"flipSessionBias={j?.FlipSessionBias == true} encoreLeft={j?.EncoreIterations ?? 0}");
+        }
+    }
+
+    private static void ApplyGhidraStaticBias(
+        ProjectConfig project,
+        CorpusTracker corpus,
+        byte[] payload,
+        int newEdges,
+        bool verbose,
+        IFuzzProgressSink? progress,
+        int iterations)
+    {
+        var boost = GhidraStaticMapBias.NovelCoverageEnergyBoost(
+            project.Name,
+            newEdges,
+            project.Fuzz.GhidraStaticBias,
+            CrashCatalog.FindRepoRoot());
+        if (boost <= 0)
+            return;
+
+        corpus.BoostEnergy(payload, boost);
+        if (verbose)
+        {
+            FuzzAnalystLog.Info(progress,
+                $"  Ghidra static bias energy +{boost} (uncovered targets in randall-analysis.json)",
+                iterations);
         }
     }
 }

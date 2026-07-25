@@ -143,14 +143,17 @@ Each finding: `rule_id`, `rule_class`, `severity`, `input_hash`, `expected_relat
 
 ## Static target map (Ghidra)
 
-When `data/stalk/<project>/randall-analysis.json` exists (from `randall stalk ghidra-analyze`), the Oracle CLI surfaces **static fuzz priorities** alongside runtime findings:
+When `data/stalk/<project>/randall-analysis.json` exists (from `randall stalk ghidra-analyze`), the Oracle CLI surfaces **static fuzz priorities** and **coverage gaps** alongside runtime findings:
 
 ```bash
 randall stalk ghidra-analyze -p vulnserver --binary path/to/target
+# fuzz with coverageGuided + stalk layers (or corpus edges) to populate overlay
 randall oracles -p vulnserver
 ```
 
-The map lists functions, sink xrefs, and a `fuzzPriority` heuristic (complexity + dangerous-call proximity + input reachability). v1 does **not** rewrite the fuzz schedule from static data alone — it proves the Ghidra → Oracle pipe. Later milestones can bias stalk/mutation toward uncovered high-priority functions and correlate crash RIP → decompiled context.
+The map lists functions, per-function CFG blocks, sink call graph edges, and a `fuzzPriority` heuristic. **v2** overlays stalk/drcov edges onto static BBs and recomputes priority using sink risk × complexity × uncovered CFG distance ÷ coverage fraction (blended with the v1 static score). Optional `fuzz.ghidraStaticBias: true` softly boosts corpus energy when novel edges arrive while high-priority functions remain uncovered.
+
+This does **not** rewrite the full fuzz schedule from static data alone — it matures the Ghidra → Oracle pipe and nudges exploration. Crash-RIP → decompiled context and GhidraMCP queries are separate milestones.
 
 See [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md) for headless vs Script Manager export and companion tools (GhidraMCP, BinExport).
 

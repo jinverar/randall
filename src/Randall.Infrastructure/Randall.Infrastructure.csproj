@@ -15,4 +15,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Randall.Tests" />
+  </ItemGroup>
+
 </Project>

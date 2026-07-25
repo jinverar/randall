@@ -62,6 +62,10 @@ def is_dangerous(name):
     return False
 
 
+def sink_related(name):
+    return is_dangerous(name) or is_input_source(name)
+
+
 def sink_risk(name):
     if not name:
         return 50
@@ -99,6 +103,65 @@ def count_basic_blocks(func, bbm, monitor):
     return count
 
 
+def export_function_cfg(func, bbm, monitor):
+    body = func.getBody()
+    if body is None or body.isEmpty():
+        return {"blocks": []}
+
+    code_blocks = []
+    addr_to_idx = {}
+    iter_blocks = bbm.getCodeBlocksContaining(body, monitor)
+    while iter_blocks.hasNext():
+        cb = iter_blocks.next()
+        start = addr_hex(cb.getMinAddress())
+        size = int(cb.getMaxAddress().subtract(cb.getMinAddress())) + 1
+        addr_to_idx[start] = len(code_blocks)
+        code_blocks.append({
+            "address": start,
+            "size": size,
+            "successors": [],
+            "predecessors": [],
+        })
+
+    # Re-walk to wire edges (BasicBlockModel iterator is not indexable)
+    iter_blocks = bbm.getCodeBlocksContaining(body, monitor)
+    while iter_blocks.hasNext():
+        cb = iter_blocks.next()
+        start = addr_hex(cb.getMinAddress())
+        if start not in addr_to_idx:
+            continue
+        idx = addr_to_idx[start]
+        block = code_blocks[idx]
+
+        dest_it = bbm.getDestinations(cb, monitor)
+        while dest_it.hasNext():
+            ref = dest_it.next()
+            dest = ref.getDestinationBlock()
+            if dest is None:
+                continue
+            ds = addr_hex(dest.getMinAddress())
+            if ds in addr_to_idx and ds not in block["successors"]:
+                block["successors"].append(ds)
+                di = addr_to_idx[ds]
+                if start not in code_blocks[di]["predecessors"]:
+                    code_blocks[di]["predecessors"].append(start)
+
+        src_it = bbm.getSources(cb, monitor)
+        while src_it.hasNext():
+            ref = src_it.next()
+            src = ref.getSourceBlock()
+            if src is None:
+                continue
+            ss = addr_hex(src.getMinAddress())
+            if ss in addr_to_idx and ss not in block["predecessors"]:
+                block["predecessors"].append(ss)
+                si = addr_to_idx[ss]
+                if start not in code_blocks[si]["successors"]:
+                    code_blocks[si]["successors"].append(start)
+
+    return {"blocks": code_blocks}
+
+
 def callee_names(func, listing, fm):
     names = set()
     start = func.getEntryPoint()
@@ -119,6 +182,40 @@ def callee_names(func, listing, fm):
                             names.add(sym.getName())
         addr = addr.next()
     return sorted(names)
+
+
+def collect_call_edges(func, listing, fm):
+    edges = []
+    start = func.getEntryPoint()
+    end = func.getBody().getMaxAddress()
+    caller = func.getName()
+    addr = start
+    while addr is not None and addr.compareTo(end) <= 0:
+        cu = listing.getCodeUnitAt(addr)
+        if cu is not None:
+            for ref in cu.getReferencesFrom():
+                if not ref.getReferenceType().isCall():
+                    continue
+                to = ref.getToAddress()
+                callee_name = None
+                callee = fm.getFunctionAt(to)
+                if callee is not None:
+                    callee_name = callee.getName()
+                else:
+                    sym = getSymbolAt(to)
+                    if sym is not None:
+                        callee_name = sym.getName()
+                if callee_name is None:
+                    continue
+                if not (sink_related(callee_name) or sink_related(caller)):
+                    continue
+                edges.append({
+                    "caller": caller,
+                    "callee": callee_name,
+                    "callSite": addr_hex(ref.getFromAddress()),
+                })
+        addr = addr.next()
+    return edges
 
 
 def caller_count(func, ref_mgr):
@@ -154,7 +251,6 @@ def export_analysis(output_path):
     listing = prog.getListing()
     ref_mgr = prog.getReferenceManager()
     sym_table = prog.getSymbolTable()
-    ext_mgr = prog.getExternalManager()
     bbm = BasicBlockModel(prog)
     monitor = ConsoleTaskMonitor()
 
@@ -162,6 +258,7 @@ def export_analysis(output_path):
     exports_list = []
     sink_index = {}
     xrefs = []
+    call_graph = []
 
     # External / import symbols
     for sym in sym_table.getExternalSymbols():
@@ -172,7 +269,7 @@ def export_analysis(output_path):
         lib = ext_loc.getLibraryName() if ext_loc is not None else ""
         addr = addr_hex(sym.getAddress()) if sym.getAddress() is not None else ""
         imports_list.append({"library": lib, "name": name, "address": addr})
-        if is_dangerous(name) or is_input_source(name):
+        if sink_related(name):
             kind = "input" if is_input_source(name) else "sink"
             sink_index[name] = {
                 "name": name,
@@ -208,6 +305,9 @@ def export_analysis(output_path):
             input_reachable_funcs.add(name)
 
         priority = compute_priority(bb_count, complexity, dangerous, reaches_input, callers)
+        cfg = export_function_cfg(func, bbm, monitor)
+        call_graph.extend(collect_call_edges(func, listing, fm))
+
         functions.append({
             "name": name,
             "address": addr_hex(entry),
@@ -220,10 +320,11 @@ def export_analysis(output_path):
             "hasDangerousCalls": len(dangerous) > 0,
             "dangerousCalls": dangerous,
             "fuzzPriority": priority,
+            "cfg": cfg,
         })
 
         for callee in callees:
-            if is_dangerous(callee) or is_input_source(callee):
+            if sink_related(callee):
                 xrefs.append({
                     "fromFunction": name,
                     "fromAddress": addr_hex(entry),
@@ -235,7 +336,7 @@ def export_analysis(output_path):
                     if name not in sink_index[callee]["callers"]:
                         sink_index[callee]["callers"].append(name)
 
-    # Propagate input reachability backward (cheap v1: callees that lead to input sources)
+    # Propagate input reachability backward
     changed = True
     while changed:
         changed = False
@@ -255,12 +356,22 @@ def export_analysis(output_path):
 
     sinks = sorted(sink_index.values(), key=lambda s: (-s["risk"], s["name"]))
 
+    # Dedupe call graph
+    seen_cg = set()
+    deduped_cg = []
+    for edge in call_graph:
+        key = (edge["caller"], edge["callee"], edge["callSite"])
+        if key in seen_cg:
+            continue
+        seen_cg.add(key)
+        deduped_cg.append(edge)
+
     exe = prog.getExecutablePath()
     if exe is None or exe == "":
         exe = prog.getName()
 
     doc = {
-        "version": "1",
+        "version": "2",
         "binary": exe,
         "binarySha256": None,
         "imageBase": addr_hex(prog.getImageBase()),
@@ -271,12 +382,14 @@ def export_analysis(output_path):
         "exports": exports_list,
         "sinks": sinks,
         "xrefs": xrefs,
+        "callGraph": deduped_cg,
     }
 
     with open(output_path, "w") as fh:
         json.dump(doc, fh, indent=2)
 
-    print("Randfuzz: wrote %s (%d functions, %d sinks)" % (output_path, len(functions), len(sinks)))
+    print("Randfuzz: wrote %s (%d functions, %d sinks, %d call-graph edges, v2 CFG)" % (
+        output_path, len(functions), len(sinks), len(deduped_cg)))
     return doc
 
 
