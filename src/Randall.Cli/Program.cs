@@ -2566,10 +2566,10 @@ static async Task<int> StalkGhidraAnalyze(string[] args)
                 : GhidraAnalysisBridge.AnalysisPath(project, root);
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             File.Copy(src, dest, overwrite: true);
-            var doc = GhidraAnalysisBridge.LoadOrThrow(dest);
+            var importedDoc = GhidraAnalysisBridge.LoadOrThrow(dest, project, root);
             if (diffFrom is not null)
-                doc = await GhidraAnalysisBridge.ApplyDiffFromBaselineAsync(doc, diffFrom, dest, bsimJson);
-            PrintGhidraAnalyzeSummary(project, dest, doc, fromHeadless: false);
+                importedDoc = await GhidraAnalysisBridge.ApplyDiffFromBaselineAsync(importedDoc, diffFrom, dest, bsimJson);
+            PrintGhidraAnalyzeSummary(project, dest, importedDoc, fromHeadless: false);
             return 0;
         }
 
@@ -2591,10 +2591,10 @@ static async Task<int> StalkGhidraAnalyze(string[] args)
             root,
             skipHeadless: false);
         var outPath = result.OutputPath;
-        var doc = GhidraAnalysisBridge.LoadOrThrow(outPath);
+        var analyzedDoc = GhidraAnalysisBridge.LoadOrThrow(outPath, project, root);
         if (diffFrom is not null)
-            doc = await GhidraAnalysisBridge.ApplyDiffFromBaselineAsync(doc, diffFrom, outPath, bsimJson);
-        PrintGhidraAnalyzeSummary(project, outPath, doc, result.FromHeadless);
+            analyzedDoc = await GhidraAnalysisBridge.ApplyDiffFromBaselineAsync(analyzedDoc, diffFrom, outPath, bsimJson);
+        PrintGhidraAnalyzeSummary(project, outPath, analyzedDoc, result.FromHeadless);
         return 0;
     }
     catch (Exception ex)

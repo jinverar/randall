@@ -238,6 +238,16 @@ public static class LabDoctor
                 ? (ghidra.JavaHome is not null ? $"JAVA_HOME / JDK → {ghidra.JavaHome}" : "java on PATH")
                 : "JDK 21 recommended for Ghidra — winget Microsoft.OpenJDK.21 or scripts/install-ghidra.ps1");
 
+        var binexport = BinExportTools.Discover(CrashCatalog.FindRepoRoot());
+        Add("binexport", binexport.IsBinExportExtensionPresent ? "ok" : "warn",
+            binexport.IsBinExportExtensionPresent
+                ? (binexport.BinExportExtensionDir ?? binexport.CachedGhidraZip ?? "BinExport staged")
+                : $"optional patch-hunt — {BinExportTools.InstallHint}");
+        Add("bindiff", binexport.IsBinDiffAvailable ? "ok" : "warn",
+            binexport.IsBinDiffAvailable
+                ? $"{binexport.BinDiffPath} · JSON merge works without BinDiff (stalk ghidra-diff)"
+                : "optional — compare .BinExport files; stalk ghidra-diff needs no binary");
+
         var stalkMode = (project.Fuzz.StalkMode ?? "auto").Trim().ToLowerInvariant();
         var native = new NativeStalkRunner();
         if (stalkMode == "external" && !dr.IsAvailable)
