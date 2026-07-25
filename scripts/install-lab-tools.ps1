@@ -8,6 +8,7 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SysinternalsOnly
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -SkipGcc -SkipDynamoRio -SkipFrida
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra   # optional RE (~560 MB)
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-lab-tools.ps1 -Ghidra -GhidraExtensions
 [CmdletBinding()]
 param(
     [switch]$Force,
@@ -21,7 +22,9 @@ param(
     [switch]$SkipApiMonitor,
     [switch]$SkipPython,
     # Optional: Ghidra RE GUI (~560 MB + JDK 21). Not part of default lab install.
-    [switch]$Ghidra
+    [switch]$Ghidra,
+    # Optional: build/install Dragon Dance extension (requires Ghidra + JDK 21 + Gradle).
+    [switch]$GhidraExtensions
 )
 
 $ErrorActionPreference = "Stop"
@@ -142,10 +145,20 @@ if (-not $SkipDebuggers -and -not $SysinternalsOnly) {
 if ($Ghidra -and -not $SysinternalsOnly) {
     $ghArgs = @()
     if ($Force) { $ghArgs += "-Force" }
+    if ($GhidraExtensions) { $ghArgs += "-DragonDance" }
     Invoke-Step -Name "Ghidra (optional RE)" -ScriptPath (Join-Path $Scripts "install-ghidra.ps1") -ScriptArgs $ghArgs
 } else {
     Write-Host ""
     Write-Host "======== Ghidra (optional RE) ======== (skipped — pass -Ghidra to install ~560 MB)" -ForegroundColor DarkGray
+}
+
+if ($GhidraExtensions -and -not $Ghidra -and -not $SysinternalsOnly) {
+    $extArgs = @()
+    if ($Force) { $extArgs += "-Force" }
+    Invoke-Step -Name "Ghidra extensions (Dragon Dance)" -ScriptPath (Join-Path $Scripts "install-ghidra-extensions.ps1") -ScriptArgs $extArgs
+} elseif (-not $GhidraExtensions) {
+    Write-Host ""
+    Write-Host "======== Ghidra extensions ======== (skipped — pass -GhidraExtensions with -Ghidra)" -ForegroundColor DarkGray
 }
 
 Write-Host ""

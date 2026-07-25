@@ -7,13 +7,15 @@
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1 -Skip
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1 -ZipPath C:\Users\007\Downloads\ghidra_12.1.2_PUBLIC_20260605.zip
 #   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1 -Force
+#   powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1 -DragonDance
 [CmdletBinding()]
 param(
     [string]$Version = "",
     [string]$ZipPath = "",
     [switch]$Skip,
     [switch]$Force,
-    [switch]$SkipJdk
+    [switch]$SkipJdk,
+    [switch]$DragonDance
 )
 
 $ErrorActionPreference = "Stop"
@@ -255,6 +257,31 @@ function Write-ManualHints {
     Write-Host "  Docs: docs/GHIDRA_INTEGRATION.md"
 }
 
+function Invoke-OptionalDragonDance {
+    if (-not $DragonDance) { return 0 }
+    if (-not (Test-GhidraInstalled $Dest) -and -not (Test-Path $Marker)) {
+        Write-GhidraLog "-DragonDance skipped — Ghidra app not installed yet." "Warn"
+        return 0
+    }
+    Write-Host ""
+    Write-Host "======== Dragon Dance (optional extension) ========" -ForegroundColor Cyan
+    $extScript = Join-Path $PSScriptRoot "install-ghidra-extensions.ps1"
+    if (-not (Test-Path $extScript)) {
+        Write-GhidraLog "Missing $extScript" "Warn"
+        return 1
+    }
+    $extArgs = @("-File", $extScript)
+    if ($Force) { $extArgs += "-Force" }
+    if ($SkipJdk) { $extArgs += "-SkipJdk" }
+    $psExe = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($psExe) {
+        & $psExe.Source -NoProfile -ExecutionPolicy Bypass @extArgs
+    } else {
+        & $extScript
+    }
+    return $LASTEXITCODE
+}
+
 # --- main ---
 
 if ($Skip) {
@@ -277,6 +304,8 @@ if ((Test-Path $Marker) -and -not $Force) {
     Write-Host ""
     Write-Host "Script Manager → add: $ScriptsDir"
     Write-Host "Doctor: dotnet run --project src\Randall.Cli -- doctor -c projects\vulnserver.yaml"
+    $dd = Invoke-OptionalDragonDance
+    if ($dd -ne 0) { exit $dd }
     exit 0
 }
 
@@ -290,6 +319,8 @@ if (-not $Force) {
         Install-FromExtractRoot $existing.FullName
         Add-Result "ghidra" "installed" $Marker
         Ensure-Jdk | Out-Null
+        $dd = Invoke-OptionalDragonDance
+        if ($dd -ne 0) { exit $dd }
         exit 0
     }
 }
@@ -318,6 +349,8 @@ if ($localZip) {
     Write-Host ""
     Write-Host "Script Manager → add: $ScriptsDir"
     Write-Host "Doctor: dotnet run --project src\Randall.Cli -- doctor -c projects\vulnserver.yaml"
+    $dd = Invoke-OptionalDragonDance
+    if ($dd -ne 0) { exit $dd }
     exit 0
 }
 
@@ -346,6 +379,8 @@ if ((Test-Path $zip) -and -not $Force) {
         Add-Result "ghidra" "installed" $Marker
         Write-Host ""
         Write-Host "Script Manager → add: $ScriptsDir"
+        $dd = Invoke-OptionalDragonDance
+        if ($dd -ne 0) { exit $dd }
         exit 0
     }
 }
@@ -395,4 +430,6 @@ Write-Host "Docs:    docs/GHIDRA_INTEGRATION.md"
 
 $failed = @($script:Results | Where-Object { $_.Status -eq "failed" })
 if ($failed.Count -gt 0) { exit 1 }
+$dd = Invoke-OptionalDragonDance
+if ($dd -ne 0) { exit $dd }
 exit 0

@@ -17,6 +17,15 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra.ps1
 
 Target: `tools/ghidra-app/ghidraRun.bat` (gitignored). Randfuzz Python importers stay in **this** folder (`tools/ghidra/`).
 
+**Dragon Dance** (optional, binary drcov only):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\install-ghidra-extensions.ps1
+# or with Ghidra: ...\install-ghidra.ps1 -DragonDance
+```
+
+See [docs/GHIDRA_INTEGRATION.md](../../docs/GHIDRA_INTEGRATION.md) for plugin comparison and manual build steps.
+
 **Linux** — install from your package manager or extract a [PUBLIC release zip](https://github.com/NationalSecurityAgency/ghidra/releases) under `tools/ghidra-app/`.
 
 ### Script Manager (required for coloring)

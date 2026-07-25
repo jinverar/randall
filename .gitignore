@@ -25,6 +25,10 @@ tools/dynamorio/
 tools/DynamoRIO-*/
 tools/ghidra-app/
 tools/ghidra_*PUBLIC*/
+tools/ghidra-extensions/src/
+tools/ghidra-extensions/dist/
+tools/ghidra-extensions/*.installed.json
+tools/ghidra-extensions/dragondance.installed.json
 tools/mingw64/
 tools/*.exe
 tools/API Monitor/
