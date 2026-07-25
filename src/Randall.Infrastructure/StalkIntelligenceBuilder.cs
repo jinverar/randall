@@ -124,6 +124,7 @@ public static class StalkIntelligenceBuilder
         var commandStrip = TargetIntelligenceBuilder.BuildCommandStrip(project, repoRoot);
         var targetProfile = TargetIntelligenceBuilder.TryLoad(project, repoRoot)
             ?? TargetIntelligenceBuilder.Build(project, repoRoot, persist: true);
+        var lastBrain = RandallBrain.TryLoadSnapshot(project, repoRoot)?.LastDecision;
 
         return new StalkIntelligenceDto(
             project,
@@ -139,7 +140,8 @@ public static class StalkIntelligenceBuilder
             mutators.Take(5).ToList(),
             mutatorBias,
             commandStrip,
-            targetProfile);
+            targetProfile,
+            lastBrain);
     }
 
     private static string LabelForFrontier(FrontierBranchDto f) =>
@@ -168,7 +170,10 @@ public static class StalkIntelligenceBuilder
                        (string.IsNullOrWhiteSpace(f.Command) ? "" : $" · {f.Command}");
         if (f.Fault is null)
             return baseText;
-        return $"{baseText} · fault {f.Fault.Kind}/{f.Fault.Source}";
+        var faultLine = string.IsNullOrWhiteSpace(f.Fault.Summary)
+            ? f.Fault.Kind.ToString()
+            : f.Fault.Summary;
+        return $"{baseText} · fault {f.Fault.Kind}/{f.Fault.Source}: {faultLine}";
     }
 
     private static int ScoreOracleFinding(OracleFindingDto f) =>

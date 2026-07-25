@@ -46,6 +46,8 @@ public class CrashIntelAdvisorTests
             r.Contains("shellcode", StringComparison.OrdinalIgnoreCase));
         Assert.Contains("Triage", intel.Disclaimer, StringComparison.OrdinalIgnoreCase);
 
+        Assert.Contains("PRIMARY FAULT", intel.Findings[0], StringComparison.OrdinalIgnoreCase);
+
         var text = CrashIntelAdvisor.FormatConsole(intel);
         Assert.Contains("RECIPE RECOMMENDATIONS", text);
         Assert.Contains("COVERAGE / DEPTH", text);

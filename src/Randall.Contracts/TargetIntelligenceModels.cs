@@ -34,7 +34,28 @@ public sealed record TargetIntelligenceDynamicDto(
     int UniqueClusters,
     int OracleFindingCount,
     string? LastRunId,
-    DateTimeOffset? LastRunAt);
+    DateTimeOffset? LastRunAt,
+    int RppObservationCount = 0,
+    int BusObservationCount = 0,
+    string? LastRefreshSource = null,
+    int HuntJournalEntries = 0);
+
+/// <summary>One line in <c>data/stalk/&lt;project&gt;/hunt_journal.jsonl</c> — brain decisions and write-back events.</summary>
+public sealed record HuntJournalEntry(
+    string At,
+    string Source,
+    string Summary,
+    string? RunId = null,
+    IReadOnlyDictionary<string, object?>? Data = null);
+
+/// <summary>Lightweight runtime counters merged into target intelligence on refresh.</summary>
+public sealed record TargetIntelligenceCountersDto(
+    int RppObservationCount,
+    int BusObservationCount,
+    string? LastRefreshSource,
+    string? LastRppAt,
+    string? LastRppPlugin,
+    int HuntJournalEntries);
 
 public sealed record TargetIntelligenceFrontierDto(
     int Count,
@@ -45,7 +66,13 @@ public sealed record TargetIntelligenceCrashDto(
     int Total,
     int UniqueClusters,
     IReadOnlyDictionary<string, int> MoodCounts,
-    int MaxScreamScore);
+    int MaxScreamScore,
+    /// <summary>Most common primary fault kind across saved crashes.</summary>
+    string? DominantFaultKind = null,
+    /// <summary>Count of crashes whose primary fault is sanitizer-sourced.</summary>
+    int SanitizerFaultCount = 0,
+    /// <summary>Histogram of primary fault kinds (AccessViolation, Sanitizer, …).</summary>
+    IReadOnlyDictionary<string, int>? FaultKindCounts = null);
 
 public sealed record TargetIntelligenceOracleDto(
     int FindingCount,

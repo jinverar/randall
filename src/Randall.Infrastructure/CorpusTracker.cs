@@ -79,9 +79,10 @@ public sealed class CorpusTracker(string corpusDir)
         PersistEnergy();
     }
 
-    public byte[] PickSeed(IReadOnlyList<byte[]> seeds, Random rng, bool powerSchedule = true)
+    public byte[] PickSeed(IReadOnlyList<byte[]> seeds, Random rng, bool powerSchedule = true, double priorityBias = 0.65)
     {
-        if (_priority.Count > 0 && rng.NextDouble() < 0.65)
+        priorityBias = Math.Clamp(priorityBias, 0.5, 0.9);
+        if (_priority.Count > 0 && rng.NextDouble() < priorityBias)
         {
             if (powerSchedule && _energy.Count > 0)
                 return WeightedPick(_priority, rng);

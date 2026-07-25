@@ -1173,6 +1173,35 @@ app.MapPost("/api/case/update-project", (CaseUpdateProjectRequest request) =>
 
 app.MapGet("/api/fuzz/status", (FuzzSessionManager sessions) => sessions.Status);
 
+app.MapGet("/api/fuzz/brain", (string? project) =>
+{
+    try
+    {
+        var name = project?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+            return Results.BadRequest(new { error = "project query parameter required" });
+
+        var snapshot = RandallBrain.TryLoadSnapshot(name);
+        if (snapshot is null)
+        {
+            return Results.Ok(new BrainDecisionSnapshotDto(
+                name,
+                Enabled: true,
+                HasSignals: false,
+                LastDecision: null,
+                PersistedAt: null,
+                EmptyHint:
+                "No brain decision yet — run fuzz with frontier/static/oracle/scream data or `randall stalk frontier`."));
+        }
+
+        return Results.Ok(snapshot);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/fuzz/logs", (FuzzLiveLogBuffer liveLog, FuzzSessionManager sessions) =>
 {
     var status = sessions.Status;

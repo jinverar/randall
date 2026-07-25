@@ -97,7 +97,8 @@ public class CrashIntelligenceBuilderTests
             null, null, null, null, null, DateTimeOffset.UtcNow);
         var intel = new CrashIntelligenceDto(
             "low", 90, "k", 1, 2, "fn+0x10", 4, OracleScore.Empty,
-            true, true, DateTimeOffset.UtcNow, 1, null, 55);
+            true, true, DateTimeOffset.UtcNow, 1, null, 55,
+            new FaultSignal(FaultSignalKind.AccessViolation, 0.9, "high", FaultSignalSource.CrashTriage, "AV @ dead"));
 
         var enriched = CrashIntelligenceBuilder.WithListIntelligence(summary, intel);
 
@@ -105,5 +106,7 @@ public class CrashIntelligenceBuilderTests
         Assert.Equal(90, enriched.Novelty);
         Assert.Equal(0, enriched.OracleScoreTotal);
         Assert.Equal(1, enriched.SeenCount);
+        Assert.Equal("AccessViolation", enriched.PrimaryFaultKind);
+        Assert.NotNull(enriched.PrimaryFaultSummary);
     }
 }

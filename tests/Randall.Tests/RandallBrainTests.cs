@@ -1,0 +1,300 @@
+using System.Text.Json;
+using Randall.Contracts;
+using Randall.Infrastructure;
+using Randall.Infrastructure.Mutators;
+using Xunit;
+
+namespace Randall.Tests;
+
+public class RandallBrainTests
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    [Fact]
+    public void ShouldActivate_WhenFrontierExists()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "brain-frontier";
+            WriteFrontier(root, project, score: 72);
+
+            var brain = new RandallBrain();
+            var signals = brain.LoadSignals(project, root);
+            var projectCfg = new ProjectConfig { Name = project, Fuzz = new FuzzConfig { Brain = true } };
+
+            Assert.True(signals.HasData);
+            Assert.True(RandallBrain.ShouldActivate(projectCfg, signals));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void Decide_PrefersFrontier_WithExplainableTerms()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "brain-pick";
+            WriteFrontier(root, project, score: 88);
+            WriteStaticMap(root, project, fuzzPriority: 55);
+
+            var brain = new RandallBrain();
+            var signals = brain.LoadSignals(project, root);
+            var mutators = BuiltInMutators.Create(
+                ["bitflip", "havoc", "dictionary", "splice", "cyclic"], seed: 42);
+            var decision = brain.Decide(project, signals, [], mutators, iteration: 3);
+
+            Assert.True(decision.Active);
+            Assert.Equal("frontier", decision.FocusKind);
+            Assert.Contains("frontier rank", decision.WhyTerms[0].Label, StringComparison.OrdinalIgnoreCase);
+            Assert.True(decision.CorpusPriorityBias >= 0.78);
+            Assert.True(decision.RecommendedEnergyBoost >= 3);
+            Assert.Contains("Randall thinks:", decision.Summary, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void Decide_StaticMap_PrefersDictionaryMutator()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "brain-static";
+            WriteStaticMap(root, project, fuzzPriority: 91);
+
+            var brain = new RandallBrain();
+            var signals = brain.LoadSignals(project, root);
+            var mutators = BuiltInMutators.Create(
+                ["bitflip", "havoc", "dictionary", "splice", "cyclic"], seed: 42);
+            var decision = brain.Decide(project, signals, [], mutators, iteration: 1);
+
+            Assert.True(decision.Active);
+            Assert.Equal("static", decision.FocusKind);
+            Assert.Equal("dictionary", decision.PreferredMutator);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void Decide_SaturatedScreamClusters_DeprioritizedInTerms()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "brain-scream";
+            WriteFrontier(root, project, score: 40);
+
+            var signals = new RandallBrain.Signals(
+                true,
+                "test",
+                FrontierEngine.TryLoad(project, root),
+                null,
+                null,
+                [],
+                [
+                    new RandallBrain.ScreamClusterSignal("cluster-a", 80, 20, 12, "crash_fn", Saturated: true),
+                    new RandallBrain.ScreamClusterSignal("cluster-a", 80, 20, 12, "crash_fn", Saturated: true),
+                ]);
+
+            var brain = new RandallBrain();
+            var mutators = BuiltInMutators.Create(
+                ["bitflip", "havoc", "dictionary", "splice", "cyclic"], seed: 42);
+            var decision = brain.Decide(project, signals, [], mutators, iteration: 5);
+
+            Assert.Contains(decision.WhyTerms, t =>
+                t.Label.Contains("saturation", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void PickMutator_BlendsBrainPreferenceWithCredit()
+    {
+        var mutators = BuiltInMutators.Create(
+            ["bitflip", "havoc", "dictionary"], seed: 7);
+        var credit = new MutatorCreditTracker(persistPath: null, biasEnabled: true);
+        credit.Record("bitflip", 5, uniqueCrash: false);
+        credit.Record("bitflip", 5, uniqueCrash: false);
+        credit.Record("havoc", 0, uniqueCrash: false);
+
+        var decision = new NextHuntDecision(
+            1,
+            DateTimeOffset.UtcNow,
+            "demo",
+            true,
+            "test",
+            "frontier",
+            "door",
+            80,
+            "dictionary",
+            0.8,
+            4,
+            [new OracleScoreTerm("frontier rank", 80, "cfg")],
+            new OracleScore(80, [], ""));
+
+        var brain = new RandallBrain();
+        var picks = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < 200; i++)
+        {
+            var pick = brain.PickMutator(decision, mutators, credit, Random.Shared);
+            picks[pick.Name] = picks.GetValueOrDefault(pick.Name) + 1;
+        }
+
+        Assert.True(picks.GetValueOrDefault("dictionary") > 40);
+    }
+
+    [Fact]
+    public void PersistLast_WritesBrainJson()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "brain-persist";
+            var brain = new RandallBrain();
+            var decision = new NextHuntDecision(
+                9,
+                DateTimeOffset.UtcNow,
+                project,
+                true,
+                "Randall thinks: frontier door [70]",
+                "frontier",
+                "door",
+                70,
+                "havoc",
+                0.82,
+                4,
+                [new OracleScoreTerm("frontier rank", 70, "cfg")],
+                new OracleScore(70, [new OracleScoreTerm("frontier rank", 70, "cfg")], "cfg"));
+
+            brain.PersistLast(decision, root);
+
+            var path = RandallBrain.LastDecisionPath(project, root);
+            Assert.True(File.Exists(path));
+            var loaded = RandallBrain.TryLoadSnapshot(project, root);
+            Assert.NotNull(loaded?.LastDecision);
+            Assert.Equal("frontier", loaded.LastDecision!.FocusKind);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void ShouldActivate_FalseWhenBrainDisabled()
+    {
+        var signals = new RandallBrain.Signals(true, "x", null, null, null, [], []);
+        var projectCfg = new ProjectConfig { Name = "x", Fuzz = new FuzzConfig { Brain = false } };
+        Assert.False(RandallBrain.ShouldActivate(projectCfg, signals));
+    }
+
+    private static void WriteFrontier(string root, string project, int score)
+    {
+        var dir = Path.Combine(root, "data", "stalk", project);
+        Directory.CreateDirectory(dir);
+        var report = new FrontierReportDto(
+            project,
+            DateTime.UtcNow.ToString("O"),
+            "cfg",
+            "test frontier",
+            4,
+            1,
+            null,
+            [
+                new FrontierBranchDto(
+                    "bb:0x401000->0x401020",
+                    "cfg-branch",
+                    score,
+                    2,
+                    0.4,
+                    2,
+                    0.6,
+                    "parse_input",
+                    "0x401000",
+                    "0x401020",
+                    "demo.exe",
+                    "uncovered successor"),
+            ],
+            "hint");
+        File.WriteAllText(
+            Path.Combine(dir, FrontierEngine.FileName),
+            JsonSerializer.Serialize(report, JsonOptions));
+    }
+
+    private static void WriteStaticMap(string root, string project, int fuzzPriority)
+    {
+        var dir = Path.Combine(root, "data", "stalk", project);
+        Directory.CreateDirectory(dir);
+        var doc = new RandallAnalysisDocument(
+            "2",
+            "demo.exe",
+            null,
+            "0x400000",
+            DateTime.UtcNow.ToString("O"),
+            "test",
+            [
+                new RandallAnalysisFunctionDto(
+                    "parse_input",
+                    "0x401000",
+                    96,
+                    6,
+                    40,
+                    2,
+                    4,
+                    true,
+                    true,
+                    ["memcpy", "recv"],
+                    fuzzPriority,
+                    new RandallAnalysisFunctionCfgDto([
+                        new RandallAnalysisBasicBlockDto("0x401000", 16, ["0x401010"], []),
+                        new RandallAnalysisBasicBlockDto("0x401010", 16, [], ["0x401000"]),
+                    ]),
+                    UncoveredBlockCount: 3,
+                    CoverageFraction: 0.25),
+            ],
+            [],
+            [],
+            [],
+            []);
+        File.WriteAllText(
+            Path.Combine(dir, GhidraAnalysisBridge.FileName),
+            JsonSerializer.Serialize(doc, JsonOptions));
+    }
+
+    private static string NewTempRoot()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "randall-brain-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+        }
+        catch
+        {
+            /* ignore */
+        }
+    }
+}

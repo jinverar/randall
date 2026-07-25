@@ -17,7 +17,7 @@ Randfuzz normalizes heterogeneous crash sensors into **`FaultSignal`** rows:
 | **Minidump / PE analysis** | `*_analysis.json` from auto-analyze |
 | **cdb / !exploitable** | WER-ish classification (`EXPLOITABLE`, …) |
 | **Page Heap** | `target.pageHeap: true` on the project YAML |
-| **Sanitizer stderr** | ASan/UBSan/MSan/TSan tokens in target detail |
+| **Sanitizer stderr** | `SanitizerLogParser` — structured ASan ERROR/SUMMARY + UBSan `runtime error:` lines → `FaultSignal` |
 | **RPP post_crash** | Plugin tag → mapped kind |
 | **Oracle runtime** | `runtime.crash` / `runtime.sanitizer` findings |
 
@@ -29,7 +29,7 @@ Implementation: `FaultSignalMapper` in `Randall.Infrastructure`.
 |----------|--------|
 | **Crash intelligence** | `CrashIntelligenceDto.PrimaryFault`, `FaultSignals` on `GET /api/crashes/{id}` |
 | **Oracle FINDINGS** | Optional `Fault` on `OracleFindingDto` for runtime rules |
-| **Observation bus** | `ObservationKind.Fault` via `ObservationEvents.Fault` each crash (and RPP observe) |
+| **Target intelligence** | `TargetIntelligenceCrashDto` fault histogram + dominant kind on profile refresh |
 
 ## Observation bus
 

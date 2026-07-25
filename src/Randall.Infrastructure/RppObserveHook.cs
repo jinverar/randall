@@ -46,13 +46,24 @@ public static class RppObserveHook
             results.Add(result);
 
             if (result.Observation is not null)
-                bus.Publish(result.Observation with
+            {
+                var obs = result.Observation with
                 {
                     RunId = runId,
                     Iteration = iteration,
                     InputHash = inputHash,
                     Project = project.Name,
-                });
+                };
+                bus.Publish(obs);
+                try
+                {
+                    TargetIntelligenceWriteBack.OnRppObservation(
+                        project.Name,
+                        result.PluginName,
+                        obs);
+                }
+                catch { /* write-back must not break observe hook */ }
+            }
 
             if (result.Fault is not null)
                 bus.Publish(ObservationEvents.Fault(

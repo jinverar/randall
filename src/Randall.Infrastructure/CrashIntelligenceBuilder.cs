@@ -49,7 +49,9 @@ public static class CrashIntelligenceBuilder
         var lineage = BuildLineage(sidecar);
         var screamScore = ComputeScreamScore(severity, novelty, oracleScore?.Total, seenCount, triage);
         var faultSignals = FaultSignalMapper.FromCrash(
-            triage, analysis, cdb, sidecar, pageHeapEnabled, rppTag ?? summary.TriageTag);
+            triage, analysis, cdb, sidecar, pageHeapEnabled, rppTag ?? summary.TriageTag,
+            sidecar?.TargetDetail,
+            int.TryParse(summary.TargetExitCode, out var exitEc) ? exitEc : sidecar?.ExitCode);
         var primaryFault = FaultSignalMapper.Primary(faultSignals);
         var frontierHint = BuildFrontierHint(summary.Project, triage, CrashCatalog.FindRepoRoot());
         var canisterContext = BuildCanisterContext(triage, function, oracleScore, frontierHint);
@@ -85,6 +87,9 @@ public static class CrashIntelligenceBuilder
             OracleScoreTotal = intelligence.OracleScore?.Total,
             SeenCount = intelligence.SeenCount,
             CanisterContext = intelligence.CanisterContext,
+            PrimaryFaultKind = intelligence.PrimaryFault?.Kind.ToString(),
+            PrimaryFaultSummary = intelligence.PrimaryFault?.Summary ?? intelligence.PrimaryFault?.Detail,
+            PrimaryFaultConfidence = intelligence.PrimaryFault?.Confidence,
         };
 
     private static string? BuildFrontierHint(string project, CrashTriageDto? triage, string? repoRoot)

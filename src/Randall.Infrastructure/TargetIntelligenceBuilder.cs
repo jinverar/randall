@@ -57,9 +57,10 @@ public static class TargetIntelligenceBuilder
         var crashes = CrashCatalog.ListAll(repoRoot, project);
         var clusters = CrashCluster.Build(crashes, repoRoot);
         var campaigns = LoadRecentCampaigns(project, yaml, repoRoot, 5);
+        var counters = TargetIntelligenceWriteBack.LoadCounters(project, repoRoot);
 
         var staticDto = BuildStatic(analysis);
-        var dynamicDto = BuildDynamic(campaigns, crashes, oracleFindings);
+        var dynamicDto = BuildDynamic(campaigns, crashes, oracleFindings, counters);
         var frontierDto = BuildFrontier(frontier);
         var crashDto = BuildCrashStats(crashes, clusters);
         var oracleDto = BuildOracleStats(cfg, yaml, oracleFindings);
@@ -154,9 +155,13 @@ public static class TargetIntelligenceBuilder
     private static TargetIntelligenceDynamicDto? BuildDynamic(
         IReadOnlyList<TargetIntelligenceCampaignDto> campaigns,
         IReadOnlyList<CrashSummaryDto> crashes,
-        IReadOnlyList<OracleFindingDto> findings)
+        IReadOnlyList<OracleFindingDto> findings,
+        TargetIntelligenceCountersDto counters)
     {
-        if (campaigns.Count == 0 && findings.Count == 0 && crashes.Count == 0)
+        if (campaigns.Count == 0 && findings.Count == 0 && crashes.Count == 0
+            && counters.RppObservationCount == 0 && counters.BusObservationCount == 0
+            && string.IsNullOrWhiteSpace(counters.LastRefreshSource)
+            && counters.HuntJournalEntries == 0)
             return null;
 
         var last = campaigns.FirstOrDefault();
@@ -172,7 +177,11 @@ public static class TargetIntelligenceBuilder
             uniqueClusters,
             findings.Count,
             last?.RunId,
-            last?.StartedAt);
+            last?.StartedAt,
+            counters.RppObservationCount,
+            counters.BusObservationCount,
+            counters.LastRefreshSource,
+            counters.HuntJournalEntries);
     }
 
     private static TargetIntelligenceFrontierDto? BuildFrontier(FrontierReportDto? frontier)
@@ -209,11 +218,31 @@ public static class TargetIntelligenceBuilder
         var moods = CanisterMoodScorer.CountMoods([(unique, critical, ipCount)]);
         var maxScream = crashes.Count == 0 ? 0 : crashes.Max(c => c.ScreamScore);
 
+        var faultKinds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var sanitizerCount = 0;
+        foreach (var c in crashes)
+        {
+            var kind = c.PrimaryFaultKind;
+            if (string.IsNullOrWhiteSpace(kind))
+                continue;
+            faultKinds[kind] = faultKinds.GetValueOrDefault(kind) + 1;
+            if (kind.Contains("Sanitizer", StringComparison.OrdinalIgnoreCase) ||
+                (c.PrimaryFaultSummary?.Contains("Sanitizer", StringComparison.OrdinalIgnoreCase) ?? false))
+                sanitizerCount++;
+        }
+
+        var dominant = faultKinds.Count == 0
+            ? null
+            : faultKinds.OrderByDescending(kv => kv.Value).First().Key;
+
         return new TargetIntelligenceCrashDto(
             crashes.Count,
             clusters.Count,
             moods,
-            maxScream);
+            maxScream,
+            dominant,
+            sanitizerCount,
+            faultKinds.Count == 0 ? null : faultKinds);
     }
 
     private static TargetIntelligenceOracleDto? BuildOracleStats(
@@ -267,7 +296,12 @@ public static class TargetIntelligenceBuilder
         if (stat?.ChangedFunctionCount > 0)
             parts.Add($"{stat.ChangedFunctionCount} changed fn(s)");
         if (crashes?.Total > 0)
-            parts.Add($"{crashes.Total} crash(es) · {crashes.UniqueClusters} cluster(s)");
+        {
+            var faultBit = !string.IsNullOrWhiteSpace(crashes.DominantFaultKind)
+                ? $" · top fault {crashes.DominantFaultKind}"
+                : "";
+            parts.Add($"{crashes.Total} crash(es) · {crashes.UniqueClusters} cluster(s){faultBit}");
+        }
         if (oracles?.DifferentialEnabled == true)
             parts.Add("differential oracle armed");
         if (dynamic?.TotalIterations > 0)

@@ -46,6 +46,7 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | **Stalk map (in-Randall RE)** | PE/ELF strings, imports, hotspots on missed blocks | [STALK_MAP.md](STALK_MAP.md) — proximity, not full CFG |
 | **Frontier (gray doors)** | CFG/session fork scoring → `frontier.json` | `FrontierEngine` · `stalk frontier` |
 | **Mutator credit** | Bandit-lite productive-mutator bias + persistence | `MutatorCreditTracker` · `fuzz.mutatorCredit` (default on) |
+| **RandallBrain** | Closed-loop seed/mutator/energy fusion | `RandallBrain` · `fuzz.brain` (default on) · `GET /api/fuzz/brain` |
 | **Scream Intelligence** | `CrashIntelligenceDto`, ScreamScore, novelty, lineage stub | [SCREAM_INTELLIGENCE.md](SCREAM_INTELLIGENCE.md) · Crashes / Investigation API |
 | **Scream canisters** | Mood thresholds, EIP/RIP seal, harvest rack | UI Crashes tab · [canisters README](assets/canisters/README.md) |
 | **Ghidra export + pack** | Script Manager importers, stalk layers, crash packs | [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md) |
@@ -103,8 +104,8 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | `FrontierEngine` + `frontier.json` | ✅ | CFG branches, session forks, edge-gap fallback |
 | CLI `stalk frontier` + API | ✅ | Persists under `data/stalk/<project>/` |
 | Ghidra CFG + coverage overlay input | ✅ | Needs `randall-analysis.json` for best scores |
-| Auto seed/dictionary nudge from top frontiers | 🔲 | Hint text today; closed loop pending |
-| Frontier-aware corpus energy in `FuzzEngine` | 🔲 | Complements `ghidraStaticBias` |
+| Auto seed/dictionary nudge from top frontiers | ✅ | `RandallBrain` closed-loop picker in `FuzzEngine` |
+| Frontier-aware corpus energy in `FuzzEngine` | ✅ | Brain + `ghidraStaticBias` energy boosts |
 
 **Done when:** Top-N frontiers automatically boost related dictionary tokens or Scare Floor suggestions after each stalk layer.
 
@@ -158,7 +159,7 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | Canister mood + EIP/RIP seal | ✅ | Harvest rack on by default |
 | Minimization + reproducibility flags | ✅ | Cluster-shortest input heuristic |
 | Journal-backed mutator lineage in Investigation | ✅ | `CrashLineageResolver` · seed + parent hash in panel |
-| ScreamScore drives fuzz stop / campaign goals | 🔲 | Sorting only today |
+| ScreamScore drives fuzz stop / campaign goals | 🔲 | Sorting only today; brain uses novelty for hunt bias ✅ |
 
 **Done when:** Campaign YAML can target “N unique screams above score S” and auto-prioritize replay/minimize for top clusters.
 
@@ -185,8 +186,8 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | Differential fuzz YAML/UI surfacing | ✅ | `oracles.differential` badge + `stalk intel` ref check · [ORACLES.md](ORACLES.md) |
 | Ghidra map → auto oracle rule suggestions | 🔲 | CLI hints only |
 | Crash-RIP → full decompiled context (MCP) | 🔲 | Snippet-only CLI today; not Investigation panel embed |
-| RPP `observe` + Target Intelligence write-back | 🔲 | Observe hook ships; profile merge pending |
-| Closed loop: frontier → Scare Floor → re-fuzz | 🔲 | Manual workflow documented |
+| RPP `observe` + Target Intelligence write-back | ✅ | Observe → bus + counters; auto-refresh on fuzz/frontier/oracle · `hunt_journal.jsonl` |
+| Closed loop: frontier → Scare Floor → re-fuzz | ✅ Capable | `RandallBrain` steers seed/mutator/energy; `GET /api/fuzz/brain` |
 
 **Done when:** `GET /api/stalking/{project}/target-intelligence` returns a merged profile (static, frontier, oracle history, top screams); one-click “bias campaign from frontier” from UI.
 

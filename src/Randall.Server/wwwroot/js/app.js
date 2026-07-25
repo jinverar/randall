@@ -2757,7 +2757,7 @@ function renderCrashDetail(detail, title) {
       ${intel ? `<div class="scream-intel-box${intelHot ? ' scream-hot' : ''}">
         <h4>Scream intelligence</h4>
         <dl class="scream-intel-dl">
-          ${primaryFault ? `<dt>Primary fault</dt><dd><code>${escapeAttr(primaryFault.kind || '')}</code> · ${escapeAttr(primaryFault.summary || primaryFault.detail || '')}</dd>` : ''}
+          ${primaryFault ? `<dt>Primary fault</dt><dd><code>${escapeAttr(faultKindLabel(primaryFault.kind))}</code> · ${escapeAttr(primaryFault.summary || primaryFault.detail || '')}</dd>` : ''}
           <dt>Severity</dt><dd><span class="severity-${intel.severity}">${escapeAttr(intel.severity)}</span></dd>
           <dt>Novelty</dt><dd><span class="scream-intel-meter">${intel.novelty}</span>/100</dd>
           <dt>Cluster</dt><dd><code title="${escapeAttr(intel.clusterKey || '')}">${intel.seenCount}×</code>${intel.clusterKey ? ` · <code>${escapeAttr(intel.clusterKey.slice(0, 48))}${intel.clusterKey.length > 48 ? '…' : ''}</code>` : ''}</dd>

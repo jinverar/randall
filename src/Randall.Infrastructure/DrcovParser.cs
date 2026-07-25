@@ -212,18 +212,25 @@ public sealed class CoverageSet(string? persistPath = null)
 
         var newCount = 0;
         foreach (var edge in DrcovParser.ParseEdges(tracePath))
-        {
-            _hitCounts.TryGetValue(edge, out var hits);
-            _hitCounts[edge] = hits + 1;
-
-            if (_edges.Add(edge))
-            {
-                newCount++;
-                if (_persistPath is not null)
-                    File.AppendAllText(_persistPath, edge + Environment.NewLine);
-            }
-        }
+            newCount += RegisterRawEdge(edge);
         return newCount;
+    }
+
+    /// <summary>Register a single edge key (drcov BB, sancov PC, external worker).</summary>
+    public int RegisterRawEdge(string edge)
+    {
+        if (string.IsNullOrWhiteSpace(edge))
+            return 0;
+
+        _hitCounts.TryGetValue(edge, out var hits);
+        _hitCounts[edge] = hits + 1;
+
+        if (!_edges.Add(edge))
+            return 0;
+
+        if (_persistPath is not null)
+            File.AppendAllText(_persistPath, edge + Environment.NewLine);
+        return 1;
     }
 
     public int TotalEdges => _edges.Count;

@@ -1,40 +1,47 @@
-# SanitizerCoverage (sancov) — stub path
+# SanitizerCoverage (sancov)
 
-Randfuzz’s primary coverage sensor today is **DynamoRIO drcov** (`fuzz.coverageGuided`, `fuzz.stalkMode`). LLVM **SanitizerCoverage** (sancov) is a complementary edge bitmap from ASan/MSan-instrumented builds — useful when the target is already compiled with `-fsanitize-coverage=trace-pc-guard` and you want native edges without DynamoRIO.
+Randfuzz’s primary coverage sensor today is **DynamoRIO drcov** (`fuzz.coverageGuided`, `fuzz.stalkMode`). LLVM **SanitizerCoverage** (sancov) is a complementary edge source from ASan-instrumented builds — useful when the target is compiled with `-fsanitize-coverage=trace-pc-guard` (or `-fsanitize=fuzzer` no-link) and you want native PCs without DynamoRIO.
 
-## YAML flag (stub)
+## YAML flag
 
 ```yaml
 fuzz:
-  sanitizerCoverage: true   # soft hook — does not disable drcov today
+  sanitizerCoverage: true
   coverageGuided: true
   stalkMode: auto
 ```
 
 When `sanitizerCoverage: true`:
 
-- `SanitizerCoverageBackend.Resolve()` reports requested + availability
-- **If DynamoRIO is present:** drcov remains active; flag notes sancov ingest is not wired yet
-- **If DynamoRIO is missing:** corpus-novelty stalk only; doctor should warn on coverageGuided projects
+- `SanitizerCoverageBackend.Resolve()` reports requested + availability (doctor row `sanitizerCoverage`)
+- **If DynamoRIO is present:** drcov remains active; Randfuzz also ingests `*.sancov` PCs from `corpus/traces` when drcov returns no new edges
+- **If DynamoRIO is missing (typical Linux ASan lab):** ingest raw `*.sancov` PC lists into `edges.txt` as `sancov:<module>:0x<pc>` keys — corpus-novelty stalk still applies when no sancov files appear
 
-Full sancov ingest (reading `.sancov` / inline guards) is on the roadmap — not a LibAFL port.
+## Linux ASan lab build (no DynamoRIO)
+
+```bash
+clang -fsanitize=address -fsanitize-coverage=trace-pc-guard -g target.c -o target
+export ASAN_OPTIONS=coverage=1
+# fuzz — sancov files land under corpus/traces/*.sancov when the target writes them
+```
+
+Inline-guard registration inside the target process is still the target author’s responsibility; Randfuzz only **reads** emitted `.sancov` artifacts.
 
 ## Relationship to DynamoRIO
 
 | Backend | When |
 |---------|------|
 | **drcov** | Default when `tools/dynamorio` or `DYNAMORIO_HOME` is installed |
-| **sancov** | Future — same `ObservationKind.Coverage` bus events, different sensor source |
-| **corpus-novelty** | Fallback when neither is available |
+| **sancov ingest** | `fuzz.sanitizerCoverage: true` + `*.sancov` under trace dir |
+| **corpus-novelty** | Fallback when neither produces edges |
 
-DynamoRIO and sancov can coexist on Linux lab builds; Randfuzz will prefer explicit stalk backend selection once sancov lands.
+## Hard limits
 
-## Doctor / CLI
-
-`randall doctor -c projects/….yaml` does not fail on `sanitizerCoverage: true` alone — it is advisory until ingest ships. Watch `stalk backend` rows for drcov availability.
+- No LibAFL sancov bitmap merge yet — PC keys only, not BB translation
+- Windows sancov ingest is best-effort (needs ASan-built target writing `.sancov` beside traces)
+- Does not replace sanitizer **fault** parsing (`SanitizerLogParser` on stderr) — coverage PCs ≠ crash class
 
 ## Related
 
 - [STALKING.md](STALKING.md) — stalk loop + drcov
-- [EXTERNAL_WORKERS.md](EXTERNAL_WORKERS.md) — LibAFL often pairs with sancov
 - [FAULT_SIGNALS.md](FAULT_SIGNALS.md) — sanitizer faults vs coverage edges

@@ -2681,7 +2681,32 @@ static int StalkIntel(string[] args)
         }
 
         if (profile.Dynamic is { } dyn)
+        {
             Console.WriteLine($"Campaigns: {dyn.TotalIterations} iters · {dyn.TotalCrashes} crash(es) · last={dyn.LastRunId ?? "—"}");
+            if (dyn.RppObservationCount > 0 || dyn.BusObservationCount > 0)
+                Console.WriteLine($"  observations: bus={dyn.BusObservationCount} rpp={dyn.RppObservationCount}" +
+                                  (dyn.LastRefreshSource is not null ? $" · last refresh={dyn.LastRefreshSource}" : ""));
+            if (dyn.HuntJournalEntries > 0)
+                Console.WriteLine($"  hunt journal: {dyn.HuntJournalEntries} entr(ies) → {TargetIntelligenceWriteBack.HuntJournalPath(project)}");
+        }
+
+        var mapPath = GhidraAnalysisBridge.AnalysisPath(project);
+        var frontierPath = FrontierEngine.FrontierPath(project);
+        var intelPath = TargetIntelligenceBuilder.ProfilePath(project);
+        Console.WriteLine();
+        Console.WriteLine("Artifacts:");
+        Console.WriteLine($"  static map:  {(File.Exists(mapPath) ? "ok" : "missing")}  {mapPath}");
+        Console.WriteLine($"  frontier:    {(File.Exists(frontierPath) ? "ok" : "missing")}  {frontierPath}");
+        Console.WriteLine($"  intel:       {(File.Exists(intelPath) ? "ok" : "missing")}  {intelPath}");
+
+        var journal = TargetIntelligenceWriteBack.ReadJournalTail(project, 5);
+        if (journal.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Recent hunt journal:");
+            foreach (var entry in journal)
+                Console.WriteLine($"  [{entry.Source}] {entry.Summary}");
+        }
 
         if (profile.RecentCampaigns.Count > 0)
         {
@@ -2697,6 +2722,7 @@ static int StalkIntel(string[] args)
             Console.WriteLine("Next steps:");
             Console.WriteLine($"  randall stalk ghidra-analyze -p {project} -c projects/{project}.yaml  (optional; needs Ghidra + native binary)");
             Console.WriteLine($"  randall stalk frontier -p {project}  (after coverage layers or static map)");
+            Console.WriteLine($"  randall doctor -c projects/{project}.yaml  (stalk artifact hints)");
         }
 
         return 0;

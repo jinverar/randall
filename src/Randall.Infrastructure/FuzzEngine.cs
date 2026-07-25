@@ -65,6 +65,13 @@ public sealed class FuzzEngine
             Path.Combine(corpusDir, "mutator_credit.txt"),
             project.Fuzz.MutatorCredit);
 
+        var repoRoot = CrashCatalog.FindRepoRoot();
+        BrainDecisionStore.Clear();
+        var brain = new RandallBrain();
+        var brainSignals = brain.LoadSignals(project.Name, repoRoot);
+        var brainActive = RandallBrain.ShouldActivate(project, brainSignals);
+        NextHuntDecision? huntDecision = null;
+
         var coveragePath = Path.Combine(corpusDir, "edges.txt");
         var coverage = new CoverageSet(coveragePath);
         coverage.Load();
@@ -105,6 +112,15 @@ public sealed class FuzzEngine
 
         var progress = options.Progress;
         progress?.OnStarted(project.Name, project.Kind);
+        if (brainActive)
+        {
+            FuzzAnalystLog.Info(progress, $"Brain on — {brainSignals.SummaryLine}");
+        }
+        else if (project.Fuzz.Brain)
+        {
+            FuzzAnalystLog.Info(progress,
+                "Brain armed — waiting for frontier/static/oracle/scream signals (soft no-op until data exists)");
+        }
         FuzzAnalystLog.Info(progress,
             $"Fuzzing '{project.Name}' ({project.Kind}) — max {maxIterations} iterations" +
             (dryRun ? " [dry-run]" : "") +
@@ -495,6 +511,21 @@ public sealed class FuzzEngine
                 var iterGraphBias = project.Fuzz.SessionGraphBias;
                 var uniqueCrashThisIter = false;
                 IMutator mutator;
+                if (brainActive)
+                {
+                    huntDecision = brain.Decide(
+                        project.Name,
+                        brainSignals,
+                        mutatorCredit.SnapshotRows(),
+                        mutators,
+                        iterations);
+                    brain.PersistLast(huntDecision, repoRoot);
+                    if (verbose)
+                    {
+                        FuzzAnalystLog.Info(progress, RandallBrain.FormatVerbose(huntDecision), iterations);
+                    }
+                }
+
                 if (JokerEngine.ShouldPlay(project, rng) && mutators.Count > 0)
                 {
                     jokerTrick = JokerEngine.StartTrick(project, mutators, rng);
@@ -513,6 +544,10 @@ public sealed class FuzzEngine
                             $"graphBias={(jokerTrick.GraphBiasOverride is double g ? g.ToString("0.00") : "-")}",
                             iterations);
                     }
+                }
+                else if (brainActive && huntDecision is { Active: true })
+                {
+                    mutator = brain.PickMutator(huntDecision, mutators, mutatorCredit, rng);
                 }
                 else
                 {
@@ -681,7 +716,8 @@ public sealed class FuzzEngine
                 }
                 else
                 {
-                    var seed = corpus.PickSeed(seeds, rng, powerSchedule);
+                    var corpusBias = huntDecision?.CorpusPriorityBias ?? 0.65;
+                    var seed = corpus.PickSeed(seeds, rng, powerSchedule, corpusBias);
                     parentInputHash = InputHash.StackHash(seed);
                     seedSource = "corpus";
                     payload = mutator.Mutate(seed).ToArray();
@@ -907,12 +943,15 @@ public sealed class FuzzEngine
                     if (trace is not null && File.Exists(trace))
                     {
                         newEdges = coverage.RegisterTrace(trace);
+                        if (newEdges == 0 && project.Fuzz.SanitizerCoverage)
+                            newEdges = SanitizerCoverageBackend.TryIngestTraceDirectory(coverage, traceDir);
                         newCoverage = newEdges > 0;
                         if (newCoverage && !result.Crashed)
                         {
                             corpus.AddPriority(payload);
                             corpusAdded++;
                             ApplyGhidraStaticBias(project, corpus, payload, newEdges, verbose, progress, iterations);
+                            ApplyBrainEnergyBoost(huntDecision, corpus, payload, verbose, progress, iterations);
                         }
                     }
                 }
@@ -922,12 +961,15 @@ public sealed class FuzzEngine
                         project, yamlPath, payload, traceDir, cancellationToken);
                     iterTracePath = covRun.TracePath;
                     newEdges = coverage.RegisterTrace(covRun.TracePath);
+                    if (newEdges == 0 && project.Fuzz.SanitizerCoverage)
+                        newEdges = SanitizerCoverageBackend.TryIngestTraceDirectory(coverage, traceDir);
                     newCoverage = newEdges > 0;
                     if (newCoverage && !result.Crashed)
                     {
                         corpus.AddPriority(payload);
                         corpusAdded++;
                         ApplyGhidraStaticBias(project, corpus, payload, newEdges, verbose, progress, iterations);
+                        ApplyBrainEnergyBoost(huntDecision, corpus, payload, verbose, progress, iterations);
                     }
 
                     // Dragon Dance sidecar: binary drcov (no -dump_text) on novel / crash
@@ -1075,6 +1117,7 @@ public sealed class FuzzEngine
                         }
                         if (oracleEval.EnergyBoost > 0)
                             corpus.BoostEnergy(payload, oracleEval.EnergyBoost);
+                        ApplyBrainEnergyBoost(huntDecision, corpus, payload, verbose, progress, iterations);
                     }
 
                     if (verbose)
@@ -1235,17 +1278,21 @@ public sealed class FuzzEngine
                             crashDump, result.ExitCode?.ToString(), crashTag, null, journal?.RunId,
                             DateTimeOffset.UtcNow),
                         payload: payload);
-                    foreach (var fault in FaultSignalMapper.FromCrash(
-                                 crashFaultPreview,
-                                 analysis: null,
-                                 cdb: null,
-                                 sidecar: null,
-                                 pageHeapEnabled: project.Target.PageHeap,
-                                 rppTag: crashTag))
-                    {
-                        ObservationBus.Publish(ObservationEvents.Fault(
-                            runId, iterations, payloadHash, fault, project.Name));
-                    }
+                    FaultSignalMapper.PublishFaults(
+                        ObservationBus,
+                        runId,
+                        iterations,
+                        payloadHash,
+                        project.Name,
+                        FaultSignalMapper.FromCrash(
+                            crashFaultPreview,
+                            analysis: null,
+                            cdb: null,
+                            sidecar: null,
+                            pageHeapEnabled: project.Target.PageHeap,
+                            rppTag: crashTag,
+                            targetDetail: result.Detail,
+                            exitCode: result.ExitCode));
 
                     var savedResult = crashStore.SaveEx(
                         project.Name,
@@ -1504,6 +1551,26 @@ public sealed class FuzzEngine
                         }
                     }
 
+                    if (savedResult.IsNew)
+                    {
+                        try
+                        {
+                            PublishEnrichedCrashFaults(
+                                project,
+                                saved,
+                                crashesDir,
+                                crashTag,
+                                result.Detail,
+                                runId,
+                                iterations,
+                                payloadHash);
+                        }
+                        catch (Exception faultEx)
+                        {
+                            FuzzAnalystLog.Warn(progress, $"fault republish: {faultEx.Message}", iterations);
+                        }
+                    }
+
                     if ((debuggerOpenOnCrash || debuggerMode is "both") && saved.MiniDumpPath is not null)
                     {
                         try
@@ -1685,6 +1752,21 @@ public sealed class FuzzEngine
 
             try { journal?.Complete(iterations, crashCount, coverage.GetTopHotEdges()); }
             catch { /* ignore */ }
+
+            try
+            {
+                if (!dryRun)
+                {
+                    TargetIntelligenceWriteBack.OnFuzzComplete(
+                        project.Name,
+                        runId,
+                        iterations,
+                        crashCount,
+                        corpusAdded,
+                        ObservationBus.Snapshot);
+                }
+            }
+            catch { /* intel write-back must not break teardown */ }
         }
 
         var runResult = new FuzzRunResult(iterations, corpusAdded, crashCount, crashes);
@@ -1869,5 +1951,63 @@ public sealed class FuzzEngine
                 $"  Ghidra static bias energy +{boost} (uncovered targets in randall-analysis.json)",
                 iterations);
         }
+    }
+
+    private static void ApplyBrainEnergyBoost(
+        NextHuntDecision? decision,
+        CorpusTracker corpus,
+        byte[] payload,
+        bool verbose,
+        IFuzzProgressSink? progress,
+        int iterations)
+    {
+        if (decision is not { Active: true } or { RecommendedEnergyBoost: <= 0 })
+            return;
+
+        corpus.BoostEnergy(payload, decision.RecommendedEnergyBoost);
+        if (verbose)
+        {
+            FuzzAnalystLog.Info(progress,
+                $"  Brain energy +{decision.RecommendedEnergyBoost} ({decision.FocusKind} focus)",
+                iterations);
+        }
+    }
+
+    private void PublishEnrichedCrashFaults(
+        ProjectConfig project,
+        SavedCrash saved,
+        string crashesDir,
+        string? crashTag,
+        string? targetDetail,
+        string runId,
+        int iterations,
+        string payloadHash)
+    {
+        var summary = new CrashSummaryDto(
+            saved.Id, saved.Project, saved.Iteration, saved.Mutator, saved.InputHash, saved.InputPath,
+            saved.MiniDumpPath, saved.TargetExitCode, saved.TriageTag, saved.SidecarPath, saved.RunId, saved.At);
+        var sidecar = CrashSidecarWriter.TryRead(saved.SidecarPath);
+        var analysisPath = CrashAnalysisWriter.AnalysisPathFor(crashesDir, saved.Id);
+        var analysis = CrashAnalysisWriter.TryRead(analysisPath)
+            ?? (saved.MiniDumpPath is not null ? CrashAnalysisWriter.AnalyzeDump(saved.MiniDumpPath) : null);
+        var cdbSidecar = WindowsCdbCrashAnalysisWriter.TryRead(
+            WindowsCdbCrashAnalysisWriter.TriagePathFor(crashesDir, saved.Id));
+        var triage = CrashTriage.Classify(
+            analysis,
+            sidecar,
+            summary,
+            null,
+            cdbSidecar?.ExploitableClassification);
+        var faults = FaultSignalMapper.FromCrash(
+            triage,
+            analysis,
+            CrashCatalog.MapCdbTriage(cdbSidecar),
+            sidecar,
+            project.Target.PageHeap,
+            crashTag ?? saved.TriageTag,
+            targetDetail ?? sidecar?.TargetDetail,
+            sidecar?.ExitCode ?? (int.TryParse(saved.TargetExitCode, out var ec) ? ec : null));
+        FaultSignalMapper.PublishFaults(
+            ObservationBus, runId, iterations, payloadHash, project.Name, faults);
     }
 }

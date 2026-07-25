@@ -107,6 +107,15 @@ public static class OracleEngine
                 OracleScoreTerms = eval.Score.Terms,
             });
         }
+
+        try
+        {
+            TargetIntelligenceWriteBack.OnOracleFindings(
+                project.Name,
+                eval.Findings.Count,
+                eval.Findings.FirstOrDefault()?.RuleId);
+        }
+        catch { /* write-back must not break oracle persist */ }
     }
 
     private static void EvaluateRuntime(OracleObservation obs, List<OracleFindingDto> findings)

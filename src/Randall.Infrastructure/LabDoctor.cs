@@ -261,6 +261,54 @@ public static class LabDoctor
                 ? $"{binexport.BinDiffPath} · JSON merge works without BinDiff (stalk ghidra-diff)"
                 : "optional — compare .BinExport files; stalk ghidra-diff needs no binary");
 
+        var repoRoot = CrashCatalog.FindRepoRoot();
+        var mapPath = GhidraAnalysisBridge.AnalysisPath(project.Name, repoRoot);
+        var frontierPath = FrontierEngine.FrontierPath(project.Name, repoRoot);
+        var intelPath = TargetIntelligenceBuilder.ProfilePath(project.Name, repoRoot);
+        var journalPath = TargetIntelligenceWriteBack.HuntJournalPath(project.Name, repoRoot);
+
+        Add("stalk:map", File.Exists(mapPath) ? "ok" : "warn",
+            File.Exists(mapPath)
+                ? $"randall-analysis.json → {mapPath}"
+                : $"no static map — export Ghidra or randall stalk ghidra-analyze -p {project.Name}");
+        Add("stalk:frontier", File.Exists(frontierPath) ? "ok" : "warn",
+            File.Exists(frontierPath)
+                ? $"frontier.json scored — randall stalk frontier -p {project.Name} to refresh"
+                : "no frontier yet — run fuzz with coverage, then randall stalk frontier -p " + project.Name);
+        Add("stalk:intel", File.Exists(intelPath) ? "ok" : "warn",
+            File.Exists(intelPath)
+                ? $"target_intelligence.json — randall stalk intel -p {project.Name} [--refresh]"
+                : "no target profile yet — auto-refreshes after fuzz/frontier/oracle; or stalk intel --refresh");
+        if (File.Exists(journalPath))
+        {
+            var journalLines = File.ReadLines(journalPath).Count(l => !string.IsNullOrWhiteSpace(l));
+            Add("stalk:journal", "ok",
+                $"{journalLines} hunt decision(s) → {journalPath}");
+        }
+        else
+        {
+            Add("stalk:journal", "warn",
+                "hunt_journal.jsonl empty — brain/RPP/fuzz write-back appends after campaigns");
+        }
+
+        if (!File.Exists(mapPath) && !File.Exists(frontierPath))
+        {
+            Add("stalk:brain", "warn",
+                "stalk brain thin — export Ghidra map and/or record coverage layers for ranked gray doors");
+        }
+        else if (File.Exists(mapPath) && GhidraAnalysisBridge.TryLoad(project.Name, repoRoot) is { } doc
+                 && doc.Functions.Count > 0)
+        {
+            Add("stalk:brain", "ok",
+                $"static brain loaded · {doc.Functions.Count} fn(s)" +
+                (doc.ChangedFunctions is { Count: > 0 } cf ? $" · {cf.Count} changed" : ""));
+        }
+        else
+        {
+            Add("stalk:brain", "warn",
+                "frontier without full map — session/edge-gap mode only; export Ghidra for CFG gray doors");
+        }
+
         var stalkMode = (project.Fuzz.StalkMode ?? "auto").Trim().ToLowerInvariant();
         var native = new NativeStalkRunner();
         if (stalkMode == "external" && !dr.IsAvailable)
@@ -280,6 +328,17 @@ public static class LabDoctor
         {
             var resolved = StalkTraceBackendFactory.ResolveBackendId(project);
             Add("stalkMode", "ok", $"requested={stalkMode}, resolved={resolved}");
+        }
+
+        var sancov = SanitizerCoverageBackend.Resolve(project);
+        if (sancov.Requested)
+        {
+            Add("sanitizerCoverage", sancov.Available ? "ok" : "warn", sancov.Note);
+        }
+        else if (project.Fuzz.CoverageGuided)
+        {
+            Add("sanitizerCoverage", "ok",
+                "optional fuzz.sanitizerCoverage for ASan-built targets (*.sancov PCs) — drcov remains default");
         }
 
         var procmonExe = ProcmonCapture.DiscoverExecutable();

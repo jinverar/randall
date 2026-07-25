@@ -18,7 +18,8 @@ public sealed record StalkIntelligenceDto(
     IReadOnlyList<MutatorCreditRowDto> TopMutators,
     bool MutatorBiasEnabled,
     StalkCommandStripDto? CommandStrip = null,
-    TargetIntelligenceDto? TargetProfile = null);
+    TargetIntelligenceDto? TargetProfile = null,
+    NextHuntDecision? LastBrainDecision = null);
 
 /// <summary>One ranked scare target with optional explainable score breakdown for the Why? control.</summary>
 public sealed record StalkIntelligenceTargetDto(

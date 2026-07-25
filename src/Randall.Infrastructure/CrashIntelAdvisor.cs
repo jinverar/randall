@@ -62,6 +62,16 @@ public static class CrashIntelAdvisor
             ? $"{triage.Severity}/{triage.Class}: {hyp}"
             : hyp;
 
+        var faultSignals = FaultSignalMapper.FromCrash(
+            triage, null, null, null, pageHeapEnabled: false, targetDetail: detail, exitCode: exit);
+        var primaryFault = FaultSignalMapper.Primary(faultSignals);
+        if (primaryFault is not null)
+        {
+            findings.Insert(0,
+                $"PRIMARY FAULT [{primaryFault.Kind}/{primaryFault.Source}] {primaryFault.Summary} " +
+                $"(confidence {primaryFault.Confidence:0.00}, {primaryFault.Severity})");
+        }
+
         if (exit is 139 or unchecked((int)0xC0000005))
             findings.Add("signal shape looks like SIGSEGV / ACCESS_VIOLATION — capture a core before restarts eat evidence");
         else if (exit is 134)

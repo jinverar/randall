@@ -14,7 +14,9 @@ public static class FaultSignalMapper
         CdbTriageDto? cdb = null,
         CrashSidecarDto? sidecar = null,
         bool pageHeapEnabled = false,
-        string? rppTag = null)
+        string? rppTag = null,
+        string? targetDetail = null,
+        int? exitCode = null)
     {
         var signals = new List<FaultSignal>();
 
@@ -22,18 +24,20 @@ public static class FaultSignalMapper
             signals.Add(FromTriage(triage, analysis));
 
         var detail = sidecar?.TargetDetail
+            ?? targetDetail
             ?? sidecar?.ExceptionHint
             ?? triage?.ExceptionHint
             ?? analysis?.ExceptionHint;
-        if (LooksLikeSanitizer(detail))
+
+        foreach (var san in SanitizerLogParser.ExtractAll(detail))
         {
             signals.Add(new FaultSignal(
-                FaultSignalKind.Sanitizer,
+                SanitizerLogParser.MapCheckKind(san.CheckType),
                 0.95,
-                "high",
+                SanitizerLogParser.MapSeverity(san.CheckType, san.Sanitizer),
                 FaultSignalSource.SanitizerLog,
-                "Sanitizer report in target output",
-                Truncate(detail, 240)));
+                $"{san.Sanitizer}: {san.CheckType}",
+                Truncate(san.Location is not null ? $"{san.SummaryLine} ({san.Location})" : san.SummaryLine, 240)));
         }
 
         if (pageHeapEnabled)
@@ -65,6 +69,16 @@ public static class FaultSignalMapper
                 rppTag));
         }
 
+        if (signals.Count == 0)
+        {
+            var fallback = TryFallbackFromDetail(
+                detail,
+                exitCode ?? sidecar?.ExitCode,
+                sidecar?.ExceptionHint);
+            if (fallback is not null)
+                signals.Add(fallback);
+        }
+
         return Deduplicate(signals);
     }
 
@@ -75,7 +89,23 @@ public static class FaultSignalMapper
         return signals
             .OrderByDescending(s => s.Confidence)
             .ThenByDescending(s => SeverityRank(s.Severity))
+            .ThenByDescending(s => KindRank(s.Kind))
             .First();
+    }
+
+    public static void PublishFaults(
+        ObservationBus bus,
+        string runId,
+        int iteration,
+        string inputHash,
+        string? project,
+        IReadOnlyList<FaultSignal> signals)
+    {
+        foreach (var fault in signals)
+        {
+            bus.Publish(ObservationEvents.Fault(
+                runId, iteration, inputHash, fault, project));
+        }
     }
 
     public static FaultSignal? FromOracleFinding(string ruleId, string severity, string actualRelation, double confidence)
@@ -93,6 +123,18 @@ public static class FaultSignalMapper
 
         if (ruleId.Equals("runtime.sanitizer", StringComparison.OrdinalIgnoreCase))
         {
+            var san = SanitizerLogParser.ExtractAll(actualRelation).FirstOrDefault();
+            if (san is not null)
+            {
+                return new FaultSignal(
+                    SanitizerLogParser.MapCheckKind(san.CheckType),
+                    confidence,
+                    SanitizerLogParser.MapSeverity(san.CheckType, san.Sanitizer),
+                    FaultSignalSource.OracleRuntime,
+                    $"{san.Sanitizer}: {san.CheckType}",
+                    Truncate(actualRelation, 240));
+            }
+
             return new FaultSignal(
                 FaultSignalKind.Sanitizer,
                 confidence,
@@ -169,6 +211,41 @@ public static class FaultSignalMapper
             cdb.ExploitableDescription);
     }
 
+    private static FaultSignal? TryFallbackFromDetail(string? detail, int? exitCode, string? exceptionHint)
+    {
+        if (SanitizerLogParser.TryParseFirst(detail, out var san) && san is not null)
+        {
+            return new FaultSignal(
+                SanitizerLogParser.MapCheckKind(san.CheckType),
+                0.9,
+                SanitizerLogParser.MapSeverity(san.CheckType, san.Sanitizer),
+                FaultSignalSource.SanitizerLog,
+                $"{san.Sanitizer}: {san.CheckType}",
+                Truncate(san.SummaryLine, 240));
+        }
+
+        var hint = exceptionHint
+            ?? WindowsExceptionHints.Describe(exitCode)
+            ?? (exitCode is not null ? $"exit {exitCode}" : null);
+        if (string.IsNullOrWhiteSpace(hint))
+            return null;
+
+        var kind = hint.Contains("ACCESS_VIOLATION", StringComparison.OrdinalIgnoreCase) ||
+                   exitCode is 139 or unchecked((int)0xC0000005)
+            ? FaultSignalKind.AccessViolation
+            : exitCode is 134
+                ? FaultSignalKind.HeapCorruption
+                : FaultSignalKind.Other;
+
+        return new FaultSignal(
+            kind,
+            0.55,
+            exitCode is 139 or unchecked((int)0xC0000005) ? "high" : "medium",
+            FaultSignalSource.ExitCode,
+            hint,
+            Truncate(detail, 240));
+    }
+
     private static FaultSignalKind MapRppKind(string tag)
     {
         var t = tag.ToLowerInvariant();
@@ -185,16 +262,6 @@ public static class FaultSignalMapper
         return FaultSignalKind.Other;
     }
 
-    private static bool LooksLikeSanitizer(string? detail) =>
-        !string.IsNullOrWhiteSpace(detail) && (
-            detail.Contains("AddressSanitizer", StringComparison.OrdinalIgnoreCase) ||
-            detail.Contains("UndefinedBehaviorSanitizer", StringComparison.OrdinalIgnoreCase) ||
-            detail.Contains("MemorySanitizer", StringComparison.OrdinalIgnoreCase) ||
-            detail.Contains("ThreadSanitizer", StringComparison.OrdinalIgnoreCase) ||
-            detail.Contains("heap-buffer-overflow", StringComparison.OrdinalIgnoreCase) ||
-            detail.Contains("stack-buffer-overflow", StringComparison.OrdinalIgnoreCase) ||
-            detail.Contains("use-after-free", StringComparison.OrdinalIgnoreCase));
-
     private static int SeverityRank(string severity) => severity.ToLowerInvariant() switch
     {
         "critical" => 4,
@@ -202,6 +269,17 @@ public static class FaultSignalMapper
         "medium" => 2,
         "low" => 1,
         _ => 0,
+    };
+
+    private static int KindRank(FaultSignalKind kind) => kind switch
+    {
+        FaultSignalKind.WerClassification => 5,
+        FaultSignalKind.Sanitizer => 4,
+        FaultSignalKind.StackBufferOverrun => 3,
+        FaultSignalKind.UseAfterFree => 3,
+        FaultSignalKind.HeapCorruption => 3,
+        FaultSignalKind.AccessViolation => 2,
+        _ => 1,
     };
 
     private static List<FaultSignal> Deduplicate(List<FaultSignal> signals)

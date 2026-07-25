@@ -69,7 +69,11 @@ public static class FrontierEngine
             "Run randall stalk frontier -p " + project + " after new layers; bias seeds toward top gray doors.");
 
         if (persist)
+        {
             Save(report, repoRoot);
+            try { TargetIntelligenceWriteBack.OnFrontierSaved(report, repoRoot); }
+            catch { /* write-back must not break frontier save */ }
+        }
 
         return report;
     }

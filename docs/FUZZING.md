@@ -89,6 +89,36 @@ fuzz:
   powerSchedule: true
 ```
 
+## RandallBrain (closed-loop hunt steering)
+
+When `fuzz.brain: true` (default), Randall fuses stalk intelligence into **every iteration** — seed corpus bias, mutator pick, and corpus energy — producing an explainable **NextHuntDecision** with Why? terms.
+
+| Signal | Role in brain |
+|--------|----------------|
+| `frontier.json` gray doors | Top focus when CFG/session forks rank highest |
+| `randall-analysis.json` fuzzPriority | Static/patch targets; prefers `dictionary` / `havoc` |
+| Oracle findings JSONL | Boosts semantic hunts; prefers `interesting` / `boundary` |
+| Mutator credit | Blends with brain mutator preference (62% brain / 38% credit) |
+| Scream clusters | Hot unique screams boost focus; saturated clusters get negative Why? terms |
+
+**Behavior**
+
+- **Default on** — soft no-op when frontier/static/oracle/scream data is missing (baseline AFL-style pick unchanged).
+- **Corpus bias** — raises priority-corpus pick rate from 65% up to ~82% when hunting frontiers.
+- **Energy** — adds +2…+8 corpus energy after novel coverage / oracle retains when brain is active.
+- **Verbose** — `Brain: frontier parse→0x401020 [78] mutator=havoc corpus=82% energy+4 — +78 frontier rank · …`
+- **Persistence** — last decision at `data/stalk/<project>/brain_last.json`
+- **API** — `GET /api/fuzz/brain?project=<name>` and Scare Floor intelligence `lastBrainDecision`
+
+Disable with:
+
+```yaml
+fuzz:
+  brain: false
+```
+
+Populate signals: `randall stalk ghidra-analyze` (or manual export) → short fuzz with coverage → `randall stalk frontier -p <project>` → oracle/scream history from crashes.
+
 ## Session flows (stateful TCP)
 
 Random single-command fuzzing misses bugs that need a **probe** first (banner, STAT, GMON keepalive):

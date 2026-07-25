@@ -79,6 +79,94 @@ public class CrashLineageResolverTests
     }
 }
 
+public class TargetIntelligenceWriteBackTests
+{
+    [Fact]
+    public void Refresh_AppendsJournalAndPersistsProfile()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "randall-writeback-" + Guid.NewGuid().ToString("N"));
+        var project = "wb-demo";
+        var stalkDir = Path.Combine(repo, "data", "stalk", project);
+        Directory.CreateDirectory(stalkDir);
+
+        try
+        {
+            var profile = TargetIntelligenceWriteBack.Refresh(
+                project,
+                "fuzz-complete",
+                "10 iters · 0 crashes",
+                "run-abc",
+                new Dictionary<string, object?> { ["Coverage"] = 3 },
+                repo);
+
+            Assert.Equal(project, profile.Project);
+            Assert.True(File.Exists(TargetIntelligenceBuilder.ProfilePath(project, repo)));
+            Assert.True(File.Exists(TargetIntelligenceWriteBack.HuntJournalPath(project, repo)));
+
+            var tail = TargetIntelligenceWriteBack.ReadJournalTail(project, 5, repo);
+            Assert.Single(tail);
+            Assert.Equal("fuzz-complete", tail[0].Source);
+            Assert.NotNull(profile.Dynamic);
+            Assert.Equal("fuzz-complete", profile.Dynamic!.LastRefreshSource);
+        }
+        finally
+        {
+            try { Directory.Delete(repo, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public void AppendJournal_TrimsToMaxEntries()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "randall-journal-" + Guid.NewGuid().ToString("N"));
+        var project = "journal-demo";
+        Directory.CreateDirectory(Path.Combine(repo, "data", "stalk", project));
+
+        try
+        {
+            for (var i = 0; i < 5; i++)
+            {
+                TargetIntelligenceWriteBack.AppendJournal(project, new HuntJournalEntry(
+                    DateTime.UtcNow.ToString("o"),
+                    "brain",
+                    $"decision {i}"), repo, maxEntries: 3);
+            }
+
+            var lines = File.ReadAllLines(TargetIntelligenceWriteBack.HuntJournalPath(project, repo))
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .ToList();
+            Assert.Equal(3, lines.Count);
+            Assert.Contains("decision 4", lines[^1]);
+        }
+        finally
+        {
+            try { Directory.Delete(repo, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public void OnRppObservation_IncrementsCounters()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "randall-rpp-" + Guid.NewGuid().ToString("N"));
+        var project = "rpp-demo";
+        Directory.CreateDirectory(Path.Combine(repo, "data", "stalk", project));
+
+        try
+        {
+            var obs = ObservationEvents.Coverage("run", 1, "hash", 2, 10, project);
+            TargetIntelligenceWriteBack.OnRppObservation(project, "demo-plugin", obs, repo);
+
+            var counters = TargetIntelligenceWriteBack.LoadCounters(project, repo);
+            Assert.Equal(1, counters.RppObservationCount);
+            Assert.Equal("demo-plugin", counters.LastRppPlugin);
+        }
+        finally
+        {
+            try { Directory.Delete(repo, true); } catch { /* ignore */ }
+        }
+    }
+}
+
 public class TargetIntelligenceBuilderTests
 {
     [Fact]

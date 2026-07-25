@@ -45,7 +45,13 @@ public sealed record CrashSummaryDto(
     /// <summary>How many crashes share this cluster key in the project.</summary>
     int SeenCount = 0,
     /// <summary>Fused RIP + function + oracle + frontier one-liner for canister rack tooltips.</summary>
-    string? CanisterContext = null);
+    string? CanisterContext = null,
+    /// <summary>Primary normalized fault kind when intelligence is computed.</summary>
+    string? PrimaryFaultKind = null,
+    /// <summary>Primary fault summary for list / Investigation chips.</summary>
+    string? PrimaryFaultSummary = null,
+    /// <summary>Primary fault confidence 0–1 when known.</summary>
+    double? PrimaryFaultConfidence = null);
 
 public sealed record CdbTriageDto(
     bool Ok,
