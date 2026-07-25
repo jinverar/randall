@@ -226,4 +226,16 @@ public static class DebuggerTools
             CreateNoWindow = !gui,
         };
     }
+
+    /// <summary>Non-blocking launch for post-crash dump open (GUI or headless cdb).</summary>
+    public static ProcessStartInfo BuildDetachedStartInfo(string exe, string arguments)
+    {
+        return new ProcessStartInfo
+        {
+            FileName = exe,
+            Arguments = arguments,
+            UseShellExecute = true,
+            CreateNoWindow = false,
+        };
+    }
 }

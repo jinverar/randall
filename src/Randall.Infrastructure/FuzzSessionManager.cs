@@ -89,6 +89,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                 catch (Exception ex) when (BenignRecorderPipeException.IsBenign(ex))
                 {
                     FuzzRunResult partial;
+                    var expectedIters = request.MaxIterations is > 0 ? request.MaxIterations.Value : (int?)null;
                     lock (_gate)
                     {
                         partial = new FuzzRunResult(
@@ -96,12 +97,15 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                             _status.CorpusAdded,
                             _status.Crashes,
                             []);
+                        var early = expectedIters is > 0 && partial.Iterations < expectedIters.Value;
                         _status = _status with
                         {
                             Running = false,
                             Phase = partial.Iterations > 0 ? "completed" : "error",
                             LastMessage = partial.Iterations > 0
-                                ? $"Done — {partial.Iterations} iterations (recorder teardown noise: {ex.Message})"
+                                ? early
+                                    ? $"Done — {partial.Iterations} iterations (stopped early — hub/recorder noise: {ex.Message})"
+                                    : $"Done — {partial.Iterations} iterations (recorder teardown noise: {ex.Message})"
                                 : ex.Message,
                         };
                     }

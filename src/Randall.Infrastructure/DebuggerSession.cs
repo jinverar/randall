@@ -23,8 +23,8 @@ public static class DebuggerSession
         var args = $"-z \"{dumpPath}\"";
         try
         {
-            var gui = resolvedKind is not DebuggerTools.KindCdb;
-            var proc = Process.Start(DebuggerTools.BuildStartInfo(exe, args, gui));
+            // Fire-and-forget: never block the fuzz loop waiting on a debugger console/GUI.
+            var proc = Process.Start(DebuggerTools.BuildDetachedStartInfo(exe, args));
             return new DebuggerLaunchResultDto(
                 true, resolvedKind, exe, proc?.Id, dumpPath,
                 $"Opened dump in {resolvedKind}: {dumpPath}");

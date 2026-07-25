@@ -341,7 +341,7 @@ public sealed class FuzzEngine
             if (proc is null || proc.HasExited || dryRun)
                 return;
 
-            options.Progress?.OnTargetPid(proc.Id);
+            FuzzProgressGuard.Try(options.Progress, p => p.OnTargetPid(proc.Id));
             Console.WriteLine($"Target PID: {proc.Id}");
 
             if (sysinternalsSnap is { AnyToolFound: true })
@@ -439,6 +439,10 @@ public sealed class FuzzEngine
                 }
             }
             catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (BenignRecorderPipeException.IsBenign(ex))
+            {
+                Console.WriteLine($"  debugger wait (hub/recorder noise): {ex.Message}");
+            }
             catch (Exception ex)
             {
                 Console.WriteLine($"  debugger wait: {ex.Message}");
@@ -475,6 +479,8 @@ public sealed class FuzzEngine
         {
             for (var i = 0; i < maxIterations && !cancellationToken.IsCancellationRequested; i++)
             {
+                try
+                {
                 iterations++;
                 JokerTrick? jokerTrick = null;
                 var iterFlowBias = flowBias;
@@ -711,8 +717,8 @@ public sealed class FuzzEngine
                         parentInputHash, seedSource, payload.Length, InputHash.StackHash(payload),
                         false, 0, coverage.TotalEdges, sw.ElapsedMilliseconds, "dry-run", null,
                         stalkBackend, null, journal?.RunId ?? "", true));
-                    progress?.OnIteration(new FuzzIterationEvent(
-                        iterations, dryLabel, payload.Length, false, false, 0, corpus.SeenCount, coverage.TotalEdges, "dry-run"));
+                    FuzzProgressGuard.Try(progress, p => p.OnIteration(new FuzzIterationEvent(
+                        iterations, dryLabel, payload.Length, false, false, 0, corpus.SeenCount, coverage.TotalEdges, "dry-run")));
                     FuzzAnalystLog.Ok(progress, "Check OK: dry-run (not sent).", iterations);
                     continue;
                 }
@@ -1104,7 +1110,7 @@ public sealed class FuzzEngine
                     iterDetail, result.ExitCode, stalkBackend, iterTracePath,
                     journal?.RunId ?? "", false));
 
-                options.Progress?.OnIteration(new FuzzIterationEvent(
+                FuzzProgressGuard.Try(options.Progress, p => p.OnIteration(new FuzzIterationEvent(
                     iterations,
                     caseLabel,
                     payload.Length,
@@ -1113,7 +1119,7 @@ public sealed class FuzzEngine
                     newEdges,
                     corpus.SeenCount,
                     coverage.TotalEdges,
-                    iterDetail));
+                    iterDetail)));
 
                 if (verbose)
                 {
@@ -1418,10 +1424,17 @@ public sealed class FuzzEngine
 
                     if ((debuggerOpenOnCrash || debuggerMode is "both") && saved.MiniDumpPath is not null)
                     {
-                        var opened = DebuggerSession.OpenDump(saved.MiniDumpPath, debuggerKind);
-                        Console.WriteLine(opened.Ok
-                            ? $"  debugger open: {opened.Message}"
-                            : $"  debugger open skipped: {opened.Message}");
+                        try
+                        {
+                            var opened = DebuggerSession.OpenDump(saved.MiniDumpPath, debuggerKind);
+                            Console.WriteLine(opened.Ok
+                                ? $"  debugger open: {opened.Message}"
+                                : $"  debugger open skipped: {opened.Message}");
+                        }
+                        catch (Exception openEx)
+                        {
+                            Console.WriteLine($"  debugger open skipped: {openEx.Message}");
+                        }
                     }
 
                     // Auto-record a stalk "crash" layer when coverage edges/trace exist.
@@ -1468,6 +1481,34 @@ public sealed class FuzzEngine
                          longLived is { HasExited: true });
                     if (needsInfraRestart)
                         longLived = await RestartLongLivedAsync(iterations);
+                }
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex) when (BenignRecorderPipeException.IsBenign(ex))
+                {
+                    FuzzAnalystLog.Warn(progress,
+                        $"Recorder/hub noise — continuing fuzz: {ex.Message}", iterations);
+                }
+                catch (Exception ex)
+                {
+                    FuzzAnalystLog.Warn(progress,
+                        $"Iteration error — continuing fuzz: {ex.Message}", iterations);
+                    if (runtime is not null)
+                    {
+                        try
+                        {
+                            if (longLived is null or { HasExited: true })
+                                longLived = await RestartLongLivedAsync(iterations);
+                        }
+                        catch (Exception restartEx)
+                        {
+                            FuzzAnalystLog.Warn(progress,
+                                $"Target restart after iteration error: {restartEx.Message}", iterations);
+                        }
+                    }
                 }
             }
         }
@@ -1545,7 +1586,7 @@ public sealed class FuzzEngine
                 /* ignore */
             }
 
-            try { options.Progress?.OnTargetPid(null); }
+            try { FuzzProgressGuard.Try(options.Progress, p => p.OnTargetPid(null)); }
             catch { /* ignore */ }
 
             try { journal?.Complete(iterations, crashCount, coverage.GetTopHotEdges()); }
