@@ -1125,6 +1125,12 @@ async function refreshScareFloorBrain(opts = {}) {
           `<span class="scare-brain-mut-chip" title="score ${c.score} · ${c.newEdges} edges">${escapeAttr(c.displayLabel || (c.chain || []).join('→'))}</span>`).join('');
         parts.push(`Top chains${intel.mutatorChainBiasEnabled ? '' : ' (bias off)'}: <span class="scare-brain-mutators">${chainChips}</span>`);
       }
+      if (intel.brainMemoryConfidence != null && intel.brainMemoryConfidence < 0.999) {
+        parts.push(`Brain memory ${Math.round(intel.brainMemoryConfidence * 100)}%`);
+      }
+      if (intel.brainMemoryMessage) {
+        parts.push(escapeAttr(intel.brainMemoryMessage));
+      }
       if (parts.length) {
         footEl.innerHTML = parts.join('<br/>');
         footEl.classList.remove('hidden');
