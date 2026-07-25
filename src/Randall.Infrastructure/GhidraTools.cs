@@ -34,8 +34,8 @@ public static class GhidraTools
 
     public static string InstallHint =>
         OperatingSystem.IsWindows()
-            ? "optional RE GUI — run scripts/install-ghidra.ps1 (~560 MB; needs JDK 21)"
-            : "optional RE GUI — install Ghidra + JDK 21 (package manager) or extract under tools/ghidra-app";
+            ? "run scripts/install-ghidra.ps1 (~560 MB; needs JDK 21)"
+            : "install Ghidra + JDK 21 (package manager) or extract under tools/ghidra-app";
 
     internal static string? FindGhidraRun(string? repoRoot)
     {

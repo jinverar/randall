@@ -2691,11 +2691,20 @@ static int StalkIntel(string[] args)
                 Console.WriteLine($"  {run.RunId}  iters={run.Iterations} crashes={run.CrashesFound} backend={run.StalkBackend}");
         }
 
+        if (profile.Static is null && profile.Frontier is null)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Next steps:");
+            Console.WriteLine($"  randall stalk ghidra-analyze -p {project} -c projects/{project}.yaml  (optional; needs Ghidra + native binary)");
+            Console.WriteLine($"  randall stalk frontier -p {project}  (after coverage layers or static map)");
+        }
+
         return 0;
     }
     catch (Exception ex)
     {
         Console.Error.WriteLine(ex.Message);
+        Console.Error.WriteLine($"Hint: ensure project '{project}' exists under projects/ and data/stalk/{project}/ is writable.");
         return 1;
     }
 }
@@ -3077,6 +3086,26 @@ static async Task<int> StalkGhidraAnalyze(string[] args)
             root);
         if (resolved is null)
         {
+            var yamlHint = config is not null ? Path.GetFullPath(config) : ResolveProjectYaml(root, project);
+            if (yamlHint is not null && File.Exists(yamlHint))
+            {
+                try
+                {
+                    var cfg = ProjectLoader.Load(yamlHint);
+                    if (cfg.Kind.Equals("harness", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.Error.WriteLine(
+                            "In-process harness projects have no native PE/ELF for Ghidra. " +
+                            "Pass --binary <path> to a native target (e.g. file-text app.exe) or analyze a file/tcp lab.");
+                        return 1;
+                    }
+                }
+                catch
+                {
+                    /* fall through */
+                }
+            }
+
             Console.Error.WriteLine("Binary not found. Pass --binary <path> or -c projects/<proj>.yaml");
             return 1;
         }

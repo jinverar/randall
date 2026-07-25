@@ -220,3 +220,22 @@ We will **not** optimize Randfuzz to win AFL++ exec/s bake-offs. Adapters exist 
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Layer diagram and deployment |
 
 **Living doc:** update this file when Intelligence Loop milestones ship or scope changes. Web UI Roadmap tab (`GET /api/roadmap`) tracks the broader phase list, not this loop-specific map.
+
+---
+
+## Verified (Windows E2E — 2026-07-25)
+
+Smoke on `main` @ `39a4e27` (Release build, 231/231 tests after maturation fixes):
+
+| Surface | Command / endpoint | Result |
+|---------|-------------------|--------|
+| CLI doctor | `doctor -c projects/harness-demo.yaml` | OK — in-process harness ready |
+| CLI frontier | `stalk frontier -p harness-demo` | OK — empty mode, persists `frontier.json` |
+| CLI intel | `stalk intel -p harness-demo --refresh` | OK — writes `target_intelligence.json` |
+| CLI oracles | `oracles -p harness-demo` | OK — no findings (oracles off) |
+| CLI fuzz | `fuzz … --max-iterations 20` (harness-demo + file-text) | OK — 20 iters each, no crash |
+| CLI ghidra-analyze | `stalk ghidra-analyze -p file-text -c …` | Soft-fail — clear Ghidra-missing + manual export path |
+| Server | `GET /api/stalking/{p}/intelligence`, `/target-intelligence`, `/api/crashes` | OK on current build (port 5001); stale server on :5000 may 404 new routes |
+| file-text lab | `scripts/build-file-text.ps1` + doctor | OK — native `app.exe` resolves |
+
+**Honest gaps on stock Windows lab:** DynamoRIO/Ghidra not installed → frontier stays empty, static map unavailable; corpus-novelty / path-coverage only until DR layers exist. Intelligence loop **consumes** artifacts correctly; producing Ghidra map + BB coverage remains operator/setup work.

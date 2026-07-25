@@ -111,9 +111,12 @@ public static class StalkIntelligenceBuilder
             .Take(10)
             .ToList();
 
-        var hasData = frontier is not null || hints is not null || oracleFindings.Count > 0 || mutators.Count > 0
+        var hasData = targets.Count > 0
+            || (frontier?.FrontierCount ?? 0) > 0
+            || hints is not null
+            || oracleFindings.Count > 0
             || analysis?.ChangedFunctions is { Count: > 0 };
-        var summary = BuildSummary(frontier, hints, oracleFindings.Count, targets);
+        var summary = BuildSummary(frontier, hints, oracleFindings.Count, targets, mutators.Count);
         var emptyHint =
             "No stalk brain yet — export Ghidra → randall-analysis.json, run fuzz with coverage, " +
             "then `randall stalk frontier -p <project>`. Oracle hints appear after semantic fuzz runs.";
@@ -322,10 +325,15 @@ public static class StalkIntelligenceBuilder
         FrontierReportDto? frontier,
         GhidraAnalysisOracleHints.HintPack? hints,
         int oracleCount,
-        IReadOnlyList<StalkIntelligenceTargetDto> targets)
+        IReadOnlyList<StalkIntelligenceTargetDto> targets,
+        int mutatorCreditRows)
     {
         if (targets.Count == 0 && frontier is null && hints is null && oracleCount == 0)
+        {
+            if (mutatorCreditRows > 0)
+                return "Mutator credit from recent runs — export Ghidra map or record coverage for ranked targets.";
             return "Randall is waiting for stalk data — no gray doors or static map yet.";
+        }
 
         var parts = new List<string>();
         if (frontier?.FrontierCount > 0)
