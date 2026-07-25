@@ -11,7 +11,11 @@ public static class CrashIntelligenceBuilder
         CrashTriageDto? triage,
         CrashSidecarDto? sidecar,
         int inputLength,
-        IReadOnlyList<CrashSummaryDto> projectCrashes)
+        IReadOnlyList<CrashSummaryDto> projectCrashes,
+        CrashAnalysisDto? analysis = null,
+        CdbTriageDto? cdb = null,
+        bool pageHeapEnabled = false,
+        string? rppTag = null)
     {
         var clusterKey = triage?.ClusterKey ?? summary.ClusterKey;
         var clusterMembers = string.IsNullOrWhiteSpace(clusterKey)
@@ -44,6 +48,11 @@ public static class CrashIntelligenceBuilder
         var minimized = IsMinimized(summary, clusterMembers, inputLength);
         var lineage = BuildLineage(sidecar);
         var screamScore = ComputeScreamScore(severity, novelty, oracleScore?.Total, seenCount, triage);
+        var faultSignals = FaultSignalMapper.FromCrash(
+            triage, analysis, cdb, sidecar, pageHeapEnabled, rppTag ?? summary.TriageTag);
+        var primaryFault = FaultSignalMapper.Primary(faultSignals);
+        var frontierHint = BuildFrontierHint(summary.Project, triage, repoRoot);
+        var canisterContext = BuildCanisterContext(triage, function, oracleScore, frontierHint);
 
         return new CrashIntelligenceDto(
             severity,
@@ -59,7 +68,11 @@ public static class CrashIntelligenceBuilder
             firstSeen,
             seenCount,
             lineage,
-            screamScore);
+            screamScore,
+            primaryFault,
+            faultSignals,
+            canisterContext,
+            frontierHint);
     }
 
     public static CrashSummaryDto WithListIntelligence(
@@ -71,7 +84,46 @@ public static class CrashIntelligenceBuilder
             Novelty = intelligence.Novelty,
             OracleScoreTotal = intelligence.OracleScore?.Total,
             SeenCount = intelligence.SeenCount,
+            CanisterContext = intelligence.CanisterContext,
         };
+
+    private static string? BuildFrontierHint(string project, CrashTriageDto? triage, string? repoRoot)
+    {
+        var frontier = FrontierEngine.TryLoad(project, repoRoot);
+        var fn = triage?.StaticFunction?.FunctionName;
+        var near = GhidraCallGraphHelper.FindNearestFrontier(fn, frontier);
+        if (near is null)
+            return null;
+
+        var label = string.IsNullOrWhiteSpace(near.FunctionName)
+            ? near.ToAddress
+            : $"{near.FunctionName}→{near.ToAddress}";
+        return near.Kind switch
+        {
+            "session-fork" => $"session fork near {label} [{near.Score}]",
+            "edge-gap" => $"edge gap near {label} [{near.Score}]",
+            _ => $"gray door {label} [{near.Score}]",
+        };
+    }
+
+    private static string? BuildCanisterContext(
+        CrashTriageDto? triage,
+        string? function,
+        OracleScore? oracleScore,
+        string? frontierHint)
+    {
+        var parts = new List<string>();
+        var rip = triage?.Rip ?? triage?.StaticFunction?.PcAddress;
+        if (!string.IsNullOrWhiteSpace(rip))
+            parts.Add($"RIP {rip}");
+        if (!string.IsNullOrWhiteSpace(function))
+            parts.Add(function);
+        if (oracleScore is { Total: > 0 })
+            parts.Add($"oracle {oracleScore.Total}");
+        if (!string.IsNullOrWhiteSpace(frontierHint))
+            parts.Add(frontierHint);
+        return parts.Count == 0 ? null : string.Join(" · ", parts);
+    }
 
     private static int ComputeNovelty(int seenCount, int? coverageDelta, int? oracleTotal)
     {

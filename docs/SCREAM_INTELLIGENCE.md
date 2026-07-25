@@ -18,8 +18,9 @@ Built by `CrashIntelligenceBuilder` from the crash catalog, triage, sidecar, sta
 | `Reproducible` | Input `.bin` + sidecar/run link present |
 | `Minimized` | Shortest input in cluster |
 | `FirstSeen` | Earliest `ObservedAt` in cluster |
-| `Lineage` | Sidecar `MutatorChain` stub (`Partial: true` until journal replay) |
+| `Lineage` | Sidecar `MutatorChain` + journal replay when `iterations.jsonl` exists |
 | `ScreamScore` | Unified rank for list / canister / Investigation |
+| `PrimaryFault` / `FaultSignals` | `FaultSignalMapper` — triage, cdb, Page Heap, sanitizer, RPP ([FAULT_SIGNALS.md](FAULT_SIGNALS.md)) |
 
 ## API
 

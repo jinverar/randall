@@ -700,6 +700,23 @@ app.MapGet("/api/stalking/{project}/intelligence", (string project) =>
     }
 });
 
+app.MapGet("/api/stalking/{project}/target-intelligence", (string project, bool? refresh) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        if (refresh == true)
+            return Results.Ok(TargetIntelligenceBuilder.Build(project, persist: true));
+        return Results.Ok(TargetIntelligenceBuilder.TryLoad(project)
+            ?? TargetIntelligenceBuilder.Build(project, persist: true));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapPost("/api/stalking/{project}/inventory", (string project, StalkInventoryImportBody body) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

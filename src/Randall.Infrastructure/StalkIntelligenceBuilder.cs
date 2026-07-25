@@ -76,6 +76,22 @@ public static class StalkIntelligenceBuilder
             }
         }
 
+        if (analysis?.ChangedFunctions is { Count: > 0 } changed)
+        {
+            foreach (var fn in changed.OrderByDescending(c => c.ChangeScore).Take(3))
+            {
+                targets.Add(new StalkIntelligenceTargetDto(
+                    $"patch:{fn.Address}",
+                    "patch",
+                    fn.Name,
+                    ScoreChangedFunction(fn),
+                    BuildChangedFunctionDetail(fn),
+                    fn.Address,
+                    fn.Name,
+                    BuildChangedFunctionScoreBreakdown(fn)));
+            }
+        }
+
         foreach (var finding in oracleFindings)
         {
             targets.Add(new StalkIntelligenceTargetDto(
@@ -95,11 +111,16 @@ public static class StalkIntelligenceBuilder
             .Take(10)
             .ToList();
 
-        var hasData = frontier is not null || hints is not null || oracleFindings.Count > 0 || mutators.Count > 0;
+        var hasData = frontier is not null || hints is not null || oracleFindings.Count > 0 || mutators.Count > 0
+            || analysis?.ChangedFunctions is { Count: > 0 };
         var summary = BuildSummary(frontier, hints, oracleFindings.Count, targets);
         var emptyHint =
             "No stalk brain yet — export Ghidra → randall-analysis.json, run fuzz with coverage, " +
             "then `randall stalk frontier -p <project>`. Oracle hints appear after semantic fuzz runs.";
+
+        var commandStrip = TargetIntelligenceBuilder.BuildCommandStrip(project, repoRoot);
+        var targetProfile = TargetIntelligenceBuilder.TryLoad(project, repoRoot)
+            ?? TargetIntelligenceBuilder.Build(project, repoRoot, persist: true);
 
         return new StalkIntelligenceDto(
             project,
@@ -113,7 +134,9 @@ public static class StalkIntelligenceBuilder
             oracleFindings.Count,
             targets,
             mutators.Take(5).ToList(),
-            mutatorBias);
+            mutatorBias,
+            commandStrip,
+            targetProfile);
     }
 
     private static string LabelForFrontier(FrontierBranchDto f) =>
@@ -136,9 +159,14 @@ public static class StalkIntelligenceBuilder
         return string.Join(" · ", parts);
     }
 
-    private static string BuildOracleDetail(OracleFindingDto f) =>
-        $"{f.RuleClass} · {f.Severity} · iter #{f.Iteration}" +
-        (string.IsNullOrWhiteSpace(f.Command) ? "" : $" · {f.Command}");
+    private static string BuildOracleDetail(OracleFindingDto f)
+    {
+        var baseText = $"{f.RuleClass} · {f.Severity} · iter #{f.Iteration}" +
+                       (string.IsNullOrWhiteSpace(f.Command) ? "" : $" · {f.Command}");
+        if (f.Fault is null)
+            return baseText;
+        return $"{baseText} · fault {f.Fault.Kind}/{f.Fault.Source}";
+    }
 
     private static int ScoreOracleFinding(OracleFindingDto f) =>
         ParseOracleSeverity(f.Severity) switch
@@ -212,6 +240,51 @@ public static class StalkIntelligenceBuilder
         return new OracleScore(total, terms, BuildStaticDetail(fn));
     }
 
+    private static int ScoreChangedFunction(RandallAnalysisChangedFunctionDto fn) =>
+        Math.Clamp((int)Math.Round(fn.ChangeScore * 10) + Math.Abs(fn.FuzzPriorityDelta), 20, 95);
+
+    private static string BuildChangedFunctionDetail(RandallAnalysisChangedFunctionDto fn)
+    {
+        var parts = new List<string> { fn.ChangeKind };
+        if (fn.SizeDelta != 0)
+            parts.Add($"size Δ{fn.SizeDelta:+0;-0}");
+        if (fn.ComplexityDelta != 0)
+            parts.Add($"complexity Δ{fn.ComplexityDelta:+0;-0}");
+        if (fn.BasicBlockCountDelta != 0)
+            parts.Add($"BB Δ{fn.BasicBlockCountDelta:+0;-0}");
+        if (fn.FuzzPriorityDelta != 0)
+            parts.Add($"priority Δ{fn.FuzzPriorityDelta:+0;-0}");
+        return string.Join(" · ", parts);
+    }
+
+    private static OracleScore BuildChangedFunctionScoreBreakdown(RandallAnalysisChangedFunctionDto fn)
+    {
+        var terms = new List<OracleScoreTerm>
+        {
+            new("change score", Math.Min(25, (int)Math.Round(fn.ChangeScore * 8)), $"{fn.ChangeScore:0.##}"),
+            new("change kind", fn.ChangeKind switch
+            {
+                "modified" => 18,
+                "added" => 14,
+                "renamed" => 10,
+                "removed" => 8,
+                _ => 6,
+            }, fn.ChangeKind),
+        };
+        if (Math.Abs(fn.FuzzPriorityDelta) > 0)
+            terms.Add(new OracleScoreTerm("priority delta", Math.Min(12, Math.Abs(fn.FuzzPriorityDelta)),
+                $"{fn.FuzzPriorityDelta:+0;-0}"));
+        if (Math.Abs(fn.ComplexityDelta) > 0)
+            terms.Add(new OracleScoreTerm("complexity delta", Math.Min(10, Math.Abs(fn.ComplexityDelta)),
+                $"{fn.ComplexityDelta:+0;-0}"));
+        if (Math.Abs(fn.BasicBlockCountDelta) > 0)
+            terms.Add(new OracleScoreTerm("BB delta", Math.Min(10, Math.Abs(fn.BasicBlockCountDelta) * 2),
+                $"{fn.BasicBlockCountDelta:+0;-0}"));
+
+        var total = Math.Min(100, terms.Sum(t => t.Points));
+        return new OracleScore(total, terms, BuildChangedFunctionDetail(fn));
+    }
+
     private static OracleScore BuildOracleScoreBreakdown(OracleFindingDto f)
     {
         var terms = new List<OracleScoreTerm>();
@@ -259,6 +332,10 @@ public static class StalkIntelligenceBuilder
             parts.Add($"{frontier.FrontierCount} gray door(s)");
         if (hints is not null)
             parts.Add(hints.Summary);
+        if (hints is not null)
+            parts.Add(hints.UnopenedDoorsSummary);
+        if (hints is not null && !string.IsNullOrWhiteSpace(hints.PatchHuntSummary))
+            parts.Add(hints.PatchHuntSummary);
         if (oracleCount > 0)
             parts.Add($"{oracleCount} recent oracle hint(s)");
         if (targets.Count > 0)

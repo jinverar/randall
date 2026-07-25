@@ -16,12 +16,14 @@ public sealed record StalkIntelligenceDto(
     int OracleFindingCount,
     IReadOnlyList<StalkIntelligenceTargetDto> Targets,
     IReadOnlyList<MutatorCreditRowDto> TopMutators,
-    bool MutatorBiasEnabled);
+    bool MutatorBiasEnabled,
+    StalkCommandStripDto? CommandStrip = null,
+    TargetIntelligenceDto? TargetProfile = null);
 
 /// <summary>One ranked scare target with optional explainable score breakdown for the Why? control.</summary>
 public sealed record StalkIntelligenceTargetDto(
     string Id,
-    /// <summary>frontier | static | oracle</summary>
+    /// <summary>frontier | static | oracle | patch</summary>
     string Kind,
     string Label,
     int Score,

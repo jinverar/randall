@@ -195,4 +195,6 @@ public sealed record OracleFindingDto(
     int ReproductionCount,
     DateTimeOffset At,
     int? OracleScoreTotal = null,
-    IReadOnlyList<OracleScoreTerm>? OracleScoreTerms = null);
+    IReadOnlyList<OracleScoreTerm>? OracleScoreTerms = null,
+    /// <summary>Normalized fault when the finding is runtime/sanitizer/crash shaped.</summary>
+    FaultSignal? Fault = null);

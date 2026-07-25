@@ -691,7 +691,60 @@ function initRecipeCatalog() {
 function scareBrainKindLabel(kind) {
   if (kind === 'frontier') return 'gray door';
   if (kind === 'oracle') return 'oracle';
+  if (kind === 'patch') return 'patch delta';
   return 'static';
+}
+
+function renderScareBrainStrip(strip) {
+  if (!strip) return '';
+  const chips = [];
+  if (strip.coveragePercent != null) {
+    const bb = strip.totalBlocks != null && strip.coveredBlocks != null
+      ? ` (${strip.coveredBlocks}/${strip.totalBlocks} BBs)` : '';
+    chips.push(`<span class="scare-brain-chip">coverage <strong>${strip.coveragePercent}%</strong>${escapeAttr(bb)}</span>`);
+  }
+  if (strip.frontierCount != null) {
+    chips.push(`<span class="scare-brain-chip">frontiers <strong>${strip.frontierCount}</strong></span>`);
+  }
+  const moods = strip.canisterMoods || {};
+  const moodOrder = ['eip', 'virulent', 'toxic', 'watching', 'laughter'];
+  moodOrder.forEach((m) => {
+    const n = moods[m];
+    if (n > 0) {
+      const cls = m === 'toxic' ? ' mood-toxic' : m === 'virulent' ? ' mood-virulent' : m === 'eip' ? ' mood-eip' : '';
+      chips.push(`<span class="scare-brain-chip${cls}">${escapeAttr(m)} <strong>${n}</strong></span>`);
+    }
+  });
+  if (strip.differentialEnabled) {
+    chips.push('<span class="scare-brain-chip" title="oracles.differential armed">diff oracle <strong>on</strong></span>');
+  }
+  return chips.length ? chips.join('') : '';
+}
+
+function renderScareBrainTargetIntel(profile) {
+  if (!profile?.summary) return '';
+  const parts = [];
+  if (profile.static?.changedFunctionCount > 0) {
+    parts.push(`${profile.static.changedFunctionCount} changed fn(s) from ghidra-diff`);
+  }
+  if (profile.crashes?.total > 0) {
+    parts.push(`${profile.crashes.total} crash(es) · scream max ${profile.crashes.maxScreamScore}`);
+  }
+  if (profile.oracles?.differentialEnabled) {
+    const rules = profile.oracles.differentialRules || [];
+    const missing = rules.filter((r) => !r.referenceExists).length;
+    parts.push(`differential ${rules.length} rule(s)${missing ? ` · ${missing} ref missing` : ''}`);
+  }
+  if (profile.dynamic?.totalIterations > 0) {
+    parts.push(`${profile.dynamic.totalIterations} campaign iters`);
+  }
+  const detail = parts.length ? `<p class="hint">${escapeAttr(parts.join(' · '))}</p>` : '';
+  return `<div class="scare-brain-target-intel-inner">
+    <h3>Target intelligence</h3>
+    <p>${escapeAttr(profile.summary)}</p>
+    ${detail}
+    <p class="hint"><code>data/stalk/${escapeAttr(profile.project)}/target_intelligence.json</code></p>
+  </div>`;
 }
 
 function renderScareBrainTerms(breakdown) {
@@ -728,6 +781,8 @@ function renderScareBrainTarget(t, index) {
 async function refreshScareFloorBrain() {
   const project = document.getElementById('case-project')?.value;
   const summaryEl = document.getElementById('scare-brain-summary');
+  const stripEl = document.getElementById('scare-brain-strip');
+  const targetIntelEl = document.getElementById('scare-brain-target-intel');
   const targetsEl = document.getElementById('scare-brain-targets');
   const footEl = document.getElementById('scare-brain-foot');
   if (!targetsEl) return;
@@ -735,18 +790,37 @@ async function refreshScareFloorBrain() {
   if (!project) {
     if (summaryEl) summaryEl.textContent = 'Pick a project to see gray doors, static priorities, and oracle hints.';
     targetsEl.innerHTML = '<p class="hint scare-brain-empty">Select <strong>Working on project</strong> below — Randall reads <code>data/stalk/&lt;project&gt;/</code> on disk.</p>';
+    stripEl?.classList.add('hidden');
+    targetIntelEl?.classList.add('hidden');
     footEl?.classList.add('hidden');
     return;
   }
 
   targetsEl.innerHTML = '<p class="hint scare-brain-empty">Thinking…</p>';
+  stripEl?.classList.add('hidden');
+  targetIntelEl?.classList.add('hidden');
   try {
     const intel = await api.get(`/api/stalking/${encodeURIComponent(project)}/intelligence`);
     if (summaryEl) summaryEl.textContent = intel.summary || intel.emptyHint || '';
 
+    if (stripEl && intel.commandStrip) {
+      const stripHtml = renderScareBrainStrip(intel.commandStrip);
+      if (stripHtml) {
+        stripEl.innerHTML = stripHtml;
+        stripEl.classList.remove('hidden');
+      } else {
+        stripEl.classList.add('hidden');
+      }
+    }
+
+    if (targetIntelEl && intel.targetProfile) {
+      targetIntelEl.innerHTML = renderScareBrainTargetIntel(intel.targetProfile);
+      targetIntelEl.classList.remove('hidden');
+    }
+
     if (!intel.hasData || !(intel.targets || []).length) {
       targetsEl.innerHTML = `<p class="hint scare-brain-empty">${escapeAttr(intel.emptyHint || 'No stalk intelligence yet.')}</p>`;
-      footEl?.classList.add('hidden');
+      if (!intel.targetProfile) footEl?.classList.add('hidden');
       return;
     }
 
@@ -2496,8 +2570,9 @@ function renderCrashDetail(detail, title) {
           <dt>Minimized</dt><dd>${intel.minimized ? 'yes (shortest in cluster)' : 'no'}</dd>
           <dt>First seen</dt><dd>${new Date(intel.firstSeen).toLocaleString()}</dd>
         </dl>
-        ${intel.lineage?.mutatorChain?.length ? `<p class="label">Lineage <span class="hint-inline">${intel.lineage.partial ? 'partial' : 'full'}</span></p>
-          <p class="hint"><code>${escapeAttr(intel.lineage.mutatorChain.join(' → '))}</code></p>` : ''}
+        ${intel.lineage?.mutatorChain?.length ? `<p class="label">Lineage <span class="hint-inline">${intel.lineage.partial ? 'partial' : 'journal-backed'}</span></p>
+          <p class="hint"><code>${escapeAttr(intel.lineage.mutatorChain.join(' → '))}</code></p>
+          ${intel.lineage.seedSource ? `<p class="hint">Seed <code>${escapeAttr(intel.lineage.seedSource)}</code>${intel.lineage.parentInputHash ? ` · parent <code>${escapeAttr(intel.lineage.parentInputHash.slice(0, 16))}…</code>` : ''}</p>` : ''}` : ''}
       </div>` : ''}
       <div class="crash-why-actions">
         ${cluster ? `<button type="button" class="btn" id="crash-filter-cluster-btn">Browse ${clusterN}× cluster</button>` : ''}
@@ -3653,11 +3728,13 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
     const ipControlled = ipCount > 0;
     const live = harvestState.liveProject && name === harvestState.liveProject;
     const staticHint = list.find((c) => c.staticFunctionSummary)?.staticFunctionSummary || '';
+    const canisterCtx = list.find((c) => c.canisterContext)?.canisterContext || '';
     const hotCrash = list.find(screamHot);
     const screamHotSlot = !!hotCrash;
     const intelHint = hotCrash
-      ? `novelty ${hotCrash.novelty ?? '—'} · oracle ${hotCrash.oracleScoreTotal ?? '—'}`
-      : '';
+      ? (hotCrash.canisterContext
+        || `novelty ${hotCrash.novelty ?? '—'} · oracle ${hotCrash.oracleScoreTotal ?? '—'}`)
+      : canisterCtx || '';
     const cls = [
       'harvest',
       `mood-${mood}`,

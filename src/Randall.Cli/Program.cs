@@ -112,6 +112,7 @@ static void PrintHelp()
           randall stalk capture-binary -p <project> [-i seed] Dragon Dance binary drcov
           randall stalk map -p <project> [-c yaml] [--binary path]  In-app stalk map (strings/imports)
           randall stalk frontier -p <project> [--limit N] [--json]  Score gray-door CFG branches
+          randall stalk intel -p <project> [--json] [--refresh]  Target intelligence profile
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall ghidra mcp ping|imports|callers   Optional live GhidraMCP Q&A (soft-fail)
           randall stalk from-crash -i <crash-guid> [--tag crash]
@@ -127,7 +128,7 @@ static void PrintHelp()
           randall debug attach -p <pid> | -t <project> [--kind …]
           randall fuzz -c <project> --debugger wait|attach|both [--open-on-crash]
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
-          randall oracles [-p name] [--json] [--mcp-import sym]   Oracle + optional live Ghidra MCP
+          randall oracles [-p name] [--json] [--mcp-import sym] [--mcp-path recv:memcpy]   Oracle + Ghidra MCP
           randall magician [spells|cast|log]   Magician: spells / summons for Oracle needs
           randall hunt -d <src> [-c yaml --arm]  Bug Hunter: AI/human analysis + arm campaign
           randall hunt attribution|mistakes   Bug Hunter subcommands
@@ -930,6 +931,7 @@ static int RunOracles(string[] args)
     string? project = null;
     var json = false;
     string? mcpImport = null;
+    string? mcpPath = null;
     for (var i = 0; i < args.Length; i++)
     {
         switch (args[i])
@@ -942,6 +944,9 @@ static int RunOracles(string[] args)
                 break;
             case "--mcp-import" when i + 1 < args.Length:
                 mcpImport = args[++i];
+                break;
+            case "--mcp-path" when i + 1 < args.Length:
+                mcpPath = args[++i];
                 break;
         }
     }
@@ -973,6 +978,9 @@ static int RunOracles(string[] args)
             Console.WriteLine("Static target map (Ghidra):");
             Console.WriteLine($"  {hints.Summary}");
             Console.WriteLine($"  {hints.CoverageGapSummary}");
+            Console.WriteLine($"  {hints.UnopenedDoorsSummary}");
+            if (!string.IsNullOrWhiteSpace(hints.PatchHuntSummary))
+                Console.WriteLine($"  {hints.PatchHuntSummary}");
             Console.WriteLine($"  Path: {hints.AnalysisPath}");
             Console.WriteLine("  Top static targets:");
             foreach (var fn in hints.TopFunctions.Take(5))
@@ -994,6 +1002,22 @@ static int RunOracles(string[] args)
                 Console.Write("  Sinks: ");
                 Console.WriteLine(string.Join(", ", hints.TopSinks.Take(4).Select(s => s.Name)));
             }
+            if (hints.TopSourceSinkPaths.Count > 0)
+            {
+                Console.WriteLine("  Source→sink paths (static):");
+                foreach (var p in hints.TopSourceSinkPaths.Take(5))
+                    Console.WriteLine(
+                        $"    [{p.PathScore}] {p.SourceSymbol} → {p.SinkSymbol} ({p.HopCount} hop(s): " +
+                        $"{string.Join(" → ", p.PathFunctions.Take(4))})");
+            }
+
+            if (hints.TopChangedFunctions.Count > 0)
+            {
+                Console.WriteLine("  Patch-hunt changed functions:");
+                foreach (var c in hints.TopChangedFunctions.Take(5))
+                    Console.WriteLine(
+                        $"    [{c.ChangeScore:0}] {c.Name} ({c.ChangeKind}) Δsize={c.SizeDelta} Δbb={c.BasicBlockCountDelta}");
+            }
 
             var frontier = FrontierEngine.TryLoad(project, repo)
                 ?? FrontierEngine.Score(project, repo, limit: 20, persist: true);
@@ -1005,6 +1029,27 @@ static int RunOracles(string[] args)
                         $"    [{f.Score}] {f.Kind} → {f.ToAddress}  " +
                         $"(d={f.CfgDistance:0} r={f.Rarity:P0} succ={f.UnseenSuccessorCount})");
                 Console.WriteLine($"  Path: {FrontierEngine.FrontierPath(project, repo)}");
+            }
+            Console.WriteLine();
+        }
+
+        if (mcpPath is not null && project is not null)
+        {
+            var parts = mcpPath.Split(':', 2, StringSplitOptions.TrimEntries);
+            if (parts.Length != 2)
+            {
+                Console.WriteLine("Ghidra MCP path: use --mcp-path recv:memcpy (input import:sink import).");
+            }
+            else
+            {
+                var traced = GhidraMcpClient.TryTraceInputToSinkPathAsync(
+                    project, parts[0], parts[1], repo).GetAwaiter().GetResult();
+                if (traced is null)
+                    Console.WriteLine(
+                        $"Ghidra MCP path: no {parts[0]}→{parts[1]} chain (offline MCP or missing randall-analysis.json).");
+                else
+                    Console.WriteLine(
+                        $"Ghidra MCP path ({traced.Source}): {traced.Summary}");
             }
             Console.WriteLine();
         }
@@ -2378,6 +2423,8 @@ static int RunStalk(string[] args)
                                             In-Randall stalk map: missed + PE/ELF strings/imports
               randall stalk frontier -p <project> [--limit N] [--json] [--no-save]
                                             Score gray-door CFG branches → frontier.json
+              randall stalk intel -p <project> [--json] [--refresh]
+                                            Build/read target_intelligence.json rollup
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
               randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
             """);
@@ -2399,6 +2446,7 @@ static int RunStalk(string[] args)
         "capture-binary" or "binary-drcov" or "dragon-dance" => StalkCaptureBinary(rest).GetAwaiter().GetResult(),
         "map" or "stalk-map" or "surface" => StalkMap(rest),
         "frontier" or "frontiers" or "doors" => StalkFrontier(rest),
+        "intel" or "intelligence" or "profile" => StalkIntel(rest),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
         "bench" => StalkBench(rest),
@@ -2567,6 +2615,91 @@ static int StalkFrontier(string[] args)
     }
 }
 
+static int StalkIntel(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    var json = false;
+    var refresh = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--json")
+            json = true;
+        else if (args[i] is "--refresh")
+            refresh = true;
+    }
+
+    try
+    {
+        var profile = refresh
+            ? TargetIntelligenceBuilder.Build(project, persist: true)
+            : TargetIntelligenceBuilder.TryLoad(project)
+              ?? TargetIntelligenceBuilder.Build(project, persist: true);
+
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(profile,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        Console.WriteLine($"Target intelligence: {profile.Project}");
+        Console.WriteLine($"  {profile.Summary}");
+        Console.WriteLine($"  saved: {TargetIntelligenceBuilder.ProfilePath(project)}");
+        Console.WriteLine();
+
+        if (profile.Static is { } s)
+        {
+            Console.WriteLine("Static map:");
+            Console.WriteLine($"  binary={s.Binary ?? "(none)"}  functions={s.FunctionCount}" +
+                              (s.CoveragePercent is { } cp ? $"  coverage={cp:0.#}%" : "") +
+                              (s.ChangedFunctionCount > 0 ? $"  changed={s.ChangedFunctionCount}" : ""));
+            foreach (var fn in s.TopChangedFunctions.Take(4))
+                Console.WriteLine($"    [{fn.ChangeKind}] {fn.Name} @ {fn.Address} score={fn.ChangeScore:0.##}");
+        }
+
+        if (profile.Frontier is { } f)
+            Console.WriteLine($"Frontier: {f.Count} gray door(s) [{f.Mode}] top={f.TopTarget ?? "—"}");
+
+        if (profile.Crashes is { } c)
+        {
+            var moods = string.Join(", ", c.MoodCounts.Select(kv => $"{kv.Key}={kv.Value}"));
+            Console.WriteLine($"Crashes: {c.Total} total · {c.UniqueClusters} cluster(s) · max scream={c.MaxScreamScore} · moods [{moods}]");
+        }
+
+        if (profile.Oracles is { } o)
+        {
+            Console.WriteLine($"Oracles: {o.FindingCount} finding(s) · {o.ViolationCount} violation(s)" +
+                              (o.DifferentialEnabled ? " · differential armed" : ""));
+            foreach (var d in o.DifferentialRules)
+            {
+                var ok = d.ReferenceExists ? "ok" : "MISSING";
+                Console.WriteLine($"  diff {d.Id} ({d.Type}) ref={d.ReferenceExecutable} [{ok}]");
+            }
+        }
+
+        if (profile.Dynamic is { } dyn)
+            Console.WriteLine($"Campaigns: {dyn.TotalIterations} iters · {dyn.TotalCrashes} crash(es) · last={dyn.LastRunId ?? "—"}");
+
+        if (profile.RecentCampaigns.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Recent runs:");
+            foreach (var run in profile.RecentCampaigns.Take(3))
+                Console.WriteLine($"  {run.RunId}  iters={run.Iterations} crashes={run.CrashesFound} backend={run.StalkBackend}");
+        }
+
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
 static string TrimConsole(string s, int max) =>
     s.Length <= max ? s : s[..(max - 1)] + "…";
 
@@ -2680,9 +2813,12 @@ static int RunGhidra(string[] args)
               randall ghidra mcp imports [--filter <symbol>]
               randall ghidra mcp callers --import <symbol>
               randall ghidra mcp xrefs --to <address>
+              randall ghidra mcp crash --rip <address> [-p <project>]
+              randall ghidra debugger annotate --rip <address> [-p <project>]
 
             Requires GhidraMCP HTTP server (default http://127.0.0.1:8089/).
-            Install: scripts/install-ghidra-mcp.ps1 · docs/GHIDRA_INTEGRATION.md
+            TraceRMI debugger translation (optional): GHIDRA_DEBUGGER_URL (default :8099).
+            Install: scripts/install-ghidra-mcp.ps1 · docs/GHIDRA_DEBUGGER.md
             """);
         return 0;
     }
@@ -2690,8 +2826,20 @@ static int RunGhidra(string[] args)
     return args[0].ToLowerInvariant() switch
     {
         "mcp" => RunGhidraMcp(args.Skip(1).ToArray()).GetAwaiter().GetResult(),
+        "debugger" => RunGhidraDebugger(args.Skip(1).ToArray()).GetAwaiter().GetResult(),
         _ => Unknown("ghidra " + args[0]),
     };
+}
+
+static async Task<int> RunGhidraDebugger(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+        return RunGhidra(["help"]);
+
+    if (!args[0].Equals("annotate", StringComparison.OrdinalIgnoreCase))
+        return Unknown("ghidra debugger " + args[0]);
+
+    return await RunGhidraCrashAnnotate(args.Skip(1).ToArray());
 }
 
 static async Task<int> RunGhidraMcp(string[] args)
@@ -2700,7 +2848,7 @@ static async Task<int> RunGhidraMcp(string[] args)
         return RunGhidra(["help"]);
 
     var sub = args[0].ToLowerInvariant();
-    string? filter = null, importName = null, xrefTo = null;
+    string? filter = null, importName = null, xrefTo = null, rip = null, project = null;
     for (var i = 1; i < args.Length; i++)
     {
         switch (args[i])
@@ -2714,7 +2862,30 @@ static async Task<int> RunGhidraMcp(string[] args)
             case "--to" when i + 1 < args.Length:
                 xrefTo = args[++i];
                 break;
+            case "--rip" when i + 1 < args.Length:
+                rip = args[++i];
+                break;
+            case "-p" or "--project" when i + 1 < args.Length:
+                project = args[++i];
+                break;
         }
+    }
+
+    if (sub is "crash" or "annotate" or "rip")
+    {
+        if (string.IsNullOrWhiteSpace(rip))
+        {
+            Console.Error.WriteLine("Usage: randall ghidra mcp crash --rip <address> [-p <project>]");
+            return 1;
+        }
+
+        var crashArgs = new List<string> { "--rip", rip };
+        if (!string.IsNullOrWhiteSpace(project))
+        {
+            crashArgs.Add("-p");
+            crashArgs.Add(project);
+        }
+        return await RunGhidraCrashAnnotate(crashArgs.ToArray());
     }
 
     switch (sub)
@@ -2808,6 +2979,48 @@ static async Task<int> RunGhidraMcp(string[] args)
         default:
             return Unknown("ghidra mcp " + sub);
     }
+}
+
+static async Task<int> RunGhidraCrashAnnotate(string[] args)
+{
+    string? rip = null, project = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "--rip" when i + 1 < args.Length:
+                rip = args[++i];
+                break;
+            case "-p" or "--project" when i + 1 < args.Length:
+                project = args[++i];
+                break;
+        }
+    }
+
+    if (string.IsNullOrWhiteSpace(rip))
+    {
+        Console.Error.WriteLine("Usage: randall ghidra mcp crash --rip <address> [-p <project>]");
+        Console.Error.WriteLine("       randall ghidra debugger annotate --rip <address> [-p <project>]");
+        Console.Error.WriteLine("  docs/GHIDRA_DEBUGGER.md");
+        return 1;
+    }
+
+    var repo = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+    var ann = await GhidraDebuggerCorrelation.AnnotateRipAsync(rip, project, repo);
+    Console.WriteLine(GhidraDebuggerCorrelation.FormatOneLine(ann));
+    Console.WriteLine($"  {ann.Summary}");
+    Console.WriteLine($"  Source: {ann.Source}");
+    if (ann.StaticMap?.InstructionHint is not null)
+        Console.WriteLine($"  Hint: {ann.StaticMap.InstructionHint}");
+    if (ann.DecompiledSnippet is not null)
+    {
+        Console.WriteLine("  Decompiled (snippet):");
+        foreach (var line in ann.DecompiledSnippet.Split('\n').Take(10))
+            Console.WriteLine($"    {line}");
+    }
+    if (ann.Source == "none")
+        return 1;
+    return 0;
 }
 
 static async Task<int> StalkGhidraAnalyze(string[] args)

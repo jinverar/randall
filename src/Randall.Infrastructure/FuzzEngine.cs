@@ -989,6 +989,19 @@ public sealed class FuzzEngine
                         runId, iterations, payloadHash, newEdges, coverage.TotalEdges, project.Name));
                 }
 
+                await RppObserveHook.RunAsync(
+                    project,
+                    yamlPath,
+                    ObservationBus,
+                    runId,
+                    iterations,
+                    payloadHash,
+                    payload,
+                    newEdges,
+                    coverage.TotalEdges,
+                    result.Detail,
+                    cancellationToken);
+
                 // Hybrid semantic oracle stack — supplements coverage (docs/ORACLES.md).
                 OracleEvalResult? oracleEval = null;
                 if (OracleEngine.IsEnabled(project))
@@ -1214,6 +1227,25 @@ public sealed class FuzzEngine
                         : OracleScorer.CrashScore(result.Detail, newEdges);
                     ObservationBus.Publish(ObservationEvents.Crash(
                         runId, iterations, payloadHash, result.ExitCode, result.Detail, newEdges, project.Name));
+                    var crashFaultPreview = CrashTriage.Classify(
+                        analysis: null,
+                        sidecar: null,
+                        summary: new CrashSummaryDto(
+                            Guid.Empty, project.Name, iterations, mutatorLabel, payloadHash, expectedInputPath,
+                            crashDump, result.ExitCode?.ToString(), crashTag, null, journal?.RunId,
+                            DateTimeOffset.UtcNow),
+                        payload: payload);
+                    foreach (var fault in FaultSignalMapper.FromCrash(
+                                 crashFaultPreview,
+                                 analysis: null,
+                                 cdb: null,
+                                 sidecar: null,
+                                 pageHeapEnabled: project.Target.PageHeap,
+                                 rppTag: crashTag))
+                    {
+                        ObservationBus.Publish(ObservationEvents.Fault(
+                            runId, iterations, payloadHash, fault, project.Name));
+                    }
 
                     var savedResult = crashStore.SaveEx(
                         project.Name,

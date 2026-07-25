@@ -20,7 +20,8 @@ public sealed record RandallAnalysisDocument(
     RandallAnalysisCoverageSummaryDto? CoverageSummary = null,
     IReadOnlyList<RandallAnalysisChangedFunctionDto>? ChangedFunctions = null,
     IReadOnlyList<RandallAnalysisBsimMatchDto>? BsimMatches = null,
-    RandallAnalysisDiffMetaDto? DiffMeta = null);
+    RandallAnalysisDiffMetaDto? DiffMeta = null,
+    IReadOnlyList<RandallAnalysisSourceSinkPathDto>? SourceSinkPaths = null);
 
 public sealed record RandallAnalysisFunctionDto(
     string Name,
@@ -144,3 +145,26 @@ public sealed record StaticFunctionMappingDto(
     string? ModuleRva = null,
     string? InstructionHint = null,
     int? FuzzPriority = null);
+
+/// <summary>
+/// SaTC-style static reachability: input API → intermediate functions → dangerous sink.
+/// Computed from call graph + import xrefs in <c>randall-analysis.json</c>.
+/// </summary>
+public sealed record RandallAnalysisSourceSinkPathDto(
+    string SourceSymbol,
+    string SinkSymbol,
+    int PathScore,
+    int HopCount,
+    IReadOnlyList<string> PathFunctions,
+    string Summary);
+
+/// <summary>
+/// GhidraMCP / TraceRMI crash RIP annotation — static map + optional live decompile/debugger context.
+/// </summary>
+public sealed record CrashRipAnnotationDto(
+    string RipAddress,
+    StaticFunctionMappingDto? StaticMap,
+    string? DecompiledSnippet,
+    string? DebuggerStaticAddress,
+    string Source,
+    string Summary);

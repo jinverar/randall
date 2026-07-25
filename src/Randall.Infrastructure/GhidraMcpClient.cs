@@ -31,6 +31,17 @@ public static class GhidraMcpClient
         IReadOnlyList<XrefEntry> Callers,
         string Source);
 
+    public sealed record InputToSinkPathResult(
+        string InputImport,
+        string SinkImport,
+        IReadOnlyList<string> Path,
+        string Source,
+        string Summary);
+
+    public sealed record DecompileResult(string Address, string? Code, string Source);
+
+    public sealed record DebuggerTranslateResult(string DynamicAddress, string? StaticAddress, string Source);
+
     public static string ResolveBaseUrl()
     {
         var explicitUrl = Environment.GetEnvironmentVariable("GHIDRA_MCP_URL");
@@ -118,6 +129,133 @@ public static class GhidraMcpClient
         return new ImportCallersResult(match.Name, match.Address, xrefs, "ghidra-mcp-live");
     }
 
+    /// <summary>
+    /// Trace a static call path from an input import (e.g. recv) toward a sink (e.g. memcpy).
+    /// Uses <c>randall-analysis.json</c> when present; optionally validates leaf via live MCP.
+    /// </summary>
+    public static async Task<InputToSinkPathResult?> TryTraceInputToSinkPathAsync(
+        string project,
+        string inputImport,
+        string sinkImport,
+        string? repoRoot = null,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(inputImport) || string.IsNullOrWhiteSpace(sinkImport))
+            throw new ArgumentException("input and sink import names required");
+
+        repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var doc = GhidraAnalysisBridge.TryLoad(project, repoRoot);
+        IReadOnlyList<string>? path = null;
+        var source = "static-map";
+
+        if (doc is not null)
+        {
+            path = GhidraCallGraphHelper.TryFindCallPath(doc, inputImport, sinkImport);
+            if (path is not null && path.Count > 0)
+                source = "randall-analysis.json";
+        }
+
+        if (path is null || path.Count == 0)
+        {
+            if (await ProbeAsync(ct) is not { Available: true })
+                return null;
+
+            path = await TryBuildLiveCallChainAsync(inputImport, sinkImport, ct);
+            if (path is null || path.Count == 0)
+                return null;
+            source = "ghidra-mcp-live";
+        }
+        else if (await ProbeAsync(ct) is { Available: true })
+        {
+            var leaf = path[^1];
+            if (!leaf.Contains(sinkImport, StringComparison.OrdinalIgnoreCase))
+            {
+                var liveTail = await TryBuildLiveCallChainAsync(path[^1], sinkImport, ct);
+                if (liveTail is { Count: > 1 })
+                {
+                    path = path.Concat(liveTail.Skip(1)).ToList();
+                    source = "static-map+mcp";
+                }
+            }
+        }
+
+        var summary = GhidraCallGraphHelper.FormatCallPath(path);
+        return new InputToSinkPathResult(inputImport, sinkImport, path, source, summary);
+    }
+
+    private static async Task<IReadOnlyList<string>?> TryBuildLiveCallChainAsync(
+        string fromImport,
+        string toImport,
+        CancellationToken ct,
+        int maxDepth = 8)
+    {
+        var callers = await TryGetImportCallersAsync(fromImport, ct);
+        if (callers is null || callers.Callers.Count == 0)
+            return [fromImport];
+
+        var queue = new Queue<(string Symbol, List<string> Path)>();
+        queue.Enqueue((fromImport, [fromImport]));
+
+        while (queue.Count > 0)
+        {
+            var (symbol, path) = queue.Dequeue();
+            if (path.Count > maxDepth)
+                continue;
+
+            if (symbol.Contains(toImport, StringComparison.OrdinalIgnoreCase) ||
+                toImport.Contains(symbol, StringComparison.OrdinalIgnoreCase))
+                return path;
+
+            var next = symbol.Equals(fromImport, StringComparison.OrdinalIgnoreCase)
+                ? callers
+                : null;
+            if (next is null && !string.IsNullOrWhiteSpace(symbol))
+            {
+                var fnCallers = await TryGetFunctionCallersAsync(symbol, ct);
+                if (fnCallers is { Count: > 0 })
+                {
+                    foreach (var c in fnCallers.Take(6))
+                    {
+                        var fn = c.FromFunction ?? c.FromAddress;
+                        if (string.IsNullOrWhiteSpace(fn))
+                            continue;
+                        queue.Enqueue((fn, path.Concat([fn]).ToList()));
+                    }
+                    continue;
+                }
+            }
+
+            foreach (var c in (next?.Callers ?? []).Take(8))
+            {
+                var fn = c.FromFunction ?? c.FromAddress;
+                if (string.IsNullOrWhiteSpace(fn))
+                    continue;
+                queue.Enqueue((fn, path.Concat([fn]).ToList()));
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task<IReadOnlyList<XrefEntry>?> TryGetFunctionCallersAsync(
+        string functionName,
+        CancellationToken ct)
+    {
+        if (await ProbeAsync(ct) is not { Available: true })
+            return null;
+
+        try
+        {
+            var raw = await GetTextAsync(
+                $"{ResolveBaseUrl()}/get_callers?function={Uri.EscapeDataString(functionName)}", ct);
+            return await ParseXrefsAsync(raw, ct);
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+    }
+
     public static async Task<IReadOnlyList<XrefEntry>?> TryGetXrefsToAsync(
         string address,
         CancellationToken ct = default)
@@ -128,6 +266,124 @@ public static class GhidraMcpClient
         var addr = NormalizeAddress(address);
         var raw = await GetTextAsync($"{ResolveBaseUrl()}/get_xrefs_to?address={Uri.EscapeDataString(addr)}", ct);
         return await ParseXrefsAsync(raw, ct);
+    }
+
+    /// <summary>Decompile function at address via GhidraMCP (soft-fail offline).</summary>
+    public static async Task<string?> TryDecompileFunctionAsync(
+        string address,
+        CancellationToken ct = default)
+    {
+        if (await ProbeAsync(ct) is not { Available: true })
+            return null;
+
+        var addr = NormalizeAddress(address);
+        foreach (var path in new[]
+                 {
+                     $"/decompile_function?address={Uri.EscapeDataString(addr)}",
+                     $"/decompile?address={Uri.EscapeDataString(addr)}",
+                 })
+        {
+            try
+            {
+                var raw = await GetTextAsync($"{ResolveBaseUrl()}{path}", ct);
+                if (string.IsNullOrWhiteSpace(raw) ||
+                    raw.StartsWith("Error", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return raw.Trim();
+            }
+            catch (HttpRequestException)
+            {
+                // try next endpoint variant
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Translate runtime dynamic address to static Ghidra address via TraceRMI debugger proxy.
+    /// Requires Ghidra debugger server (default http://127.0.0.1:8099/) — soft-fails offline.
+    /// </summary>
+    public static async Task<string?> TryDebuggerDynamicToStaticAsync(
+        string dynamicAddress,
+        CancellationToken ct = default)
+    {
+        var addr = NormalizeAddress(dynamicAddress);
+        var debuggerBase = ResolveDebuggerBaseUrl();
+
+        foreach (var baseUrl in new[] { debuggerBase, ResolveBaseUrl() })
+        {
+            foreach (var path in new[]
+                     {
+                         $"/debugger_dynamic_to_static?address={Uri.EscapeDataString(addr)}",
+                         $"/debugger/dynamic_to_static?address={Uri.EscapeDataString(addr)}",
+                     })
+            {
+                try
+                {
+                    var raw = await GetTextAsync($"{baseUrl}{path}", ct);
+                    var translated = ParseDebuggerAddress(raw);
+                    if (translated is not null)
+                        return translated;
+                }
+                catch (HttpRequestException)
+                {
+                    // soft-fail
+                }
+                catch (TaskCanceledException)
+                {
+                    return null;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public static string ResolveDebuggerBaseUrl()
+    {
+        var explicitUrl = Environment.GetEnvironmentVariable("GHIDRA_DEBUGGER_URL");
+        if (!string.IsNullOrWhiteSpace(explicitUrl))
+            return explicitUrl.TrimEnd('/');
+
+        var portText = Environment.GetEnvironmentVariable("GHIDRA_DEBUGGER_PORT");
+        if (!string.IsNullOrWhiteSpace(portText) &&
+            int.TryParse(portText, out var parsed) &&
+            parsed is > 0 and < 65536)
+            return $"http://127.0.0.1:{parsed}";
+
+        return "http://127.0.0.1:8099";
+    }
+
+    internal static string? ParseDebuggerAddress(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        if (raw.TrimStart().StartsWith('{'))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(raw);
+                foreach (var name in new[] { "staticAddress", "static_address", "address", "result" })
+                {
+                    if (doc.RootElement.TryGetProperty(name, out var el) &&
+                        el.ValueKind == JsonValueKind.String)
+                    {
+                        var s = el.GetString();
+                        if (!string.IsNullOrWhiteSpace(s))
+                            return NormalizeAddress(s);
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // fall through
+            }
+        }
+
+        var extracted = ExtractAddress(raw);
+        return extracted;
     }
 
     internal static IReadOnlyList<ImportEntry> ParseImports(string raw)

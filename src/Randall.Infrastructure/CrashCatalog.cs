@@ -49,7 +49,8 @@ public static class CrashCatalog
                 continue;
 
             var store = new CrashStore(dir);
-            var projectRows = new List<(CrashSummaryDto Summary, CrashTriageDto Triage, CrashSidecarDto? Sidecar, int InputLength)>();
+            var pageHeapEnabled = TryResolvePageHeapForProject(projectName, repoRoot);
+            var projectRows = new List<(CrashSummaryDto Summary, CrashTriageDto Triage, CrashSidecarDto? Sidecar, CrashAnalysisDto? Analysis, CdbTriageDto? Cdb, int InputLength)>();
             foreach (var c in store.List())
             {
                 var analysisPath = CrashAnalysisWriter.AnalysisPathFor(dir, c.Id);
@@ -99,14 +100,22 @@ public static class CrashCatalog
                     triage.IpLooksControlled,
                     staticFn is not null ? CrashStaticFunctionMapper.FormatOneLine(staticFn) : null);
 
-                projectRows.Add((enrichedSummary, triage, sidecar, inputLength));
+                projectRows.Add((enrichedSummary, triage, sidecar, analysis, MapCdbTriage(cdbSidecar), inputLength));
             }
 
             var projectSummaries = projectRows.Select(r => r.Summary).ToList();
             foreach (var row in projectRows)
             {
                 var intelligence = CrashIntelligenceBuilder.Build(
-                    row.Summary, row.Triage, row.Sidecar, row.InputLength, projectSummaries);
+                    row.Summary,
+                    row.Triage,
+                    row.Sidecar,
+                    row.InputLength,
+                    projectSummaries,
+                    row.Analysis,
+                    row.Cdb,
+                    pageHeapEnabled,
+                    row.Summary.TriageTag);
                 results.Add(CrashIntelligenceBuilder.WithListIntelligence(row.Summary, intelligence));
             }
         }
@@ -193,9 +202,18 @@ public static class CrashCatalog
             if (staticFn is not null)
                 triage = triage with { StaticFunction = staticFn };
             var cdbTriage = MapCdbTriage(cdbSidecar);
+            var pageHeapEnabled = TryResolvePageHeap(sidecar, repoRoot);
             var projectSummaries = ListAll(repoRoot).Where(x => x.Project == summary.Project).ToList();
             var intelligence = CrashIntelligenceBuilder.Build(
-                summary, triage, sidecar, bytes.Length, projectSummaries);
+                summary,
+                triage,
+                sidecar,
+                bytes.Length,
+                projectSummaries,
+                analysis,
+                cdbTriage,
+                pageHeapEnabled,
+                summary.TriageTag);
             return new CrashDetailDto(
                 CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
                 bytes.Length,
@@ -222,6 +240,59 @@ public static class CrashCatalog
                 s.TriageJsonPath,
                 s.MsecAvailable,
                 s.Error);
+
+    private static bool TryResolvePageHeap(CrashSidecarDto? sidecar, string? repoRoot)
+    {
+        if (sidecar?.FuzzSnapshot.ConfigPath is not { } cfgPath)
+            return false;
+        return TryLoadPageHeap(cfgPath, repoRoot);
+    }
+
+    private static bool TryResolvePageHeapForProject(string projectName, string? repoRoot)
+    {
+        repoRoot ??= FindRepoRoot();
+        if (repoRoot is null)
+            return false;
+
+        foreach (var path in ProjectLoader.DiscoverAll(repoRoot))
+        {
+            try
+            {
+                var p = ProjectLoader.Load(path);
+                if (string.Equals(p.Name, projectName, StringComparison.OrdinalIgnoreCase))
+                    return p.Target.PageHeap;
+            }
+            catch
+            {
+                /* ignore */
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryLoadPageHeap(string configPath, string? repoRoot)
+    {
+        try
+        {
+            var yaml = configPath;
+            if (!Path.IsPathRooted(yaml))
+            {
+                repoRoot ??= FindRepoRoot();
+                if (repoRoot is not null)
+                    yaml = Path.Combine(repoRoot, configPath.Replace('/', Path.DirectorySeparatorChar));
+            }
+
+            if (!File.Exists(yaml))
+                return false;
+
+            return ProjectLoader.Load(yaml).Target.PageHeap;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     internal static string BuildAsciiPreview(ReadOnlySpan<byte> bytes, int previewLen)
     {

@@ -186,6 +186,98 @@ public sealed class RppPluginHost(string pluginDir)
         return null;
     }
 
+    public async Task<RppObserveResult?> ObserveAsync(
+        RppPluginManifest manifest,
+        int iteration,
+        byte[] input,
+        int newEdges,
+        int totalEdges,
+        string? detail,
+        CancellationToken cancellationToken = default)
+    {
+        var entry = Path.Combine(PluginDir, manifest.Entry);
+        if (!File.Exists(entry))
+            return null;
+
+        var exe = ResolveRuntime(manifest.Runtime);
+        if (exe is null)
+            return null;
+
+        var request = JsonSerializer.Serialize(new
+        {
+            op = "observe",
+            iteration,
+            input = Convert.ToBase64String(input),
+            newEdges,
+            totalEdges,
+            detail = detail ?? "",
+        }, JsonOptions);
+
+        var outputLine = await InvokePluginAsync(exe, entry, request, cancellationToken);
+        if (string.IsNullOrWhiteSpace(outputLine))
+            return null;
+
+        using var doc = JsonDocument.Parse(outputLine);
+        var root = doc.RootElement;
+
+        Observation? observation = null;
+        if (root.TryGetProperty("novelty", out var noveltyProp) &&
+            noveltyProp.TryGetDouble(out var novelty))
+        {
+            var confidence = root.TryGetProperty("confidence", out var confProp) && confProp.TryGetDouble(out var c)
+                ? c
+                : Math.Clamp(newEdges / 5.0, 0, 1);
+            var severity = root.TryGetProperty("severity", out var sevProp)
+                ? sevProp.GetString() ?? "info"
+                : "info";
+            string? note = root.TryGetProperty("note", out var noteProp) ? noteProp.GetString() : null;
+            observation = new Observation(
+                ObservationKind.Generic,
+                "",
+                confidence,
+                novelty,
+                severity,
+                new Dictionary<string, object?> { ["note"] = note, ["plugin"] = manifest.Name },
+                DateTimeOffset.UtcNow,
+                iteration);
+        }
+
+        FaultSignal? fault = null;
+        if (root.TryGetProperty("signal", out var signalProp))
+        {
+            var signalName = signalProp.GetString() ?? "other";
+            var faultConfidence = root.TryGetProperty("confidence", out var fcProp) && fcProp.TryGetDouble(out var fc)
+                ? fc
+                : 0.6;
+            var faultSeverity = root.TryGetProperty("severity", out var fsProp)
+                ? fsProp.GetString() ?? "medium"
+                : "medium";
+            string? note = root.TryGetProperty("note", out var fnProp) ? fnProp.GetString() : null;
+            fault = new FaultSignal(
+                MapPluginSignal(signalName),
+                faultConfidence,
+                faultSeverity,
+                FaultSignalSource.RppPlugin,
+                $"RPP observe: {signalName}",
+                note);
+        }
+
+        string? responseNote = root.TryGetProperty("note", out var nProp) ? nProp.GetString() : null;
+        return new RppObserveResult(manifest.Name, observation, fault, responseNote);
+    }
+
+    private static FaultSignalKind MapPluginSignal(string signal) =>
+        signal.ToLowerInvariant() switch
+        {
+            "access_violation" or "av" => FaultSignalKind.AccessViolation,
+            "stack_overflow" => FaultSignalKind.StackOverflow,
+            "heap" or "heap_corruption" => FaultSignalKind.HeapCorruption,
+            "sanitizer" or "asan" => FaultSignalKind.Sanitizer,
+            "uaf" or "use_after_free" => FaultSignalKind.UseAfterFree,
+            "hang" or "timeout" => FaultSignalKind.Hang,
+            _ => FaultSignalKind.Other,
+        };
+
     private async Task<string?> InvokePluginAsync(
         string exe,
         string entry,

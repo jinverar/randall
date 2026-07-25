@@ -21,7 +21,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=scare-floor-brain-1" />
+  <link rel="stylesheet" href="/css/app.css?v=scare-floor-brain-2" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -685,15 +685,17 @@
             · <button type="button" class="linkish" data-help="LORE.md">Lore</button></p>
         </div>
 
-        <div class="panel scare-floor-brain" id="scare-floor-brain" aria-label="Randall thinks — scare floor intelligence">
+        <div class="panel scare-floor-brain" id="scare-floor-brain" aria-label="Randall thinks — scare floor command center">
           <div class="case-step-heading compact scare-brain-head">
             <span class="case-step-num scare-brain-icon" aria-hidden="true">🧠</span>
             <div class="scare-brain-title-block">
-              <h2>Randall thinks <span class="hex">— scare floor brain</span></h2>
+              <h2>Randall thinks <span class="hex">— campaign command</span></h2>
               <p class="hint" id="scare-brain-summary">Pick a project to see gray doors, static priorities, and oracle hints.</p>
             </div>
             <button type="button" class="btn btn-sm" id="scare-brain-refresh" title="Refresh stalk intelligence">Refresh</button>
           </div>
+          <div id="scare-brain-strip" class="scare-brain-strip hidden" aria-label="Campaign status strip"></div>
+          <div id="scare-brain-target-intel" class="scare-brain-target-intel hidden" aria-label="Target intelligence profile"></div>
           <div id="scare-brain-targets" class="scare-brain-targets" aria-live="polite">
             <p class="hint scare-brain-empty">Loading…</p>
           </div>
@@ -1447,6 +1449,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=scare-floor-brain-1"></script>
+  <script type="module" src="/js/app.js?v=scare-floor-brain-2"></script>
 </body>
 </html>

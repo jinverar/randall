@@ -733,6 +733,7 @@ public static class OracleEngine
         var covSig = obs.NewEdges > 0
             ? $"edges+{obs.NewEdges}/{obs.CoverageEdgeTotal}"
             : $"edges={obs.CoverageEdgeTotal}";
+        var fault = FaultSignalMapper.FromOracleFinding(ruleId, severity, actual, confidence);
         return new OracleFindingDto(
             Guid.NewGuid().ToString("N"),
             obs.Project.Name,
@@ -750,7 +751,8 @@ public static class OracleEngine
             transformation,
             covSig,
             1,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            Fault: fault);
     }
 
     private static string NormalizeObservation(TargetRunResult r)

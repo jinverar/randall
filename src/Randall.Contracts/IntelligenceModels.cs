@@ -1,5 +1,50 @@
 namespace Randall.Contracts;
 
+/// <summary>Unified fault taxonomy — crash, sanitizer, Page Heap, WER/cdb, oracle-only.</summary>
+public enum FaultSignalKind
+{
+    Unknown,
+    AccessViolation,
+    StackOverflow,
+    StackBufferOverrun,
+    HeapCorruption,
+    UseAfterFree,
+    Sanitizer,
+    PageHeap,
+    WerClassification,
+    OracleOnly,
+    Hang,
+    IllegalInstruction,
+    Other,
+}
+
+/// <summary>Where a <see cref="FaultSignal"/> was inferred from.</summary>
+public enum FaultSignalSource
+{
+    Unknown,
+    ExitCode,
+    MinidumpAnalysis,
+    CdbAnalyze,
+    LinuxCore,
+    PageHeap,
+    SanitizerLog,
+    OracleRuntime,
+    RppPlugin,
+    CrashTriage,
+}
+
+/// <summary>
+/// Normalized fault sensor output — unifies CrashTriage, cdb/!exploitable, Page Heap context,
+/// sanitizer stderr, and RPP post_crash tags into one comparable shape for intelligence + FINDINGS.
+/// </summary>
+public sealed record FaultSignal(
+    FaultSignalKind Kind,
+    double Confidence,
+    string Severity,
+    FaultSignalSource Source,
+    string? Summary = null,
+    string? Detail = null);
+
 /// <summary>Kind of signal emitted on the in-process observation bus.</summary>
 public enum ObservationKind
 {
@@ -9,6 +54,7 @@ public enum ObservationKind
     Crash,
     Oracle,
     Ghidra,
+    Fault,
 }
 
 /// <summary>
@@ -69,7 +115,15 @@ public sealed record CrashIntelligenceDto(
     int SeenCount,
     CrashLineageDto? Lineage = null,
     /// <summary>Unified rank for sorting — severity + novelty + oracle + uniqueness.</summary>
-    int ScreamScore = 0);
+    int ScreamScore = 0,
+    /// <summary>Primary normalized fault (highest-confidence sensor).</summary>
+    FaultSignal? PrimaryFault = null,
+    /// <summary>All mapped fault sensors for this crash (triage, cdb, Page Heap, sanitizer, RPP).</summary>
+    IReadOnlyList<FaultSignal>? FaultSignals = null,
+    /// <summary>One-line canister seal: RIP + static fn + oracle + frontier context.</summary>
+    string? CanisterContext = null,
+    /// <summary>Nearest gray door or coverage gap relative to crash function.</summary>
+    string? FrontierHint = null);
 
 /// <summary>In-process observation collector for a single fuzz run.</summary>
 public sealed class ObservationBus
@@ -220,6 +274,30 @@ public static class ObservationEvents
             {
                 ["hint"] = hint,
                 ["priority"] = priority,
+            },
+            At: DateTimeOffset.UtcNow,
+            Iteration: iteration,
+            InputHash: inputHash,
+            Project: project);
+
+    public static Observation Fault(
+        string runId,
+        int iteration,
+        string inputHash,
+        FaultSignal signal,
+        string? project = null) =>
+        new(
+            ObservationKind.Fault,
+            runId,
+            Confidence: signal.Confidence,
+            Novelty: signal.Severity is "critical" or "high" ? 1.0 : 0.5,
+            Severity: signal.Severity,
+            Data: new Dictionary<string, object?>
+            {
+                ["kind"] = signal.Kind.ToString(),
+                ["source"] = signal.Source.ToString(),
+                ["summary"] = signal.Summary,
+                ["detail"] = signal.Detail,
             },
             At: DateTimeOffset.UtcNow,
             Iteration: iteration,

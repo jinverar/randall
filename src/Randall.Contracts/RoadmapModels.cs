@@ -43,7 +43,9 @@ public sealed record CrashSummaryDto(
     /// <summary>Randall oracle score total when known.</summary>
     int? OracleScoreTotal = null,
     /// <summary>How many crashes share this cluster key in the project.</summary>
-    int SeenCount = 0);
+    int SeenCount = 0,
+    /// <summary>Fused RIP + function + oracle + frontier one-liner for canister rack tooltips.</summary>
+    string? CanisterContext = null);
 
 public sealed record CdbTriageDto(
     bool Ok,

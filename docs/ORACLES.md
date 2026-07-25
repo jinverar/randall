@@ -160,7 +160,9 @@ randall oracles -p vulnserver
 
 The map lists functions, per-function CFG blocks, sink call graph edges, and a `fuzzPriority` heuristic. **v2** overlays stalk/drcov edges onto static BBs and recomputes priority using sink risk × complexity × uncovered CFG distance ÷ coverage fraction (blended with the v1 static score). Optional `fuzz.ghidraStaticBias: true` softly boosts corpus energy when novel edges arrive while high-priority functions remain uncovered.
 
-This does **not** rewrite the full fuzz schedule from static data alone — it matures the Ghidra → Oracle pipe and nudges exploration. Crash-RIP → decompiled context and GhidraMCP queries are separate milestones.
+**Source→sink paths:** when `randall-analysis.json` includes imports/sinks and call edges, `SourceSinkPathScorer` ranks input API → dangerous sink routes (SaTC-style static reachability, not a separate engine). Surfaces in `randall oracles -p <project>` and static-map score bonuses.
+
+This does **not** rewrite the full fuzz schedule from static data alone — it matures the Ghidra → Oracle pipe and nudges exploration. Crash-RIP decompile snippets and TraceRMI translation are optional via `randall ghidra mcp crash` ([GHIDRA_DEBUGGER.md](GHIDRA_DEBUGGER.md)).
 
 See [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md) for headless vs Script Manager export and companion tools (GhidraMCP, BinExport).
 
@@ -171,6 +173,31 @@ See [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md) for headless vs Script Manage
 - Length-prefix violations weight higher when the target **accepted** the PDU
 - Differential soft-skips missing reference binaries
 - Start narrow: one auth forbidUntil + one state order rule
+
+## Differential fuzzing (two-target compare)
+
+Compare the **primary** target executable against a **reference** harness on the same input. Useful for patch-hunt regressions, parser forks, and “safe vs vulnerable” lab pairs.
+
+```yaml
+oracles:
+  enabled: true
+  differential:
+    - id: safe-vs-vuln
+      type: fileExit          # fileExit | fileResponse
+      referenceExecutable: ../targets/file-text/randall-file-text-safe
+      referenceArgs: ["@@"]
+      timeoutMs: 2000
+```
+
+| Step | Command / UI |
+|------|----------------|
+| Arm rules | Add `oracles.differential` to project YAML (paths relative to YAML dir) |
+| Doctor check | `randall doctor -c projects/<name>.yaml` — warns when reference binary missing |
+| Target profile | `randall stalk intel -p <project>` — lists diff rules + ref existence |
+| Scare Floor | **Randall thinks** command strip shows **diff oracle on** when armed |
+| During fuzz | `OracleEngine` soft-skips missing refs; violations land in `_oracles/` findings |
+
+Reference must accept `@@` or `{file}` like other file harnesses. This is **oracle differential**, not BinDiff instruction-level fuzzing — pair with `randall stalk ghidra-diff` for static `changedFunctions[]`.
 
 ## What this is not
 

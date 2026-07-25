@@ -1,0 +1,4 @@
+name: edge-observer
+runtime: python
+entry: observer.py
+hook: observe

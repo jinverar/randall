@@ -207,8 +207,6 @@ def collect_call_edges(func, listing, fm):
                         callee_name = sym.getName()
                 if callee_name is None:
                     continue
-                if not (sink_related(callee_name) or sink_related(caller)):
-                    continue
                 edges.append({
                     "caller": caller,
                     "callee": callee_name,
@@ -388,7 +386,7 @@ def export_analysis(output_path):
     with open(output_path, "w") as fh:
         json.dump(doc, fh, indent=2)
 
-    print("Randfuzz: wrote %s (%d functions, %d sinks, %d call-graph edges, v2 CFG)" % (
+    print("Randfuzz: wrote %s (%d functions, %d sinks, %d call-graph edges, v2 full CFG)" % (
         output_path, len(functions), len(sinks), len(deduped_cg)))
     return doc
 

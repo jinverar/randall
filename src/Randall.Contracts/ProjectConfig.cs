@@ -331,4 +331,9 @@ public sealed class FuzzConfig
     /// (needs strings64.exe in tools/ or PATH).
     /// </summary>
     public bool StringsOnCrash { get; set; }
+    /// <summary>
+    /// Prefer SanitizerCoverage (LLVM sancov) when available; falls back to DynamoRIO drcov today.
+    /// Stub flag — see docs/SANITIZER_COVERAGE.md. Does not disable existing stalk backends.
+    /// </summary>
+    public bool SanitizerCoverage { get; set; }
 }

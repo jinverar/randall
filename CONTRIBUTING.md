@@ -45,3 +45,16 @@ New features should map to a leg when possible — see [docs/LEGS.md](docs/LEGS.
 ## Security
 
 Randfuzz is a security research tool. Do not commit targets, crashes, or corpus data from systems you were not authorized to test.
+
+## RPP plugins (community)
+
+[RPP](docs/RPP.md) plugins extend mutation, observation, or crash triage via line-delimited JSON child processes.
+
+| Hook | Kind | Status |
+|------|------|--------|
+| `mutate` | Mutator | Shipped |
+| `post_receive` | Observer | Shipped |
+| `post_crash` | Oracle-adjacent triage | Shipped |
+| `observe` | Observer → mutator credit | Planned |
+
+Place plugins under `plugins/<name>/` with `rpp.yaml`. See [plugins/README.md](plugins/README.md) for examples (`xor-silly`, `ftp-response`, `crash-tag`). PRs that add plugins should include a minimal smoke test command in the PR description.

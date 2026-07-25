@@ -43,6 +43,10 @@ public class CrashIntelligenceBuilderTests
         Assert.Equal(3, intel.Lineage!.MutatorChain.Count);
         Assert.True(intel.Lineage.Partial);
         Assert.True(intel.ScreamScore > 40);
+        Assert.NotNull(intel.PrimaryFault);
+        Assert.Equal(FaultSignalKind.AccessViolation, intel.PrimaryFault!.Kind);
+        Assert.NotNull(intel.FaultSignals);
+        Assert.NotEmpty(intel.FaultSignals!);
     }
 
     [Fact]

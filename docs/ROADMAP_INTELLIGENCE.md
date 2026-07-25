@@ -41,7 +41,7 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | **Oracle stack** | Runtime, invariant, auth, state, structure, resource, differential, metamorphic rules | [ORACLES.md](ORACLES.md) · `OracleEngine` + findings JSONL |
 | **OracleScore** | Explainable 0–100 score on iterations and crashes | `OracleScorer` · sidecar `RandallScore` · crash fallback |
 | **Observation bus** | Unified event shape per fuzz run | `ObservationBus` + `ObservationEvents` in `FuzzEngine` |
-| **Ghidra static map v2** | Headless analyze → `randall-analysis.json`; v2 priority overlays drcov on CFG BBs | `stalk ghidra-analyze` · optional `fuzz.ghidraStaticBias` |
+| **Ghidra static map v2** | Headless analyze → `randall-analysis.json`; v2 priority overlays drcov on CFG BBs; full call graph + source→sink paths | `stalk ghidra-analyze` · optional `fuzz.ghidraStaticBias` |
 | **RIP / fault PC map** | Crash PC → function + offset (Ghidra map or PE heuristics) | [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md) · Investigation one-liner |
 | **Stalk map (in-Randall RE)** | PE/ELF strings, imports, hotspots on missed blocks | [STALK_MAP.md](STALK_MAP.md) — proximity, not full CFG |
 | **Frontier (gray doors)** | CFG/session fork scoring → `frontier.json` | `FrontierEngine` · `stalk frontier` |
@@ -54,7 +54,9 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | **WinDbg / cdb triage** | Auto `!analyze`, msec when present, symbol path defaults | [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md) · [WINDBG_FUZZ_PKG.md](WINDBG_FUZZ_PKG.md) |
 | **Differential oracle** | Reference executable compare (soft-skip missing ref) | YAML `oracles.differential` |
 | **Engine adapters** | AFL++/honggfuzz as optional Linux grinders | [ENGINE_ADAPTERS.md](ENGINE_ADAPTERS.md) |
-| **RPP plugins** | mutate · post_receive · post_crash hooks | [RPP.md](RPP.md) — `observe` hook planned |
+| **External worker ingest** | `IExternalWorkerIngest` stub for LibAFL/WinAFL companions | [EXTERNAL_WORKERS.md](EXTERNAL_WORKERS.md) |
+| **FaultSignal taxonomy** | CrashTriage + cdb + Page Heap + sanitizer → unified DTO | [FAULT_SIGNALS.md](FAULT_SIGNALS.md) |
+| **RPP plugins** | mutate · post_receive · post_crash · **observe** hooks | [RPP.md](RPP.md) |
 
 ---
 
@@ -69,9 +71,26 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | Sidecar `RandallScore` on new crashes | ✅ | Synthesized at read time when missing |
 | Findings → corpus retain / energy | ✅ | `retainOnViolation` / near-miss |
 | Live observation stream in UI | 🔲 | Bus exists; SignalR surfacing still thin |
-| Full mutator lineage from journal replay | 🔲 | Sidecar chain is `Partial: true` today |
+| Full mutator lineage from journal replay | ✅ | `CrashLineageResolver` walks `iterations.jsonl` via `parentInputHash` |
 
 **Done when:** Investigation and Fuzz tabs show a per-run observation timeline; lineage is journal-backed, not sidecar-only.
+
+---
+
+## Phase 2 — Ghidra map provider (bridge maturation) ✅ capable
+
+**Goal:** Mature the Ghidra static map as Randall’s primary RE sensor — full call graph, coverage-painted gaps as oracle “unopened doors”, fused canister context, live MCP path questions, and patch-hunt bias.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| Full call graph + v2 CFG in `randall-analysis.json` | ✅ | `RandfuzzExportAnalysis.py` exports all call edges + BB successors/predecessors; `GhidraCallGraphHelper` merges xrefs |
+| Coverage overlay → Oracle “unopened doors” | ✅ | `GhidraAnalysisOracleHints.UnopenedDoorsSummary` fuses coverage gaps + `frontier.json` gray doors |
+| Crash canister = RIP + function + oracle + frontier | ✅ | `CrashIntelligenceDto.CanisterContext` · `FrontierHint` · list API `canisterContext` |
+| GhidraMCP deeper Oracle questions | ✅ | `oracles --mcp-path recv:memcpy` · `GhidraMcpClient.TryTraceInputToSinkPathAsync` |
+| Patch-hunt `changedFunctions[]` first-class | ✅ | Oracle/brain/static bias · `stalk ghidra-diff` merge · Scare Floor `patch` targets |
+| Source→sink static paths | ✅ | `SourceSinkPathScorer` · persisted `sourceSinkPaths[]` on enrich |
+
+**Done when:** Scare Floor brain + Investigation show unopened doors and patch deltas without re-export; canister tooltips carry full static+frontier context.
 
 ---
 
@@ -100,14 +119,34 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | `MutatorCreditTracker` | ✅ | edges×10 + uniqueCrash×100; weighted pick |
 | Per-run + cumulative persistence | ✅ | `data/runs/` + corpus dir |
 | YAML toggle `fuzz.mutatorCredit` | ✅ | Default on |
-| Credit visible in UI / run summary | 🔲 | JSON exists; Fuzz tab surfacing thin |
-| RPP `observe` hook feeding credit | 🔲 | [RPP.md](RPP.md) — planned |
+| Credit visible in UI / run summary | ✅ | Scare Floor command strip + mutator chips in brain foot |
+| RPP `observe` hook feeding credit | 🔲 | Observe hook ships; credit wiring pending |
 
-**Done when:** Run summary and doctor show mutator leaderboard; optional RPP observers can add custom credit signals.
+**Done when:** Run summary and doctor show mutator leaderboard; RPP observers can add custom credit signals.
 
 ---
 
-## Phase 4 — Scream Intelligence ✅ capable
+## Phase 4 — Sensors & workers ✅ capable
+
+**Goal:** Normalize crash/sanitizer/Page Heap/WER sensors into comparable fault rows; external grinders and RPP observers feed the observation bus.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| `FaultSignal` + `FaultSignalMapper` | ✅ | Kind / Confidence / Severity / Source |
+| Crash intelligence + FINDINGS surface | ✅ | `PrimaryFault`, `FaultSignals`, oracle `Fault` |
+| Observation bus `Fault` kind | ✅ | Published on crash + RPP observe |
+| RPP `observe` hook + example plugin | ✅ | `plugins/edge-observer` |
+| External worker ingest stub | ✅ | `IExternalWorkerIngest` · [EXTERNAL_WORKERS.md](EXTERNAL_WORKERS.md) |
+| AFL++/LibAFL/WinAFL worker docs | ✅ | LibAFL/WinAFL companions documented, not ported |
+| SanitizerCoverage YAML stub | ✅ | `fuzz.sanitizerCoverage` · [SANITIZER_COVERAGE.md](SANITIZER_COVERAGE.md) |
+| Live sancov bitmap ingest | 🔲 | drcov remains default when DynamoRIO present |
+| Streaming AFL++ observations during campaign | 🔲 | Post-run sync only today |
+
+**Done when:** sancov edges merge with drcov on the bus; external workers stream observations live without waiting for campaign exit.
+
+---
+
+## Phase 5 — Scream Intelligence ✅ capable
 
 **Goal:** Crashes sort by *story* — severity, novelty, oracle, cluster, static context — not just timestamp.
 
@@ -118,32 +157,40 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | Investigation “Scream intelligence” panel | ✅ | Purple highlight when hot |
 | Canister mood + EIP/RIP seal | ✅ | Harvest rack on by default |
 | Minimization + reproducibility flags | ✅ | Cluster-shortest input heuristic |
+| Journal-backed mutator lineage in Investigation | ✅ | `CrashLineageResolver` · seed + parent hash in panel |
 | ScreamScore drives fuzz stop / campaign goals | 🔲 | Sorting only today |
 
 **Done when:** Campaign YAML can target “N unique screams above score S” and auto-prioritize replay/minimize for top clusters.
 
 ---
 
-## Phase 5 — Target Intelligence + mature RE pipe 🔄 active
+## Phase 6 — Target Intelligence + mature RE pipe 🔄 active
 
 **Goal:** One target profile accumulates static map, runtime observations, crash history, and patch deltas — Scare Floor and oracles consume it without re-exporting.
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Ghidra map v2 priority + static bias | ✅ | Sink × complexity × uncovered distance |
-| RIP → function + offset on crashes | ✅ | Ghidra map preferred, PE fallback |
-| GhidraMCP live queries | ✅ Capable | Optional; offline soft-fail |
-| BinDiff / JSON merge diff | ✅ Capable | `stalk ghidra-diff`; BinDiff binary optional |
+| Ghidra map v2 priority + static bias | ✅ | Sink × complexity × uncovered distance · patch-hunt boost |
+| RIP → function + offset on crashes | ✅ | Ghidra map preferred, PE fallback · canister context fuse |
+| GhidraMCP live queries | ✅ Capable | `--mcp-import` · `--mcp-path recv:memcpy` |
+| BinDiff / JSON merge diff | ✅ Capable | `stalk ghidra-diff`; `changedFunctions[]` in oracle/brain/bias |
 | Differential fuzz (oracle + ref harness) | ✅ Capable | Not full binary diff fuzzing |
 | Scare Floor UX → session/model promotion | ✅ | Phases 18–19 in [ROADMAP.md](ROADMAP.md) |
-| **Target Intelligence** profile (unified DTO + API) | 🔲 | Today: scattered JSON (analysis, frontier, findings) |
-| **FaultSignal** taxonomy (controlled RIP, heap class, oracle-only) | 🔲 | Partial signals in triage + canisters; no unified enum/bus publish |
+| **Source→sink path scoring** (SaTC-style static) | ✅ Capable | `SourceSinkPathScorer` in Oracle hints + static bonus; BFS on call graph |
+| **TraceRMI / debugger RIP annotate CLI** | ✅ Capable (stub) | `ghidra mcp crash` · decompile + debugger translate soft-fail · [GHIDRA_DEBUGGER.md](GHIDRA_DEBUGGER.md) |
+| **RE companions docs** (GhidrAssist, Class Analyzer) | ✅ | [GHIDRA_RE_COMPANIONS.md](GHIDRA_RE_COMPANIONS.md) · `install-ghidra-re-companions.ps1` |
+| **RPP community README** | ✅ | [plugins/README.md](../plugins/README.md) · CONTRIBUTING hook table |
+| **Target Intelligence** profile (unified DTO + API) | ✅ | `target_intelligence.json` · `stalk intel` · `/api/stalking/{p}/target-intelligence` |
+| Scare Floor command center (status strip + Why?) | ✅ | Coverage % · frontiers · canister moods · patch `changedFunctions` |
+| Differential fuzz YAML/UI surfacing | ✅ | `oracles.differential` badge + `stalk intel` ref check · [ORACLES.md](ORACLES.md) |
 | Ghidra map → auto oracle rule suggestions | 🔲 | CLI hints only |
-| Crash-RIP → decompiled context (MCP/decompiler) | 🔲 | Separate from one-line static summary |
-| RPP `observe` + Target Intelligence write-back | 🔲 | Ambition: plugins as first-class sensors |
+| Crash-RIP → full decompiled context (MCP) | 🔲 | Snippet-only CLI today; not Investigation panel embed |
+| RPP `observe` + Target Intelligence write-back | 🔲 | Observe hook ships; profile merge pending |
 | Closed loop: frontier → Scare Floor → re-fuzz | 🔲 | Manual workflow documented |
 
-**Done when:** `GET /api/targets/{project}/intelligence` returns a merged profile (static, frontier, oracle history, top screams); FaultSignal publishes on the observation bus; one-click “bias campaign from frontier” from UI.
+**Done when:** `GET /api/stalking/{project}/target-intelligence` returns a merged profile (static, frontier, oracle history, top screams); one-click “bias campaign from frontier” from UI.
+
+(FaultSignal taxonomy and bus publish — see **Phase 4 — Sensors & workers**.)
 
 ---
 

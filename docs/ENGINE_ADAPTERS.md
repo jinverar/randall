@@ -11,6 +11,8 @@ When you need **market-grade coverage throughput** on a real parse entry, opt in
 
 Crashes and queue corpora **sync back** into Randfuzz (`data/crashes/…`, `data/corpus/…`) so scream canisters / triage still work.
 
+LibAFL and WinAFL companions (ingest-only, no full port) are documented in [EXTERNAL_WORKERS.md](EXTERNAL_WORKERS.md).
+
 > **Authorized targets only.** These adapters are for software you own or have written permission to test — not for unlicensed third-party zero-click hunting.
 
 ## Install

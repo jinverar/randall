@@ -358,7 +358,8 @@ randall oracles -p vulnserver --mcp-import recv
 
 | Tool | Role |
 |------|------|
-| TraceRMI / Ghidra Debugger | Live crash ↔ static correlation in Ghidra |
+| TraceRMI / Ghidra Debugger | Live crash ↔ static correlation — [GHIDRA_DEBUGGER.md](GHIDRA_DEBUGGER.md) · `randall ghidra mcp crash` |
+| GhidrAssist / C++ Class Analyzer | Optional RE accelerators — [GHIDRA_RE_COMPANIONS.md](GHIDRA_RE_COMPANIONS.md) |
 
 Randfuzz owns the JSON contract in-repo (`tools/ghidra/RandfuzzExportAnalysis.py` +
 `GhidraAnalysisBridge.cs` + `GhidraAnalysisDiff.cs`) so patch-hunt hints work without

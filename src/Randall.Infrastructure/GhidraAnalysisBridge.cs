@@ -223,24 +223,20 @@ public static class GhidraAnalysisBridge
             ? doc.Sinks
             : BuildSinksFromFunctions(functions, doc.Imports);
 
-        var callGraph = doc.CallGraph is { Count: > 0 }
-            ? doc.CallGraph
-            : BuildCallGraphFromXrefs(doc.Xrefs);
-
-        doc = doc with { Functions = functions, Sinks = sinks, CallGraph = callGraph };
+        doc = doc with { Functions = functions, Sinks = sinks, CallGraph = doc.CallGraph ?? [] };
+        doc = GhidraCallGraphHelper.EnrichCallGraph(doc);
 
         if (!string.IsNullOrWhiteSpace(project))
             doc = GhidraCoverageOverlay.Apply(doc, project, repoRoot);
 
+        var paths = doc.SourceSinkPaths is { Count: > 0 }
+            ? doc.SourceSinkPaths
+            : SourceSinkPathScorer.ScorePaths(doc);
+        if (paths.Count > 0)
+            doc = doc with { SourceSinkPaths = paths };
+
         return doc;
     }
-
-    private static IReadOnlyList<RandallAnalysisCallEdgeDto> BuildCallGraphFromXrefs(
-        IReadOnlyList<RandallAnalysisXrefDto> xrefs) =>
-        xrefs
-            .Where(x => x.RefKind.Equals("call", StringComparison.OrdinalIgnoreCase))
-            .Select(x => new RandallAnalysisCallEdgeDto(x.FromFunction, x.ToSymbol, x.FromAddress))
-            .ToList();
 
     public static async Task SaveAsync(
         RandallAnalysisDocument doc,
