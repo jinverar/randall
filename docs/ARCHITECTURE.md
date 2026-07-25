@@ -80,6 +80,10 @@ dotnet publish src/Randall.Cli -c Release -r win-x64 --self-contained -p:Publish
 4. Optional **notifications** (Discord webhook / SMTP) on unique crash — [NOTIFICATIONS.md](NOTIFICATIONS.md)
 5. Export bundle for Ghidra + Dragon Dance
 
+## Intelligence Loop (foundation)
+
+Closed-loop signals share one **Observation** shape (coverage, crash, oracle, Ghidra) on `FuzzEngine.ObservationBus`. The oracle stack produces an explainable **OracleScore** (0–100) persisted on findings and crash sidecars. Formula: [ORACLES.md](ORACLES.md#interestingness-randall-intelligence-loop).
+
 ## Project bundles
 
 Portable `.randall/` directory:
