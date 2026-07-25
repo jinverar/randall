@@ -141,6 +141,19 @@ randall oracles -p vulnrpc --json
 
 Each finding: `rule_id`, `rule_class`, `severity`, `input_hash`, `expected_relation`, `actual_relation`, `normalized_observation`, `transformation_chain`, `coverage_signature`, `confidence`.
 
+## Static target map (Ghidra)
+
+When `data/stalk/<project>/randall-analysis.json` exists (from `randall stalk ghidra-analyze`), the Oracle CLI surfaces **static fuzz priorities** alongside runtime findings:
+
+```bash
+randall stalk ghidra-analyze -p vulnserver --binary path/to/target
+randall oracles -p vulnserver
+```
+
+The map lists functions, sink xrefs, and a `fuzzPriority` heuristic (complexity + dangerous-call proximity + input reachability). v1 does **not** rewrite the fuzz schedule from static data alone — it proves the Ghidra → Oracle pipe. Later milestones can bias stalk/mutation toward uncovered high-priority functions and correlate crash RIP → decompiled context.
+
+See [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md) for headless vs Script Manager export and companion tools (GhidraMCP, BinExport).
+
 ## Design rules (avoid junk)
 
 - Normalize before compare (`status_class`, response class, lengths) — not timestamps/logs

@@ -106,6 +106,7 @@ static void PrintHelp()
           randall stalk inventory -p <project> --import <file>  BB inventory for never-hit
           randall stalk dynapstalker <drcov.log> <exe> <out.idc|.py> [--format idc|ghidra] [--color …]
           randall stalk ghidra-pack -p <project> [-o dir]     First-class Ghidra stalk pack
+          randall stalk ghidra-analyze -p <project> [--binary path]  Static target map → Oracle
           randall stalk capture-binary -p <project> [-i seed] Dragon Dance binary drcov
           randall stalk map -p <project> [-c yaml] [--binary path]  In-app stalk map (strings/imports)
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
@@ -953,6 +954,25 @@ static int RunOracles(string[] args)
     var all = new List<OracleFindingDto>();
     foreach (var dir in dirs)
         all.AddRange(new OracleFindingStore(dir).List(project));
+
+    if (project is not null)
+    {
+        var hints = GhidraAnalysisOracleHints.TryBuild(project, repo);
+        if (hints is not null)
+        {
+            Console.WriteLine("Static target map (Ghidra):");
+            Console.WriteLine($"  {hints.Summary}");
+            Console.WriteLine($"  Path: {hints.AnalysisPath}");
+            foreach (var fn in hints.TopFunctions.Take(5))
+                Console.WriteLine($"    [{fn.FuzzPriority}] {fn.Name} @ {fn.Address}");
+            if (hints.TopSinks.Count > 0)
+            {
+                Console.Write("  Sinks: ");
+                Console.WriteLine(string.Join(", ", hints.TopSinks.Take(4).Select(s => s.Name)));
+            }
+            Console.WriteLine();
+        }
+    }
 
     if (all.Count == 0)
     {
@@ -2285,6 +2305,8 @@ static int RunStalk(string[] args)
               randall stalk dynapstalker <drcov.log> <process.exe> <out.idc|.py> [--format idc|ghidra] [--color 0x00ffff]
               randall stalk export -p <project> --format idc|ghidra|edges [-o dir] [layerId…]
               randall stalk ghidra-pack -p <project> [-o dir]   Bundle Ghidra scripts + layer export
+              randall stalk ghidra-analyze -p <project> [--binary path] [-c yaml] [-o path]
+                                            [--import-only]  Headless Ghidra → randall-analysis.json
               randall stalk capture-binary -p <project> [-i seed.bin] [-o dir]
                                             Binary drcov (no -dump_text) for Dragon Dance
               randall stalk map -p <project> [-c yaml] [--binary path] [--limit N]
@@ -2305,6 +2327,7 @@ static int RunStalk(string[] args)
         "inventory" => StalkInventory(rest),
         "dynapstalker" or "drcov2idc" => StalkDynapstalker(rest),
         "ghidra-pack" or "ghidra" => StalkGhidraPack(rest),
+        "ghidra-analyze" or "analyze" => StalkGhidraAnalyze(rest).GetAwaiter().GetResult(),
         "capture-binary" or "binary-drcov" or "dragon-dance" => StalkCaptureBinary(rest).GetAwaiter().GetResult(),
         "map" or "stalk-map" or "surface" => StalkMap(rest),
         "export" => StalkExport(rest),
@@ -2494,6 +2517,104 @@ static string? ResolveProjectYaml(string repoRoot, string projectName)
         Path.Combine(repoRoot, "projects", name, "project.yaml"),
     };
     return candidates.FirstOrDefault(File.Exists);
+}
+
+static async Task<int> StalkGhidraAnalyze(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    string? config = null, binary = null, output = null, importOnly = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-c" or "--config" && i + 1 < args.Length)
+            config = args[++i];
+        else if (args[i] is "--binary" or "-b" && i + 1 < args.Length)
+            binary = args[++i];
+        else if (args[i] is "-o" or "--output" && i + 1 < args.Length)
+            output = args[++i];
+        else if (args[i] is "--import-only" && i + 1 < args.Length)
+            importOnly = args[++i];
+    }
+
+    try
+    {
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        if (importOnly is not null)
+        {
+            var src = Path.GetFullPath(importOnly);
+            if (!File.Exists(src))
+            {
+                Console.Error.WriteLine($"Import file not found: {src}");
+                return 1;
+            }
+
+            var dest = output is not null
+                ? Path.GetFullPath(output)
+                : GhidraAnalysisBridge.AnalysisPath(project, root);
+            Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
+            File.Copy(src, dest, overwrite: true);
+            var doc = GhidraAnalysisBridge.LoadOrThrow(dest);
+            PrintGhidraAnalyzeSummary(project, dest, doc, fromHeadless: false);
+            return 0;
+        }
+
+        var resolved = StalkMapBuilder.ResolveBinary(
+            project,
+            config is null ? null : Path.GetFullPath(config),
+            binary is null ? null : Path.GetFullPath(binary),
+            root);
+        if (resolved is null)
+        {
+            Console.Error.WriteLine("Binary not found. Pass --binary <path> or -c projects/<proj>.yaml");
+            return 1;
+        }
+
+        var result = await GhidraAnalysisBridge.AnalyzeAsync(
+            project,
+            resolved,
+            output,
+            root,
+            skipHeadless: false);
+        PrintGhidraAnalyzeSummary(project, result.OutputPath, GhidraAnalysisBridge.LoadOrThrow(result.OutputPath),
+            result.FromHeadless);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        Console.Error.WriteLine(
+            $"Manual export: Ghidra → Script Manager → {GhidraAnalysisBridge.ScriptName} → " +
+            GhidraAnalysisBridge.AnalysisPath(project, root));
+        return 1;
+    }
+}
+
+static void PrintGhidraAnalyzeSummary(
+    string project,
+    string outputPath,
+    RandallAnalysisDocument doc,
+    bool fromHeadless)
+{
+    Console.WriteLine($"Ghidra analysis: {project}");
+    Console.WriteLine($"  Output:   {outputPath}");
+    Console.WriteLine($"  Binary:   {doc.Binary}");
+    Console.WriteLine($"  Mode:     {(fromHeadless ? "headless analyzeHeadless" : "import")}");
+    Console.WriteLine($"  Summary:  {doc.Functions.Count} functions, {doc.Imports.Count} imports, {doc.Sinks.Count} sinks");
+    Console.WriteLine();
+    Console.WriteLine("Top fuzz priorities:");
+    foreach (var fn in doc.Functions.OrderByDescending(f => f.FuzzPriority).Take(10))
+    {
+        var flags = fn.InputReachable ? " input-reachable" : "";
+        var danger = fn.HasDangerousCalls ? " sinks=" + string.Join(",", fn.DangerousCalls.Take(3)) : "";
+        Console.WriteLine(
+            $"  [{fn.FuzzPriority}] {fn.Name} @ {fn.Address}  bb={fn.BasicBlockCount}{flags}{danger}");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Oracle: randall oracles -p " + project + "  (includes static map hints when present)");
 }
 
 static int StalkGhidraPack(string[] args)

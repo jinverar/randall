@@ -193,9 +193,64 @@ Manager scripts; these are optional RE accelerators.
 |--------|--------|
 | Export layers to Ghidra | Stalking bugs → **Ghidra** · `stalk export --format ghidra` |
 | Full Ghidra pack | `randall stalk ghidra-pack -p P` |
+| **Static target map (Oracle)** | `randall stalk ghidra-analyze -p P [--binary path]` → `randall-analysis.json` |
 | Binary drcov for DD | `randall stalk capture-binary -p P` · YAML `captureBinaryDrcov` |
 | Crash → Ghidra pack | Crashes → Export · `randall export -i <guid>` |
 | Missed blocks + ideas | Stalking bugs → Missed · `stalk missed -p P` |
+
+---
+
+## Static target map (`randall-analysis.json`)
+
+Ghidra feeds Randall's **Oracle** with a static map — not another fuzz button inside Ghidra.
+
+```text
+Target binary  →  Ghidra (headless or Script Manager)  →  randall-analysis.json
+                                                              ↓
+                                                    Oracle / stalk priorities
+```
+
+### Export
+
+**Headless (preferred when Ghidra is installed):**
+
+```bash
+randall stalk ghidra-analyze -p vulnserver --binary targets/vulnserver/randall-vulnserver
+# writes data/stalk/vulnserver/randall-analysis.json
+```
+
+**Script Manager (GUI):**
+
+1. Import/open the target in Ghidra
+2. **Script Manager** → `RandfuzzExportAnalysis.py` → save JSON
+3. Copy into `data/stalk/<project>/randall-analysis.json`, or:
+
+```bash
+randall stalk ghidra-analyze -p vulnserver --import-only /path/to/randall-analysis.json
+```
+
+### JSON contents (v1)
+
+| Field | Purpose |
+|-------|---------|
+| `functions[]` | name, address, size, basic-block count, complexity heuristic |
+| `imports` / `exports` | IAT/EAT surface |
+| `sinks[]` | SaTC-style dangerous APIs + input sources (`recv`, `memcpy`, …) |
+| `xrefs[]` | caller → sink edges (cheap static reachability) |
+| `fuzzPriority` | 0–100 heuristic: complexity + sink proximity + input reachability |
+
+Oracle reads the map lightly: `randall oracles -p <project>` prints top static targets when the file exists.
+
+### Companion tools (future — not required for v1)
+
+| Tool | Role |
+|------|------|
+| [GhidraMCP](https://github.com/bethington/ghidra-mcp) | Agent/Oracle programmatic queries (CFG distance, decompile) |
+| [BinExport](https://github.com/google/binexport) + BinDiff | Patch/delta-directed fuzzing across versions |
+| BSim | Cross-build function similarity |
+| TraceRMI / Ghidra Debugger | Crash RIP ↔ static correlation |
+
+Randfuzz v1 owns the JSON contract in-repo (`tools/ghidra/RandfuzzExportAnalysis.py` + `GhidraAnalysisBridge.cs`) so you are not blocked on third-party installs.
 
 ---
 
@@ -204,6 +259,7 @@ Manager scripts; these are optional RE accelerators.
 Done now:
 
 - Real Script Manager importers (layers, crash novel, tools/ghidra)
+- **Static target map export** (`RandfuzzExportAnalysis.py`, `stalk ghidra-analyze`)
 - Module table start/end → `modules.txt` + open-program filter
 - Focus bookmarks + goTo
 - Optional dual-capture binary drcov sidecar + `capture-binary` CLI
@@ -215,4 +271,6 @@ PE/ELF strings/imports overlaid on missed blocks.
 Later (not blocking):
 
 - Headless Ghidra analyze+color in CI
+- Full CFG edge export + coverage overlay scoring
+- GhidraMCP / BinDiff integration for delta-directed campaigns
 - TCP auto binary sidecar without a file seed
