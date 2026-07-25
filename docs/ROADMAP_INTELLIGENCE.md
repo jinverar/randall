@@ -224,6 +224,29 @@ We will **not** optimize Randfuzz to win AFL++ exec/s bake-offs. Adapters exist 
 
 ---
 
+## Operator 10-minute hunt
+
+Windows one-shot script that walks the Intelligence Loop on a stock lab target (~10 minutes with Ghidra headless; faster without).
+
+| Step | What it does | Soft-fail |
+|------|----------------|-------------|
+| Build | `file-text` (default) via `build-file-text.ps1`, or `harness-demo` DLL | Missing gcc / prior binary |
+| Static map | `randall stalk ghidra-analyze` when `tools/ghidra-app` or `GHIDRA_INSTALL_DIR` is present | Skip + manual export path |
+| Fuzz | 50 iterations, `fuzz.brain` default on; `--debugger wait` (Scream) for native `file-text` | Doctor/binary issues |
+| Frontier | `randall stalk frontier -p <project>` | Empty without DynamoRIO layers |
+| Intel | `randall stalk intel -p <project> --refresh` | Thin profile until artifacts exist |
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\demo-intelligence-hunt.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\demo-intelligence-hunt.ps1 -Project harness-demo -SkipBuild
+```
+
+**Next:** `dotnet run --project src\Randall.Server --urls http://127.0.0.1:5000` → **Fuzz → Scare Floor** → **Brain** panel + **Scare Doors** (frontier). API: `GET /api/fuzz/brain?project=<name>`.
+
+Related: [STALK_LOOP.md](STALK_LOOP.md) · [FUZZING.md](FUZZING.md#randallbrain-closed-loop-hunt-steering) · [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md).
+
+---
+
 ## Verified (Windows E2E — 2026-07-25)
 
 Smoke on `main` @ `39a4e27` (Release build, 231/231 tests after maturation fixes):

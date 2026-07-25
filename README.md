@@ -274,6 +274,17 @@ See [docs/TARGETS.md](docs/TARGETS.md), [targets/README.md](targets/README.md), 
 
 **Hands-on lab walkthrough:** [docs/LAB_PRACTICE.md](docs/LAB_PRACTICE.md)
 
+### Operator 10-minute hunt
+
+Guided Windows demo of the **Intelligence Loop** — optional lab build, Ghidra static map (if installed), short brain-on fuzz, then frontier + target-intelligence refresh. Each step soft-fails so a partial lab still teaches the flow.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\demo-intelligence-hunt.ps1
+# harness-demo (in-process, no Ghidra analyze):  ... -Project harness-demo
+```
+
+When it finishes, open **Fuzz → Scare Floor** and look for **Brain** (`lastBrainDecision`) and **Scare Doors** (gray frontier rows). Full loop map: [docs/ROADMAP_INTELLIGENCE.md](docs/ROADMAP_INTELLIGENCE.md#operator-10-minute-hunt).
+
 ### Target Runtime (local & remote)
 
 Start·stop·restart for long-lived targets, remote lab agent, crash artifact packs, memory/heap lens:
