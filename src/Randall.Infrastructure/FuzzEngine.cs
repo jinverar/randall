@@ -150,6 +150,13 @@ public sealed class FuzzEngine
             }
         }
 
+        var preflightError = FuzzPreflight.ValidateTargetExecutable(project, yamlPath, dryRun);
+        if (preflightError is not null)
+        {
+            FuzzAnalystLog.Warn(progress, preflightError);
+            throw new InvalidOperationException(preflightError);
+        }
+
         if (!dryRun && wantProcmon && runDir is not null)
         {
             var pml = Path.Combine(runDir, "fuzz.pml");

@@ -609,6 +609,10 @@ public static class LabDoctor
             return win ? "run scripts/build-reeldeck.ps1" : "run scripts/build-reeldeck.sh";
         if (name.Contains("vulnserver") || exe.Contains("vulnserver"))
             return win ? "run scripts/build-vulnserver.ps1" : "run scripts/build-lab-targets.sh vulnserver";
+        if (name.Contains("vulnftp") || exe.Contains("vulnftp"))
+            return win
+                ? "run scripts/build-vulnftp.ps1 (or scripts/build-all-lab-targets.ps1)"
+                : "run scripts/build-lab-targets.sh vulnftp";
         if (project.Kind.Equals("file", StringComparison.OrdinalIgnoreCase))
             return win
                 ? "build the file target (scripts/build-file-text.ps1 | build-file-framed.ps1 | build-reeldeck.ps1)"
