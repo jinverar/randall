@@ -50,7 +50,7 @@ public static class CrashCatalog
 
             var store = new CrashStore(dir);
             var pageHeapEnabled = TryResolvePageHeapForProject(projectName, repoRoot);
-            var projectRows = new List<(CrashSummaryDto Summary, CrashTriageDto Triage, CrashSidecarDto? Sidecar, CrashAnalysisDto? Analysis, CdbTriageDto? Cdb, int InputLength)>();
+            var projectRows = new List<(CrashSummaryDto Summary, CrashTriageDto Triage, CrashSidecarDto? Sidecar, CrashAnalysisDto? Analysis, CdbTriageDto? Cdb, int InputLength, DebuggerObservation? Debugger)>();
             foreach (var c in store.List())
             {
                 var analysisPath = CrashAnalysisWriter.AnalysisPathFor(dir, c.Id);
@@ -100,7 +100,9 @@ public static class CrashCatalog
                     triage.IpLooksControlled,
                     staticFn is not null ? CrashStaticFunctionMapper.FormatOneLine(staticFn) : null);
 
-                projectRows.Add((enrichedSummary, triage, sidecar, analysis, MapCdbTriage(cdbSidecar), inputLength));
+                var debugger = ScreamInvestigator.TryRead(
+                    ScreamInvestigator.ObservationPathFor(dir, c.Id));
+                projectRows.Add((enrichedSummary, triage, sidecar, analysis, MapCdbTriage(cdbSidecar), inputLength, debugger));
             }
 
             var projectSummaries = projectRows.Select(r => r.Summary).ToList();
@@ -115,7 +117,8 @@ public static class CrashCatalog
                     row.Analysis,
                     row.Cdb,
                     pageHeapEnabled,
-                    row.Summary.TriageTag);
+                    row.Summary.TriageTag,
+                    row.Debugger);
                 results.Add(CrashIntelligenceBuilder.WithListIntelligence(row.Summary, intelligence));
             }
         }
@@ -202,6 +205,8 @@ public static class CrashCatalog
             if (staticFn is not null)
                 triage = triage with { StaticFunction = staticFn };
             var cdbTriage = MapCdbTriage(cdbSidecar);
+            var debugger = ScreamInvestigator.TryRead(
+                ScreamInvestigator.ObservationPathFor(crashesDir, summary.Id));
             var pageHeapEnabled = TryResolvePageHeap(sidecar, repoRoot);
             var projectSummaries = ListAll(repoRoot).Where(x => x.Project == summary.Project).ToList();
             var intelligence = CrashIntelligenceBuilder.Build(
@@ -213,7 +218,8 @@ public static class CrashCatalog
                 analysis,
                 cdbTriage,
                 pageHeapEnabled,
-                summary.TriageTag);
+                summary.TriageTag,
+                debugger);
             return new CrashDetailDto(
                 CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
                 bytes.Length,
@@ -223,7 +229,8 @@ public static class CrashCatalog
                 analysis,
                 triage,
                 cdbTriage,
-                intelligence);
+                intelligence,
+                debugger);
         }
         return null;
     }

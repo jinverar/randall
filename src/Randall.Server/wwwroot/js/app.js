@@ -2822,11 +2822,8 @@ function renderCrashDetail(detail, title) {
   const a = detail.analysis;
   const t = detail.triage;
   const cdb = detail.cdbTriage;
+  const dbg = detail.debuggerObservation;
   const regs = a?.registers;
-  const why = t?.exceptionHint
-    || s?.exceptionHint
-    || detail.summary.exceptionHint
-    || (detail.summary.targetExitCode ? `exit ${detail.summary.targetExitCode}` : 'unknown — open dump / analyze');
   const dump = detail.summary.miniDumpPath || a?.dumpPath || '';
   const windbgCmd = dump ? `windbg -z "${dump}"` : '';
   const procdumpCmd = dump
@@ -2837,6 +2834,12 @@ function renderCrashDetail(detail, title) {
   const clusterN = cluster?.count || clusterCountFor(detail.summary);
   const score = scoreCrash(detail.summary);
   const intel = detail.intelligence;
+  const why = dbg?.diagnosis
+    || intel?.debuggerDiagnosis
+    || t?.exceptionHint
+    || s?.exceptionHint
+    || detail.summary.exceptionHint
+    || (detail.summary.targetExitCode ? `exit ${detail.summary.targetExitCode}` : 'unknown — open dump / analyze');
   const intelScore = intel?.screamScore ?? score;
   const primaryFault = intel?.primaryFault;
   const intelHot = intel
@@ -2865,6 +2868,14 @@ function renderCrashDetail(detail, title) {
         <span class="hint-inline">${escapeAttr(primaryFault.source || '')}</span>
         · ${escapeAttr(primaryFault.summary || primaryFault.detail || '')}
         ${primaryFault.confidence != null ? `<span class="hint-inline">(${(primaryFault.confidence * 100).toFixed(0)}%)</span>` : ''}
+      </p>` : ''}
+      ${dbg?.ok ? `<p class="crash-dbg-sensor">
+        <span class="label">Scream Investigator</span>
+        ${dbg.access && dbg.access !== 'Unknown' ? `<code>${escapeAttr(dbg.access)}</code> ` : ''}
+        ${dbg.faultingFunction ? `<code>${escapeAttr((dbg.faultingModule || '') + '!' + dbg.faultingFunction + (dbg.functionOffset || ''))}</code> · ` : ''}
+        ${dbg.exploitabilityHint ? `<span class="hint-inline">exploit ${escapeAttr(dbg.exploitabilityHint)}</span> · ` : ''}
+        ${dbg.suspectedInputInfluence && dbg.suspectedInputInfluence !== 'UNKNOWN' ? `<span class="hint-inline">input ${escapeAttr(dbg.suspectedInputInfluence)}</span> · ` : ''}
+        ${dbg.stackHash ? `<span class="hint-inline">stack ${escapeAttr(dbg.stackHash)}</span>` : ''}
       </p>` : ''}
       <p class="crash-why-detail"><code>${escapeAttr(why)}</code>
         ${a?.faultAddress ? ` @ <code>${escapeAttr(a.faultAddress)}</code>` : ''}

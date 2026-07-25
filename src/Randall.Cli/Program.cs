@@ -2278,12 +2278,22 @@ static int RunAnalyze(string[] args)
                 ? Path.GetDirectoryName(detail.Summary.InputPath)!
                 : Path.GetDirectoryName(targetDump)!;
             var crashGuid = id ?? Guid.NewGuid();
-            var cdb = WindowsCdbCrashAnalysisWriter.Analyze(outDir, crashGuid, targetDump);
+            var sidecar = detail?.Sidecar;
+            var cdb = WindowsCdbCrashAnalysisWriter.Analyze(outDir, crashGuid, targetDump, crashSidecar: sidecar);
             Console.WriteLine($"cdb: {cdb.SummaryLine}");
             if (cdb.Sidecar.AnalyzeTextPath is not null)
                 Console.WriteLine($"  !analyze → {cdb.Sidecar.AnalyzeTextPath}");
             if (cdb.Sidecar.ExploitableTextPath is not null)
                 Console.WriteLine($"  !exploitable → {cdb.Sidecar.ExploitableTextPath}");
+            var inv = ScreamInvestigator.TryRead(ScreamInvestigator.ObservationPathFor(outDir, crashGuid));
+            if (inv is { Ok: true })
+            {
+                Console.WriteLine($"scream investigator: {inv.Diagnosis}");
+                Console.WriteLine($"  access={inv.Access} addr={inv.FaultAddress} class={inv.FaultAddressClass}");
+                Console.WriteLine($"  exploit={inv.ExploitabilityHint} input={inv.SuspectedInputInfluence} bonus={inv.DebuggerScreamBonus}");
+                if (inv.ObservationPath is not null)
+                    Console.WriteLine($"  observation → {inv.ObservationPath}");
+            }
         }
     }
 

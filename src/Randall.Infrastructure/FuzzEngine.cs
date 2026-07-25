@@ -1718,14 +1718,31 @@ public sealed class FuzzEngine
                             {
                                 try
                                 {
+                                    var crashSidecar = CrashSidecarWriter.TryRead(saved.SidecarPath);
                                     var cdb = WindowsCdbCrashAnalysisWriter.Analyze(
-                                        crashesDir, saved.Id, saved.MiniDumpPath);
+                                        crashesDir, saved.Id, saved.MiniDumpPath,
+                                        crashSidecar: crashSidecar);
                                     Console.WriteLine($"  cdb triage: {cdb.SummaryLine}");
                                     if (cdb.Sidecar.AnalyzeTextPath is not null)
                                         Console.WriteLine($"  !analyze → {cdb.Sidecar.AnalyzeTextPath}");
                                     if (cdb.Sidecar.ExploitableTextPath is not null)
                                         Console.WriteLine($"  !exploitable → {cdb.Sidecar.ExploitableTextPath}");
                                     FuzzAnalystLog.Info(progress, $"[cdb] {cdb.SummaryLine}", iterations);
+
+                                    var inv = ScreamInvestigator.TryRead(
+                                        ScreamInvestigator.ObservationPathFor(crashesDir, saved.Id));
+                                    if (inv is { Ok: true })
+                                    {
+                                        Console.WriteLine($"  scream investigator: {inv.Diagnosis}");
+                                        FuzzAnalystLog.Info(progress,
+                                            $"[scream-investigator] {inv.Diagnosis}", iterations);
+                                        ObservationBus.Publish(ObservationEvents.Debugger(
+                                            runId, iterations, payloadHash, inv, project.Name));
+                                    }
+                                    else if (inv?.Error is not null)
+                                    {
+                                        Console.WriteLine($"  scream investigator: {inv.Error}");
+                                    }
                                 }
                                 catch (Exception cdbEx)
                                 {

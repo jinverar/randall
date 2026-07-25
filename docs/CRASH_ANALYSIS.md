@@ -12,17 +12,20 @@ data/crashes/<project>/<crash-guid>_analysis.json
 
 Fields include exception code, fault address, module+offset, and x64 register snapshot (RIP, RSP, …).
 
-### Headless cdb `!analyze -v` (Windows)
+### Headless cdb + Scream Investigator (Windows)
 
-When `fuzz.cdbAnalyzeCrash: true` (default, requires `autoAnalyzeCrash`), Randfuzz also runs **cdb** on the minidump:
+When `fuzz.cdbAnalyzeCrash: true` (default, requires `autoAnalyzeCrash`), Randfuzz runs **cdb** as an automated crash robot (not the WinDbg GUI). One session collects `!analyze -v`, exception record, registers, stack (`kv`), disassembly near RIP, memory near RSP, and optional `!exploitable`.
 
 | Artifact | Contents |
 |----------|----------|
 | `<guid>_analyze.txt` | Full `!analyze -v` text |
 | `<guid>_exploitable.txt` | `!exploitable` output when **msec.dll** is available |
 | `<guid>_cdb_triage.json` | Parsed summary + paths |
+| `<guid>_debugger_observation.json` | **Scream Investigator** — structured `DebuggerObservation` (access type, fault address class, stack hash, diagnosis, exploitability hint, input-influence guess) |
 
-Soft-fails when cdb is missing (install `scripts/install-debuggers.ps1`). Does not block the fuzz loop — 90s timeout. Randfuzz passes `-y` (local cache + Microsoft symbol server) and runs `.sympath` before `!analyze`; see [WinDbg symbols](#windbg-symbols) below.
+`DebuggerObservation` feeds FaultSignals, ScreamScore bonuses, and the Crashes Investigation UI (“Scream Investigator” line). WinDbg remains the human “open the dump” button.
+
+Soft-fails when cdb is missing (install `scripts/install-debuggers.ps1`). Does not block the fuzz loop — ~90–120s timeout. Randfuzz passes `-y` (local cache + Microsoft symbol server) and runs `.sympath` before probes; see [WinDbg symbols](#windbg-symbols) below.
 
 **msec.dll** (Microsoft Exploitability Index extension) is optional:
 

@@ -72,7 +72,8 @@ public static partial class WindowsCdbCrashAnalysisWriter
         Guid crashId,
         string dumpPath,
         bool runExploitable = true,
-        int timeoutMs = 90_000)
+        int timeoutMs = 90_000,
+        CrashSidecarDto? crashSidecar = null)
     {
         if (!LooksLikeWindowsDump(dumpPath))
         {
@@ -112,6 +113,11 @@ public static partial class WindowsCdbCrashAnalysisWriter
 
         var analyzeBlock = ExtractBlock(text, "RANDFUZZ_ANALYZE_BEGIN", "RANDFUZZ_ANALYZE_END");
         var exploitableBlock = ExtractBlock(text, "RANDFUZZ_EXPLOITABLE_BEGIN", "RANDFUZZ_EXPLOITABLE_END");
+        var exrBlock = ExtractBlock(text, "RANDFUZZ_EXR_BEGIN", "RANDFUZZ_EXR_END");
+        var regsBlock = ExtractBlock(text, "RANDFUZZ_REGS_BEGIN", "RANDFUZZ_REGS_END");
+        var stackBlock = ExtractBlock(text, "RANDFUZZ_STACK_BEGIN", "RANDFUZZ_STACK_END");
+        var disasmBlock = ExtractBlock(text, "RANDFUZZ_DISASM_BEGIN", "RANDFUZZ_DISASM_END");
+        var memBlock = ExtractBlock(text, "RANDFUZZ_MEM_BEGIN", "RANDFUZZ_MEM_END");
 
         var analyzePath = AnalyzeTextPathFor(crashesDir, crashId);
         File.WriteAllText(analyzePath, string.IsNullOrWhiteSpace(analyzeBlock) ? text : analyzeBlock);
@@ -153,6 +159,28 @@ public static partial class WindowsCdbCrashAnalysisWriter
 
         var triagePath = WriteSidecar(crashesDir, crashId, sidecar with { TriageJsonPath = TriagePathFor(crashesDir, crashId) });
 
+        // Same CDB session → structured DebuggerObservation (Scream Investigator).
+        try
+        {
+            ScreamInvestigator.PersistFromCdbBlocks(
+                crashesDir,
+                crashId,
+                dumpPath,
+                analyzeBlock.Length > 0 ? analyzeBlock : text,
+                exrBlock,
+                regsBlock,
+                stackBlock,
+                disasmBlock,
+                memBlock,
+                exploitableBlock,
+                timedOut,
+                crashSidecar);
+        }
+        catch
+        {
+            /* observation is best-effort */
+        }
+
         var summary = BuildSummary(sidecar);
         return new AutoAnalyzeResult(sidecar with { TriageJsonPath = triagePath }, summary);
     }
@@ -164,7 +192,10 @@ public static partial class WindowsCdbCrashAnalysisWriter
         return path;
     }
 
-    private static string BuildScript(string? msecPath)
+    /// <summary>
+    /// Headless CDB script: !analyze plus register/stack/disasm/memory probes for Scream Investigator.
+    /// </summary>
+    internal static string BuildScript(string? msecPath)
     {
         var lines = new List<string>
         {
@@ -172,6 +203,21 @@ public static partial class WindowsCdbCrashAnalysisWriter
             ".echo RANDFUZZ_ANALYZE_BEGIN",
             "!analyze -v",
             ".echo RANDFUZZ_ANALYZE_END",
+            ".echo RANDFUZZ_EXR_BEGIN",
+            ".exr -1",
+            ".echo RANDFUZZ_EXR_END",
+            ".echo RANDFUZZ_REGS_BEGIN",
+            "r",
+            ".echo RANDFUZZ_REGS_END",
+            ".echo RANDFUZZ_STACK_BEGIN",
+            "kv 16",
+            ".echo RANDFUZZ_STACK_END",
+            ".echo RANDFUZZ_DISASM_BEGIN",
+            "u @rip-20 L16",
+            ".echo RANDFUZZ_DISASM_END",
+            ".echo RANDFUZZ_MEM_BEGIN",
+            "dq @rsp L20",
+            ".echo RANDFUZZ_MEM_END",
         };
         if (msecPath is not null)
         {
@@ -185,7 +231,7 @@ public static partial class WindowsCdbCrashAnalysisWriter
         return string.Join("; ", lines);
     }
 
-    private static (string Text, bool TimedOut) RunCdb(string cdb, string dumpPath, string script, int timeoutMs)
+    internal static (string Text, bool TimedOut) RunCdb(string cdb, string dumpPath, string script, int timeoutMs)
     {
         var symArgs = DebuggerTools.FormatSymbolCommandLineArgs();
         var psi = new ProcessStartInfo
@@ -212,7 +258,7 @@ public static partial class WindowsCdbCrashAnalysisWriter
         return (text, timedOut);
     }
 
-    private static string ExtractBlock(string text, string begin, string end)
+    public static string ExtractBlock(string text, string begin, string end)
     {
         var lines = new List<string>();
         var started = false;

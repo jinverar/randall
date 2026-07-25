@@ -3,6 +3,9 @@ namespace Randall.Infrastructure;
 /// <summary>Validate crash dump paths before persisting or opening in a debugger.</summary>
 public static class CrashDumpPaths
 {
+    /// <summary>True when the dump file exists and has non-zero length.</summary>
+    public static bool IsUsableDump(string? path) => Sanitize(path) is not null;
+
     /// <summary>Return <paramref name="path"/> only when the file exists and is non-empty; otherwise null.</summary>
     public static string? Sanitize(string? path)
     {

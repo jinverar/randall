@@ -16,7 +16,8 @@ public static class FaultSignalMapper
         bool pageHeapEnabled = false,
         string? rppTag = null,
         string? targetDetail = null,
-        int? exitCode = null)
+        int? exitCode = null,
+        DebuggerObservation? debugger = null)
     {
         var signals = new List<FaultSignal>();
 
@@ -56,6 +57,13 @@ public static class FaultSignalMapper
             var wer = FromCdb(cdb);
             if (wer is not null)
                 signals.Add(wer);
+        }
+
+        if (debugger is { Ok: true })
+        {
+            var dbg = FromDebugger(debugger);
+            if (dbg is not null)
+                signals.Add(dbg);
         }
 
         if (!string.IsNullOrWhiteSpace(rppTag))
@@ -209,6 +217,38 @@ public static class FaultSignalMapper
             FaultSignalSource.CdbAnalyze,
             $"!exploitable: {exp}",
             cdb.ExploitableDescription);
+    }
+
+    private static FaultSignal? FromDebugger(DebuggerObservation dbg)
+    {
+        var kind = dbg.HeapSignal switch
+        {
+            "HEAP_CORRUPTION" or "HEAP_SIGNAL" => FaultSignalKind.HeapCorruption,
+            "USE_AFTER_FREE" => FaultSignalKind.UseAfterFree,
+            _ => dbg.ExceptionHint?.Contains("ACCESS", StringComparison.OrdinalIgnoreCase) == true
+                || dbg.ExceptionCode?.Contains("c0000005", StringComparison.OrdinalIgnoreCase) == true
+                ? FaultSignalKind.AccessViolation
+                : FaultSignalKind.WerClassification,
+        };
+
+        var sev = dbg.ExploitabilityHint.ToUpperInvariant() switch
+        {
+            "HIGH" => "critical",
+            "MEDIUM" => "high",
+            "LOW" => "medium",
+            _ => "high",
+        };
+
+        return new FaultSignal(
+            kind,
+            dbg.Confidence,
+            sev,
+            FaultSignalSource.DebuggerInvestigation,
+            Truncate(dbg.Diagnosis, 160),
+            Truncate(
+                $"{dbg.Access} @ {dbg.FaultAddress ?? dbg.Rip} · input={dbg.SuspectedInputInfluence}" +
+                (dbg.FaultingFunction is not null ? $" · {dbg.FaultingModule}!{dbg.FaultingFunction}" : ""),
+                240));
     }
 
     private static FaultSignal? TryFallbackFromDetail(string? detail, int? exitCode, string? exceptionHint)

@@ -15,7 +15,8 @@ public static class CrashIntelligenceBuilder
         CrashAnalysisDto? analysis = null,
         CdbTriageDto? cdb = null,
         bool pageHeapEnabled = false,
-        string? rppTag = null)
+        string? rppTag = null,
+        DebuggerObservation? debugger = null)
     {
         var clusterKey = triage?.ClusterKey ?? summary.ClusterKey;
         var clusterMembers = string.IsNullOrWhiteSpace(clusterKey)
@@ -38,23 +39,29 @@ public static class CrashIntelligenceBuilder
         }
 
         var coverageDelta = sidecar?.NewEdgesAtCrash;
-        var function = triage?.StaticFunction is not null
-            ? CrashStaticFunctionMapper.FormatOneLine(triage.StaticFunction)
-            : summary.StaticFunctionSummary;
+        var function = debugger?.FaultingFunction is not null
+            ? $"{debugger.FaultingModule ?? "?"}!{debugger.FaultingFunction}{debugger.FunctionOffset ?? ""}"
+            : triage?.StaticFunction is not null
+                ? CrashStaticFunctionMapper.FormatOneLine(triage.StaticFunction)
+                : summary.StaticFunctionSummary;
         var offset = triage?.PatternDepthBytes;
         var severity = (triage?.Severity ?? summary.Severity ?? "low").ToLowerInvariant();
+        if (string.Equals(debugger?.ExploitabilityHint, "HIGH", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(debugger?.ExploitableClassification, "EXPLOITABLE", StringComparison.OrdinalIgnoreCase))
+            severity = "critical";
         var novelty = ComputeNovelty(seenCount, coverageDelta, oracleScore?.Total);
         var reproducible = ReproLooksReady(summary, sidecar);
         var minimized = IsMinimized(summary, clusterMembers, inputLength);
         var lineage = BuildLineage(sidecar);
-        var screamScore = ComputeScreamScore(severity, novelty, oracleScore?.Total, seenCount, triage);
+        var screamScore = ComputeScreamScore(severity, novelty, oracleScore?.Total, seenCount, triage, debugger);
         var faultSignals = FaultSignalMapper.FromCrash(
             triage, analysis, cdb, sidecar, pageHeapEnabled, rppTag ?? summary.TriageTag,
             sidecar?.TargetDetail,
-            int.TryParse(summary.TargetExitCode, out var exitEc) ? exitEc : sidecar?.ExitCode);
+            int.TryParse(summary.TargetExitCode, out var exitEc) ? exitEc : sidecar?.ExitCode,
+            debugger);
         var primaryFault = FaultSignalMapper.Primary(faultSignals);
         var frontierHint = BuildFrontierHint(summary.Project, triage, CrashCatalog.FindRepoRoot());
-        var canisterContext = BuildCanisterContext(triage, function, oracleScore, frontierHint);
+        var canisterContext = BuildCanisterContext(triage, function, oracleScore, frontierHint, debugger);
 
         return new CrashIntelligenceDto(
             severity,
@@ -74,7 +81,9 @@ public static class CrashIntelligenceBuilder
             primaryFault,
             faultSignals,
             canisterContext,
-            frontierHint);
+            frontierHint,
+            debugger?.Diagnosis,
+            debugger?.ExploitabilityHint);
     }
 
     public static CrashSummaryDto WithListIntelligence(
@@ -115,14 +124,19 @@ public static class CrashIntelligenceBuilder
         CrashTriageDto? triage,
         string? function,
         OracleScore? oracleScore,
-        string? frontierHint)
+        string? frontierHint,
+        DebuggerObservation? debugger = null)
     {
         var parts = new List<string>();
-        var rip = triage?.Rip ?? triage?.StaticFunction?.PcAddress;
+        var rip = debugger?.Rip ?? triage?.Rip ?? triage?.StaticFunction?.PcAddress;
         if (!string.IsNullOrWhiteSpace(rip))
             parts.Add($"RIP {rip}");
         if (!string.IsNullOrWhiteSpace(function))
             parts.Add(function);
+        if (debugger?.Access is DebuggerAccessKind.Write or DebuggerAccessKind.Execute)
+            parts.Add(debugger.Access.ToString().ToLowerInvariant() + " AV");
+        if (debugger?.SuspectedInputInfluence is "HIGH" or "MEDIUM")
+            parts.Add($"input {debugger.SuspectedInputInfluence.ToLowerInvariant()}");
         if (oracleScore is { Total: > 0 })
             parts.Add($"oracle {oracleScore.Total}");
         if (!string.IsNullOrWhiteSpace(frontierHint))
@@ -154,7 +168,8 @@ public static class CrashIntelligenceBuilder
         int novelty,
         int? oracleTotal,
         int seenCount,
-        CrashTriageDto? triage)
+        CrashTriageDto? triage,
+        DebuggerObservation? debugger = null)
     {
         var sev = severity switch
         {
@@ -166,9 +181,14 @@ public static class CrashIntelligenceBuilder
         };
 
         var uniqueBonus = seenCount <= 1 ? 20 : seenCount <= 3 ? 10 : 0;
-        var ipBonus = triage?.IpLooksControlled == true ? 12 : 0;
+        var ipBonus = triage?.IpLooksControlled == true
+                      || debugger?.SuspectedInputInfluence == "HIGH"
+                      || debugger?.FaultAddressClass == DebuggerAddressClass.AsciiPattern
+            ? 12
+            : 0;
         var oracleBonus = oracleTotal is > 0 ? Math.Min(25, oracleTotal.Value / 4) : 0;
-        return sev * 12 + novelty / 2 + uniqueBonus + ipBonus + oracleBonus;
+        var dbgBonus = debugger?.Ok == true ? debugger.DebuggerScreamBonus : 0;
+        return Math.Clamp(sev * 12 + novelty / 2 + uniqueBonus + ipBonus + oracleBonus + dbgBonus, 0, 100);
     }
 
     private static bool ReproLooksReady(CrashSummaryDto summary, CrashSidecarDto? sidecar)

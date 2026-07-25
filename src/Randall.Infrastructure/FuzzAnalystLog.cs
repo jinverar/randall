@@ -10,6 +10,9 @@ public static class FuzzAnalystLog
         TryEnableAnsiConsole();
     }
 
+    /// <summary>Call once at process start so Quick Edit cannot freeze console writes before first fuzz log.</summary>
+    public static void EnsureConsoleReady() => TryEnableAnsiConsole();
+
     public static void Info(IFuzzProgressSink? sink, string message, int? iteration = null) =>
         Emit(sink, "info", $"Info: {message}", iteration);
 
@@ -101,12 +104,21 @@ public static class FuzzAnalystLog
         {
             // Enable VT processing so color escapes work in conhost / Windows Terminal
             var stdout = GetStdHandle(-11);
-            if (stdout == IntPtr.Zero || stdout == new IntPtr(-1))
-                return;
-            if (!GetConsoleMode(stdout, out var mode))
-                return;
-            const uint enableVirtualTerminal = 0x0004;
-            _ = SetConsoleMode(stdout, mode | enableVirtualTerminal);
+            if (stdout != IntPtr.Zero && stdout != new IntPtr(-1) && GetConsoleMode(stdout, out var outMode))
+            {
+                const uint enableVirtualTerminal = 0x0004;
+                _ = SetConsoleMode(stdout, outMode | enableVirtualTerminal);
+            }
+
+            // Quick Edit: clicking the console selects text and BLOCKS all Console.WriteLine
+            // until Enter/Esc — fuzz looks frozen; Ctrl+C "kick starts" by canceling selection.
+            var stdin = GetStdHandle(-10);
+            if (stdin != IntPtr.Zero && stdin != new IntPtr(-1) && GetConsoleMode(stdin, out var inMode))
+            {
+                const uint enableQuickEdit = 0x0040;
+                const uint enableExtendedFlags = 0x0080;
+                _ = SetConsoleMode(stdin, (inMode | enableExtendedFlags) & ~enableQuickEdit);
+            }
         }
         catch
         {

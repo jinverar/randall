@@ -3,6 +3,10 @@ using Randall.Infrastructure;
 using Randall.Infrastructure.Rop;
 using Randall.Server;
 
+// Disable console Quick Edit early — a click in the serve window otherwise blocks WriteLine
+// and makes fuzz look hung until Ctrl+C cancels the selection.
+FuzzAnalystLog.EnsureConsoleReady();
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<FuzzLiveLogBuffer>();

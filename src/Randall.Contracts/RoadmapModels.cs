@@ -72,7 +72,8 @@ public sealed record CrashDetailDto(
     CrashAnalysisDto? Analysis,
     CrashTriageDto? Triage = null,
     CdbTriageDto? CdbTriage = null,
-    CrashIntelligenceDto? Intelligence = null);
+    CrashIntelligenceDto? Intelligence = null,
+    DebuggerObservation? DebuggerObservation = null);
 
 public sealed record SessionGraphReportDto(
     string Project,

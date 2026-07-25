@@ -31,6 +31,8 @@ public enum FaultSignalSource
     OracleRuntime,
     RppPlugin,
     CrashTriage,
+    /// <summary>Structured Scream Investigator (expanded CDB probes).</summary>
+    DebuggerInvestigation,
 }
 
 /// <summary>
@@ -55,6 +57,7 @@ public enum ObservationKind
     Oracle,
     Ghidra,
     Fault,
+    Debugger,
 }
 
 /// <summary>
@@ -123,7 +126,11 @@ public sealed record CrashIntelligenceDto(
     /// <summary>One-line canister seal: RIP + static fn + oracle + frontier context.</summary>
     string? CanisterContext = null,
     /// <summary>Nearest gray door or coverage gap relative to crash function.</summary>
-    string? FrontierHint = null);
+    string? FrontierHint = null,
+    /// <summary>Scream Investigator diagnosis (CDB sensor).</summary>
+    string? DebuggerDiagnosis = null,
+    /// <summary>Debugger-aware exploitability hint (HIGH/MEDIUM/LOW).</summary>
+    string? DebuggerExploitability = null);
 
 /// <summary>In-process observation collector for a single fuzz run.</summary>
 public sealed class ObservationBus
@@ -298,6 +305,37 @@ public static class ObservationEvents
                 ["source"] = signal.Source.ToString(),
                 ["summary"] = signal.Summary,
                 ["detail"] = signal.Detail,
+            },
+            At: DateTimeOffset.UtcNow,
+            Iteration: iteration,
+            InputHash: inputHash,
+            Project: project);
+
+    public static Observation Debugger(
+        string runId,
+        int iteration,
+        string inputHash,
+        DebuggerObservation observation,
+        string? project = null) =>
+        new(
+            ObservationKind.Debugger,
+            runId,
+            Confidence: observation.Confidence,
+            Novelty: observation.DebuggerScreamBonus >= 12 ? 1.0 : 0.6,
+            Severity: observation.ExploitabilityHint.Equals("HIGH", StringComparison.OrdinalIgnoreCase)
+                ? "critical"
+                : "high",
+            Data: new Dictionary<string, object?>
+            {
+                ["diagnosis"] = observation.Diagnosis,
+                ["access"] = observation.Access.ToString(),
+                ["faultAddress"] = observation.FaultAddress,
+                ["rip"] = observation.Rip,
+                ["function"] = observation.FaultingFunction,
+                ["stackHash"] = observation.StackHash,
+                ["inputInfluence"] = observation.SuspectedInputInfluence,
+                ["exploitability"] = observation.ExploitabilityHint,
+                ["screamBonus"] = observation.DebuggerScreamBonus,
             },
             At: DateTimeOffset.UtcNow,
             Iteration: iteration,
