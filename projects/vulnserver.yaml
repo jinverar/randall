@@ -34,6 +34,10 @@ sessionCommands:
     model: protocols/vulnserver_rand.yaml
     readBanner: true
 fuzz:
+  # brain: true is the code default — RandallBrain fuses frontier/Ghidra/oracle/scream when stalk data exists
+  brain: true
+  # Scream watcher: debug-attach on crash → minidump under data/crashes/vulnserver/dumps/ (needs longLived target)
+  debuggerMode: wait
   maxIterations: 1000
   powerSchedule: true
   havocDepth: 8

@@ -50,6 +50,35 @@ public sealed class MutatorCreditTracker
         entry.Score = ComputeScore(entry.NewEdges, entry.UniqueCrashes);
     }
 
+    /// <summary>
+    /// Record iteration outcome; on unique crash, also credit every mutator in the lineage chain
+    /// (excluding joker wrappers already expanded in the chain).
+    /// </summary>
+    public void RecordWithChain(
+        string primaryMutator,
+        IReadOnlyList<string> mutatorChain,
+        int newEdges,
+        bool uniqueCrash)
+    {
+        Record(primaryMutator, newEdges, uniqueCrash);
+        if (!uniqueCrash || mutatorChain.Count <= 1)
+            return;
+
+        foreach (var name in mutatorChain)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+            if (name.StartsWith("joker:", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (name.Equals(primaryMutator, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var entry = GetOrCreate(name);
+            entry.UniqueCrashes++;
+            entry.Score = ComputeScore(entry.NewEdges, entry.UniqueCrashes);
+        }
+    }
+
     public int GetSelectionWeight(string mutatorName)
     {
         if (!_entries.TryGetValue(mutatorName, out var entry) || entry.Runs <= 0)

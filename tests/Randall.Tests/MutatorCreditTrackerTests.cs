@@ -107,6 +107,31 @@ public class MutatorCreditTrackerTests
     }
 
     [Fact]
+    public void RecordWithChain_CreditsUniqueCrashToLineageMutators()
+    {
+        var tracker = new MutatorCreditTracker(persistPath: null, biasEnabled: true);
+        tracker.RecordWithChain("expand", ["seed", "havoc", "expand"], newEdges: 2, uniqueCrash: true);
+
+        var rows = tracker.SnapshotRows().ToDictionary(r => r.Name, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(1, rows["expand"].UniqueCrashes);
+        Assert.Equal(1, rows["seed"].UniqueCrashes);
+        Assert.Equal(1, rows["havoc"].UniqueCrashes);
+        Assert.Equal(0, rows["seed"].Runs);
+        Assert.Equal(1, rows["expand"].Runs);
+    }
+
+    [Fact]
+    public void RecordWithChain_SkipsJokerWrappersOnUniqueCrash()
+    {
+        var tracker = new MutatorCreditTracker(persistPath: null, biasEnabled: true);
+        tracker.RecordWithChain("havoc", ["joker:double", "bitflip", "havoc"], newEdges: 0, uniqueCrash: true);
+
+        var rows = tracker.SnapshotRows();
+        Assert.DoesNotContain(rows, r => r.Name.StartsWith("joker:", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal(1, rows.Single(r => r.Name == "bitflip").UniqueCrashes);
+    }
+
+    [Fact]
     public void WriteRunJson_WritesLeaderboardFile()
     {
         var runDir = Path.Combine(Path.GetTempPath(), "randall-credit-run-" + Guid.NewGuid().ToString("N"));

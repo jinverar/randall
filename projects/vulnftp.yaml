@@ -46,6 +46,9 @@ sessionGraph:
       when: "230"
       to: RETR
 fuzz:
+  # brain: true (default) — run fuzz + stalk frontier or export Ghidra map for ranked gray doors
+  brain: true
+  # debuggerMode: none (default) — set fuzz.debuggerMode: wait for Scream minidumps on crash
   maxIterations: 1000
   mutateStep: last
   sessionGraphBias: 0.3

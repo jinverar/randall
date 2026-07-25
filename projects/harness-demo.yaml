@@ -8,6 +8,9 @@ target:
   harnessType: managed
   timeoutMs: 2000
 fuzz:
+  # brain: true (default) — sidecar lineage + corpus feed Scare Floor even without native dumps
+  brain: true
+  # debuggerMode: none — in-process managed harness; repro from crash input + sidecar (no Scream attach)
   executionMode: in-process
   persistent: true          # warm harness; Reset() each case
   forkServer: true          # recycle managed host after crash

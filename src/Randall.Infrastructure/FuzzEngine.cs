@@ -501,7 +501,9 @@ public sealed class FuzzEngine
 
         try
         {
-            for (var i = 0; i < maxIterations && !cancellationToken.IsCancellationRequested; i++)
+            var screamGoal = project.Fuzz.ScreamScoreGoal;
+            var screamGoalReached = false;
+            for (var i = 0; i < maxIterations && !cancellationToken.IsCancellationRequested && !screamGoalReached; i++)
             {
                 try
                 {
@@ -518,7 +520,8 @@ public sealed class FuzzEngine
                         brainSignals,
                         mutatorCredit.SnapshotRows(),
                         mutators,
-                        iterations);
+                        iterations,
+                        repoRoot);
                     brain.PersistLast(huntDecision, repoRoot);
                     if (verbose)
                     {
@@ -1365,6 +1368,20 @@ public sealed class FuzzEngine
                     var saved = savedResult.Crash;
                     uniqueCrashThisIter = savedResult.IsNew;
 
+                    if (screamGoal > 0 && savedResult.IsNew && repoRoot is not null)
+                    {
+                        var projectCrashes = CrashCatalog.ListAll(repoRoot, project.Name);
+                        if (ScreamScoreHelper.GoalReached(screamGoal, projectCrashes))
+                        {
+                            var maxScore = projectCrashes.Max(c => c.ScreamScore);
+                            var hotCount = projectCrashes.Count(ScreamScoreHelper.IsHot);
+                            FuzzAnalystLog.Info(progress,
+                                $"Scream score goal {screamGoal} reached (max={maxScore}, hot={hotCount}) — stopping",
+                                iterations);
+                            screamGoalReached = true;
+                        }
+                    }
+
                     Console.WriteLine(
                         $"CRASH #{crashCount} iter={iterations} {mutatorLabel} " +
                         $"detail={result.Detail} saved={saved.InputPath}" +
@@ -1632,7 +1649,7 @@ public sealed class FuzzEngine
                         longLived = await RestartLongLivedAsync(iterations);
                 }
 
-                mutatorCredit.Record(mutator.Name, newEdges, uniqueCrashThisIter);
+                mutatorCredit.RecordWithChain(mutator.Name, mutatorChain, newEdges, uniqueCrashThisIter);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

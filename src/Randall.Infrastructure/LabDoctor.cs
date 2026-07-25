@@ -309,6 +309,62 @@ public static class LabDoctor
                 "frontier without full map — session/edge-gap mode only; export Ghidra for CFG gray doors");
         }
 
+        if (project.Fuzz.Brain)
+        {
+            if (!File.Exists(mapPath) && !File.Exists(frontierPath))
+            {
+                Add("fuzz:brain", "warn",
+                    "fuzz.brain on but no frontier.json or randall-analysis.json — brain idles until coverage or Ghidra export " +
+                    $"(randall stalk frontier -p {project.Name})");
+            }
+            else
+            {
+                Add("fuzz:brain", "ok",
+                    "fuzz.brain armed — stalk signals present or accumulating during fuzz");
+            }
+        }
+        else
+        {
+            Add("fuzz:brain", "ok", "fuzz.brain disabled — enable for closed-loop seed/mutator steering");
+        }
+
+        var crashesDirResolved = ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir);
+        var dbgModeNorm = (project.Fuzz.DebuggerMode ?? "none").Trim().ToLowerInvariant();
+        var dumpCapture = dbgModeNorm is "wait" or "both" or "attach" || project.Fuzz.ProcdumpOnCrash;
+        if (Directory.Exists(crashesDirResolved))
+        {
+            var crashStore = new CrashStore(crashesDirResolved);
+            var savedCrashes = crashStore.List();
+            if (savedCrashes.Count > 0)
+            {
+                var missingDumps = savedCrashes.Count(c =>
+                    string.IsNullOrWhiteSpace(c.MiniDumpPath) || !File.Exists(c.MiniDumpPath));
+                if (missingDumps > 0 && !dumpCapture)
+                {
+                    Add("crashes:dumps", "warn",
+                        $"{missingDumps}/{savedCrashes.Count} crash(es) have no minidump — " +
+                        "set fuzz.debuggerMode: wait (Scream) or fuzz.procdumpOnCrash: true " +
+                        "(see projects/vulnserver.yaml, screamcrash.yaml)");
+                }
+                else if (missingDumps > 0)
+                {
+                    Add("crashes:dumps", "warn",
+                        $"{missingDumps}/{savedCrashes.Count} crash(es) missing dumps on disk — re-fuzz or check WinDbg/cdb on PATH");
+                }
+                else
+                {
+                    Add("crashes:dumps", "ok",
+                        $"{savedCrashes.Count} crash(es) with minidump(s) under {crashesDirResolved}");
+                }
+            }
+            else if (!dumpCapture && OperatingSystem.IsWindows() && project.Target.LongLived)
+            {
+                Add("crashes:dumps", "warn",
+                    "debuggerMode: none — no Scream attach for minidumps; teaching labs use fuzz.debuggerMode: wait " +
+                    "(randall doctor after first crash if dumps stay empty)");
+            }
+        }
+
         var stalkMode = (project.Fuzz.StalkMode ?? "auto").Trim().ToLowerInvariant();
         var native = new NativeStalkRunner();
         if (stalkMode == "external" && !dr.IsAvailable)
