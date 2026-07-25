@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Randall.Contracts;
 using Randall.Core;
@@ -158,11 +158,13 @@ public sealed class RandallBrain
             breakdown);
     }
 
-    public IMutator PickMutator(
+public IMutator PickMutator(
         NextHuntDecision decision,
         IReadOnlyList<IMutator> mutators,
         MutatorCreditTracker credit,
-        Random rng)
+        Random rng,
+        MutatorChainTracker? chains = null,
+        string? previousMutator = null)
     {
         if (mutators.Count == 0)
             throw new InvalidOperationException("No mutators available.");
@@ -170,18 +172,37 @@ public sealed class RandallBrain
             return mutators[0];
 
         if (!decision.Active || string.IsNullOrWhiteSpace(decision.PreferredMutator))
-            return credit.Pick(mutators, rng);
+            return PickWithOptionalChain(credit, chains, previousMutator, mutators, rng);
 
         var preferred = mutators.FirstOrDefault(m =>
             m.Name.Equals(decision.PreferredMutator, StringComparison.OrdinalIgnoreCase));
         if (preferred is null)
-            return credit.Pick(mutators, rng);
+            return PickWithOptionalChain(credit, chains, previousMutator, mutators, rng);
 
-        // 62% brain preference, 38% credit roulette ΓÇö keeps exploration alive.
         if (rng.NextDouble() < 0.62)
+        {
+            if (chains is not null && chains.BiasEnabled && !string.IsNullOrWhiteSpace(previousMutator)
+                && rng.NextDouble() < 0.08)
+            {
+                var chainPick = chains.BlendPick(mutators, credit, previousMutator, rng);
+                if (!chainPick.Name.Equals(preferred.Name, StringComparison.OrdinalIgnoreCase))
+                    return chainPick;
+            }
             return preferred;
-        return credit.Pick(mutators, rng);
+        }
+
+        return PickWithOptionalChain(credit, chains, previousMutator, mutators, rng);
     }
+
+    private static IMutator PickWithOptionalChain(
+        MutatorCreditTracker credit,
+        MutatorChainTracker? chains,
+        string? previousMutator,
+        IReadOnlyList<IMutator> mutators,
+        Random rng) =>
+        chains is not null && chains.BiasEnabled
+            ? chains.BlendPick(mutators, credit, previousMutator, rng)
+            : credit.Pick(mutators, rng);
 
     public void PersistLast(NextHuntDecision decision, string? repoRoot = null)
     {
