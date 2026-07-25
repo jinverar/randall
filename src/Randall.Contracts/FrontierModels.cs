@@ -36,4 +36,11 @@ public sealed record FrontierBranchDto(
     /// <summary>Layer hits on covered predecessor(s) — "almost opened" signal.</summary>
     int ApproachCount = 0,
     /// <summary>Layer hits on the unexplored successor — 0 means still unopened.</summary>
-    int CrossedCount = 0);
+    int CrossedCount = 0,
+    int Attempts = 0,
+    double ClosestDistance = 0,
+    string? LastProgress = null,
+    string? BestSeedId = null,
+    string? BestMutation = null,
+    int StaticScore = 0,
+    double ProgressFraction = 0);

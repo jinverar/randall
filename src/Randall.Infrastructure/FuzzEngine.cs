@@ -769,6 +769,7 @@ public sealed class FuzzEngine
                         iterations, dryLabel, payload.Length, false, false, 0, corpus.SeenCount, coverage.TotalEdges, "dry-run")));
                     FuzzAnalystLog.Ok(progress, "Check OK: dry-run (not sent).", iterations);
                     mutatorCredit.Record(mutator.Name, 0, uniqueCrash: false);
+                    RecordScareDoorProgress(project.Name, repoRoot, iterations, mutator.Name, parentInputHash, 0, false, coverage.TotalEdges);
                     continue;
                 }
 
@@ -1650,6 +1651,9 @@ public sealed class FuzzEngine
                 }
 
                 mutatorCredit.RecordWithChain(mutator.Name, mutatorChain, newEdges, uniqueCrashThisIter);
+                RecordScareDoorProgress(
+                    project.Name, repoRoot, iterations, mutator.Name, parentInputHash,
+                    newEdges, newCoverage, coverage.TotalEdges);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -1988,6 +1992,30 @@ public sealed class FuzzEngine
                 $"  Brain energy +{decision.RecommendedEnergyBoost} ({decision.FocusKind} focus)",
                 iterations);
         }
+    }
+
+    private static void RecordScareDoorProgress(
+        string project,
+        string repoRoot,
+        int iteration,
+        string mutator,
+        string? seedId,
+        int newEdges,
+        bool newCoverage,
+        int coverageEdgeTotal)
+    {
+        try
+        {
+            var focus = RandallBrain.TryLoadFocus(project, repoRoot);
+            if (focus is null || !focus.FocusKind.Equals("frontier", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var frontier = FrontierEngine.TryLoad(project, repoRoot);
+            ScareDoorProgressStore.RecordPinnedIteration(
+                project, focus, frontier, iteration, mutator, seedId,
+                newEdges, newCoverage, coverageEdgeTotal, repoRoot);
+        }
+        catch { /* hunt pressure must not break fuzz loop */ }
     }
 
     private void PublishEnrichedCrashFaults(

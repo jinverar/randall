@@ -1,4 +1,4 @@
-namespace Randall.Contracts;
+﻿namespace Randall.Contracts;
 
 /// <summary>
 /// Scare Floor "Randall thinks" rollup — frontier gray doors, static fuzzPriority, oracle hints, mutator credit.
@@ -33,7 +33,14 @@ public sealed record StalkIntelligenceTargetDto(
     string? FunctionName,
     OracleScore? ScoreBreakdown,
     int ApproachCount = 0,
-    int CrossedCount = 0);
+    int CrossedCount = 0,
+    int Attempts = 0,
+    double ClosestDistance = 0,
+    string? LastProgress = null,
+    string? BestSeedId = null,
+    string? BestMutation = null,
+    int StaticScore = 0,
+    double ProgressFraction = 0);
 
 /// <summary>POST body for <c>/api/stalking/{project}/hunt</c> — pin brain focus for the next fuzz run.</summary>
 public sealed record StalkHuntRequest(

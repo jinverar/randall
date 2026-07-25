@@ -772,6 +772,9 @@ function scareBrainDecisionLine(brain, intel) {
 }
 
 function scareBrainBarPct(t) {
+  if (t.kind === 'frontier' && t.progressFraction != null && t.progressFraction > 0) {
+    return Math.min(100, Math.max(4, Math.round(t.progressFraction * 100)));
+  }
   const terms = t.scoreBreakdown?.terms || [];
   for (const term of terms) {
     const m = (term.detail || '').match(/(\d+(?:\.\d+)?)\s*%/);

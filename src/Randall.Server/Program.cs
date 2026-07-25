@@ -746,6 +746,12 @@ app.MapPost("/api/stalking/{project}/hunt", (string project, StalkHuntRequest bo
     try
     {
         var focus = RandallBrain.PersistFocus(project, body.FocusKind, body.FocusLabel, body.Address);
+        try
+        {
+            var frontier = FrontierEngine.TryLoad(project);
+            ScareDoorProgressStore.EnsurePinnedDoor(project, focus, frontier);
+        }
+        catch { /* progress seed must not break hunt pin */ }
         return Results.Ok(new { ok = true, focus });
     }
     catch (Exception ex)

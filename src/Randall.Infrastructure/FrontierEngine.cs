@@ -75,7 +75,7 @@ public static class FrontierEngine
             catch { /* write-back must not break frontier save */ }
         }
 
-        return report;
+        return ScareDoorProgressStore.EnrichReport(report, repoRoot);
     }
 
     public static FrontierReportDto? TryLoad(string project, string? repoRoot = null)
@@ -85,7 +85,8 @@ public static class FrontierEngine
             return null;
         try
         {
-            return JsonSerializer.Deserialize<FrontierReportDto>(File.ReadAllText(path), JsonOptions);
+            var report = JsonSerializer.Deserialize<FrontierReportDto>(File.ReadAllText(path), JsonOptions);
+            return report is null ? null : ScareDoorProgressStore.EnrichReport(report, repoRoot);
         }
         catch (JsonException)
         {

@@ -29,9 +29,10 @@ public static class StalkIntelligenceBuilder
 
         if (frontier?.Frontiers is { Count: > 0 } frontiers)
         {
+            var progress = ScareDoorProgressStore.TryLoad(project, repoRoot);
             foreach (var f in frontiers.Take(5))
             {
-                targets.Add(new StalkIntelligenceTargetDto(
+                var target = new StalkIntelligenceTargetDto(
                     $"frontier:{f.EdgeKey}",
                     "frontier",
                     LabelForFrontier(f),
@@ -41,7 +42,16 @@ public static class StalkIntelligenceBuilder
                     f.FunctionName,
                     BuildFrontierScoreBreakdown(f),
                     f.ApproachCount,
-                    f.CrossedCount));
+                    f.CrossedCount,
+                    f.Attempts,
+                    f.ClosestDistance,
+                    f.LastProgress,
+                    f.BestSeedId,
+                    f.BestMutation,
+                    f.StaticScore,
+                    f.ProgressFraction);
+                targets.Add(ScareDoorProgressStore.EnrichTarget(
+                    target, progress?.Doors.GetValueOrDefault(f.EdgeKey)));
             }
         }
 
