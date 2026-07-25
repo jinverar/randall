@@ -58,6 +58,9 @@ public sealed class FuzzEngine
         corpus.Load();
 
         var mutators = LoadMutators(project, yamlPath, corpus, seeds);
+        var mutatorCredit = new MutatorCreditTracker(
+            Path.Combine(corpusDir, "mutator_credit.txt"),
+            project.Fuzz.MutatorCredit);
 
         var coveragePath = Path.Combine(corpusDir, "edges.txt");
         var coverage = new CoverageSet(coveragePath);
@@ -486,6 +489,7 @@ public sealed class FuzzEngine
                 JokerTrick? jokerTrick = null;
                 var iterFlowBias = flowBias;
                 var iterGraphBias = project.Fuzz.SessionGraphBias;
+                var uniqueCrashThisIter = false;
                 IMutator mutator;
                 if (JokerEngine.ShouldPlay(project, rng) && mutators.Count > 0)
                 {
@@ -508,7 +512,7 @@ public sealed class FuzzEngine
                 }
                 else
                 {
-                    mutator = mutators[rng.Next(mutators.Count)];
+                    mutator = mutatorCredit.Pick(mutators, rng);
                 }
                 TargetRunner.TcpSendOptions? tcpOptions = null;
                 string commandName = "default";
@@ -721,6 +725,7 @@ public sealed class FuzzEngine
                     FuzzProgressGuard.Try(progress, p => p.OnIteration(new FuzzIterationEvent(
                         iterations, dryLabel, payload.Length, false, false, 0, corpus.SeenCount, coverage.TotalEdges, "dry-run")));
                     FuzzAnalystLog.Ok(progress, "Check OK: dry-run (not sent).", iterations);
+                    mutatorCredit.Record(mutator.Name, 0, uniqueCrash: false);
                     continue;
                 }
 
@@ -1069,7 +1074,7 @@ public sealed class FuzzEngine
                                     iterations);
                             }
                             FuzzAnalystLog.Info(progress,
-                                $"Oracle score={oracleEval.InterestingnessScore} retain={oracleEval.RetainInCorpus} " +
+                                $"Oracle score={oracleEval.Score.Total} retain={oracleEval.RetainInCorpus} " +
                                 $"energy+={oracleEval.EnergyBoost} summary={oracleEval.Summary}",
                                 iterations);
                         }
@@ -1078,10 +1083,10 @@ public sealed class FuzzEngine
                     {
                         if (oracleEval.MaxSeverity >= OracleSeverity.Violation)
                             FuzzAnalystLog.Warn(progress,
-                                $"Oracle [{oracleEval.InterestingnessScore}]: {oracleEval.Summary}", iterations);
+                                $"Oracle [{oracleEval.Score.Total}]: {oracleEval.Summary}", iterations);
                         else
                             FuzzAnalystLog.Info(progress,
-                                $"Oracle near-miss [{oracleEval.InterestingnessScore}]: {oracleEval.Summary}",
+                                $"Oracle near-miss [{oracleEval.Score.Total}]: {oracleEval.Summary}",
                                 iterations);
                     }
                 }
@@ -1188,6 +1193,9 @@ public sealed class FuzzEngine
                         : $"{commandName}/joker:{jokerTrick.TrickName}";
                     var payloadHash = InputHash.StackHash(payload);
                     var expectedInputPath = Path.Combine(crashesDir, $"{project.Name}_{iterations}_{payloadHash}.bin");
+                    var randallScore = oracleEval is { Score.Total: > 0 }
+                        ? oracleEval.Score
+                        : OracleScorer.CrashScore(result.Detail, newEdges);
 
                     var savedResult = crashStore.SaveEx(
                         project.Name,
@@ -1254,9 +1262,11 @@ public sealed class FuzzEngine
                                     project.Kind, project.Transport.Host, project.Transport.Port, project.Transport.Tls),
                                 new FuzzSnapshotDto(coverageGuided, dryRun, Path.GetFullPath(yamlPath)),
                                 DateTimeOffset.UtcNow,
-                                intel);
+                                intel,
+                                randallScore);
                         });
                     var saved = savedResult.Crash;
+                    uniqueCrashThisIter = savedResult.IsNew;
 
                     Console.WriteLine(
                         $"CRASH #{crashCount} iter={iterations} {mutatorLabel} " +
@@ -1504,6 +1514,8 @@ public sealed class FuzzEngine
                     if (needsInfraRestart)
                         longLived = await RestartLongLivedAsync(iterations);
                 }
+
+                mutatorCredit.Record(mutator.Name, newEdges, uniqueCrashThisIter);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -1609,6 +1621,16 @@ public sealed class FuzzEngine
             }
 
             try { FuzzProgressGuard.Try(options.Progress, p => p.OnTargetPid(null)); }
+            catch { /* ignore */ }
+
+            try
+            {
+                mutatorCredit.Save();
+                var statsDir = journal?.RunDirectory ?? runDir;
+                if (statsDir is not null)
+                    mutatorCredit.WriteRunJson(statsDir);
+                Console.WriteLine(mutatorCredit.FormatLeaderboard());
+            }
             catch { /* ignore */ }
 
             try { journal?.Complete(iterations, crashCount, coverage.GetTopHotEdges()); }

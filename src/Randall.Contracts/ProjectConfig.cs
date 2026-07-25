@@ -241,6 +241,8 @@ public sealed class FuzzConfig
     /// Does not rewrite mutators — nudges power schedule only. Disable with <c>false</c>.
     /// </summary>
     public bool GhidraStaticBias { get; set; } = true;
+    /// <summary>When true, bias mutator selection toward credited winners (mutator_stats.json).</summary>
+    public bool MutatorCredit { get; set; } = true;
     /// <summary>AFL-style energy: favor corpus entries that found new coverage.</summary>
     public bool PowerSchedule { get; set; } = true;
     /// <summary>Max stacked mutation rounds for havoc mutator.</summary>
