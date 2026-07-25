@@ -41,6 +41,7 @@ return args[0].ToLowerInvariant() switch
     "windbg" or "randfuzzdbg" or "rfdbg" => RunWindbg(args.Skip(1).ToArray()),
     "memory" or "lens" => RunMemoryLens(args.Skip(1).ToArray()),
     "stalk" => RunStalk(args.Skip(1).ToArray()),
+    "ghidra" => RunGhidra(args.Skip(1).ToArray()),
     "debug" => RunDebug(args.Skip(1).ToArray()),
     "scream" => await RunScream(args.Skip(1).ToArray()),
     "ladder" => RunLadder(args.Skip(1).ToArray()),
@@ -111,6 +112,7 @@ static void PrintHelp()
           randall stalk capture-binary -p <project> [-i seed] Dragon Dance binary drcov
           randall stalk map -p <project> [-c yaml] [--binary path]  In-app stalk map (strings/imports)
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
+          randall ghidra mcp ping|imports|callers   Optional live GhidraMCP Q&A (soft-fail)
           randall stalk from-crash -i <crash-guid> [--tag crash]
           randall scream watch -p <pid> [-o dumpsDir]   Built-in exception dump watcher
           randall scream walk -i <crash-guid> [--goal auto]  CONTROL→stack→badchars→sketch→walk
@@ -124,7 +126,7 @@ static void PrintHelp()
           randall debug attach -p <pid> | -t <project> [--kind …]
           randall fuzz -c <project> --debugger wait|attach|both [--open-on-crash]
           randall case ops|new|preview|save-seed|mutators   Build seeds / YAML targets
-          randall oracles [-p name] [--json]   Oracle engine: list findings (judgment/report)
+          randall oracles [-p name] [--json] [--mcp-import sym]   Oracle + optional live Ghidra MCP
           randall magician [spells|cast|log]   Magician: spells / summons for Oracle needs
           randall hunt -d <src> [-c yaml --arm]  Bug Hunter: AI/human analysis + arm campaign
           randall hunt attribution|mistakes   Bug Hunter subcommands
@@ -914,16 +916,19 @@ static int RunOracles(string[] args)
             List hybrid semantic oracle findings (docs/ORACLES.md)
 
             Usage:
-              randall oracles [-p <project>] [--json]
+              randall oracles [-p <project>] [--json] [--mcp-import <symbol>]
 
             Findings are written during fuzz when projects enable `oracles:`.
             Path: data/crashes/<project>/_oracles/oracle_findings.jsonl
+
+            --mcp-import asks a running GhidraMCP server (optional; soft-fails when offline).
             """);
         return 0;
     }
 
     string? project = null;
     var json = false;
+    string? mcpImport = null;
     for (var i = 0; i < args.Length; i++)
     {
         switch (args[i])
@@ -933,6 +938,9 @@ static int RunOracles(string[] args)
                 break;
             case "--json":
                 json = true;
+                break;
+            case "--mcp-import" when i + 1 < args.Length:
+                mcpImport = args[++i];
                 break;
         }
     }
@@ -963,13 +971,51 @@ static int RunOracles(string[] args)
         {
             Console.WriteLine("Static target map (Ghidra):");
             Console.WriteLine($"  {hints.Summary}");
+            Console.WriteLine($"  {hints.CoverageGapSummary}");
             Console.WriteLine($"  Path: {hints.AnalysisPath}");
+            Console.WriteLine("  Top static targets:");
             foreach (var fn in hints.TopFunctions.Take(5))
-                Console.WriteLine($"    [{fn.FuzzPriority}] {fn.Name} @ {fn.Address}");
+            {
+                var cov = fn.CoverageFraction is null
+                    ? ""
+                    : $" cov={fn.CoverageFraction:P0} gap={fn.UncoveredBlockCount}bb dist={fn.UncoveredDistance}";
+                Console.WriteLine($"    [{fn.FuzzPriority}] {fn.Name} @ {fn.Address}{cov}");
+            }
+            if (hints.TopUncoveredTargets.Count > 0)
+            {
+                Console.WriteLine("  Top uncovered (coverage gaps):");
+                foreach (var fn in hints.TopUncoveredTargets.Take(5))
+                    Console.WriteLine(
+                        $"    [{fn.FuzzPriority}] {fn.Name} — {fn.UncoveredBlockCount}/{fn.BasicBlockCount} BBs uncovered");
+            }
             if (hints.TopSinks.Count > 0)
             {
                 Console.Write("  Sinks: ");
                 Console.WriteLine(string.Join(", ", hints.TopSinks.Take(4).Select(s => s.Name)));
+            }
+            Console.WriteLine();
+        }
+
+        if (mcpImport is not null)
+        {
+            var live = GhidraMcpClient.TryGetImportCallersAsync(mcpImport).GetAwaiter().GetResult();
+            if (live is null)
+            {
+                Console.WriteLine("Ghidra MCP: offline — start Tools → GhidraMCP → Start MCP Server in Ghidra.");
+                Console.WriteLine("  Install: .\\scripts\\install-ghidra-mcp.ps1  ·  docs/GHIDRA_INTEGRATION.md#ghidra-mcp-companion");
+            }
+            else if (live.Source == "import-not-found")
+            {
+                Console.WriteLine($"Ghidra MCP: import '{mcpImport}' not found in open program.");
+            }
+            else
+            {
+                Console.WriteLine($"Ghidra MCP callers of {live.ImportName} @ {live.ImportAddress}:");
+                foreach (var x in live.Callers.Take(12))
+                {
+                    var fn = string.IsNullOrWhiteSpace(x.FromFunction) ? "(unknown fn)" : x.FromFunction;
+                    Console.WriteLine($"  {fn} @ {x.FromAddress} [{x.RefKind}]");
+                }
             }
             Console.WriteLine();
         }
@@ -2526,6 +2572,148 @@ static string? ResolveProjectYaml(string repoRoot, string projectName)
     return candidates.FirstOrDefault(File.Exists);
 }
 
+static int RunGhidra(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+    {
+        Console.WriteLine("""
+            Ghidra companion commands (optional — fuzz/CI never require MCP)
+
+            Usage:
+              randall ghidra mcp ping
+              randall ghidra mcp imports [--filter <symbol>]
+              randall ghidra mcp callers --import <symbol>
+              randall ghidra mcp xrefs --to <address>
+
+            Requires GhidraMCP HTTP server (default http://127.0.0.1:8089/).
+            Install: scripts/install-ghidra-mcp.ps1 · docs/GHIDRA_INTEGRATION.md
+            """);
+        return 0;
+    }
+
+    return args[0].ToLowerInvariant() switch
+    {
+        "mcp" => RunGhidraMcp(args.Skip(1).ToArray()).GetAwaiter().GetResult(),
+        _ => Unknown("ghidra " + args[0]),
+    };
+}
+
+static async Task<int> RunGhidraMcp(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
+        return RunGhidra(["help"]);
+
+    var sub = args[0].ToLowerInvariant();
+    string? filter = null, importName = null, xrefTo = null;
+    for (var i = 1; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "--filter" or "-f" when i + 1 < args.Length:
+                filter = args[++i];
+                break;
+            case "--import" when i + 1 < args.Length:
+                importName = args[++i];
+                break;
+            case "--to" when i + 1 < args.Length:
+                xrefTo = args[++i];
+                break;
+        }
+    }
+
+    switch (sub)
+    {
+        case "ping" or "health":
+        {
+            var probe = await GhidraMcpClient.ProbeAsync();
+            if (!probe.Available)
+            {
+                Console.WriteLine($"Ghidra MCP: offline @ {probe.BaseUrl}");
+                Console.WriteLine($"  {probe.Message}");
+                return 1;
+            }
+
+            Console.WriteLine($"Ghidra MCP: online @ {probe.BaseUrl}");
+            Console.WriteLine($"  {probe.Message}");
+            if (probe.ProgramName is not null)
+                Console.WriteLine($"  Program: {probe.ProgramName}");
+            return 0;
+        }
+        case "imports" or "import":
+        {
+            var imports = await GhidraMcpClient.TryListImportsAsync(filter);
+            if (imports is null)
+            {
+                Console.WriteLine("Ghidra MCP: offline (soft-fail). Start MCP server in Ghidra.");
+                return 1;
+            }
+
+            foreach (var imp in imports.Take(80))
+            {
+                var lib = string.IsNullOrWhiteSpace(imp.Library) ? "" : $" ({imp.Library})";
+                Console.WriteLine($"{imp.Name,-28} {imp.Address}{lib}");
+            }
+
+            return 0;
+        }
+        case "callers" or "refs":
+        {
+            if (string.IsNullOrWhiteSpace(importName))
+            {
+                Console.Error.WriteLine("Usage: randall ghidra mcp callers --import <symbol>");
+                return 1;
+            }
+
+            var result = await GhidraMcpClient.TryGetImportCallersAsync(importName);
+            if (result is null)
+            {
+                Console.WriteLine("Ghidra MCP: offline (soft-fail). Start MCP server in Ghidra.");
+                return 1;
+            }
+
+            if (result.Source == "import-not-found")
+            {
+                Console.WriteLine($"Import '{importName}' not found in open program.");
+                return 1;
+            }
+
+            Console.WriteLine($"Callers of {result.ImportName} @ {result.ImportAddress}:");
+            foreach (var x in result.Callers.Take(40))
+            {
+                var fn = string.IsNullOrWhiteSpace(x.FromFunction) ? "(unknown fn)" : x.FromFunction;
+                Console.WriteLine($"  {fn} @ {x.FromAddress} [{x.RefKind}]");
+            }
+
+            return 0;
+        }
+        case "xrefs":
+        {
+            if (string.IsNullOrWhiteSpace(xrefTo))
+            {
+                Console.Error.WriteLine("Usage: randall ghidra mcp xrefs --to <address>");
+                return 1;
+            }
+
+            var xrefs = await GhidraMcpClient.TryGetXrefsToAsync(xrefTo);
+            if (xrefs is null)
+            {
+                Console.WriteLine("Ghidra MCP: offline (soft-fail). Start MCP server in Ghidra.");
+                return 1;
+            }
+
+            foreach (var x in xrefs.Take(40))
+            {
+                var fn = string.IsNullOrWhiteSpace(x.FromFunction) ? "(unknown fn)" : x.FromFunction;
+                Console.WriteLine($"  {fn} @ {x.FromAddress} [{x.RefKind}]");
+            }
+
+            return 0;
+        }
+        default:
+            return Unknown("ghidra mcp " + sub);
+    }
+}
+
 static async Task<int> StalkGhidraAnalyze(string[] args)
 {
     var project = RequireProject(args);
@@ -2619,6 +2807,15 @@ static void PrintGhidraAnalyzeSummary(
     Console.WriteLine($"  Binary:   {doc.Binary}");
     Console.WriteLine($"  Mode:     {(fromHeadless ? "headless analyzeHeadless" : "import")}");
     Console.WriteLine($"  Summary:  {doc.Functions.Count} functions, {doc.Imports.Count} imports, {doc.Sinks.Count} sinks");
+    if (doc.CallGraph is { Count: > 0 })
+        Console.WriteLine($"  Call graph: {doc.CallGraph.Count} sink-related edges");
+    if (doc.CoverageSummary is not null)
+    {
+        var s = doc.CoverageSummary;
+        Console.WriteLine(
+            $"  Coverage:   {s.CoveredBlocks}/{s.TotalBlocks} BBs ({s.CoverageFraction:P0}), " +
+            $"{s.FunctionsWithGaps} functions with gaps");
+    }
     if (doc.ChangedFunctions is { Count: > 0 } changed)
         Console.WriteLine($"  Diff:       {changed.Count} changed functions (baseline: {doc.DiffMeta?.BaselinePath})");
     if (doc.BsimMatches is { Count: > 0 } bsim)
@@ -2629,8 +2826,11 @@ static void PrintGhidraAnalyzeSummary(
     {
         var flags = fn.InputReachable ? " input-reachable" : "";
         var danger = fn.HasDangerousCalls ? " sinks=" + string.Join(",", fn.DangerousCalls.Take(3)) : "";
+        var cov = fn.CoverageFraction is null
+            ? ""
+            : $" cov={fn.CoverageFraction:P0} uncovered={fn.UncoveredBlockCount}";
         Console.WriteLine(
-            $"  [{fn.FuzzPriority}] {fn.Name} @ {fn.Address}  bb={fn.BasicBlockCount}{flags}{danger}");
+            $"  [{fn.FuzzPriority}] {fn.Name} @ {fn.Address}  bb={fn.BasicBlockCount}{flags}{danger}{cov}");
     }
 
     Console.WriteLine();
