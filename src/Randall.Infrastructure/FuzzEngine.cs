@@ -540,7 +540,8 @@ public sealed class FuzzEngine
                         mutators,
                         iterations,
                         repoRoot,
-                        chainRows: mutatorChainTracker.SnapshotRows());
+                        chainRows: mutatorChainTracker.SnapshotRows(),
+                        memoryConfidence: brainMemory.MemoryConfidence);
                     brain.PersistLast(huntDecision, repoRoot);
                     if (verbose)
                     {

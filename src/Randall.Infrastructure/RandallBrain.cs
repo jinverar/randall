@@ -86,8 +86,10 @@ public sealed class RandallBrain
         IReadOnlyList<IMutator> mutators,
         int iteration,
         string? repoRoot = null,
-        IReadOnlyList<MutatorChainRowDto>? chainRows = null)
+        IReadOnlyList<MutatorChainRowDto>? chainRows = null,
+        double memoryConfidence = 1.0)
     {
+        memoryConfidence = Math.Clamp(memoryConfidence, 0.05, 1.0);
         if (!signals.HasData)
             return NextHuntDecision.Inactive(project, iteration);
 
@@ -95,7 +97,9 @@ public sealed class RandallBrain
         var candidates = BuildCandidates(signals, mutatorRows);
         var focus = TryLoadFocus(project, repoRoot);
         if (focus is not null)
-            candidates = ApplyFocusPreference(candidates, focus, signals);
+            candidates = ApplyFocusPreference(candidates, focus, signals).ToList();
+        if (memoryConfidence < 0.999)
+            candidates = ApplyMemoryConfidence(candidates, memoryConfidence);
 
         if (candidates.Count == 0)
             return NextHuntDecision.Inactive(project, iteration);
@@ -131,6 +135,14 @@ public sealed class RandallBrain
                 topChain.DisplayLabel));
         }
 
+        if (memoryConfidence < 0.999)
+        {
+            why.Add(new OracleScoreTerm(
+                "memory confidence",
+                (int)Math.Round((memoryConfidence - 1.0) * 20),
+                $"{memoryConfidence:P0} after target change"));
+        }
+
         var corpusBias = ResolveCorpusBias(top, signals);
         var energyBoost = ResolveEnergyBoost(top, signals);
 
@@ -139,8 +151,9 @@ public sealed class RandallBrain
         var summary =
             $"Randall thinks: {top.Kind} ΓåÆ {top.Label} [{top.Score}]" +
             (focus is not null ? " ┬╖ pinned focus" : "") +
-            (preferredMutator is not null ? $" ┬╖ mutator={preferredMutator}" : "") +
-            $" ┬╖ corpus={corpusBias:P0} energy+{energyBoost}";
+            (preferredMutator is not null ? $" · mutator={preferredMutator}" : "") +
+            (memoryConfidence < 0.999 ? $" · memory={memoryConfidence:P0}" : "") +
+            $" · corpus={corpusBias:P0} energy+{energyBoost}";
 
         return new NextHuntDecision(
             iteration,
@@ -158,7 +171,7 @@ public sealed class RandallBrain
             breakdown);
     }
 
-public IMutator PickMutator(
+    public IMutator PickMutator(
         NextHuntDecision decision,
         IReadOnlyList<IMutator> mutators,
         MutatorCreditTracker credit,
@@ -204,6 +217,15 @@ public IMutator PickMutator(
             ? chains.BlendPick(mutators, credit, previousMutator, rng)
             : credit.Pick(mutators, rng);
 
+    private static List<HuntCandidate> ApplyMemoryConfidence(IReadOnlyList<HuntCandidate> candidates, double factor)
+    {
+        if (factor >= 0.999) return candidates.ToList();
+        return candidates.Select(c => new HuntCandidate(c.Kind, c.Label, Math.Max(1, (int)Math.Round(c.Score * factor)), c.Detail,
+            c.Terms.Select(t => new OracleScoreTerm(t.Label, (int)Math.Round(t.Points * factor), t.Detail)).ToList()))
+            .OrderByDescending(c => c.Score).ThenBy(c => c.Label, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+
     public void PersistLast(NextHuntDecision decision, string? repoRoot = null)
     {
         if (string.IsNullOrWhiteSpace(decision.Project))
@@ -214,7 +236,9 @@ public IMutator PickMutator(
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        var snapshot = BrainDecisionSnapshotDto.FromDecision(decision, decision.Project);
+        var memory = BrainMemoryDecay.TryLoad(decision.Project, repoRoot);
+        var snapshot = BrainDecisionSnapshotDto.FromDecision(decision, decision.Project,
+            memoryConfidence: memory?.MemoryConfidence ?? 1.0, memoryMessage: memory?.DecayMessage);
         File.WriteAllText(path, JsonSerializer.Serialize(snapshot, JsonOptions));
         BrainDecisionStore.SetLive(decision);
 
@@ -319,10 +343,18 @@ public IMutator PickMutator(
         if (string.IsNullOrWhiteSpace(project))
             return null;
 
+        var memory = BrainMemoryDecay.TryLoad(project, repoRoot);
+        var memoryConfidence = memory?.MemoryConfidence ?? 1.0;
+        var memoryMessage = memory?.DecayMessage;
+
         var live = BrainDecisionStore.GetLive(project);
         if (live is not null)
         {
-            return BrainDecisionSnapshotDto.FromDecision(live, project);
+            return BrainDecisionSnapshotDto.FromDecision(
+                live,
+                project,
+                memoryConfidence: memoryConfidence,
+                memoryMessage: memoryMessage);
         }
 
         var path = LastDecisionPath(project, repoRoot);
@@ -333,7 +365,17 @@ public IMutator PickMutator(
         {
             var snap = JsonSerializer.Deserialize<BrainDecisionSnapshotDto>(File.ReadAllText(path), JsonOptions);
             if (snap?.LastDecision is not null && snap.Decision is null)
-                return BrainDecisionSnapshotDto.FromDecision(snap.LastDecision, snap.Project, snap.Enabled, snap.EmptyHint);
+                return BrainDecisionSnapshotDto.FromDecision(
+                    snap.LastDecision,
+                    snap.Project,
+                    snap.Enabled,
+                    snap.EmptyHint,
+                    memoryConfidence,
+                    memoryMessage);
+            if (snap is null)
+                return null;
+            if (snap.MemoryConfidence >= 0.999 && memoryConfidence < 0.999)
+                return snap with { MemoryConfidence = memoryConfidence, MemoryMessage = memoryMessage };
             return snap;
         }
         catch
