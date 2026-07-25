@@ -2345,6 +2345,7 @@ function renderCrashDetail(detail, title) {
         ${detail.summary.faultAddress && !a?.faultAddress ? ` @ <code>${escapeAttr(detail.summary.faultAddress)}</code>` : ''}
       </p>
       ${t?.summary ? `<p class="hint">${escapeAttr(t.summary)}</p>` : ''}
+      ${t?.staticFunction ? `<p class="severity-high">Static: <code>${escapeAttr(t.staticFunction.functionName)}${escapeAttr(t.staticFunction.offset)}</code> (${escapeAttr(t.staticFunction.source)})${t.staticFunction.instructionHint ? ` — ${escapeAttr(t.staticFunction.instructionHint)}` : ''}</p>` : (detail.summary.staticFunctionSummary ? `<p class="hint">Static: <code>${escapeAttr(detail.summary.staticFunctionSummary)}</code></p>` : '')}
       <div class="crash-why-actions">
         ${cluster ? `<button type="button" class="btn" id="crash-filter-cluster-btn">Browse ${clusterN}× cluster</button>` : ''}
         <button type="button" class="btn" id="crash-next-unique-inline">Next unique</button>
@@ -3498,6 +3499,7 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
     const mood = scoreHarvestMood({ unique, critical, ipCount });
     const ipControlled = ipCount > 0;
     const live = harvestState.liveProject && name === harvestState.liveProject;
+    const staticHint = list.find((c) => c.staticFunctionSummary)?.staticFunctionSummary || '';
     const cls = [
       'harvest',
       `mood-${mood}`,
@@ -3514,7 +3516,9 @@ function buildHarvestSlots(all, { compact = false, mode = 'projects' } = {}) {
       cls,
       title: ipControlled
         ? `${name} — EIP/RIP controlled (${ipCount}) · sealed`
-        : `${name} — ${screamCaptionForMood(mood)} · ${unique} unique`,
+        : staticHint
+          ? `${name} — ${staticHint} · ${unique} unique`
+          : `${name} — ${screamCaptionForMood(mood)} · ${unique} unique`,
       hue: moodHue(mood, projectCanisterHue(name)),
       live,
       ipControlled,

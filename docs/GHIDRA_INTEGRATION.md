@@ -194,6 +194,7 @@ Manager scripts; these are optional RE accelerators.
 | Export layers to Ghidra | Stalking bugs → **Ghidra** · `stalk export --format ghidra` |
 | Full Ghidra pack | `randall stalk ghidra-pack -p P` |
 | **Static target map (Oracle)** | `randall stalk ghidra-analyze -p P [--binary path]` → `randall-analysis.json` |
+| **Patch-hunt diff merge** | `randall stalk ghidra-diff -p P --from baseline.json` → `changedFunctions[]` |
 | Binary drcov for DD | `randall stalk capture-binary -p P` · YAML `captureBinaryDrcov` |
 | Crash → Ghidra pack | Crashes → Export · `randall export -i <guid>` |
 | Missed blocks + ideas | Stalking bugs → Missed · `stalk missed -p P` |
@@ -241,16 +242,99 @@ randall stalk ghidra-analyze -p vulnserver --import-only /path/to/randall-analys
 
 Oracle reads the map lightly: `randall oracles -p <project>` prints top static targets when the file exists.
 
-### Companion tools (future — not required for v1)
+### Companion tools: BinExport / BinDiff (patch-hunt)
+
+Randfuzz does **not** ship or invoke BinDiff. We document the workflow, stage the Ghidra
+BinExport extension when feasible, and merge **`changedFunctions[]`** from two
+`randall-analysis.json` files without any BinDiff binary.
+
+| Step | Action |
+|------|--------|
+| Install extension | `powershell -ExecutionPolicy Bypass -File .\scripts\install-binexport.ps1` |
+| Optional Ghidra install | `-InstallToGhidra` copies zip into `<ghidra>/Ghidra/Extensions/` |
+| Export from Ghidra | Right-click program → **Export → Binary Export (v2)** → `.BinExport` |
+| BinDiff (optional) | `bindiff primary.BinExport secondary.BinExport` → `.BinDiff` database |
+| JSON-only merge | `randall stalk ghidra-diff -p P --from old.json` (no BinDiff required) |
+
+**Windows installer** caches `BinExport_Ghidra-Java.zip` under `tools/binexport/dist/`.
+BinDiff itself is a separate Google/zynamics install — set `BINDIFF_HOME` or place
+`bindiff.exe` on `PATH`. `randall doctor` reports `binexport` and `bindiff` as optional warns.
+
+**During analyze:**
+
+```bash
+randall stalk ghidra-analyze -p vulnserver --binary targets/vulnserver/randall-vulnserver \
+  --diff-from data/stalk/vulnserver/randall-analysis-v1.0.json
+```
+
+**Standalone merge** (compare an older export to the project’s current map):
+
+```bash
+randall stalk ghidra-diff -p vulnserver \
+  --from data/stalk/vulnserver/randall-analysis-v1.0.json \
+  --into data/stalk/vulnserver/randall-analysis.json
+```
+
+### JSON schema extensions (optional)
+
+Populated only when a baseline or BSim input is supplied:
+
+| Field | Purpose |
+|-------|---------|
+| `changedFunctions[]` | `added` / `removed` / `modified` / `renamed` + size/complexity/BB deltas + `changeScore` |
+| `bsimMatches[]` | BSim similarity rows (`queryFunction`, `matchFunction`, `similarity`, …) |
+| `diffMeta` | Baseline path/binary SHA, `comparedAt`, `source` (`json-merge`, future `bindiff`) |
+
+`changedFunctions` uses name match first, then image-base-relative address. Thresholds:
+size ≥ 4 bytes, complexity ≥ 3, basic blocks ≥ 2. Tune by re-exporting from Ghidra after
+refactoring — BinDiff remains the ground truth for instruction-level patch diffs.
+
+### BSim (built-in Ghidra)
+
+[BSim](https://github.com/NationalSecurityAgency/ghidra/tree/master/GhidraDocs/GhidraClass/BSim)
+ compares decompiler feature vectors across binaries (library ID, stripped firmware, cross-version
+ naming). It is **built into Ghidra** — enable under **File → Configure** → BSim.
+
+| Scale | Setup |
+|-------|--------|
+| Ad-hoc | Ghidra → **BSim** → search similar functions → note matches manually |
+| Corpus | PostgreSQL or Elasticsearch backend (see Ghidra BSim docs) |
+
+Export matches to JSON and attach to the static map:
+
+```bash
+randall stalk ghidra-diff -p vulnserver --from baseline.json --bsim-json bsim-matches.json
+```
+
+`bsim-matches.json` format (array):
+
+```json
+[
+  {
+    "queryFunction": "parse_request",
+    "queryAddress": "0x401020",
+    "matchFunction": "parse_req_v2",
+    "matchAddress": "0x402100",
+    "similarity": 0.91,
+    "matchBinary": "firmware-v2.bin",
+    "source": "bsim"
+  }
+]
+```
+
+Oracle reads `changedFunctions` lightly when present — prioritize modified functions with
+high `changeScore` and sink proximity for patch-directed fuzz campaigns.
+
+### Other companions (document-only)
 
 | Tool | Role |
 |------|------|
-| [GhidraMCP](https://github.com/bethington/ghidra-mcp) | Agent/Oracle programmatic queries (CFG distance, decompile) |
-| [BinExport](https://github.com/google/binexport) + BinDiff | Patch/delta-directed fuzzing across versions |
-| BSim | Cross-build function similarity |
-| TraceRMI / Ghidra Debugger | Crash RIP ↔ static correlation |
+| [GhidraMCP](https://github.com/bethington/ghidra-mcp) | Agent/Oracle programmatic queries (separate install) |
+| TraceRMI / Ghidra Debugger | Live crash ↔ static correlation in Ghidra |
 
-Randfuzz v1 owns the JSON contract in-repo (`tools/ghidra/RandfuzzExportAnalysis.py` + `GhidraAnalysisBridge.cs`) so you are not blocked on third-party installs.
+Randfuzz owns the JSON contract in-repo (`tools/ghidra/RandfuzzExportAnalysis.py` +
+`GhidraAnalysisBridge.cs` + `GhidraAnalysisDiff.cs`) so patch-hunt hints work without
+third-party engines.
 
 ---
 
@@ -260,6 +344,8 @@ Done now:
 
 - Real Script Manager importers (layers, crash novel, tools/ghidra)
 - **Static target map export** (`RandfuzzExportAnalysis.py`, `stalk ghidra-analyze`)
+- **JSON diff merge** (`stalk ghidra-diff`, `--diff-from`) + optional `changedFunctions[]` / `bsimMatches[]`
+- **BinExport install helper** (`scripts/install-binexport.ps1`) + doctor `binexport`/`bindiff` warns
 - Module table start/end → `modules.txt` + open-program filter
 - Focus bookmarks + goTo
 - Optional dual-capture binary drcov sidecar + `capture-binary` CLI
@@ -272,5 +358,5 @@ Later (not blocking):
 
 - Headless Ghidra analyze+color in CI
 - Full CFG edge export + coverage overlay scoring
-- GhidraMCP / BinDiff integration for delta-directed campaigns
+- Headless BinDiff → `changedFunctions[]` import (instruction-level ground truth)
 - TCP auto binary sidecar without a file seed

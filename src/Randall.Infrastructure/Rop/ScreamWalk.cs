@@ -94,6 +94,19 @@ public static class ScreamWalk
             steps.Add(Step("stack", "Stack Lens", "fail", ex.Message));
         }
 
+        // 1c) Static function map (Ghidra / PE)
+        var staticFn = CrashStaticFunctionMapper.TryMapFromDetail(detail, repoRoot, exeOverride);
+        steps.Add(Step("static", "Static function map",
+            staticFn is not null ? "ok" : "skip",
+            staticFn is not null
+                ? $"{CrashStaticFunctionMapper.FormatOneLine(staticFn)} @ {staticFn.PcAddress}"
+                  + (staticFn.InstructionHint is not null ? $" — {staticFn.InstructionHint}" : "")
+                : "no match — export randall-analysis.json or ensure PE exports",
+            [
+                $"randall stalk ghidra-analyze -p {detail.Summary.Project}",
+                $"randall analyze -i {crashId:N}",
+            ]));
+
         // 2) Badchars
         string? badPath = null;
         string? badHex = badCharsHex;
@@ -220,6 +233,7 @@ public static class ScreamWalk
         var summary =
             $"scream-walk: {okCount}/{steps.Count} ok · goal={goalResolved}" +
             (ctrlOff is { } c ? $" · CONTROL@{c}" : "") +
+            (staticFn is not null ? $" · {CrashStaticFunctionMapper.FormatOneLine(staticFn)}" : "") +
             (mitLabel is null ? "" : $" · {mitLabel}");
 
         var report = new ScreamWalkReportDto(

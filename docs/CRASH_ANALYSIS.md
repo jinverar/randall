@@ -137,3 +137,29 @@ See [RECORDING.md](RECORDING.md) and [PERSISTENT.md](PERSISTENT.md) for harness 
 ## Hot edges
 
 At run end, `data/runs/<runId>/run.json` includes `hotEdges`: basic blocks hit most often during the run (edge hit counters from drcov traces).
+
+## Static function mapping (RIP → Ghidra / PE)
+
+When a crash has a fault PC or RIP in `*_analysis.json` (or Linux core triage), Randall maps it to a **function name + offset**:
+
+1. **`data/stalk/<project>/randall-analysis.json`** (from `randall stalk ghidra-analyze`) — preferred; uses module RVA from `faultModule` (`exe+0x…`) when ASLR rebases the image.
+2. **PE export / section heuristics** — nearest export or section name from the target binary when no Ghidra map exists.
+
+Enrichment surfaces:
+
+| Surface | Field / command |
+|---------|-------------------|
+| Crashes → Investigation | `triage.staticFunction` |
+| Crash list / canisters | `staticFunctionSummary` one-liner |
+| `randall analyze -i <guid>` | `Static:` line |
+| `randall scream walk` | `static` playbook step + summary |
+| Memory lens API | prepended summary line |
+| Crash intel FINDINGS | `static map: …` when intel is generated |
+
+Dump-less crashes still work when triage carries RIP/fault from sidecar or exit metadata; mapping is skipped when no PC is available.
+
+Example:
+
+```text
+Static:    handle_request+0x42 (ghidra) @ 0x7ff612340042 — calls memcpy · fuzz-priority 88/100
+```

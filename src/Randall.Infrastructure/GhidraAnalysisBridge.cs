@@ -47,7 +47,7 @@ public static class GhidraAnalysisBridge
         {
             var json = File.ReadAllText(path);
             var doc = JsonSerializer.Deserialize<RandallAnalysisDocument>(json, JsonOptions);
-            return doc is null ? null : Enrich(doc);
+            return doc is null ? null : Enrich(doc, project, repoRoot);
         }
         catch (JsonException)
         {
@@ -59,12 +59,12 @@ public static class GhidraAnalysisBridge
         }
     }
 
-    public static RandallAnalysisDocument LoadOrThrow(string path)
+    public static RandallAnalysisDocument LoadOrThrow(string path, string? project = null, string? repoRoot = null)
     {
         var json = File.ReadAllText(path);
         var doc = JsonSerializer.Deserialize<RandallAnalysisDocument>(json, JsonOptions)
                   ?? throw new InvalidOperationException("randall-analysis.json is empty or invalid.");
-        return Enrich(doc);
+        return Enrich(doc, project, repoRoot);
     }
 
     public static async Task<GhidraAnalyzeResultDto> AnalyzeAsync(
@@ -107,7 +107,7 @@ public static class GhidraAnalysisBridge
         if (!File.Exists(outputPath))
             throw new InvalidOperationException($"Analysis file not produced: {outputPath}");
 
-        var doc = LoadOrThrow(outputPath);
+        var doc = LoadOrThrow(outputPath, project, repoRoot);
         doc = doc with
         {
             Binary = binaryPath,
@@ -205,7 +205,10 @@ public static class GhidraAnalysisBridge
         }
     }
 
-    public static RandallAnalysisDocument Enrich(RandallAnalysisDocument doc)
+    public static RandallAnalysisDocument Enrich(
+        RandallAnalysisDocument doc,
+        string? project = null,
+        string? repoRoot = null)
     {
         var functions = doc.Functions.Select(f =>
         {
@@ -220,7 +223,59 @@ public static class GhidraAnalysisBridge
             ? doc.Sinks
             : BuildSinksFromFunctions(functions, doc.Imports);
 
-        return doc with { Functions = functions, Sinks = sinks };
+        var callGraph = doc.CallGraph is { Count: > 0 }
+            ? doc.CallGraph
+            : BuildCallGraphFromXrefs(doc.Xrefs);
+
+        doc = doc with { Functions = functions, Sinks = sinks, CallGraph = callGraph };
+
+        if (!string.IsNullOrWhiteSpace(project))
+            doc = GhidraCoverageOverlay.Apply(doc, project, repoRoot);
+
+        return doc;
+    }
+
+    private static IReadOnlyList<RandallAnalysisCallEdgeDto> BuildCallGraphFromXrefs(
+        IReadOnlyList<RandallAnalysisXrefDto> xrefs) =>
+        xrefs
+            .Where(x => x.RefKind.Equals("call", StringComparison.OrdinalIgnoreCase))
+            .Select(x => new RandallAnalysisCallEdgeDto(x.FromFunction, x.ToSymbol, x.FromAddress))
+            .ToList();
+
+    public static async Task SaveAsync(
+        RandallAnalysisDocument doc,
+        string outputPath,
+        CancellationToken ct = default)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+        await File.WriteAllTextAsync(outputPath, JsonSerializer.Serialize(doc, JsonOptions), ct);
+    }
+
+    public static async Task<RandallAnalysisDocument> ApplyDiffFromBaselineAsync(
+        RandallAnalysisDocument current,
+        string baselinePath,
+        string outputPath,
+        string? bsimJsonPath = null,
+        CancellationToken ct = default)
+    {
+        baselinePath = Path.GetFullPath(baselinePath);
+        if (!File.Exists(baselinePath))
+            throw new FileNotFoundException("Baseline analysis not found.", baselinePath);
+
+        var baseline = LoadOrThrow(baselinePath);
+        var merged = GhidraAnalysisDiff.MergeDiff(current, baseline, baselinePath);
+
+        if (!string.IsNullOrWhiteSpace(bsimJsonPath))
+        {
+            bsimJsonPath = Path.GetFullPath(bsimJsonPath);
+            if (!File.Exists(bsimJsonPath))
+                throw new FileNotFoundException("BSim JSON not found.", bsimJsonPath);
+            var matches = GhidraAnalysisDiff.ParseBsimJson(bsimJsonPath);
+            merged = GhidraAnalysisDiff.WithBsimMatches(merged, matches);
+        }
+
+        await SaveAsync(merged, outputPath, ct);
+        return merged;
     }
 
     public static int ComputeFuzzPriority(

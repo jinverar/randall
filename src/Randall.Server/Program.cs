@@ -415,6 +415,12 @@ app.MapGet("/api/crashes/{id:guid}/memory", (Guid id) =>
 
     var dump = CrashCatalog.ResolveDumpPath(detail);
     var report = MemoryLensAnalyzer.AnalyzeDump(dump, detail.Analysis);
+    if (detail.Triage?.StaticFunction is { } sf)
+    {
+        var lines = report.SummaryLines.ToList();
+        lines.Insert(0, $"Static map: {CrashStaticFunctionMapper.FormatOneLine(sf)} @ {sf.PcAddress}");
+        report = report with { SummaryLines = lines };
+    }
     if (report.Ok || !string.IsNullOrWhiteSpace(dump))
         MemoryLensWriter.Write(crashesDir, id, report);
     return report.Ok ? Results.Ok(report) : Results.Ok(report);

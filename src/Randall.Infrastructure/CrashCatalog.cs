@@ -65,6 +65,8 @@ public static class CrashCatalog
                     WindowsCdbCrashAnalysisWriter.TriagePathFor(dir, c.Id));
                 var triage = CrashTriage.Classify(
                     analysis, sidecar, summary, null, cdbSidecar?.ExploitableClassification);
+                var staticFn = CrashStaticFunctionMapper.TryMapFromCrash(
+                    projectName, analysis, triage, repoRoot);
 
                 results.Add(new CrashSummaryDto(
                     c.Id,
@@ -84,7 +86,8 @@ public static class CrashCatalog
                     triage.FaultAddress ?? analysis?.FaultAddress,
                     triage.ExceptionHint ?? hint,
                     triage.ClusterKey,
-                    triage.IpLooksControlled));
+                    triage.IpLooksControlled,
+                    staticFn is not null ? CrashStaticFunctionMapper.FormatOneLine(staticFn) : null));
             }
         }
 
@@ -165,6 +168,10 @@ public static class CrashCatalog
                 WindowsCdbCrashAnalysisWriter.TriagePathFor(crashesDir, summary.Id));
             var triage = CrashTriage.Classify(
                 analysis, sidecar, summary, bytes, cdbSidecar?.ExploitableClassification);
+            var staticFn = CrashStaticFunctionMapper.TryMapFromCrash(
+                summary.Project, analysis, triage, repoRoot);
+            if (staticFn is not null)
+                triage = triage with { StaticFunction = staticFn };
             var cdbTriage = MapCdbTriage(cdbSidecar);
             return new CrashDetailDto(summary, bytes.Length, hex, ascii, sidecar, analysis, triage, cdbTriage);
         }

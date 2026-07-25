@@ -33,7 +33,9 @@ public sealed record CrashSummaryDto(
     string? ExceptionHint = null,
     string? ClusterKey = null,
     /// <summary>True when triage thinks EIP/RIP / fault PC looks attacker-controlled (ASCII pattern, non-image, etc.).</summary>
-    bool IpLooksControlled = false);
+    bool IpLooksControlled = false,
+    /// <summary>One-line static map when Ghidra analysis or PE exports resolve the fault PC.</summary>
+    string? StaticFunctionSummary = null);
 
 public sealed record CdbTriageDto(
     bool Ok,

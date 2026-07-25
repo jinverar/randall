@@ -79,6 +79,19 @@ public static class CrashIntelAdvisor
         if (payload.Length is >= 64 and <= 512)
             findings.Add($"payload size {payload.Length} is in classic smash / table-overflow range — good candidate for cyclic depth");
 
+        if (triage?.StaticFunction is { } sf)
+        {
+            findings.Add($"static map: {CrashStaticFunctionMapper.FormatOneLine(sf)} @ {sf.PcAddress} ({sf.PcSource})");
+            if (!string.IsNullOrWhiteSpace(sf.InstructionHint))
+                findings.Add($"static hint: {sf.InstructionHint}");
+        }
+        else if (!string.IsNullOrWhiteSpace(triage?.Rip) || !string.IsNullOrWhiteSpace(triage?.FaultAddress))
+        {
+            findings.Add(
+                "static map: no function match — run `randall stalk ghidra-analyze -p "
+                + project.Name + "` for named offsets (PE export fallback may still apply)");
+        }
+
         // —— Coverage / missed blocks / depth ——
         coverage.Add(coverageGuided
             ? $"coverageGuided=ON · edges at crash: new={newEdgesAtCrash} total={totalEdgesAtCrash}"

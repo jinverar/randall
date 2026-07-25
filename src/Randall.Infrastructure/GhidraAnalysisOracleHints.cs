@@ -11,8 +11,11 @@ public static class GhidraAnalysisOracleHints
         string Project,
         string AnalysisPath,
         IReadOnlyList<RandallAnalysisFunctionDto> TopFunctions,
+        IReadOnlyList<RandallAnalysisFunctionDto> TopUncoveredTargets,
         IReadOnlyList<RandallAnalysisSinkDto> TopSinks,
-        string Summary);
+        RandallAnalysisCoverageSummaryDto? CoverageSummary,
+        string Summary,
+        string CoverageGapSummary);
 
     public static HintPack? TryBuild(string project, string? repoRoot = null)
     {
@@ -25,6 +28,12 @@ public static class GhidraAnalysisOracleHints
             .OrderByDescending(f => f.FuzzPriority)
             .Take(8)
             .ToList();
+        var topUncovered = doc.Functions
+            .Where(f => f.UncoveredBlockCount > 0 || f.CoverageFraction is < 1.0)
+            .OrderByDescending(f => f.FuzzPriority)
+            .ThenByDescending(f => f.UncoveredBlockCount)
+            .Take(8)
+            .ToList();
         var topSink = doc.Sinks
             .OrderByDescending(s => s.Risk)
             .Take(6)
@@ -34,7 +43,17 @@ public static class GhidraAnalysisOracleHints
             ? "Static map loaded (no functions)."
             : $"Static map: {doc.Functions.Count} fn, {doc.Sinks.Count} sinks — top target {topFn[0].Name} ({topFn[0].FuzzPriority}/100).";
 
-        return new HintPack(project, path, topFn, topSink, summary);
+        var gapSummary = BuildCoverageGapSummary(doc);
+
+        return new HintPack(
+            project,
+            path,
+            topFn,
+            topUncovered,
+            topSink,
+            doc.CoverageSummary,
+            summary,
+            gapSummary);
     }
 
     public static int StaticMapScoreBonus(string? functionName, RandallAnalysisDocument? doc)
@@ -43,26 +62,55 @@ public static class GhidraAnalysisOracleHints
             return 0;
         var fn = doc.Functions.FirstOrDefault(f =>
             f.Name.Equals(functionName, StringComparison.OrdinalIgnoreCase));
-        return fn is null ? 0 : Math.Clamp(fn.FuzzPriority / 10, 0, 10);
+        if (fn is null)
+            return 0;
+
+        var baseBonus = Math.Clamp(fn.FuzzPriority / 10, 0, 10);
+        if (fn.CoverageFraction is null or >= 1.0)
+            return baseBonus;
+
+        var gapBoost = Math.Clamp((int)((1.0 - fn.CoverageFraction.Value) * 5), 0, 5);
+        return Math.Clamp(baseBonus + gapBoost, 0, 12);
     }
 
     public static RandallAnalysisFunctionDto? FindFunctionByAddress(
         RandallAnalysisDocument doc,
         string address)
     {
-        if (!TryParseAddr(address, out var target))
+        if (!CrashStaticFunctionMapper.TryParseAddress(address, out var target))
             return null;
+
+        if (!CrashStaticFunctionMapper.TryParseAddress(doc.ImageBase, out var imageBase))
+            imageBase = 0;
+
+        foreach (var fn in doc.Functions)
+        {
+            if (!CrashStaticFunctionMapper.TryParseAddress(fn.Address, out var fnVa))
+                continue;
+            var size = (ulong)Math.Max(fn.Size, 1);
+            if (target >= fnVa && target < fnVa + size)
+                return fn;
+            var fnRva = fnVa >= imageBase ? fnVa - imageBase : fnVa;
+            if (target >= imageBase && target - imageBase >= fnRva && target - imageBase < fnRva + size)
+                return fn;
+        }
+
         return doc.Functions.FirstOrDefault(f =>
-            TryParseAddr(f.Address, out var fa) && fa == target);
+            CrashStaticFunctionMapper.TryParseAddress(f.Address, out var fa) && fa == target);
     }
 
-    private static bool TryParseAddr(string addr, out ulong value)
+    private static string BuildCoverageGapSummary(RandallAnalysisDocument doc)
     {
-        value = 0;
-        var s = addr.Trim();
-        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-            s = s[2..];
-        return ulong.TryParse(s, System.Globalization.NumberStyles.HexNumber,
-            System.Globalization.CultureInfo.InvariantCulture, out value);
+        if (doc.CoverageSummary is null)
+            return "Coverage overlay: no stalk layers / edges yet — run fuzz with drcov or add stalk layers.";
+
+        var s = doc.CoverageSummary;
+        var pct = (int)Math.Round(s.CoverageFraction * 100);
+        var top = s.TopUncoveredTargets.Count == 0
+            ? "none ranked"
+            : string.Join(", ", s.TopUncoveredTargets.Take(4));
+        return
+            $"Coverage overlay: {s.CoveredBlocks}/{s.TotalBlocks} BBs ({pct}%), " +
+            $"{s.FunctionsWithGaps} fn with gaps — focus: {top}.";
     }
 }

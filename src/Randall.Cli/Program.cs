@@ -107,6 +107,7 @@ static void PrintHelp()
           randall stalk dynapstalker <drcov.log> <exe> <out.idc|.py> [--format idc|ghidra] [--color …]
           randall stalk ghidra-pack -p <project> [-o dir]     First-class Ghidra stalk pack
           randall stalk ghidra-analyze -p <project> [--binary path]  Static target map → Oracle
+          randall stalk ghidra-diff -p <project> --from baseline.json [--into current.json]  Patch-hunt merge
           randall stalk capture-binary -p <project> [-i seed] Dragon Dance binary drcov
           randall stalk map -p <project> [-c yaml] [--binary path]  In-app stalk map (strings/imports)
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
@@ -2306,7 +2307,12 @@ static int RunStalk(string[] args)
               randall stalk export -p <project> --format idc|ghidra|edges [-o dir] [layerId…]
               randall stalk ghidra-pack -p <project> [-o dir]   Bundle Ghidra scripts + layer export
               randall stalk ghidra-analyze -p <project> [--binary path] [-c yaml] [-o path]
-                                            [--import-only]  Headless Ghidra → randall-analysis.json
+                                            [--import-only] [--diff-from baseline.json]
+                                            [--bsim-json matches.json]
+                                            Headless Ghidra → randall-analysis.json
+              randall stalk ghidra-diff -p <project> --from baseline.json [--into current.json]
+                                            [-o path] [--bsim-json matches.json]
+                                            JSON merge → changedFunctions[] (no BinDiff required)
               randall stalk capture-binary -p <project> [-i seed.bin] [-o dir]
                                             Binary drcov (no -dump_text) for Dragon Dance
               randall stalk map -p <project> [-c yaml] [--binary path] [--limit N]
@@ -2328,6 +2334,7 @@ static int RunStalk(string[] args)
         "dynapstalker" or "drcov2idc" => StalkDynapstalker(rest),
         "ghidra-pack" or "ghidra" => StalkGhidraPack(rest),
         "ghidra-analyze" or "analyze" => StalkGhidraAnalyze(rest).GetAwaiter().GetResult(),
+        "ghidra-diff" or "diff" => StalkGhidraDiff(rest).GetAwaiter().GetResult(),
         "capture-binary" or "binary-drcov" or "dragon-dance" => StalkCaptureBinary(rest).GetAwaiter().GetResult(),
         "map" or "stalk-map" or "surface" => StalkMap(rest),
         "export" => StalkExport(rest),
@@ -2525,7 +2532,7 @@ static async Task<int> StalkGhidraAnalyze(string[] args)
     if (project is null)
         return 1;
 
-    string? config = null, binary = null, output = null, importOnly = null;
+    string? config = null, binary = null, output = null, importOnly = null, diffFrom = null, bsimJson = null;
     for (var i = 0; i < args.Length; i++)
     {
         if (args[i] is "-c" or "--config" && i + 1 < args.Length)
@@ -2536,6 +2543,10 @@ static async Task<int> StalkGhidraAnalyze(string[] args)
             output = args[++i];
         else if (args[i] is "--import-only" && i + 1 < args.Length)
             importOnly = args[++i];
+        else if (args[i] is "--diff-from" && i + 1 < args.Length)
+            diffFrom = args[++i];
+        else if (args[i] is "--bsim-json" && i + 1 < args.Length)
+            bsimJson = args[++i];
     }
 
     try
@@ -2556,6 +2567,8 @@ static async Task<int> StalkGhidraAnalyze(string[] args)
             Directory.CreateDirectory(Path.GetDirectoryName(dest)!);
             File.Copy(src, dest, overwrite: true);
             var doc = GhidraAnalysisBridge.LoadOrThrow(dest);
+            if (diffFrom is not null)
+                doc = await GhidraAnalysisBridge.ApplyDiffFromBaselineAsync(doc, diffFrom, dest, bsimJson);
             PrintGhidraAnalyzeSummary(project, dest, doc, fromHeadless: false);
             return 0;
         }
@@ -2577,8 +2590,11 @@ static async Task<int> StalkGhidraAnalyze(string[] args)
             output,
             root,
             skipHeadless: false);
-        PrintGhidraAnalyzeSummary(project, result.OutputPath, GhidraAnalysisBridge.LoadOrThrow(result.OutputPath),
-            result.FromHeadless);
+        var outPath = result.OutputPath;
+        var doc = GhidraAnalysisBridge.LoadOrThrow(outPath);
+        if (diffFrom is not null)
+            doc = await GhidraAnalysisBridge.ApplyDiffFromBaselineAsync(doc, diffFrom, outPath, bsimJson);
+        PrintGhidraAnalyzeSummary(project, outPath, doc, result.FromHeadless);
         return 0;
     }
     catch (Exception ex)
@@ -2603,6 +2619,10 @@ static void PrintGhidraAnalyzeSummary(
     Console.WriteLine($"  Binary:   {doc.Binary}");
     Console.WriteLine($"  Mode:     {(fromHeadless ? "headless analyzeHeadless" : "import")}");
     Console.WriteLine($"  Summary:  {doc.Functions.Count} functions, {doc.Imports.Count} imports, {doc.Sinks.Count} sinks");
+    if (doc.ChangedFunctions is { Count: > 0 } changed)
+        Console.WriteLine($"  Diff:       {changed.Count} changed functions (baseline: {doc.DiffMeta?.BaselinePath})");
+    if (doc.BsimMatches is { Count: > 0 } bsim)
+        Console.WriteLine($"  BSim:       {bsim.Count} similarity rows");
     Console.WriteLine();
     Console.WriteLine("Top fuzz priorities:");
     foreach (var fn in doc.Functions.OrderByDescending(f => f.FuzzPriority).Take(10))
@@ -2614,7 +2634,75 @@ static void PrintGhidraAnalyzeSummary(
     }
 
     Console.WriteLine();
+    if (doc.ChangedFunctions is { Count: > 0 })
+    {
+        Console.WriteLine("Top changed functions (patch-hunt):");
+        foreach (var ch in doc.ChangedFunctions.OrderByDescending(c => c.ChangeScore).Take(8))
+        {
+            Console.WriteLine(
+                $"  [{ch.ChangeScore:0.#}] {ch.ChangeKind} {ch.Name} @ {ch.Address} " +
+                $"sizeΔ={ch.SizeDelta} cxΔ={ch.ComplexityDelta} bbΔ={ch.BasicBlockCountDelta}");
+        }
+        Console.WriteLine();
+    }
+
     Console.WriteLine("Oracle: randall oracles -p " + project + "  (includes static map hints when present)");
+}
+
+static async Task<int> StalkGhidraDiff(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    string? from = null, into = null, output = null, bsimJson = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--from" or "-f" && i + 1 < args.Length)
+            from = args[++i];
+        else if (args[i] is "--into" or "--current" && i + 1 < args.Length)
+            into = args[++i];
+        else if (args[i] is "-o" or "--output" && i + 1 < args.Length)
+            output = args[++i];
+        else if (args[i] is "--bsim-json" && i + 1 < args.Length)
+            bsimJson = args[++i];
+    }
+
+    if (from is null)
+    {
+        Console.Error.WriteLine("Usage: randall stalk ghidra-diff -p <project> --from baseline.json [--into current.json] [-o out.json]");
+        return 1;
+    }
+
+    try
+    {
+        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+        var baselinePath = Path.GetFullPath(from);
+        var currentPath = into is not null
+            ? Path.GetFullPath(into)
+            : GhidraAnalysisBridge.AnalysisPath(project, root);
+        var outPath = output is not null
+            ? Path.GetFullPath(output)
+            : currentPath;
+
+        if (!File.Exists(currentPath))
+        {
+            Console.Error.WriteLine($"Current analysis not found: {currentPath}");
+            Console.Error.WriteLine("Run ghidra-analyze first or pass --into <path>.");
+            return 1;
+        }
+
+        var current = GhidraAnalysisBridge.LoadOrThrow(currentPath);
+        var merged = await GhidraAnalysisBridge.ApplyDiffFromBaselineAsync(
+            current, baselinePath, outPath, bsimJson);
+        PrintGhidraAnalyzeSummary(project, outPath, merged, fromHeadless: false);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
 }
 
 static int StalkGhidraPack(string[] args)

@@ -128,4 +128,5 @@ public sealed record CrashTriageDto(
     string? Rip,
     string? Rsp,
     int? PatternDepthBytes = null,
-    string? PatternNote = null);
+    string? PatternNote = null,
+    StaticFunctionMappingDto? StaticFunction = null);
