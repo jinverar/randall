@@ -153,14 +153,20 @@ public sealed class ScreamWatcher : IDisposable
 
                         case Native.ExitProcessDebugEvent:
                         {
+                            var union = IntPtr.Size == 8 ? 16 : 12;
+                            var hProcess = ReadIntPtr(eventBuf, union);
                             var exitCode = ReadExitProcessCode(eventBuf);
-                            ContinueDebugEvent(processId, threadId, Native.DbgContinue);
                             Phase = "target-exited";
                             _ready.TrySetResult(_sawInitialBreakpoint);
+                            // Dump BEFORE ContinueDebugEvent — after continue the process is gone
+                            // and MiniDumpWriteDump yields empty tcp_/scream_ placeholders.
                             if (IsCrashProcessExit(exitCode) && !_done.Task.IsCompleted)
-                                CaptureOnProcessExit(exitCode);
+                                CaptureOnProcessExit(exitCode, threadId, hProcess);
                             else
                                 _done.TrySetResult(ExistingDumpOrNull());
+                            if (hProcess != IntPtr.Zero)
+                                CloseHandle(hProcess);
+                            ContinueDebugEvent(processId, threadId, Native.DbgContinue);
                             return;
                         }
 
@@ -278,21 +284,29 @@ public sealed class ScreamWatcher : IDisposable
             : 0;
     }
 
-    private void CaptureOnProcessExit(uint exitCode)
+    private void CaptureOnProcessExit(uint exitCode, uint threadId, IntPtr hProcess)
     {
         Phase = "dumping-exit";
+        RegisterSnapshotDto? regs = null;
+        try { regs = TryReadRegisters(threadId); }
+        catch { /* best effort before continue */ }
+
+        var faultAddr = regs?.Rip ?? "0x0";
         ExceptionInfo = new ScreamExceptionInfo(
             exitCode,
             WindowsExceptionHints.DescribeCode(exitCode) ?? $"exit 0x{exitCode:X8}",
-            "0x0",
-            0,
-            null,
+            faultAddr,
+            (int)threadId,
+            regs,
             _wow64,
             "process-exit");
 
         var dumpsDir = Path.GetDirectoryName(_dumpPath)!;
         var baseName = Path.GetFileNameWithoutExtension(_dumpPath);
-        var path = TryFallbackDump(dumpsDir, baseName);
+        var path = hProcess != IntPtr.Zero
+            ? MiniDumpWriter.TryWriteDumpFromHandle(hProcess, _pid, dumpsDir, baseName)
+            : null;
+        path ??= TryFallbackDump(dumpsDir, baseName);
 
         if (path is not null &&
             !string.Equals(path, _dumpPath, StringComparison.OrdinalIgnoreCase))

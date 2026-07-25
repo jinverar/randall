@@ -65,37 +65,13 @@ public static class MiniDumpWriter
                 return null;
             }
 
-            using var file = File.Open(path, FileMode.Create, FileAccess.Write, FileShare.None);
             var owned = process.HasExited;
             try
             {
-                var type = dumpType ?? MiniDumpType;
-                var ok = MiniDumpWriteDump(
-                    handle,
-                    (uint)pid,
-                    file.SafeFileHandle,
-                    type,
-                    IntPtr.Zero,
-                    IntPtr.Zero,
-                    IntPtr.Zero);
-                if ((!ok || file.Length == 0) && type != MiniDumpTypeLight)
-                {
-                    file.SetLength(0);
-                    ok = MiniDumpWriteDump(
-                        handle, (uint)pid, file.SafeFileHandle, MiniDumpTypeLight,
-                        IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
-                }
-
-                if (!ok || file.Length == 0)
-                {
-                    RemoveEmptyDump(path);
-                    path = null;
-                    if (process.HasExited && allowExited)
-                        return TryWriteDumpForPid(pid, dumpsDir, baseName, allowExited: true, dumpType);
-                    return null;
-                }
-
-                return path;
+                return WriteDumpToFile(handle, pid, path, dumpType)
+                       ?? (process.HasExited && allowExited
+                           ? TryWriteDumpForPid(pid, dumpsDir, baseName, allowExited: true, dumpType)
+                           : null);
             }
             finally
             {
@@ -109,6 +85,69 @@ public static class MiniDumpWriter
                 RemoveEmptyDump(path);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Write a minidump using a process handle from a debug event (e.g. ExitProcess) before
+    /// <c>ContinueDebugEvent</c> tears the target down.
+    /// </summary>
+    public static string? TryWriteDumpFromHandle(
+        IntPtr hProcess,
+        int pid,
+        string dumpsDir,
+        string baseName,
+        int? dumpType = null)
+    {
+        if (hProcess == IntPtr.Zero)
+            return null;
+
+        string? path = null;
+        try
+        {
+            TryEnableDebugPrivilege();
+            Directory.CreateDirectory(dumpsDir);
+            path = Path.Combine(dumpsDir, $"{baseName}.dmp");
+            return WriteDumpToFile(hProcess, pid, path, dumpType);
+        }
+        catch
+        {
+            if (path is not null)
+                RemoveEmptyDump(path);
+            return null;
+        }
+    }
+
+    private static string? WriteDumpToFile(
+        IntPtr handle,
+        int pid,
+        string path,
+        int? dumpType)
+    {
+        using var file = File.Open(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        var type = dumpType ?? MiniDumpType;
+        var ok = MiniDumpWriteDump(
+            handle,
+            (uint)pid,
+            file.SafeFileHandle,
+            type,
+            IntPtr.Zero,
+            IntPtr.Zero,
+            IntPtr.Zero);
+        if ((!ok || file.Length == 0) && type != MiniDumpTypeLight)
+        {
+            file.SetLength(0);
+            ok = MiniDumpWriteDump(
+                handle, (uint)pid, file.SafeFileHandle, MiniDumpTypeLight,
+                IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+        }
+
+        if (!ok || file.Length == 0)
+        {
+            RemoveEmptyDump(path);
+            return null;
+        }
+
+        return path;
     }
 
     public static string? TryWriteDumpForPid(

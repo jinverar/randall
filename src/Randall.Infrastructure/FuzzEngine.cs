@@ -1824,7 +1824,7 @@ public sealed class FuzzEngine
                             "crash",
                             $"crash {saved.Id.ToString("N")[..8]} iter={iterations}",
                             null,
-                            null,
+                            iterTracePath,
                             null,
                             saved.Id.ToString(),
                             crashTag ?? result.Detail));

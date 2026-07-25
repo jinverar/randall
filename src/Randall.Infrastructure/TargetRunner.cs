@@ -149,8 +149,11 @@ public static class TargetRunner
         var crashed = IsCrashExitCode(code);
         if (crashed)
         {
-            dumpPath = CrashDumpWriter.TryWrite(
-                process, dumpsDir, $"file_{DateTime.UtcNow:yyyyMMdd_HHmmss}", allowExited: true);
+            var baseName = $"file_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
+            dumpPath = CrashDumpWriter.TryWrite(process, dumpsDir, baseName, allowExited: true);
+            if (dumpPath is null)
+                CrashDumpPaths.TryDeleteEmpty(Path.Combine(dumpsDir, $"{baseName}.dmp"));
+            dumpPath = CrashDumpPaths.Sanitize(dumpPath);
         }
 
         var detail = crashed ? "abnormal exit" : "ok";
@@ -275,9 +278,12 @@ public static class TargetRunner
                 ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir), "dumps");
             // Always attempt platform dump on TCP server death — Linux cores need the pid even
             // when the exit code is a plain non-zero (native SIGSEGV is typically 128+sig).
-            dumpPath = CrashDumpWriter.TryWrite(
-                server, dumpsDir, $"tcp_{server.Id}_{DateTime.UtcNow:yyyyMMdd_HHmmssfff}",
-                allowExited: true);
+            // On Windows with Scream armed, scream_*.dmp is preferred; this tcp_* fallback runs
+            // only when Scream is off or dump failed — never leave 0-byte placeholders.
+            var baseName = $"tcp_{server.Id}_{DateTime.UtcNow:yyyyMMdd_HHmmssfff}";
+            dumpPath = CrashDumpWriter.TryWrite(server, dumpsDir, baseName, allowExited: true);
+            if (dumpPath is null)
+                CrashDumpPaths.TryDeleteEmpty(Path.Combine(dumpsDir, $"{baseName}.dmp"));
             dumpPath = CrashDumpPaths.Sanitize(dumpPath);
         }
 

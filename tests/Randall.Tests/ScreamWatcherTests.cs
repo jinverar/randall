@@ -15,6 +15,20 @@ public class ScreamWatcherTests
     {
         Assert.Equal(expectCrash, ScreamWatcher.IsCrashProcessExit(exitCode));
     }
+
+    [Fact]
+    public void ReadExitProcessCode_ParsesExitCodeFromDebugEventUnion()
+    {
+        // x64 DEBUG_EVENT: union @16; EXIT_PROCESS_DEBUG_INFO hProcess (8) + dwExitCode @24
+        var buf = new byte[64];
+        BitConverter.GetBytes(0xC0000005u).CopyTo(buf, 24);
+        var method = typeof(ScreamWatcher).GetMethod(
+            "ReadExitProcessCode",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+        var exit = (uint)(method!.Invoke(null, [buf]) ?? 0u);
+        Assert.Equal(0xC0000005u, exit);
+    }
 }
 
 public class CrashDumpPathsTests
