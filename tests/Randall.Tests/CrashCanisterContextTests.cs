@@ -62,7 +62,7 @@ public class CrashCanisterContextTests
                 new OracleScore(72, [new OracleScoreTerm("crash", 60, "AV")], "+60 crash"));
 
             var intel = CrashIntelligenceBuilder.Build(
-                summary, triage, sidecar, 64, [summary], repoRoot: root);
+                summary, triage, sidecar, 64, [summary]);
 
             Assert.Contains("RIP 0x401020", intel.CanisterContext);
             Assert.Contains("parse_request+0xA", intel.CanisterContext!);
