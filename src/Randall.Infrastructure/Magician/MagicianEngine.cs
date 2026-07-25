@@ -315,6 +315,7 @@ public static class MagicianEngine
         sb.AppendLine("| summonBots | bots | Write analyst hint for AI seed / hunt (no live API) |");
         sb.AppendLine("| summonJoker | joker | Call the Joker — boost chaotic random tricks (encore) |");
         sb.AppendLine("| capitalizeJoker | joker | (auto) After Joker crash — energy + army + corpus |");
+        sb.AppendLine("| playJokerCard | joker | Queue a legendary Joker Card draw from the deck |");
         sb.AppendLine();
         sb.AppendLine("Oracle need → spell map: dictionary→dictionaryBoost; energy→energyBless;");
         sb.AppendLine("hunter→summonHunter; knight→summonKnight; army→summonArmy; bots→summonBots;");
@@ -361,6 +362,8 @@ public static class MagicianEngine
             case "joker":
                 if (cfg.AllowSummonJoker)
                     yield return "summonJoker";
+                if (cfg.AllowPlayJokerCard && Random.Shared.NextDouble() < 0.12)
+                    yield return "playJokerCard";
                 break;
             case "rearm":
                 yield return "rearmOracles";
