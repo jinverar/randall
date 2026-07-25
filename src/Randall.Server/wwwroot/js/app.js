@@ -3687,18 +3687,34 @@ function animateCanisterFills(rack) {
 }
 
 function renderScreamCanisters(opts = {}) {
-  if (document.documentElement.getAttribute('data-scream-canisters') === 'off') {
-    const rack = document.getElementById(opts.rackId || 'scream-canister-rack');
-    if (rack) rack.innerHTML = '';
-    const harvestRoot = document.querySelector('.scream-harvest');
-    const amb = harvestRoot?.querySelector('.scream-harvest-ambience');
-    if (amb) amb.innerHTML = '';
-    return;
-  }
   const rackId = opts.rackId || 'scream-canister-rack';
   const statusId = opts.statusId || 'scream-harvest-status';
   const pressureId = opts.pressureId || 'scream-harvest-pressure';
   const compact = !!opts.compact;
+  if (document.documentElement.getAttribute('data-scream-canisters') === 'off') {
+    const rack = document.getElementById(rackId);
+    if (rack) rack.innerHTML = '';
+    const harvestRoot = document.querySelector('.scream-harvest');
+    const amb = harvestRoot?.querySelector('.scream-harvest-ambience');
+    if (amb) amb.innerHTML = '';
+    if (!compact) {
+      const status = document.getElementById(statusId);
+      const all = opts.crashes || harvestState.all || crashState.all || [];
+      const unique = harvestUniqueCount(all);
+      if (status) {
+        status.textContent = unique
+          ? `Canisters hidden — ${unique} unique scream${unique === 1 ? '' : 's'} bottled. Enable Canisters above.`
+          : 'Canisters hidden — enable Canisters above or click Show canisters.';
+      }
+      const pressure = document.getElementById(pressureId);
+      if (pressure) {
+        pressure.textContent = 'HIDDEN';
+        pressure.classList.remove('critical', 'eip-capture', 'laughter', 'toxic', 'virulent');
+        pressure.title = 'Harvest rack hidden by Canisters pref';
+      }
+    }
+    return;
+  }
   const mode = opts.mode || harvestState.mode || 'projects';
   const rack = document.getElementById(rackId);
   const status = document.getElementById(statusId);
@@ -4090,6 +4106,9 @@ document.getElementById('canister-badge-btn')?.addEventListener('click', () => {
 document.getElementById('scream-harvest-show-btn')?.addEventListener('click', () => {
   enableScreamCanistersFromUi();
 });
+document.getElementById('scream-harvest-reveal-btn')?.addEventListener('click', () => {
+  enableScreamCanistersFromUi();
+});
 document.getElementById('scream-harvest-mode')?.addEventListener('change', (e) => {
   harvestState.mode = e.target.value === 'severity' ? 'severity' : 'projects';
   paintHarvestViews();
@@ -4108,10 +4127,11 @@ async function enableScreamCanistersFromUi() {
 }
 
 function syncScreamHarvestOffNotice() {
-  const notice = document.getElementById('scream-harvest-off-notice');
-  if (!notice) return;
   const off = document.documentElement.getAttribute('data-scream-canisters') === 'off';
-  notice.hidden = !off;
+  for (const id of ['scream-harvest-off-notice', 'scream-harvest-reveal-banner']) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !off;
+  }
 }
 
 function applyScreamHarvestPrefs({ canisters, animations, persist = true } = {}) {

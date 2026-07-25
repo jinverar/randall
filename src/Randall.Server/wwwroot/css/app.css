@@ -3396,8 +3396,58 @@ button.canister-badge:focus-visible {
   background: color-mix(in srgb, var(--danger) 8%, rgba(0, 0, 0, 0.35));
   font-size: 0.82rem;
 }
+html[data-scream-canisters="off"] .scream-harvest-off-notice,
 html[data-scream-canisters="off"] .scream-harvest-off-notice[hidden] {
   display: block !important;
+}
+
+/* Full-width recovery strip — sits above Timeline when rack is hidden (hard to miss). */
+.scream-harvest-reveal-banner {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding: 1rem 1.2rem;
+  border: 2px solid color-mix(in srgb, var(--danger) 65%, var(--border));
+  border-radius: 4px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--danger) 18%, var(--panel)), var(--panel));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 25%, transparent);
+}
+html[data-scream-canisters="off"] .scream-harvest-reveal-banner,
+html[data-scream-canisters="off"] .scream-harvest-reveal-banner[hidden] {
+  display: flex !important;
+}
+.scream-harvest-reveal-copy strong {
+  display: block;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--danger);
+  margin-bottom: 0.25rem;
+}
+.scream-harvest-reveal-copy .hint {
+  margin: 0;
+  max-width: 42rem;
+}
+.scream-harvest-reveal-btn {
+  flex-shrink: 0;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.55rem 1.1rem;
+  border-width: 2px;
+}
+html[data-scream-canisters="off"] #scream-harvest-panel .scream-canister-rack:empty::before {
+  content: "Canisters hidden — check Canisters above or click Show canisters.";
+  display: block;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: 3px;
 }
 
 .scream-harvest-header {
@@ -4694,16 +4744,22 @@ html[data-theme="light"] .scream-bottled-toast {
 }
 
 
-/* Pref toggles: canisters on by default; animations opt-in (data-scream-anim=on). */
-html[data-scream-canisters="off"] .scream-harvest,
+/* Pref toggles: canisters on by default; animations opt-in (data-scream-anim=on).
+   Crashes tab keeps harvest controls visible so users can re-enable; only the rack grid hides. */
+html[data-scream-canisters="off"] .scream-canister-rack,
+html[data-scream-canisters="off"] .scream-harvest-ambience,
+html[data-scream-canisters="off"] .scream-harvest-hero,
 html[data-scream-canisters="off"] .scream-harvest-dash,
-html[data-scream-canisters="off"] .scream-harvest-fuzz,
-html[data-scream-canisters="off"] .scream-harvest-hero {
+html[data-scream-canisters="off"] .scream-harvest-fuzz {
   display: none !important;
 }
 html[data-scream-canisters="off"] .scream-harvest-header {
   min-height: 0;
-  padding: 0;
+  padding: 1rem 1.25rem;
+}
+html[data-scream-canisters="off"] #scream-harvest-panel.scream-harvest {
+  display: block !important;
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
 }
 html:not([data-scream-anim="on"]) .scream-canister-liquid,
 html:not([data-scream-anim="on"]) .scream-canister-vapor,

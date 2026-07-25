@@ -21,7 +21,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=main-merge-1" />
+  <link rel="stylesheet" href="/css/app.css?v=scream-harvest-ux-2" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
@@ -1128,7 +1128,13 @@
         <div class="scream-canister-rack" id="scream-canister-rack" role="list"></div>
       </div>
 
-
+      <div class="scream-harvest-reveal-banner panel" id="scream-harvest-reveal-banner" hidden role="status" aria-live="polite">
+        <div class="scream-harvest-reveal-copy">
+          <strong>Scream canisters are hidden</strong>
+          <p class="hint">The harvest rack is turned off. Crashes are still recorded — show canisters to bottle them by test.</p>
+        </div>
+        <button type="button" class="btn btn-primary scream-harvest-reveal-btn" id="scream-harvest-reveal-btn">Show canisters</button>
+      </div>
 
       <div class="crash-investigate">
         <div class="panel crash-timeline-panel">
@@ -1385,6 +1391,6 @@
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=scream-harvest-ux-1"></script>
+  <script type="module" src="/js/app.js?v=scream-harvest-ux-2"></script>
 </body>
 </html>
