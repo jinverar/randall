@@ -4409,6 +4409,29 @@ function applyRecordingProfile(name) {
   if (advanced && name === 'custom') advanced.open = true;
 }
 
+function syncRecordingProfileFromCheckboxes() {
+  if (applyingRecordingProfile) return;
+  const select = document.getElementById('fuzz-recording-profile');
+  const matched = matchRecordingProfileName();
+  if (select) select.value = matched;
+  updateRecordingElevHint(matched);
+  updateReCompanionsPanel(matched);
+  if (matched === 'custom') {
+    const advanced = document.getElementById('fuzz-recording-advanced');
+    if (advanced) advanced.open = true;
+  }
+}
+
+function setAllRecordingFlags(checked) {
+  applyingRecordingProfile = true;
+  for (const id of Object.values(RECORDING_CHECKBOX_IDS)) {
+    const el = document.getElementById(id);
+    if (el) el.checked = checked;
+  }
+  applyingRecordingProfile = false;
+  syncRecordingProfileFromCheckboxes();
+}
+
 function initRecordingProfiles() {
   const select = document.getElementById('fuzz-recording-profile');
   if (!select) return;
@@ -4433,18 +4456,15 @@ function initRecordingProfiles() {
   });
 
   for (const id of Object.values(RECORDING_CHECKBOX_IDS)) {
-    document.getElementById(id)?.addEventListener('change', () => {
-      if (applyingRecordingProfile) return;
-      const matched = matchRecordingProfileName();
-      select.value = matched;
-      updateRecordingElevHint(matched);
-      updateReCompanionsPanel(matched);
-      if (matched === 'custom') {
-        const advanced = document.getElementById('fuzz-recording-advanced');
-        if (advanced) advanced.open = true;
-      }
-    });
+    document.getElementById(id)?.addEventListener('change', syncRecordingProfileFromCheckboxes);
   }
+
+  document.getElementById('fuzz-recording-select-all')?.addEventListener('click', () => {
+    setAllRecordingFlags(true);
+  });
+  document.getElementById('fuzz-recording-clear')?.addEventListener('click', () => {
+    setAllRecordingFlags(false);
+  });
 }
 
 initRecordingProfiles();

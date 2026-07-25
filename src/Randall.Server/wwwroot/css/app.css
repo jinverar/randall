@@ -1852,6 +1852,15 @@ button.linkish {
   color: var(--muted);
 }
 
+.fuzz-recording-advanced-actions {
+  margin: 0 0 0.5rem;
+}
+
+.fuzz-recording-advanced-actions .btn {
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+}
+
 .fuzz-recording-advanced .checkbox {
   margin-bottom: 0.4rem;
   font-size: 0.85rem;
