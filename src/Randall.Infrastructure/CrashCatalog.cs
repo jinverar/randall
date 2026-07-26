@@ -344,6 +344,17 @@ public static class CrashCatalog
                     cdbTriage,
                     pageHeapEnabled,
                     summary.TriageTag);
+            var primitives = PrimitiveEngine.TryReadForCrash(crashesDir, summary.Id)
+                ?? PrimitiveEngine.Build(
+                    summary.Id,
+                    summary.Project,
+                    influenceMap,
+                    rootCause,
+                    debugger,
+                    corruptionChain,
+                    triage,
+                    evidence.Facts,
+                    hypotheses);
             var intelligence = CrashIntelligenceBuilder.Build(
                 summary,
                 triage,
@@ -359,7 +370,8 @@ public static class CrashCatalog
                 evolution,
                 hypotheses,
                 rootCause,
-                evidence.Facts);
+                evidence.Facts,
+                primitives);
             var deepScream = DeepScreamBuilder.TryRead(
                     DeepScreamBuilder.PathFor(crashesDir, summary.Id))
                 ?? DeepScreamBuilder.Evaluate(

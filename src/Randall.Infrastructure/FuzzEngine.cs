@@ -2590,6 +2590,9 @@ public sealed class FuzzEngine
                 oracleScore,
                 set);
 
+            TryPersistResearchStack(crashesDir, saved.Id, project.Name, sidecar, triage,
+                debugger, corruption, set, progress, iterations);
+
             if (set is not { Ok: true, Hypotheses.Count: > 0 })
                 return;
 
@@ -2679,6 +2682,55 @@ public sealed class FuzzEngine
         catch (Exception ex)
         {
             FuzzAnalystLog.Warn(progress, $"influence: {ex.Message}", iterations);
+        }
+    }
+
+    private void TryPersistResearchStack(
+        string crashesDir,
+        Guid crashId,
+        string project,
+        CrashSidecarDto? sidecar,
+        CrashTriageDto? triage,
+        DebuggerObservation? debugger,
+        CrashCorruptionChainDto? corruption,
+        HypothesisSetDto? hypotheses,
+        IFuzzProgressSink? progress = null,
+        int iterations = 0)
+    {
+        try
+        {
+            var rootCause = RootCauseEngine.TryRead(RootCauseEngine.PathFor(crashesDir, crashId));
+            var influence = InfluenceEngine.TryRead(InfluenceEngine.PathFor(crashesDir, crashId));
+            var facts = EvidenceFactBuilder.TryReadForCrash(crashesDir, crashId)?.Facts;
+            var primitives = PrimitiveEngine.PersistForCrash(
+                crashesDir, crashId, project, influence, rootCause, debugger, corruption, triage, facts, hypotheses);
+            var plan = ResearchPlannerEngine.PersistForCrash(
+                crashesDir, crashId, project, rootCause, influence, primitives, hypotheses);
+            var skeptic = SkepticEngine.PersistForCrash(
+                crashesDir, crashId, project, plan, rootCause, influence, primitives);
+
+            if (primitives is { Ok: true })
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[primitive] {primitives.Maturity} · {primitives.MaturityLabel} — {Truncate(primitives.Summary, 100)}",
+                    iterations);
+            }
+            if (plan is { Ok: true, Steps.Count: > 0 })
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[research-plan] {plan.Steps.Count} step(s) [{plan.Confidence}] — {Truncate(plan.Objective, 100)}",
+                    iterations);
+            }
+            if (skeptic is { Ok: true, Challenges.Count: > 0 })
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[skeptic] {skeptic.Challenges.Count} falsification challenge(s)",
+                    iterations);
+            }
+        }
+        catch (Exception ex)
+        {
+            FuzzAnalystLog.Warn(progress, $"research-stack: {ex.Message}", iterations);
         }
     }
 

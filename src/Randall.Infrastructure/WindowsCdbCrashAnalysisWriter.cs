@@ -253,7 +253,7 @@ public static partial class WindowsCdbCrashAnalysisWriter
                 corruption,
                 backwardTrace,
                 oracleScore: crashSidecar?.RandallScore);
-            InfluenceEngine.PersistForCrash(
+            var influence = InfluenceEngine.PersistForCrash(
                 crashesDir,
                 crashId,
                 crashSidecar?.Project ?? "?",
@@ -264,6 +264,15 @@ public static partial class WindowsCdbCrashAnalysisWriter
                 backwardTrace,
                 externalFacts: rootCauseFacts,
                 payload: payload);
+            var rootCause = RootCauseEngine.TryRead(RootCauseEngine.PathFor(crashesDir, crashId));
+            var projectName = crashSidecar?.Project ?? "?";
+            var primitives = PrimitiveEngine.PersistForCrash(
+                crashesDir, crashId, projectName, influence, rootCause,
+                debuggerObs, corruption, triage, rootCauseFacts);
+            var plan = ResearchPlannerEngine.PersistForCrash(
+                crashesDir, crashId, projectName, rootCause, influence, primitives);
+            SkepticEngine.PersistForCrash(
+                crashesDir, crashId, projectName, plan, rootCause, influence, primitives);
         }
         catch
         {

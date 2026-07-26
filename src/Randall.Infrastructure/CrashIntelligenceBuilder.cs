@@ -21,7 +21,8 @@ public static class CrashIntelligenceBuilder
         ScreamEvolutionDto? evolution = null,
         HypothesisSetDto? hypotheses = null,
         RootCauseAnalysisDto? rootCause = null,
-        IReadOnlyList<EvidenceFact>? evidenceFacts = null)
+        IReadOnlyList<EvidenceFact>? evidenceFacts = null,
+        CrashPrimitiveReportDto? primitives = null)
     {
         var clusterKey = triage?.ClusterKey ?? summary.ClusterKey;
         var semanticFingerprint = triage?.SemanticFingerprint ?? summary.SemanticFingerprint;
@@ -121,7 +122,11 @@ public static class CrashIntelligenceBuilder
             EvidenceFacts: evidenceFacts,
             RootCauseCategory: rootCause is { Ok: true } ? rootCause.Candidate.Category.ToString() : null,
             RootCauseSummary: rootCause?.EducationalSummary,
-            RootCauseConfidence: rootCause?.Candidate.Confidence);
+            RootCauseConfidence: rootCause?.Candidate.Confidence,
+            ResearchMaturity: primitives is { Ok: true } ? primitives.Maturity.ToString() : null,
+            ResearchMaturityLabel: primitives is { Ok: true } ? primitives.MaturityLabel : null,
+            PrimitiveSummary: primitives?.Summary,
+            PrimitiveCount: primitives?.Primitives.Count ?? 0);
     }
 
     public static CrashSummaryDto WithListIntelligence(

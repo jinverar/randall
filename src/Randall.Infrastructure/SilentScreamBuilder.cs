@@ -190,7 +190,7 @@ public static class SilentScreamBuilder
             var facts = EvidenceFactBuilder.CollectFacts(
                 saved.Id, project.Name, sidecar, triage,
                 oracleScore: oracleScore, hypotheses: hypotheses, backwardTrace: backwardTrace);
-            InfluenceEngine.PersistForCrash(
+            var influence = InfluenceEngine.PersistForCrash(
                 crashesDir, saved.Id, project.Name, sidecar, triage,
                 debugger: null, corruptionChain: null, backwardTrace, hypotheses, facts, payload);
 
@@ -198,8 +198,17 @@ public static class SilentScreamBuilder
                 crashesDir, saved.Id, project.Name, sidecar, triage,
                 backwardTrace: backwardTrace, oracleScore: oracleScore, hypotheses: hypotheses);
 
+            var rootCause = RootCauseEngine.TryRead(RootCauseEngine.PathFor(crashesDir, saved.Id));
+            var primitives = PrimitiveEngine.PersistForCrash(
+                crashesDir, saved.Id, project.Name, influence, rootCause,
+                debugger: null, corruptionChain: null, triage, facts, hypotheses);
+            var plan = ResearchPlannerEngine.PersistForCrash(
+                crashesDir, saved.Id, project.Name, rootCause, influence, primitives, hypotheses);
+            SkepticEngine.PersistForCrash(
+                crashesDir, saved.Id, project.Name, plan, rootCause, influence, primitives);
+
             FuzzAnalystLog.Info(progress,
-                $"[silent-scream] intelligence pipeline — root-cause/influence/evidence for {saved.Id:N}",
+                $"[silent-scream] intelligence pipeline — root-cause/influence/evidence/primitives/plan for {saved.Id:N}",
                 iterations);
         }
         catch (Exception ex)

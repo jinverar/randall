@@ -161,7 +161,15 @@ public sealed record CrashIntelligenceDto(
     /// <summary>Educational root-cause summary (deterministic engine).</summary>
     string? RootCauseSummary = null,
     /// <summary>HIGH / MEDIUM / LOW / UNKNOWN</summary>
-    string? RootCauseConfidence = null);
+    string? RootCauseConfidence = null,
+    /// <summary>Wave 2 research-maturity level (R0…R7) — study depth, not exploit completion.</summary>
+    string? ResearchMaturity = null,
+    /// <summary>Short label for the maturity level, e.g. "Primitive observed".</summary>
+    string? ResearchMaturityLabel = null,
+    /// <summary>One-line primitive capability rollup for Investigation / list chips.</summary>
+    string? PrimitiveSummary = null,
+    /// <summary>Count of assessed capability primitives (research-only).</summary>
+    int PrimitiveCount = 0);
 
 /// <summary>In-process observation collector for a single fuzz run.</summary>
 public sealed class ObservationBus
