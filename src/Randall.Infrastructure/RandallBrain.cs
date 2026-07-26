@@ -108,7 +108,9 @@ public sealed class RandallBrain
         IReadOnlyList<MutatorChainRowDto>? chainRows = null,
         double memoryConfidence = 1.0,
         double coverageFraction = 0,
-        double baseJokerChance = 0)
+        double baseJokerChance = 0,
+        int lastObservedNewEdges = 0,
+        int lastObservedUniqueCrashes = 0)
     {
         memoryConfidence = Math.Clamp(memoryConfidence, 0.05, 1.0);
         if (!signals.HasData)
@@ -118,7 +120,8 @@ public sealed class RandallBrain
 
         var huntPolicy = HuntPolicyEngine.Evaluate(new HuntPolicyEngine.Context(
             signals, mutatorRows, chainRows, mutators, coverageFraction, iteration,
-            memoryConfidence, baseJokerChance, project, repoRoot));
+            memoryConfidence, baseJokerChance, project, repoRoot,
+            lastObservedNewEdges, lastObservedUniqueCrashes));
 
         var candidates = BuildCandidates(signals, mutatorRows);
         var focus = TryLoadFocus(project, repoRoot);
@@ -195,7 +198,8 @@ public sealed class RandallBrain
             $" · corpus={corpusBias:P0} energy+{energyBoost}" +
             (huntPolicy.Mode != HuntExecutionMode.Baseline ? $" · hunt={huntPolicy.Mode}" : "");
 
-        HuntPolicyEngine.PersistLast(huntPolicy, project, iteration, repoRoot);
+        HuntPolicyEngine.PersistLast(huntPolicy, project, iteration, repoRoot,
+            lastObservedNewEdges, lastObservedUniqueCrashes);
 
         return new NextHuntDecision(
             iteration,

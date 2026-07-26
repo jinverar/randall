@@ -10,6 +10,9 @@ namespace Randall.Infrastructure;
 /// </summary>
 public sealed class MutatorCreditTracker
 {
+    /// <summary>Selection weight floor — mutators are deprioritized, never removed.</summary>
+    public const int MinSelectionWeightFloor = 1;
+
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
     private readonly Dictionary<string, MutatorCreditEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
@@ -116,15 +119,18 @@ public sealed class MutatorCreditTracker
     public int GetSelectionWeight(string mutatorName, HuntPolicyDecision? policy = null)
     {
         if (!_entries.TryGetValue(mutatorName, out var entry) || entry.Runs <= 0)
-            return 1;
+            return MinSelectionWeightFloor;
         var avg = entry.Score / entry.Runs;
-        var weight = Math.Max(1, (int)avg + 1);
+        var weight = Math.Max(MinSelectionWeightFloor, (int)avg + 1);
 
-        if (entry.StaleRuns >= 5 && entry.NewEdges <= 1)
-            weight = Math.Max(1, weight - Math.Min(6, entry.StaleRuns / 3));
+        if (entry.StaleRuns >= 3 && entry.NewEdges <= 1)
+            weight = Math.Max(MinSelectionWeightFloor, weight - Math.Min(8, entry.StaleRuns));
+
+        if (entry.FailureRate >= 0.75 && entry.Runs >= 5)
+            weight = Math.Max(MinSelectionWeightFloor, weight - Math.Min(4, (int)Math.Round(entry.FailureRate * 5)));
 
         if (entry.FailureRate >= 0.9 && entry.Runs >= 8)
-            weight = Math.Max(1, weight - 3);
+            weight = Math.Max(MinSelectionWeightFloor, weight - 2);
 
         if (policy?.Mode == HuntExecutionMode.LineageBreed
             && policy.PreferredMutator?.Equals(mutatorName, StringComparison.OrdinalIgnoreCase) == true)
@@ -134,7 +140,7 @@ public sealed class MutatorCreditTracker
             && mutatorName.Equals("havoc", StringComparison.OrdinalIgnoreCase))
             weight += 3;
 
-        return Math.Max(1, weight);
+        return Math.Max(MinSelectionWeightFloor, weight);
     }
 
     public IReadOnlyList<MutatorCreditRowDto> SnapshotRows()
