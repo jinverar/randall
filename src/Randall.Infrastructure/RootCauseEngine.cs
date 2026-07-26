@@ -69,7 +69,7 @@ public static class RootCauseEngine
             .Select(a => BuildCandidate(a, debugger, triage, corruptionChain, backwardTrace, sidecar, facts, observed, unknowns))
             .ToList();
 
-        var summary = BuildEducationalSummary(candidate, sidecar, corruptionChain, backwardTrace);
+        var summary = BuildEducationalSummary(candidate, sidecar, corruptionChain, backwardTrace, debugger);
         return new RootCauseAnalysisDto(
             true,
             crashId,
@@ -200,7 +200,17 @@ public static class RootCauseEngine
             or DebuggerAddressClass.SmallOffset
             || chain?.PatternDepthBytes is not null
             || debugger?.SuspectedInputInfluence == "HIGH")
-            Bump(RootCauseCategory.BoundsViolation, 25);
+        {
+            // Ascii-pattern write / register-controlled smash outranks parser-name
+            // heuristics (e.g. faulting fn "Parse") — classic bounds story.
+            var pts = 25;
+            if (debugger?.FaultAddressClass == DebuggerAddressClass.AsciiPattern
+                && (debugger.Access == DebuggerAccessKind.Write
+                    || chain?.RegisterMatches is { Count: > 0 }
+                    || debugger.SuspectedInputInfluence == "HIGH"))
+                pts += 10;
+            Bump(RootCauseCategory.BoundsViolation, pts);
+        }
 
         if (LooksLikeSizeMismatch(debugger, chain, triage))
             Bump(RootCauseCategory.SizeMismatch, 30);
@@ -391,11 +401,15 @@ public static class RootCauseEngine
         RootCauseCandidate candidate,
         CrashSidecarDto? sidecar,
         CrashCorruptionChainDto? chain,
-        CrashBackwardTraceDto? trace)
+        CrashBackwardTraceDto? trace,
+        DebuggerObservation? debugger = null)
     {
         var sb = new StringBuilder();
         var catLabel = CategoryLabel(candidate.Category);
         sb.Append($"**{catLabel}** ({candidate.Confidence} confidence). ");
+
+        if (!string.IsNullOrWhiteSpace(debugger?.FaultAddress))
+            sb.Append($"Fault address `{debugger.FaultAddress}` ({debugger.FaultAddressClass}). ");
 
         if (!string.IsNullOrWhiteSpace(candidate.InputRegion))
             sb.Append($"Fuzz input region **{candidate.InputRegion}** appears to influence the fault. ");

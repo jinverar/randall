@@ -24,7 +24,7 @@ public static class EvidenceFactBuilder
             return null;
         try
         {
-            return JsonSerializer.Deserialize<CrashEvidenceDto>(File.ReadAllText(path));
+            return JsonSerializer.Deserialize<CrashEvidenceDto>(File.ReadAllText(path), JsonOpts);
         }
         catch
         {

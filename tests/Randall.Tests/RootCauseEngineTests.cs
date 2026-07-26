@@ -69,7 +69,7 @@ public class RootCauseEngineTests
         Assert.Contains(analysis.Candidate.ObservedFacts, f =>
             f.Contains("use after free", StringComparison.OrdinalIgnoreCase)
             || f.Contains("Free memory", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(analysis.EducationalSummary, "Lifetime violation", StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Lifetime violation", analysis.EducationalSummary, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
