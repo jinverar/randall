@@ -19,8 +19,8 @@ public static class CrashTriage
             ?? (summary?.TargetExitCode is { } x ? $"exit {x}" : null)
             ?? "unknown";
 
-        var fault = analysis?.FaultAddress;
-        var rip = analysis?.Registers?.Rip;
+        var fault = analysis?.FaultAddress ?? debugger?.FaultAddress;
+        var rip = analysis?.Registers?.Rip ?? debugger?.Rip;
         var rsp = analysis?.Registers?.Rsp;
         var module = analysis?.FaultModule;
 
@@ -31,6 +31,11 @@ public static class CrashTriage
         var summaryText = BuildSummary(crashClass, severity, fault, module, ipControlled, stackSmashed);
         var clusterKey = BuildClusterKey(summary?.Project ?? "?", crashClass, fault, module, debugger);
         var (depth, depthNote) = FindPatternDepth(payload, rip, fault, rsp);
+        var semanticFingerprint = SemanticCrashFingerprint.Build(
+            crashClass,
+            debugger,
+            sidecar,
+            controlledInputOffset: depth);
 
         return new CrashTriageDto(
             crashClass,
@@ -45,7 +50,8 @@ public static class CrashTriage
             rip,
             rsp,
             depth,
-            depthNote);
+            depthNote,
+            SemanticFingerprint: semanticFingerprint);
     }
 
     /// <summary>

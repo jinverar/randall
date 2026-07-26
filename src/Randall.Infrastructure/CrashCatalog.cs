@@ -74,6 +74,19 @@ public static class CrashCatalog
                 if (staticFn is not null)
                     triage = triage with { StaticFunction = staticFn };
 
+                var corruptionChainPreview = CorruptionChainBuilder.TryRead(
+                    CorruptionChainBuilder.PathFor(dir, c.Id));
+                triage = triage with
+                {
+                    SemanticFingerprint = SemanticCrashFingerprint.Build(
+                        triage.Class,
+                        debugger,
+                        sidecar,
+                        corruptionChainPreview,
+                        triage.PatternDepthBytes,
+                        triage),
+                };
+
                 var inputLength = 0;
                 if (File.Exists(c.InputPath))
                 {
@@ -100,7 +113,8 @@ public static class CrashCatalog
                     triage.ExceptionHint ?? hint,
                     triage.ClusterKey,
                     triage.IpLooksControlled,
-                    staticFn is not null ? CrashStaticFunctionMapper.FormatOneLine(staticFn) : null);
+                    staticFn is not null ? CrashStaticFunctionMapper.FormatOneLine(staticFn) : null,
+                    SemanticFingerprint: triage.SemanticFingerprint);
 
                 projectRows.Add((enrichedSummary, triage, sidecar, analysis, MapCdbTriage(cdbSidecar), inputLength, debugger));
             }
@@ -137,7 +151,23 @@ public static class CrashCatalog
                     corruptionChain,
                     evolution,
                     hypotheses);
-                results.Add(CrashIntelligenceBuilder.WithListIntelligence(row.Summary, intelligence));
+                var deepScream = DeepScreamBuilder.TryRead(
+                        DeepScreamBuilder.PathFor(dir, row.Summary.Id))
+                    ?? DeepScreamBuilder.Evaluate(
+                        row.Summary.Id,
+                        projectName,
+                        intelligence.ScreamScore,
+                        intelligence.SeenCount,
+                        intelligence.Reproducible,
+                        intelligence.Minimized,
+                        row.Summary.MiniDumpPath,
+                        dir);
+                results.Add(CrashIntelligenceBuilder.WithListIntelligence(row.Summary, intelligence with
+                {
+                    DeepScreamCandidate = deepScream.IsCandidate,
+                    DeepScreamSummary = DeepScreamBuilder.FormatSummary(deepScream),
+                    DeepScreamMinimizedBonus = deepScream.Minimized && deepScream.IsCandidate,
+                }));
             }
         }
 
@@ -159,7 +189,8 @@ public static class CrashCatalog
                 c.CrashClass,
                 c.Severity,
                 c.ExceptionHint,
-                c.FaultAddress))
+                c.FaultAddress,
+                c.SemanticFingerprint))
             .ToList();
     }
 
@@ -227,6 +258,16 @@ public static class CrashCatalog
             var cdbTriage = MapCdbTriage(cdbSidecar);
             var corruptionChain = CorruptionChainBuilder.TryRead(
                 CorruptionChainBuilder.PathFor(crashesDir, summary.Id));
+            triage = triage with
+            {
+                SemanticFingerprint = SemanticCrashFingerprint.Build(
+                    triage.Class,
+                    debugger,
+                    sidecar,
+                    corruptionChain,
+                    triage.PatternDepthBytes,
+                    triage),
+            };
             var projectContexts = ScreamEvolutionBuilder.LoadProjectContexts(crashesDir, summary.Project);
             var evolution = ScreamEvolutionBuilder.TryRead(
                     ScreamEvolutionBuilder.PathFor(crashesDir, summary.Id))
@@ -256,6 +297,23 @@ public static class CrashCatalog
                 corruptionChain,
                 evolution,
                 hypotheses);
+            var deepScream = DeepScreamBuilder.TryRead(
+                    DeepScreamBuilder.PathFor(crashesDir, summary.Id))
+                ?? DeepScreamBuilder.Evaluate(
+                    summary.Id,
+                    summary.Project,
+                    intelligence.ScreamScore,
+                    intelligence.SeenCount,
+                    intelligence.Reproducible,
+                    intelligence.Minimized,
+                    summary.MiniDumpPath,
+                    crashesDir);
+            intelligence = intelligence with
+            {
+                DeepScreamCandidate = deepScream.IsCandidate,
+                DeepScreamSummary = DeepScreamBuilder.FormatSummary(deepScream),
+                DeepScreamMinimizedBonus = deepScream.Minimized && deepScream.IsCandidate,
+            };
             return new CrashDetailDto(
                 CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
                 bytes.Length,
@@ -269,7 +327,8 @@ public static class CrashCatalog
                 debugger,
                 corruptionChain,
                 evolution,
-                hypotheses);
+                hypotheses,
+                deepScream);
         }
         return null;
     }

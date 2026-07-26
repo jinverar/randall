@@ -172,4 +172,6 @@ public sealed record CrashTriageDto(
     string? Rsp,
     int? PatternDepthBytes = null,
     string? PatternNote = null,
-    StaticFunctionMappingDto? StaticFunction = null);
+    StaticFunctionMappingDto? StaticFunction = null,
+    /// <summary>Semantic dedup key — exception/access/stack/oracle/coverage/chain (parallel to ClusterKey).</summary>
+    string? SemanticFingerprint = null);

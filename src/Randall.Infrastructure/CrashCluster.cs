@@ -18,7 +18,7 @@ public static class CrashCluster
         }
 
         return enriched
-            .GroupBy(x => x.Triage.ClusterKey, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(x => SemanticCrashFingerprint.ClusterGroupKey(x.Triage), StringComparer.OrdinalIgnoreCase)
             .Select(g =>
             {
                 var rep = g.OrderByDescending(x => x.Crash.ObservedAt).First();
@@ -34,7 +34,8 @@ public static class CrashCluster
                     rep.Triage.Class,
                     rep.Triage.Severity,
                     rep.Triage.ExceptionHint,
-                    rep.Triage.FaultAddress);
+                    rep.Triage.FaultAddress,
+                    rep.Triage.SemanticFingerprint);
             })
             .OrderByDescending(c => SeverityRank(c.Severity))
             .ThenByDescending(c => c.Count)
@@ -78,7 +79,17 @@ public static class CrashCluster
             catch { /* ignore */ }
         }
 
-        return CrashTriage.Classify(analysis, sidecar, crash, payload, debugger: debugger);
+        var triage = CrashTriage.Classify(analysis, sidecar, crash, payload, debugger: debugger);
+        var corruptionChain = CorruptionChainBuilder.TryRead(
+            CorruptionChainBuilder.PathFor(crashesDir ?? "", crash.Id));
+        var semantic = SemanticCrashFingerprint.Build(
+            triage.Class,
+            debugger,
+            sidecar,
+            corruptionChain,
+            triage.PatternDepthBytes,
+            triage);
+        return triage with { SemanticFingerprint = semantic };
     }
 
     private static int LengthBucket(CrashSummaryDto crash)
@@ -117,4 +128,5 @@ public sealed record CrashClusterSummary(
     string? CrashClass,
     string? Severity,
     string? ExceptionHint,
-    string? FaultAddress);
+    string? FaultAddress,
+    string? SemanticFingerprint = null);

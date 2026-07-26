@@ -148,7 +148,12 @@ public sealed record CrashIntelligenceDto(
     /// <summary>Phase C top hypothesis id for Investigation / hunt policy.</summary>
     string? TopHypothesisId = null,
     int TopHypothesisConfidence = 0,
-    string? TopHypothesisStatement = null);
+    string? TopHypothesisStatement = null,
+    /// <summary>Semantic dedup fingerprint (exception/access/stack/oracle/coverage/chain).</summary>
+    string? SemanticFingerprint = null,
+    bool DeepScreamCandidate = false,
+    string? DeepScreamSummary = null,
+    bool DeepScreamMinimizedBonus = false);
 
 /// <summary>In-process observation collector for a single fuzz run.</summary>
 public sealed class ObservationBus

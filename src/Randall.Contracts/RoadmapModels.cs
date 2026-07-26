@@ -44,6 +44,8 @@ public sealed record CrashSummaryDto(
     int? OracleScoreTotal = null,
     /// <summary>How many crashes share this cluster key in the project.</summary>
     int SeenCount = 0,
+    /// <summary>Semantic dedup fingerprint when computed (parallel to ClusterKey).</summary>
+    string? SemanticFingerprint = null,
     /// <summary>Fused RIP + function + oracle + frontier one-liner for canister rack tooltips.</summary>
     string? CanisterContext = null,
     /// <summary>Primary normalized fault kind when intelligence is computed.</summary>
@@ -51,7 +53,9 @@ public sealed record CrashSummaryDto(
     /// <summary>Primary fault summary for list / Investigation chips.</summary>
     string? PrimaryFaultSummary = null,
     /// <summary>Primary fault confidence 0–1 when known.</summary>
-    double? PrimaryFaultConfidence = null);
+    double? PrimaryFaultConfidence = null,
+    /// <summary>Phase D — Deep Scream candidate (gates TTD operator path).</summary>
+    bool DeepScreamCandidate = false);
 
 public sealed record CdbTriageDto(
     bool Ok,
@@ -76,7 +80,8 @@ public sealed record CrashDetailDto(
     DebuggerObservation? DebuggerObservation = null,
     CrashCorruptionChainDto? CorruptionChain = null,
     ScreamEvolutionDto? ScreamEvolution = null,
-    HypothesisSetDto? Hypotheses = null);
+    HypothesisSetDto? Hypotheses = null,
+    DeepScreamDto? DeepScream = null);
 
 public sealed record SessionGraphReportDto(
     string Project,
@@ -104,7 +109,8 @@ public sealed record CrashClusterDto(
     string? CrashClass = null,
     string? Severity = null,
     string? ExceptionHint = null,
-    string? FaultAddress = null);
+    string? FaultAddress = null,
+    string? SemanticFingerprint = null);
 
 /// <summary>
 /// One preflight check. <c>Platform</c> is a <see cref="PlatformScope"/> value

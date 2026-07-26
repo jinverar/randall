@@ -22,10 +22,15 @@ public static class CrashIntelligenceBuilder
         HypothesisSetDto? hypotheses = null)
     {
         var clusterKey = triage?.ClusterKey ?? summary.ClusterKey;
+        var semanticFingerprint = triage?.SemanticFingerprint ?? summary.SemanticFingerprint;
         var clusterMembers = string.IsNullOrWhiteSpace(clusterKey)
             ? [summary]
             : projectCrashes
-                .Where(c => string.Equals(c.ClusterKey, clusterKey, StringComparison.OrdinalIgnoreCase))
+                .Where(c =>
+                    (!string.IsNullOrWhiteSpace(semanticFingerprint)
+                     && string.Equals(c.SemanticFingerprint, semanticFingerprint, StringComparison.OrdinalIgnoreCase))
+                    || (string.IsNullOrWhiteSpace(semanticFingerprint)
+                        && string.Equals(c.ClusterKey, clusterKey, StringComparison.OrdinalIgnoreCase)))
                 .ToList();
         if (clusterMembers.Count == 0)
             clusterMembers = [summary];
@@ -70,6 +75,12 @@ public static class CrashIntelligenceBuilder
 
         var topHypothesis = HypothesisEngine.TopPending(hypotheses);
 
+        var deepCandidate = DeepScreamBuilder.IsCandidate(screamScore, seenCount, reproducible);
+        var deepSummary = deepCandidate
+            ? DeepScreamBuilder.FormatSummary(DeepScreamBuilder.Evaluate(
+                summary.Id, summary.Project, screamScore, seenCount, reproducible, minimized))
+            : null;
+
         return new CrashIntelligenceDto(
             severity,
             novelty,
@@ -100,7 +111,11 @@ public static class CrashIntelligenceBuilder
             evolution?.Summary,
             topHypothesis?.Id,
             topHypothesis?.ConfidencePercent ?? 0,
-            topHypothesis?.Statement);
+            topHypothesis?.Statement,
+            semanticFingerprint,
+            DeepScreamCandidate: deepCandidate,
+            DeepScreamSummary: deepSummary,
+            DeepScreamMinimizedBonus: minimized && deepCandidate);
     }
 
     public static CrashSummaryDto WithListIntelligence(
@@ -116,6 +131,8 @@ public static class CrashIntelligenceBuilder
             PrimaryFaultKind = intelligence.PrimaryFault?.Kind.ToString(),
             PrimaryFaultSummary = intelligence.PrimaryFault?.Summary ?? intelligence.PrimaryFault?.Detail,
             PrimaryFaultConfidence = intelligence.PrimaryFault?.Confidence,
+            SemanticFingerprint = intelligence.SemanticFingerprint,
+            DeepScreamCandidate = intelligence.DeepScreamCandidate,
         };
 
     private static string? BuildFrontierHint(string project, CrashTriageDto? triage, string? repoRoot)
