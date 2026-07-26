@@ -129,31 +129,36 @@ public class CorruptionChainTests
     }
 
     [Fact]
-    public void RewindScreamOnCrash_writes_hint_when_deep_scream_eligible()
+    public void RewindScreamOnCrash_writes_hint_when_deep_scream_marked()
     {
-        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
-        var yaml = Path.Combine(root, "projects", "file-text.yaml");
-        if (!File.Exists(yaml))
-            return;
+        var dir = Path.Combine(Path.GetTempPath(), "randall-deep-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+            var yaml = Path.Combine(root, "projects", "file-text.yaml");
+            if (!File.Exists(yaml)) return;
 
-        var project = ProjectLoader.Load(yaml);
-        project.Fuzz.RewindScream = true;
-        project.Magician ??= new MagicianConfig();
-        project.Magician.Enabled = true;
-        project.Magician.AllowRewindScream = true;
-        project.Magician.PersistSpells = false;
+            var project = ProjectLoader.Load(yaml);
+            project.Fuzz.RewindScream = true;
+            project.Fuzz.CrashesDir = dir;
+            project.Magician ??= new MagicianConfig();
+            project.Magician.Enabled = true;
+            project.Magician.AllowRewindScream = true;
+            project.Magician.PersistSpells = false;
 
-        var id = Guid.NewGuid();
-        var crashesDir = ProjectLoader.ResolvePath(yaml, project.Fuzz.CrashesDir);
-        var deepScream = DeepScreamBuilder.PersistForCrash(
-            crashesDir, id, project.Name, screamScore: 72, seenCount: 1,
-            reproducible: true, minimized: true, dumpPath: "fake.dmp");
+            var id = Guid.NewGuid();
+            var deepScream = DeepScreamBuilder.PersistForCrash(
+                dir, id, project.Name, screamScore: 72, seenCount: 1,
+                reproducible: true, minimized: true, dumpPath: "fake.dmp");
 
-        var cast = MagicianEngine.RewindScreamOnCrash(
-            project, yaml, id, "fake.dmp", deepScream, progress: null);
+            var cast = MagicianEngine.RewindScreamOnCrash(
+                project, yaml, id, "fake.dmp", deepScream, progress: null);
 
-        Assert.NotNull(cast);
-        Assert.Contains(cast!.Spells, s => s.Spell == "rewindScream");
-        Assert.True(File.Exists(DeepScreamBuilder.TtdHintPathFor(crashesDir, id)));
+            Assert.NotNull(cast);
+            Assert.Contains(cast!.Spells, s => s.Spell == "deepScream");
+            Assert.True(File.Exists(DeepScreamBuilder.TtdHintPathFor(dir, id)));
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
     }
 }

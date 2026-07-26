@@ -621,6 +621,8 @@ public sealed class FuzzEngine
         var stopGoals = IntelligenceStopGoalEvaluator.Resolve(project.Fuzz);
         var stopGoalReached = false;
         string? stopReason = null;
+        var lastObservedNewEdges = 0;
+        var lastObservedUniqueCrashes = 0;
 
         try
         {
@@ -651,7 +653,9 @@ public sealed class FuzzEngine
                         chainRows: mutatorChainTracker.SnapshotRows(),
                         memoryConfidence: brainMemory.MemoryConfidence,
                         coverageFraction: coverageFraction,
-                        baseJokerChance: JokerEngine.EffectiveChance(project));
+                        baseJokerChance: JokerEngine.EffectiveChance(project),
+                        lastObservedNewEdges: lastObservedNewEdges,
+                        lastObservedUniqueCrashes: lastObservedUniqueCrashes);
                     brain.PersistLast(huntDecision, repoRoot);
                     if (verbose)
                     {
@@ -788,7 +792,7 @@ public sealed class FuzzEngine
                 {
                     var basePayload = File.ReadAllBytes(hypInput);
                     payload = HypothesisEngine.ApplyExperiment(
-                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng)
+                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng, mutators)
                            ?? basePayload;
                     parentInputHash = InputHash.StackHash(basePayload);
                     seedSource = $"hypothesis/{hypothesisPlan.HypothesisId}";
@@ -1968,6 +1972,8 @@ public sealed class FuzzEngine
                 RecordScareDoorProgress(
                     project.Name, repoRoot ?? "", iterations, mutator.Name, parentInputHash,
                     newEdges, newCoverage, coverage.TotalEdges);
+                lastObservedNewEdges = newEdges;
+                lastObservedUniqueCrashes = uniqueCrashThisIter ? 1 : 0;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

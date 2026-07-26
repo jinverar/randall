@@ -208,66 +208,31 @@ public static class MagicianEngine
     /// Stub hook when <see cref="FuzzConfig.RewindScream"/> is on — logs TTD record/replay hint (no capture).
     /// See docs/RECORDING.md#windbg-ttd-rewind-scream-stub.
     /// </summary>
-    public static MagicianCastResult? RewindScreamOnCrash(
-        ProjectConfig project,
-        string yamlPath,
-        Guid crashId,
-        string? dumpPath,
-        DeepScreamDto? deepScream,
-        IFuzzProgressSink? progress)
+    public static MagicianCastResult? DeepScreamOnCrash(
+        ProjectConfig project, string yamlPath, Guid crashId, string? dumpPath, string? inputPath,
+        DeepScreamDto? deepScream, IFuzzProgressSink? progress)
     {
-        if (!project.Fuzz.RewindScream)
-            return null;
-        if (deepScream is not { Ok: true, IsCandidate: true })
-            return null;
-
+        if (!project.Fuzz.RewindScream || deepScream is not { Ok: true, IsMarked: true }) return null;
         var cfg = GetConfig(project);
-        if (cfg is not { Enabled: true, AllowRewindScream: true })
-            return null;
-
+        if (cfg is not { Enabled: true, AllowRewindScream: true }) return null;
         project.Magician ??= cfg;
-        var crashesDir = Path.Combine(
-            ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir));
-        var ttdPath = DeepScreamBuilder.WriteTtdOperatorHint(
-            crashesDir, crashId, project.Name, deepScream, dumpPath);
+        var crashesDir = Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir));
+        var ttdPath = DeepScreamBuilder.WriteTtdOperatorHint(crashesDir, crashId, project.Name, deepScream, dumpPath, inputPath);
         DeepScreamBuilder.WithTtdHint(crashesDir, deepScream, ttdPath);
-
-        var dir = Path.Combine(crashesDir, "_magician");
-        Directory.CreateDirectory(dir);
-        var indexPath = Path.Combine(dir, "rewind_scream_hint.md");
-        var indexLine = $"- `{crashId:N}` scream={deepScream.ScreamScore} → `{ttdPath}`{Environment.NewLine}";
-        if (File.Exists(indexPath))
-            File.AppendAllText(indexPath, indexLine);
-        else
-        {
-            var header = new StringBuilder();
-            header.AppendLine("# Deep Scream — TTD operator index (Phase D)");
-            header.AppendLine();
-            header.AppendLine("Randfuzz does **not** capture TTD traces. Crashes below passed the Deep Scream gate:");
-            header.AppendLine();
-            header.Append(indexLine);
-            File.WriteAllText(indexPath, header.ToString());
-        }
-
-        var spell = new MagicianSpellDto(
-            Guid.NewGuid().ToString("N")[..12],
-            project.Name,
-            "rewindScream",
-            "ttd",
-            $"Deep Scream TTD operator hint — scream={deepScream.ScreamScore}",
-            null,
-            null,
-            0,
-            ttdPath,
-            DateTimeOffset.UtcNow);
+        DeepScreamBuilder.AppendDeepScreamIndex(crashesDir, crashId, deepScream, ttdPath);
+        var spell = new MagicianSpellDto(Guid.NewGuid().ToString("N")[..12], project.Name, "deepScream", "ttd",
+            $"Deep Scream marked — scream={deepScream.ScreamScore} family={deepScream.FamilyId ?? "—"}",
+            null, null, 0, ttdPath, DateTimeOffset.UtcNow);
         if (cfg.PersistSpells)
-            new MagicianSpellStore(dir).Append(spell);
-
-        FuzzAnalystLog.Info(progress,
-            $"[deep-scream] TTD operator hint → {ttdPath} (external capture — see docs/RECORDING.md)", 0);
-
+            new MagicianSpellStore(Path.Combine(crashesDir, "_magician")).Append(spell);
+        FuzzAnalystLog.Info(progress, $"[deep-scream] marked → TTD playbook {ttdPath} ({deepScream.TtdToolsSummary ?? "tools unknown"})", 0);
         return new MagicianCastResult([spell], [], [], 0, false, false, "deepScream→ttd");
     }
+
+    public static MagicianCastResult? RewindScreamOnCrash(
+        ProjectConfig project, string yamlPath, Guid crashId, string? dumpPath,
+        DeepScreamDto? deepScream, IFuzzProgressSink? progress) =>
+        DeepScreamOnCrash(project, yamlPath, crashId, dumpPath, null, deepScream, progress);
 
     /// <summary>
     /// When scream evolution momentum is high, bless the warming lineage: corpus energy,

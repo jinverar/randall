@@ -6,7 +6,6 @@ namespace Randall.Contracts;
 /// </summary>
 public sealed record DeepScreamDto(
     bool Ok,
-    /// <summary>True when screamScore, uniqueness, and reproducibility gates pass.</summary>
     bool IsCandidate,
     Guid CrashId,
     string Project,
@@ -14,14 +13,30 @@ public sealed record DeepScreamDto(
     int SeenCount,
     bool Reproducible,
     bool Minimized,
-    /// <summary>Explain why eligible (and optional minimized bonus).</summary>
     IReadOnlyList<string> EligibilityReasons,
-    /// <summary>Why not a candidate when <see cref="IsCandidate"/> is false.</summary>
     IReadOnlyList<string> MissingReasons,
     string? DumpPath = null,
     string? EvolutionPath = null,
     string? CorruptionChainPath = null,
-    /// <summary>Per-crash TTD operator hint when rewind/TTD path runs.</summary>
+    string? HypothesisPath = null,
+    string? SemanticFingerprint = null,
+    string? FamilyId = null,
+    bool IsMarked = false,
+    bool FamilySuppressed = false,
+    Guid? PriorFamilyCrashId = null,
+    bool AutoMinimizeAttempted = false,
+    bool AutoMinimizeSucceeded = false,
+    string? MinimizedInputPath = null,
+    bool TtdToolsPresent = false,
+    string? TtdToolsSummary = null,
     string? TtdHintPath = null,
     DateTimeOffset At = default,
     string? Error = null);
+
+public sealed record DeepScreamFamilyEntryDto(
+    Guid CrashId,
+    int ScreamScore,
+    int MomentumScore,
+    string? MomentumLabel,
+    ScreamProgressionStep ProgressionStep,
+    DateTimeOffset At);

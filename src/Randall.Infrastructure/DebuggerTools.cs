@@ -261,6 +261,22 @@ public static class DebuggerTools
         }
     }
 
+    public static string? FindTtdTracer() => FirstExisting(
+        FromPath("tttracer.exe"), KitDebugger("tttracer.exe"), EnvPath("TTTRACER_PATH"),
+        @"C:\Windows\System32\tttracer.exe");
+
+    public static TtdToolsProbe ProbeTtd()
+    {
+        var preview = FindWinDbgPreview();
+        var tracer = FindTtdTracer();
+        var present = preview is not null || tracer is not null;
+        var summary = preview is not null && tracer is not null ? "WinDbg Preview + tttracer"
+            : preview is not null ? "WinDbg Preview (attach/!tt.record)"
+            : tracer is not null ? "tttracer only — install WinDbg Preview for replay"
+            : "install WinDbg Preview from Microsoft Store";
+        return new TtdToolsProbe(present, summary, preview, tracer);
+    }
+
     public static string? FindProcDump() => FirstExisting(
         FromPath("procdump.exe"),
         FromPath("procdump64.exe"),

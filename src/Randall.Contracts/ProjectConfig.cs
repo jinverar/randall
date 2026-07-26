@@ -355,4 +355,7 @@ public sealed class FuzzConfig
     /// Does not capture TTD traces — see docs/RECORDING.md.
     /// </summary>
     public bool RewindScream { get; set; }
+
+    /// <summary>Before marking Deep Scream, attempt replay-based input shrink (soft-skip on failure).</summary>
+    public bool DeepScreamAutoMinimize { get; set; }
 }

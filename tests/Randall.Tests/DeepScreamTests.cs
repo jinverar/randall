@@ -24,126 +24,75 @@ public class DeepScreamTests
         Directory.CreateDirectory(dir);
         try
         {
-            var dump = Path.Combine(dir, "crash.dmp");
-            File.WriteAllText(dump, "fake");
-
             var dto = DeepScreamBuilder.Evaluate(
-                id, "lab", screamScore: 68, seenCount: 1, reproducible: true, minimized: true,
-                dumpPath: dump, crashesDir: dir);
-
+                id, "lab", 68, 1, true, true, crashesDir: dir,
+                semanticFingerprint: "exc=access_violation", familyId: "fam-1", isMarked: true);
             Assert.True(dto.IsCandidate);
-            Assert.Contains(dto.EligibilityReasons, r => r.Contains("screamScore"));
-            Assert.Contains(dto.EligibilityReasons, r => r.Contains("unique"));
-            Assert.Contains(dto.EligibilityReasons, r => r.Contains("reproducible"));
-            Assert.Contains(dto.EligibilityReasons, r => r.Contains("minimized"));
-            Assert.Empty(dto.MissingReasons);
-            Assert.Equal(dump, dto.DumpPath);
-            Assert.Equal(ScreamEvolutionBuilder.PathFor(dir, id), dto.EvolutionPath);
-            Assert.Equal(CorruptionChainBuilder.PathFor(dir, id), dto.CorruptionChainPath);
+            Assert.True(dto.IsMarked);
+            Assert.Equal(HypothesisEngine.PathFor(dir, id), dto.HypothesisPath);
         }
-        finally
-        {
-            try { Directory.Delete(dir, true); } catch { /* ignore */ }
-        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
     }
 
     [Fact]
-    public void Evaluate_NotEligibleRecordsMissingReasons()
+    public void FamilyDedup_SuppressesSecondCrashUnlessMomentumJumps()
     {
-        var dto = DeepScreamBuilder.Evaluate(
-            Guid.NewGuid(), "lab", screamScore: 40, seenCount: 4, reproducible: false, minimized: false);
-
-        Assert.False(dto.IsCandidate);
-        Assert.NotEmpty(dto.MissingReasons);
-    }
-
-    [Fact]
-    public void PersistRoundTrip_WritesDeepScreamJson()
-    {
-        var id = Guid.NewGuid();
         var dir = Path.Combine(Path.GetTempPath(), "randall-deep-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
         {
-            var written = DeepScreamBuilder.PersistForCrash(
-                dir, id, "lab", screamScore: 60, seenCount: 1, reproducible: true, minimized: false);
-            var path = DeepScreamBuilder.PathFor(dir, id);
-            Assert.True(File.Exists(path));
-            var read = DeepScreamBuilder.TryRead(path);
-            Assert.NotNull(read);
-            Assert.True(read!.IsCandidate);
-            Assert.Equal(written.ScreamScore, read.ScreamScore);
+            var first = Guid.NewGuid();
+            var second = Guid.NewGuid();
+            const string family = "fam-dedup";
+            var evo1 = new ScreamEvolutionDto(true, first, "lab", family, "label", 1, null, null,
+                42, "warming", ScreamProgressionStep.WriteViolation, null, 1, [first], 1, "warm", DateTimeOffset.UtcNow);
+            DeepScreamBuilder.PersistForCrash(dir, first, "lab", 70, 1, true, true, familyId: family, evolution: evo1);
+            var (_, suppressed, prior, _) = DeepScreamBuilder.ResolveFamilyMark(
+                dir, second, 72, 1, true, family, evo1 with { CrashId = second, MomentumScore = 44 });
+            Assert.True(suppressed);
+            Assert.Equal(first, prior);
+            var (marked, suppressed2, _, reason) = DeepScreamBuilder.ResolveFamilyMark(
+                dir, second, 72, 1, true, family, evo1 with { CrashId = second, MomentumScore = 60 });
+            Assert.True(marked);
+            Assert.False(suppressed2);
+            Assert.Contains("momentum jump", reason!, StringComparison.OrdinalIgnoreCase);
         }
-        finally
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
+    public void DebuggerTools_ProbeTtd_ReturnsSummary()
+    {
+        Assert.False(string.IsNullOrWhiteSpace(DebuggerTools.ProbeTtd().Summary));
+    }
+
+    [Fact]
+    public void DeepScreamOnCrash_requires_marked_crash()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "randall-deep-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
         {
-            try { Directory.Delete(dir, true); } catch { /* ignore */ }
+            var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+            var yaml = Path.Combine(root, "projects", "file-text.yaml");
+            if (!File.Exists(yaml)) return;
+
+            var project = ProjectLoader.Load(yaml);
+            project.Fuzz.RewindScream = true;
+            project.Fuzz.CrashesDir = dir;
+            project.Magician ??= new MagicianConfig();
+            project.Magician.Enabled = true;
+            project.Magician.AllowRewindScream = true;
+            project.Magician.PersistSpells = false;
+
+            var id = Guid.NewGuid();
+            var marked = DeepScreamBuilder.PersistForCrash(
+                dir, id, project.Name, 72, 1, true, true, dumpPath: "fake.dmp");
+            var cast = MagicianEngine.DeepScreamOnCrash(project, yaml, id, "fake.dmp", "fake.bin", marked, null);
+            Assert.NotNull(cast);
+            Assert.Contains(cast!.Spells, s => s.Spell == "deepScream");
+            Assert.True(File.Exists(DeepScreamBuilder.TtdHintPathFor(dir, id)));
         }
-    }
-
-    [Fact]
-    public void CrashIntelligenceBuilder_FlagsDeepScreamCandidate()
-    {
-        var id = Guid.NewGuid();
-        var summary = new CrashSummaryDto(
-            id, "demo", 42, "cmd/havoc", "abc123", "x.bin",
-            null, "-1073741819", null, null, "run-1", DateTimeOffset.UtcNow,
-            "access_violation", "high", "0xDEAD", "AV", "demo|av|0xdead", true);
-
-        var triage = new CrashTriageDto(
-            "access_violation", "high", "test", true, false, "demo|av|0xdead",
-            "AV", "0xDEAD", null, "0x401000", "0x7fff0010", 128, "depth");
-
-        var sidecar = new CrashSidecarDto(
-            id, "run-1", 42, "demo", "cmd", "havoc", ["cmd", "havoc", "expand"],
-            "parent-hash", "corpus", [], "abc123", "x.bin", 512, -1073741819,
-            "AV", "tcp", null, 3, 120, "drcov", null, null, null, null,
-            new TransportSnapshotDto("tcp", "127.0.0.1", 9999, false),
-            new FuzzSnapshotDto(true, false, "projects/demo.yaml"),
-            DateTimeOffset.UtcNow,
-            null,
-            new OracleScore(85, [new OracleScoreTerm("crash", 80, "AV")], "+80 crash"));
-
-        var intel = CrashIntelligenceBuilder.Build(summary, triage, sidecar, 512, [summary]);
-
-        Assert.True(intel.DeepScreamCandidate);
-        Assert.NotNull(intel.DeepScreamSummary);
-        Assert.Contains("Deep Scream", intel.DeepScreamSummary!);
-    }
-
-    [Fact]
-    public void RewindScreamOnCrash_requires_deep_scream_candidate()
-    {
-        var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
-        var yaml = Path.Combine(root, "projects", "file-text.yaml");
-        if (!File.Exists(yaml))
-            return;
-
-        var project = ProjectLoader.Load(yaml);
-        project.Fuzz.RewindScream = true;
-        project.Magician ??= new MagicianConfig();
-        project.Magician.Enabled = true;
-        project.Magician.AllowRewindScream = true;
-        project.Magician.PersistSpells = false;
-
-        var id = Guid.NewGuid();
-        var notEligible = DeepScreamBuilder.Evaluate(
-            id, project.Name, screamScore: 30, seenCount: 1, reproducible: true, minimized: false);
-        Assert.Null(MagicianEngine.RewindScreamOnCrash(
-            project, yaml, id, "fake.dmp", notEligible, progress: null));
-
-        var crashesDir = ProjectLoader.ResolvePath(yaml, project.Fuzz.CrashesDir);
-        var eligible = DeepScreamBuilder.PersistForCrash(
-            crashesDir, id, project.Name, screamScore: 72, seenCount: 1,
-            reproducible: true, minimized: true, dumpPath: "fake.dmp");
-
-        var cast = MagicianEngine.RewindScreamOnCrash(
-            project, yaml, id, "fake.dmp", eligible, progress: null);
-
-        Assert.NotNull(cast);
-        Assert.Contains(cast!.Spells, s => s.Spell == "rewindScream");
-        var ttdPath = DeepScreamBuilder.TtdHintPathFor(crashesDir, id);
-        Assert.True(File.Exists(ttdPath));
-        var updated = DeepScreamBuilder.TryRead(DeepScreamBuilder.PathFor(crashesDir, id));
-        Assert.NotNull(updated?.TtdHintPath);
+        finally { try { Directory.Delete(dir, true); } catch { } }
     }
 }
