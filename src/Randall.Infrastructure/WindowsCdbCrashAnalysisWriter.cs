@@ -271,8 +271,11 @@ public static partial class WindowsCdbCrashAnalysisWriter
                 debuggerObs, corruption, triage, rootCauseFacts);
             var plan = ResearchPlannerEngine.PersistForCrash(
                 crashesDir, crashId, projectName, rootCause, influence, primitives);
-            SkepticEngine.PersistForCrash(
+            var skeptic = SkepticEngine.PersistForCrash(
                 crashesDir, crashId, projectName, plan, rootCause, influence, primitives);
+            ExploitabilityAdvisor.PersistForCrash(
+                crashesDir, crashId, projectName, rootCause, influence, primitives,
+                debuggerObs, triage, skeptic);
         }
         catch
         {

@@ -1235,9 +1235,17 @@
                 <option value="learning">Learning</option>
               </select>
             </label>
-            <label class="scream-harvest-toggle" title="Hide root-cause, offset, and primitive panels for guided instruction">
-              <input type="checkbox" id="academy-instructor-mode" />
+            <label class="scream-harvest-toggle" title="Instructor scaffolding 0–6: progressive hide of Investigation answers (0 = full research)">
               Instructor
+              <select id="academy-instructor-level" aria-label="Instructor assistance level">
+                <option value="0">0 — off</option>
+                <option value="1">1 — hide root/offset</option>
+                <option value="2">2 — + pattern depth</option>
+                <option value="3">3 — + influence</option>
+                <option value="4">4 — + primitives</option>
+                <option value="5">5 — + research plan</option>
+                <option value="6">6 — + advisor</option>
+              </select>
             </label>
             <span class="scream-harvest-pressure" id="scream-harvest-pressure" title="Harvest pressure from unique crashes">PRESSURE —</span>
           </div>

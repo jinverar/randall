@@ -12,8 +12,27 @@ public sealed class AcademyConfig
     /// </summary>
     public string PresentationMode { get; set; } = "research";
 
-    /// <summary>Hide root-cause, offset, and primitive panels for guided instruction.</summary>
-    public bool InstructorMode { get; set; }
+    /// <summary>
+    /// Legacy flag: hide early Investigation answers for guided instruction.
+    /// Kept for YAML / API backward compat — equivalent to <see cref="InstructorLevel"/> ≥ 1.
+    /// </summary>
+    public bool InstructorMode
+    {
+        get => InstructorLevel >= 1;
+        set
+        {
+            if (value && InstructorLevel < 1)
+                InstructorLevel = 1;
+            else if (!value)
+                InstructorLevel = 0;
+        }
+    }
+
+    /// <summary>
+    /// Progressive instructor scaffolding 0–6 (0 = off / full research; 6 = max hide).
+    /// Higher levels hide more Investigation panels so students work upward from evidence atoms.
+    /// </summary>
+    public int InstructorLevel { get; set; }
 
     /// <summary>
     /// Promote high oracle invariant violations into scream-like canisters (no memory crash required).

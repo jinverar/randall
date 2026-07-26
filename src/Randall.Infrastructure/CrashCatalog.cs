@@ -355,6 +355,17 @@ public static class CrashCatalog
                     triage,
                     evidence.Facts,
                     hypotheses);
+            var skeptic = SkepticEngine.TryReadForCrash(crashesDir, summary.Id);
+            var advisor = ExploitabilityAdvisor.TryReadForCrash(crashesDir, summary.Id)
+                ?? ExploitabilityAdvisor.Build(
+                    summary.Id,
+                    summary.Project,
+                    rootCause,
+                    influenceMap,
+                    primitives,
+                    debugger,
+                    triage,
+                    skeptic);
             var intelligence = CrashIntelligenceBuilder.Build(
                 summary,
                 triage,
@@ -371,7 +382,8 @@ public static class CrashCatalog
                 hypotheses,
                 rootCause,
                 evidence.Facts,
-                primitives);
+                primitives,
+                advisor);
             var deepScream = DeepScreamBuilder.TryRead(
                     DeepScreamBuilder.PathFor(crashesDir, summary.Id))
                 ?? DeepScreamBuilder.Evaluate(

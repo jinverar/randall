@@ -2866,8 +2866,37 @@ function academyResearchMode() {
   return !academyLearningMode();
 }
 
+function academyInstructorLevel() {
+  const raw = parseInt(document.documentElement.getAttribute('data-instructor-level') || '0', 10);
+  return Number.isFinite(raw) ? Math.max(0, Math.min(6, raw)) : 0;
+}
+
+/** Legacy: level ≥ 1. Prefer academyInstructorHide(panel). */
 function academyInstructorMode() {
-  return document.documentElement.getAttribute('data-instructor-mode') === 'on';
+  return academyInstructorLevel() >= 1;
+}
+
+/** Progressive hide matrix matching InstructorAssistance.ShouldHide (C#). */
+function academyInstructorHide(panel) {
+  const lv = academyInstructorLevel();
+  if (lv <= 0) return false;
+  switch (panel) {
+    case 'RootCause':
+    case 'Offset':
+      return lv >= 1;
+    case 'PatternDepth':
+      return lv >= 2;
+    case 'Influence':
+      return lv >= 3;
+    case 'Primitives':
+      return lv >= 4;
+    case 'ResearchPlan':
+      return lv >= 5;
+    case 'Advisor':
+      return lv >= 6;
+    default:
+      return false;
+  }
 }
 
 function academyEduBlurb(key) {
@@ -2876,18 +2905,30 @@ function academyEduBlurb(key) {
   return text ? `<p class="academy-edu-blurb">${escapeAttr(text)}</p>` : '';
 }
 
-function applyAcademyPrefs({ presentationMode, instructorMode, persist = true } = {}) {
+function applyAcademyPrefs({ presentationMode, instructorLevel, instructorMode, persist = true } = {}) {
   const mode = presentationMode === 'learning' ? 'learning' : 'research';
-  const instructor = instructorMode === true;
+  let level = 0;
+  if (typeof instructorLevel === 'number' && Number.isFinite(instructorLevel)) {
+    level = Math.max(0, Math.min(6, Math.trunc(instructorLevel)));
+  } else if (instructorMode === true) {
+    level = 1; // legacy checkbox → level 1
+  } else if (instructorMode === false) {
+    level = 0;
+  } else {
+    level = academyInstructorLevel();
+  }
+  const instructor = level >= 1;
   document.documentElement.setAttribute('data-presentation-mode', mode);
   document.documentElement.setAttribute('data-instructor-mode', instructor ? 'on' : 'off');
+  document.documentElement.setAttribute('data-instructor-level', String(level));
   const sel = document.getElementById('academy-presentation-mode');
-  const chk = document.getElementById('academy-instructor-mode');
+  const levelSel = document.getElementById('academy-instructor-level');
   if (sel) sel.value = mode;
-  if (chk) chk.checked = instructor;
+  if (levelSel) levelSel.value = String(level);
   if (persist) {
     try {
       localStorage.setItem('randfuzz.presentationMode', mode);
+      localStorage.setItem('randfuzz.instructorLevel', String(level));
       localStorage.setItem('randfuzz.instructorMode', instructor ? '1' : '0');
     } catch { /* ignore */ }
   }
@@ -2899,18 +2940,21 @@ function applyAcademyPrefs({ presentationMode, instructorMode, persist = true } 
 
 async function initAcademyPrefs() {
   let mode = 'research';
-  let instructor = false;
+  let level = 0;
   try {
     const localMode = localStorage.getItem('randfuzz.presentationMode');
     if (localMode === 'learning' || localMode === 'research') mode = localMode;
-    instructor = localStorage.getItem('randfuzz.instructorMode') === '1';
+    const localLevel = parseInt(localStorage.getItem('randfuzz.instructorLevel') || '', 10);
+    if (Number.isFinite(localLevel)) level = Math.max(0, Math.min(6, localLevel));
+    else if (localStorage.getItem('randfuzz.instructorMode') === '1') level = 1;
   } catch { /* ignore */ }
   try {
     const prefs = await api.get('/api/ui/prefs');
     if (prefs?.presentationMode === 'learning' || prefs?.presentationMode === 'research') mode = prefs.presentationMode;
-    if (typeof prefs?.instructorMode === 'boolean') instructor = prefs.instructorMode;
+    if (typeof prefs?.instructorLevel === 'number') level = Math.max(0, Math.min(6, prefs.instructorLevel));
+    else if (typeof prefs?.instructorMode === 'boolean') level = prefs.instructorMode ? 1 : 0;
   } catch { /* keep local */ }
-  applyAcademyPrefs({ presentationMode: mode, instructorMode: instructor, persist: true });
+  applyAcademyPrefs({ presentationMode: mode, instructorLevel: level, persist: true });
 }
 
 function evidenceTypeBadge(observationType) {
@@ -3036,7 +3080,13 @@ function renderCrashDetail(detail, title) {
     : screamHot(detail.summary);
   const evoWarm = (evo?.momentumScore ?? intel?.screamMomentum ?? 0) >= 40;
   const silentScream = detail.summary?.silentScream || s?.silentScream || t?.class === 'oracle_only';
-  const instructor = academyInstructorMode();
+  const hideRoot = academyInstructorHide('RootCause');
+  const hideOffset = academyInstructorHide('Offset');
+  const hidePattern = academyInstructorHide('PatternDepth');
+  const hideInfluence = academyInstructorHide('Influence');
+  const hidePrimitives = academyInstructorHide('Primitives');
+  const hidePlan = academyInstructorHide('ResearchPlan');
+  const hideAdvisor = academyInstructorHide('Advisor');
   const evidenceLimit = academyResearchMode() ? 48 : 16;
   if (metaEl) {
     const intelBits = intel
@@ -3089,7 +3139,7 @@ function renderCrashDetail(detail, title) {
         }).join('')}</tbody></table>
         ${evidenceFacts.length > evidenceLimit ? `<p class="hint">Showing ${evidenceLimit} of ${evidenceFacts.length} facts — see <code>${escapeAttr(detail.summary?.id?.replace(/-/g, '') || '')}_evidence.json</code></p>` : ''}
       </div>` : ''}
-      ${!instructor && influenceMap?.ok && influenceMap.links?.length ? `<div class="triage-box influence-box">
+      ${!hideInfluence && influenceMap?.ok && influenceMap.links?.length ? `<div class="triage-box influence-box">
         <h4>Influence map <span class="hint-inline">input → state</span> <span class="hint-inline">[${escapeAttr(influenceMap.confidence)}]</span></h4>
         ${academyEduBlurb('influence')}
         <p class="hint">${escapeAttr(influenceMap.summary)}</p>
@@ -3132,7 +3182,7 @@ function renderCrashDetail(detail, title) {
         ${backwardTrace.badPointerSource ? `<p class="hint">Bad pointer: <code>${escapeAttr(backwardTrace.badPointerSource)}</code>${backwardTrace.faultRegister ? ` via ${escapeAttr(backwardTrace.faultRegister)}` : ''}</p>` : ''}
         ${backwardTrace.suspectedMutator ? `<p class="hint">Attributed mutator <code>${escapeAttr(backwardTrace.suspectedMutator)}</code>${backwardTrace.primaryPayloadOffset ? ` · payload${escapeAttr(backwardTrace.primaryPayloadOffset)}` : ''}</p>` : ''}
       </div>` : ''}
-      ${!instructor && rootCause?.ok ? `<div class="triage-box root-cause-box">
+      ${!hideRoot && rootCause?.ok ? `<div class="triage-box root-cause-box">
         <h4>Root cause <span class="hint-inline">deterministic</span> <span class="hint-inline">[${escapeAttr(rootCause.candidate?.confidence || intel?.rootCauseConfidence || 'UNKNOWN')}]</span></h4>
         ${academyEduBlurb('rootCause')}
         <p class="root-cause-edu">${escapeAttr(intel?.rootCauseSummary || rootCause.educationalSummary || '')}</p>
@@ -3149,12 +3199,24 @@ function renderCrashDetail(detail, title) {
         ${rootCause.candidate?.inferences?.length ? `<p class="label">Inferences</p><ul class="root-cause-facts">${rootCause.candidate.inferences.slice(0, 5).map((f) => `<li>${escapeAttr(f)}</li>`).join('')}</ul>` : ''}
         ${rootCause.candidate?.unknowns?.length ? `<p class="label">Unknowns</p><ul class="root-cause-unknowns">${rootCause.candidate.unknowns.map((f) => `<li class="hint">${escapeAttr(f)}</li>`).join('')}</ul>` : ''}
         ${rootCause.alternatives?.length ? `<p class="hint">Alternatives: ${rootCause.alternatives.map((a) => `<code>${escapeAttr(formatRootCauseCategory(a.category))}</code>`).join(', ')}</p>` : ''}
-      </div>` : (!instructor && intel?.rootCauseSummary ? `<div class="triage-box root-cause-box">
+      </div>` : (!hideRoot && intel?.rootCauseSummary ? `<div class="triage-box root-cause-box">
         <h4>Root cause</h4>
         ${academyEduBlurb('rootCause')}
         <p class="root-cause-edu">${escapeAttr(intel.rootCauseSummary)}</p>
       </div>` : '')}
-      ${hypos?.ok && hypos.hypotheses?.length ? `<div class="triage-box hypothesis-box">
+      ${!hidePrimitives && (intel?.primitiveSummary || intel?.researchMaturity) ? `<div class="triage-box primitives-box">
+        <h4>Primitives <span class="hint-inline">research maturity</span>${intel.researchMaturity ? ` <span class="hint-inline">[${escapeAttr(intel.researchMaturity)}]</span>` : ''}</h4>
+        <p class="hint">${escapeAttr(intel.primitiveSummary || intel.researchMaturityLabel || '')}${intel.primitiveCount ? ` · ${intel.primitiveCount} capability(ies)` : ''}</p>
+      </div>` : ''}
+      ${!hidePlan && intel?.topHypothesisStatement ? `<div class="triage-box research-plan-box">
+        <h4>Research plan / claims <span class="hint-inline">scaffolding</span></h4>
+        <p class="hint"><code>${escapeAttr(intel.topHypothesisId || '')}</code> <strong>${intel.topHypothesisConfidence || 0}%</strong> — ${escapeAttr(intel.topHypothesisStatement)}</p>
+      </div>` : ''}
+      ${!hideAdvisor && intel?.advisorSummary ? `<div class="triage-box advisor-box">
+        <h4>Exploitability advisor <span class="hint-inline">teaching packages</span></h4>
+        <p class="hint">${escapeAttr(intel.advisorSummary)}</p>
+      </div>` : ''}
+      ${!hidePlan && hypos?.ok && hypos.hypotheses?.length ? `<div class="triage-box hypothesis-box">
         <h4>Hypotheses <span class="hint-inline">scientific loop</span></h4>
         <ol class="hypothesis-list">${hypos.hypotheses.slice(0, 5).map((h) => {
           const status = h.status || (h.result?.status ?? 'Pending');
@@ -3170,7 +3232,7 @@ function renderCrashDetail(detail, title) {
             <div class="hint">expect: ${escapeAttr(h.expectedObservation || '')}${h.result ? ` · ${escapeAttr(h.result.observation || h.result.status)}` : ''}</div>
           </li>`;
         }).join('')}</ol>
-      </div>` : (intel?.topHypothesisStatement ? `<div class="triage-box hypothesis-box">
+      </div>` : (!hidePlan && intel?.topHypothesisStatement ? `<div class="triage-box hypothesis-box">
         <h4>Top hypothesis</h4>
         <p class="hint"><code>${escapeAttr(intel.topHypothesisId || '')}</code> <strong>${intel.topHypothesisConfidence || 0}%</strong> — ${escapeAttr(intel.topHypothesisStatement)}</p>
       </div>` : '')}
@@ -3204,9 +3266,9 @@ function renderCrashDetail(detail, title) {
           <dt>Cluster</dt><dd><code title="${escapeAttr(intel.clusterKey || '')}">${intel.seenCount}×</code>${intel.clusterKey ? ` · <code>${escapeAttr(intel.clusterKey.slice(0, 48))}${intel.clusterKey.length > 48 ? '…' : ''}</code>` : ''}</dd>
           ${intel.coverageDelta != null ? `<dt>Coverage Δ</dt><dd>+${intel.coverageDelta} edges</dd>` : ''}
           ${intel.function ? `<dt>Function</dt><dd><code>${escapeAttr(intel.function)}</code></dd>` : ''}
-          ${!instructor && intel.offset != null ? `<dt>Offset</dt><dd><code>${intel.offset}</code> bytes in input</dd>` : ''}
+          ${!hideOffset && intel.offset != null ? `<dt>Offset</dt><dd><code>${intel.offset}</code> bytes in input</dd>` : ''}
           ${intel.corruptionChainSummary ? `<dt>Corruption chain</dt><dd><span class="severity-${(intel.corruptionConfidence || 'low').toLowerCase()}">${escapeAttr(intel.corruptionConfidence || '')}</span> — ${escapeAttr(intel.corruptionChainSummary)}</dd>` : ''}
-          ${!instructor && intel.rootCauseSummary ? `<dt>Root cause</dt><dd><code>${escapeAttr(formatRootCauseCategory(intel.rootCauseCategory))}</code> <span class="hint-inline">[${escapeAttr(intel.rootCauseConfidence || '')}]</span> — ${escapeAttr(intel.rootCauseSummary)}</dd>` : ''}
+          ${!hideRoot && intel.rootCauseSummary ? `<dt>Root cause</dt><dd><code>${escapeAttr(formatRootCauseCategory(intel.rootCauseCategory))}</code> <span class="hint-inline">[${escapeAttr(intel.rootCauseConfidence || '')}]</span> — ${escapeAttr(intel.rootCauseSummary)}</dd>` : ''}
           ${intel.oracleScore?.total != null ? `<dt>Oracle</dt><dd><span class="scream-intel-oracle">${intel.oracleScore.total}</span>${intel.oracleScore.summary ? ` — ${escapeAttr(intel.oracleScore.summary)}` : ''}</dd>` : ''}
           ${(evo?.ok || intel?.screamMomentum > 0) ? `<dt>Evolution</dt><dd><span class="severity-${evoWarm ? 'high' : 'medium'}">${escapeAttr(evo?.momentumLabel || intel?.screamMomentumLabel || 'stable')}</span> momentum <strong>${evo?.momentumScore ?? intel?.screamMomentum ?? 0}</strong>${(evo?.generation ?? intel?.screamGeneration) > 0 ? ` · gen ${evo?.generation ?? intel?.screamGeneration}` : ''}${evo?.familySize > 1 ? ` · family×${evo.familySize}` : ''}</dd>` : ''}
           ${evo?.progressionStep ? `<dt>Progression</dt><dd><code>${escapeAttr(evo.progressionStep)}</code>${evo.progressionDelta > 0 ? ` <span class="hint-inline">↑${evo.progressionDelta} vs ancestor</span>` : ''}</dd>` : ''}
@@ -3244,7 +3306,7 @@ function renderCrashDetail(detail, title) {
       ${cdb?.exploitableClassification ? `<p class="severity-${(cdb.exploitableClassification || '').toLowerCase().includes('not') ? 'medium' : 'critical'}">!exploitable: <code>${escapeAttr(cdb.exploitableClassification)}</code></p>` : ''}
       ${cdb?.analyzeTextPath ? `<p class="hint">!analyze log: <code>${escapeAttr(cdb.analyzeTextPath)}</code></p>` : ''}
       ${cdb?.error && !cdb?.ok ? `<p class="hint">${escapeAttr(cdb.error)}</p>` : ''}
-      ${!instructor && t.patternDepthBytes != null ? `<p>Pattern depth: <code>offset ${t.patternDepthBytes}</code>${t.patternNote ? ` — ${escapeAttr(t.patternNote)}` : ''}</p>` : ''}
+      ${!hidePattern && t.patternDepthBytes != null ? `<p>Pattern depth: <code>offset ${t.patternDepthBytes}</code>${t.patternNote ? ` — ${escapeAttr(t.patternNote)}` : ''}</p>` : ''}
       ${!dump ? '<p class="hint">No minidump on this hit — set Debugger to Scream wait or Both and re-fuzz for Memory lens / ROP walks. Canisters are UI harvest only.</p>' : ''}
     </div>` : ''}
     <dl class="crash-meta-dl">
@@ -5374,14 +5436,16 @@ document.getElementById('scream-harvest-show-idle')?.addEventListener('change', 
 
 document.getElementById('academy-presentation-mode')?.addEventListener('change', async (e) => {
   const mode = e.target.value === 'learning' ? 'learning' : 'research';
-  applyAcademyPrefs({ presentationMode: mode, instructorMode: academyInstructorMode() });
+  applyAcademyPrefs({ presentationMode: mode, instructorLevel: academyInstructorLevel() });
   try { await api.put('/api/ui/prefs', { presentationMode: mode }); } catch { /* localStorage still restores */ }
 });
 
-document.getElementById('academy-instructor-mode')?.addEventListener('change', async (e) => {
-  const instructor = !!e.target.checked;
-  applyAcademyPrefs({ presentationMode: academyLearningMode() ? 'learning' : 'research', instructorMode: instructor });
-  try { await api.put('/api/ui/prefs', { instructorMode: instructor }); } catch { /* localStorage still restores */ }
+document.getElementById('academy-instructor-level')?.addEventListener('change', async (e) => {
+  const level = Math.max(0, Math.min(6, parseInt(e.target.value, 10) || 0));
+  applyAcademyPrefs({ presentationMode: academyLearningMode() ? 'learning' : 'research', instructorLevel: level });
+  try {
+    await api.put('/api/ui/prefs', { instructorLevel: level, instructorMode: level >= 1 });
+  } catch { /* localStorage still restores */ }
 });
 
 async function initScreamHarvestPrefs() {

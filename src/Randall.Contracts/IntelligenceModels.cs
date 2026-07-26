@@ -169,7 +169,9 @@ public sealed record CrashIntelligenceDto(
     /// <summary>One-line primitive capability rollup for Investigation / list chips.</summary>
     string? PrimitiveSummary = null,
     /// <summary>Count of assessed capability primitives (research-only).</summary>
-    int PrimitiveCount = 0);
+    int PrimitiveCount = 0,
+    /// <summary>One-line ExploitabilityAdvisor teaching summary (packages / posture).</summary>
+    string? AdvisorSummary = null);
 
 /// <summary>In-process observation collector for a single fuzz run.</summary>
 public sealed class ObservationBus

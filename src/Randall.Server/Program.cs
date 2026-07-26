@@ -93,11 +93,19 @@ app.MapPut("/api/ui/prefs", (UiPrefsUpdateRequest request) =>
     var presentationMode = request.PresentationMode ?? current.PresentationMode;
     if (!UiPrefsStore.IsValidPresentationMode(presentationMode))
         return Results.BadRequest(new { error = "presentationMode must be learning or research" });
-    var instructorMode = request.InstructorMode ?? current.InstructorMode;
+    // Prefer explicit InstructorLevel; fall back to legacy InstructorMode bool → level 1/0.
+    int instructorLevel;
+    if (request.InstructorLevel is int reqLevel)
+        instructorLevel = InstructorAssistance.Normalize(reqLevel);
+    else if (request.InstructorMode is bool reqMode)
+        instructorLevel = InstructorAssistance.FromInstructorMode(reqMode);
+    else
+        instructorLevel = InstructorAssistance.Normalize(current.InstructorLevel);
+    var instructorMode = InstructorAssistance.ToInstructorMode(instructorLevel);
 
     var saved = UiPrefsStore.Save(new UiPrefsDto(
         theme, platform, null, screamCanisters, screamAnimations,
-        UiPrefsStore.NormalizePresentationMode(presentationMode), instructorMode));
+        UiPrefsStore.NormalizePresentationMode(presentationMode), instructorMode, instructorLevel));
     return Results.Ok(saved);
 });
 

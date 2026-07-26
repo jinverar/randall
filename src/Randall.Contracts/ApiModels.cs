@@ -74,8 +74,10 @@ public sealed record UiPrefsDto(
     bool ScreamAnimations = false,
     /// <summary>learning | research — Investigation panel density and educational blurbs.</summary>
     string PresentationMode = "research",
-    /// <summary>Hide root-cause, offset, and primitive panels for guided instruction.</summary>
-    bool InstructorMode = false);
+    /// <summary>Legacy: true when <see cref="InstructorLevel"/> ≥ 1.</summary>
+    bool InstructorMode = false,
+    /// <summary>Progressive instructor scaffolding 0–6 (0 = off / full research).</summary>
+    int InstructorLevel = 0);
 
 public sealed record UiPrefsUpdateRequest(
     string? Theme = null,
@@ -83,7 +85,8 @@ public sealed record UiPrefsUpdateRequest(
     bool? ScreamCanisters = null,
     bool? ScreamAnimations = null,
     string? PresentationMode = null,
-    bool? InstructorMode = null);
+    bool? InstructorMode = null,
+    int? InstructorLevel = null);
 
 public sealed record FuzzStartRequest(
     string ConfigPath,

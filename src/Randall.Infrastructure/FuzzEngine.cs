@@ -2277,7 +2277,7 @@ public sealed class FuzzEngine
         {
             FuzzAnalystLog.Info(progress,
                 $"  Academy: mode={academy.PresentationMode} instructor={academy.InstructorMode} " +
-                $"silentScreams={academy.SilentScreams}");
+                $"level={academy.InstructorLevel} silentScreams={academy.SilentScreams}");
         }
         else if (SilentScreamBuilder.IsEnabled(project))
         {
@@ -2708,6 +2708,8 @@ public sealed class FuzzEngine
                 crashesDir, crashId, project, rootCause, influence, primitives, hypotheses);
             var skeptic = SkepticEngine.PersistForCrash(
                 crashesDir, crashId, project, plan, rootCause, influence, primitives);
+            var advisor = ExploitabilityAdvisor.PersistForCrash(
+                crashesDir, crashId, project, rootCause, influence, primitives, debugger, triage, skeptic);
 
             if (primitives is { Ok: true })
             {
@@ -2725,6 +2727,12 @@ public sealed class FuzzEngine
             {
                 FuzzAnalystLog.Info(progress,
                     $"[skeptic] {skeptic.Challenges.Count} falsification challenge(s)",
+                    iterations);
+            }
+            if (advisor is { Ok: true })
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[advisor] {advisor.OverallLabel} [{advisor.Confidence}] — {Truncate(advisor.Summary, 100)}",
                     iterations);
             }
         }

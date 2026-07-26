@@ -32,8 +32,11 @@ public static class UiPrefsStore
                 return Defaults(host);
             var theme = IsValidTheme(dto.Theme) ? NormalizeTheme(dto.Theme) : "light";
             var platform = NormalizePlatform(dto.Platform);
+            var level = ResolveInstructorLevel(dto.InstructorLevel, dto.InstructorMode);
             return new UiPrefsDto(theme, platform, host, dto.ScreamCanisters, dto.ScreamAnimations,
-                NormalizePresentationMode(dto.PresentationMode), dto.InstructorMode);
+                NormalizePresentationMode(dto.PresentationMode),
+                InstructorAssistance.ToInstructorMode(level),
+                level);
         }
         catch
         {
@@ -45,11 +48,14 @@ public static class UiPrefsStore
     {
         var theme = IsValidTheme(prefs.Theme) ? NormalizeTheme(prefs.Theme) : "light";
         var platform = NormalizePlatform(prefs.Platform);
+        var level = ResolveInstructorLevel(prefs.InstructorLevel, prefs.InstructorMode);
         var path = PrefsPath(repoRoot);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         // HostPlatform is intentionally left null on disk — it is a live value stamped by Get().
         var saved = new UiPrefsDto(theme, platform, null, prefs.ScreamCanisters, prefs.ScreamAnimations,
-            NormalizePresentationMode(prefs.PresentationMode), prefs.InstructorMode);
+            NormalizePresentationMode(prefs.PresentationMode),
+            InstructorAssistance.ToInstructorMode(level),
+            level);
         File.WriteAllText(path, JsonSerializer.Serialize(saved, JsonOpts));
         return saved with { HostPlatform = PlatformResolver.Host };
     }
@@ -66,7 +72,7 @@ public static class UiPrefsStore
 
     private static UiPrefsDto Defaults(string host) =>
         new("light", PlatformScope.Auto, host, ScreamCanisters: true, ScreamAnimations: false,
-            PresentationMode: "research", InstructorMode: false);
+            PresentationMode: "research", InstructorMode: false, InstructorLevel: 0);
 
     public static bool IsValidPresentationMode(string? mode) =>
         !string.IsNullOrWhiteSpace(mode)
@@ -75,6 +81,20 @@ public static class UiPrefsStore
 
     public static string NormalizePresentationMode(string? mode) =>
         mode?.Equals("learning", StringComparison.OrdinalIgnoreCase) == true ? "learning" : "research";
+
+    /// <summary>
+    /// Prefer explicit level when set; otherwise map legacy InstructorMode bool (true → 1).
+    /// </summary>
+    public static int ResolveInstructorLevel(int level, bool instructorMode)
+    {
+        // Level takes precedence when non-zero, or when mode is off (level 0).
+        // If persisted file only had InstructorMode=true (level default 0), promote to 1.
+        if (level > 0)
+            return InstructorAssistance.Normalize(level);
+        if (instructorMode)
+            return 1;
+        return InstructorAssistance.Normalize(level);
+    }
 
     private static string PrefsPath(string? repoRoot)
     {

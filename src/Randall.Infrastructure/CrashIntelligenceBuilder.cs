@@ -22,7 +22,8 @@ public static class CrashIntelligenceBuilder
         HypothesisSetDto? hypotheses = null,
         RootCauseAnalysisDto? rootCause = null,
         IReadOnlyList<EvidenceFact>? evidenceFacts = null,
-        CrashPrimitiveReportDto? primitives = null)
+        CrashPrimitiveReportDto? primitives = null,
+        ExploitabilityAdvisorDto? advisor = null)
     {
         var clusterKey = triage?.ClusterKey ?? summary.ClusterKey;
         var semanticFingerprint = triage?.SemanticFingerprint ?? summary.SemanticFingerprint;
@@ -126,7 +127,8 @@ public static class CrashIntelligenceBuilder
             ResearchMaturity: primitives is { Ok: true } ? primitives.Maturity.ToString() : null,
             ResearchMaturityLabel: primitives is { Ok: true } ? primitives.MaturityLabel : null,
             PrimitiveSummary: primitives?.Summary,
-            PrimitiveCount: primitives?.Primitives.Count ?? 0);
+            PrimitiveCount: primitives?.Primitives.Count ?? 0,
+            AdvisorSummary: advisor is { Ok: true } ? advisor.Summary : null);
     }
 
     public static CrashSummaryDto WithListIntelligence(

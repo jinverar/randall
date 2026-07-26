@@ -204,11 +204,14 @@ public static class SilentScreamBuilder
                 debugger: null, corruptionChain: null, triage, facts, hypotheses);
             var plan = ResearchPlannerEngine.PersistForCrash(
                 crashesDir, saved.Id, project.Name, rootCause, influence, primitives, hypotheses);
-            SkepticEngine.PersistForCrash(
+            var skeptic = SkepticEngine.PersistForCrash(
                 crashesDir, saved.Id, project.Name, plan, rootCause, influence, primitives);
+            ExploitabilityAdvisor.PersistForCrash(
+                crashesDir, saved.Id, project.Name, rootCause, influence, primitives,
+                debugger: null, triage, skeptic);
 
             FuzzAnalystLog.Info(progress,
-                $"[silent-scream] intelligence pipeline — root-cause/influence/evidence/primitives/plan for {saved.Id:N}",
+                $"[silent-scream] intelligence pipeline — root-cause/influence/evidence/primitives/plan/advisor for {saved.Id:N}",
                 iterations);
         }
         catch (Exception ex)
