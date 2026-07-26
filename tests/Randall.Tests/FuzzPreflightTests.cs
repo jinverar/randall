@@ -32,7 +32,12 @@ public sealed class FuzzPreflightTests
 
             Assert.NotNull(error);
             Assert.Contains("not found", error, StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("build-vulnftp", error, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("vulnftp", error, StringComparison.OrdinalIgnoreCase);
+            // Windows: build-vulnftp.ps1 · Linux: build-lab-targets.sh vulnftp
+            Assert.Contains(
+                OperatingSystem.IsWindows() ? "build-vulnftp" : "build-lab-targets",
+                error,
+                StringComparison.OrdinalIgnoreCase);
         }
         finally
         {

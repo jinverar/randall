@@ -48,6 +48,11 @@ public class GhidraToolsTests
     public void InstallHint_MentionsInstallScript()
     {
         var hint = GhidraTools.InstallHint;
-        Assert.Contains("install-ghidra", hint, StringComparison.OrdinalIgnoreCase);
+        Assert.False(string.IsNullOrWhiteSpace(hint));
+        // Windows ships scripts/install-ghidra.ps1; Linux points at package manager / tools/ghidra-app.
+        if (OperatingSystem.IsWindows())
+            Assert.Contains("install-ghidra", hint, StringComparison.OrdinalIgnoreCase);
+        else
+            Assert.Contains("JDK 21", hint, StringComparison.OrdinalIgnoreCase);
     }
 }

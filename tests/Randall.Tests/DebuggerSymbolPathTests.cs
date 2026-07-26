@@ -30,15 +30,16 @@ public class DebuggerSymbolPathTests
         var priorNt = Environment.GetEnvironmentVariable(ntKey);
         var priorCache = Environment.GetEnvironmentVariable(cacheKey);
         var priorOffline = Environment.GetEnvironmentVariable(offlineKey);
+        var cacheDir = Path.Combine(Path.GetTempPath(), "randall-sym-" + Guid.NewGuid().ToString("N"));
         try
         {
             Environment.SetEnvironmentVariable(ntKey, null);
             Environment.SetEnvironmentVariable(offlineKey, null);
-            Environment.SetEnvironmentVariable(cacheKey, @"C:\TestSymbols");
+            Environment.SetEnvironmentVariable(cacheKey, cacheDir);
 
             var path = Randall.Infrastructure.DebuggerTools.GetEffectiveSymbolPath();
             Assert.Equal(
-                "srv*C:\\TestSymbols*https://msdl.microsoft.com/download/symbols",
+                $"srv*{Path.GetFullPath(cacheDir)}*https://msdl.microsoft.com/download/symbols",
                 path);
         }
         finally
@@ -46,6 +47,7 @@ public class DebuggerSymbolPathTests
             Environment.SetEnvironmentVariable(ntKey, priorNt);
             Environment.SetEnvironmentVariable(cacheKey, priorCache);
             Environment.SetEnvironmentVariable(offlineKey, priorOffline);
+            try { if (Directory.Exists(cacheDir)) Directory.Delete(cacheDir, true); } catch { /* ignore */ }
         }
     }
 
@@ -58,20 +60,22 @@ public class DebuggerSymbolPathTests
         var priorNt = Environment.GetEnvironmentVariable(ntKey);
         var priorCache = Environment.GetEnvironmentVariable(cacheKey);
         var priorOffline = Environment.GetEnvironmentVariable(offlineKey);
+        var cacheDir = Path.Combine(Path.GetTempPath(), "randall-sym-off-" + Guid.NewGuid().ToString("N"));
         try
         {
             Environment.SetEnvironmentVariable(ntKey, null);
-            Environment.SetEnvironmentVariable(cacheKey, @"C:\OfflineSymbols");
+            Environment.SetEnvironmentVariable(cacheKey, cacheDir);
             Environment.SetEnvironmentVariable(offlineKey, "1");
 
             var path = Randall.Infrastructure.DebuggerTools.GetEffectiveSymbolPath();
-            Assert.Equal(@"C:\OfflineSymbols", path);
+            Assert.Equal(Path.GetFullPath(cacheDir), path);
         }
         finally
         {
             Environment.SetEnvironmentVariable(ntKey, priorNt);
             Environment.SetEnvironmentVariable(cacheKey, priorCache);
             Environment.SetEnvironmentVariable(offlineKey, priorOffline);
+            try { if (Directory.Exists(cacheDir)) Directory.Delete(cacheDir, true); } catch { /* ignore */ }
         }
     }
 
