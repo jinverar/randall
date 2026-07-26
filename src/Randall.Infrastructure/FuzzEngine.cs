@@ -653,9 +653,7 @@ public sealed class FuzzEngine
                         chainRows: mutatorChainTracker.SnapshotRows(),
                         memoryConfidence: brainMemory.MemoryConfidence,
                         coverageFraction: coverageFraction,
-                        baseJokerChance: JokerEngine.EffectiveChance(project),
-                        lastObservedNewEdges: lastObservedNewEdges,
-                        lastObservedUniqueCrashes: lastObservedUniqueCrashes);
+                        baseJokerChance: JokerEngine.EffectiveChance(project));
                     brain.PersistLast(huntDecision, repoRoot);
                     if (verbose)
                     {
@@ -792,7 +790,7 @@ public sealed class FuzzEngine
                 {
                     var basePayload = File.ReadAllBytes(hypInput);
                     payload = HypothesisEngine.ApplyExperiment(
-                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng, mutators)
+                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng)
                            ?? basePayload;
                     parentInputHash = InputHash.StackHash(basePayload);
                     seedSource = $"hypothesis/{hypothesisPlan.HypothesisId}";
@@ -1841,8 +1839,8 @@ public sealed class FuzzEngine
                             project, crashesDir, saved, sidecar: CrashSidecarWriter.TryRead(saved.SidecarPath),
                             iterations, progress);
 
-                        TryPersistDeepScream(
-                            project, yamlPath, crashesDir, saved, iterations, progress);
+                        await TryPersistDeepScream(
+                            project, yamlPath, crashesDir, saved, iterations, progress, cancellationToken);
 
                         if (stopGoals.IsEnabled && savedResult.IsNew && repoRoot is not null)
                         {
@@ -2561,80 +2559,41 @@ public sealed class FuzzEngine
         }
     }
 
-    private void TryPersistDeepScream(
-        ProjectConfig project,
-        string yamlPath,
-        string crashesDir,
-        SavedCrash saved,
-        int iterations,
-        IFuzzProgressSink? progress)
+    private async Task TryPersistDeepScream(
+        ProjectConfig project, string yamlPath, string crashesDir, SavedCrash saved,
+        int iterations, IFuzzProgressSink? progress, CancellationToken cancellationToken)
     {
         try
         {
             var sidecar = CrashSidecarWriter.TryRead(saved.SidecarPath);
-            var debugger = ScreamInvestigator.TryRead(
-                ScreamInvestigator.ObservationPathFor(crashesDir, saved.Id));
-            var corruption = CorruptionChainBuilder.TryRead(
-                CorruptionChainBuilder.PathFor(crashesDir, saved.Id));
-            var evolution = ScreamEvolutionBuilder.TryRead(
-                ScreamEvolutionBuilder.PathFor(crashesDir, saved.Id));
-            var hypotheses = HypothesisEngine.TryRead(
-                HypothesisEngine.PathFor(crashesDir, saved.Id));
-
+            var debugger = ScreamInvestigator.TryRead(ScreamInvestigator.ObservationPathFor(crashesDir, saved.Id));
+            var corruption = CorruptionChainBuilder.TryRead(CorruptionChainBuilder.PathFor(crashesDir, saved.Id));
+            var evolution = ScreamEvolutionBuilder.TryRead(ScreamEvolutionBuilder.PathFor(crashesDir, saved.Id));
+            var hypotheses = HypothesisEngine.TryRead(HypothesisEngine.PathFor(crashesDir, saved.Id));
             byte[]? payload = null;
-            if (File.Exists(saved.InputPath))
-            {
-                try { payload = File.ReadAllBytes(saved.InputPath); }
-                catch { /* ignore */ }
-            }
-
-            var summary = new CrashSummaryDto(
-                saved.Id, project.Name, iterations, sidecar?.Mutator ?? "?",
-                saved.InputHash, saved.InputPath, saved.MiniDumpPath,
-                sidecar?.ExitCode?.ToString(), sidecar?.TriageTag, saved.SidecarPath,
-                sidecar?.RunId, DateTimeOffset.UtcNow);
+            if (File.Exists(saved.InputPath)) { try { payload = File.ReadAllBytes(saved.InputPath); } catch { } }
+            var summary = new CrashSummaryDto(saved.Id, project.Name, iterations, sidecar?.Mutator ?? "?",
+                saved.InputHash, saved.InputPath, saved.MiniDumpPath, sidecar?.ExitCode?.ToString(),
+                sidecar?.TriageTag, saved.SidecarPath, sidecar?.RunId, DateTimeOffset.UtcNow);
             var triage = CrashTriage.Classify(null, sidecar, summary, payload, debugger: debugger);
-            var projectSummaries = CrashCatalog.ListAll(projectFilter: project.Name);
-            var intelligence = CrashIntelligenceBuilder.Build(
-                summary, triage, sidecar, payload?.Length ?? 0, projectSummaries,
-                analysis: null, cdb: null, pageHeapEnabled: false,
-                rppTag: summary.TriageTag, debugger: debugger,
-                corruptionChain: corruption, evolution: evolution, hypotheses: hypotheses);
-
-            var deepScream = DeepScreamBuilder.PersistForCrash(
-                crashesDir,
-                saved.Id,
-                project.Name,
-                intelligence.ScreamScore,
-                intelligence.SeenCount,
-                intelligence.Reproducible,
-                intelligence.Minimized,
-                saved.MiniDumpPath);
-
-            if (deepScream.IsCandidate)
+            var intelligence = CrashIntelligenceBuilder.Build(summary, triage, sidecar, payload?.Length ?? 0,
+                CrashCatalog.ListAll(projectFilter: project.Name), null, null, false, summary.TriageTag, debugger,
+                corruption, evolution, hypotheses);
+            var deepScream = await DeepScreamBuilder.ProcessAndPersistAsync(crashesDir, saved.Id, project.Name,
+                intelligence.ScreamScore, intelligence.SeenCount, intelligence.Reproducible, intelligence.Minimized,
+                saved.MiniDumpPath, triage.SemanticFingerprint, evolution, project.Fuzz.DeepScreamAutoMinimize,
+                project, yamlPath, payload, cancellationToken);
+            if (deepScream.IsMarked)
             {
                 Console.WriteLine($"  deep scream: {DeepScreamBuilder.FormatSummary(deepScream)}");
-                FuzzAnalystLog.Info(progress,
-                    $"[deep-scream] candidate scream={deepScream.ScreamScore} — TTD path gated",
-                    iterations);
-
+                FuzzAnalystLog.Info(progress, $"[deep-scream] marked scream={deepScream.ScreamScore} family={deepScream.FamilyId ?? "—"}", iterations);
                 if (project.Fuzz.RewindScream)
-                {
-                    _ = MagicianEngine.RewindScreamOnCrash(
-                        project, yamlPath, saved.Id, saved.MiniDumpPath, deepScream, progress);
-                }
+                    _ = MagicianEngine.DeepScreamOnCrash(project, yamlPath, saved.Id, saved.MiniDumpPath, saved.InputPath, deepScream, progress);
             }
-            else if (project.Fuzz.RewindScream)
-            {
-                FuzzAnalystLog.Info(progress,
-                    $"[deep-scream] rewind skipped — {string.Join("; ", deepScream.MissingReasons)}",
-                    iterations);
-            }
+            else if (deepScream.FamilySuppressed)
+                FuzzAnalystLog.Info(progress, $"[deep-scream] family dedup — prior `{deepScream.PriorFamilyCrashId:N}`", iterations);
         }
-        catch (Exception ex)
-        {
-            FuzzAnalystLog.Warn(progress, $"deep scream: {ex.Message}", iterations);
-        }
+        catch (Exception ex) { FuzzAnalystLog.Warn(progress, $"deep scream: {ex.Message}", iterations); }
     }
 
     private void PublishEnrichedCrashFaults(
