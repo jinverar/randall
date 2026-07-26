@@ -56,17 +56,20 @@ public class CrashCanisterContextTests
                 new StaticFunctionMappingDto(
                     "rip", "0x401020", "parse_request", "+0xA", "ghidra", "0x1020", "calls memcpy", 88));
             var sidecar = new CrashSidecarDto(
-                summary.Id, "run", 1, project, "cmd", "havoc", [], null, null, [], "h", "f.bin",
-                64, -1, "AV", null, null, 2, 50, null, null, null, null, null, null, null,
+                summary.Id, "run", 1, project, "cmd", "havoc", [], null, "seed", [], "h", "f.bin",
+                64, -1, "AV", "detail", null, 2, 50, "none", null, null, null, null,
+                new TransportSnapshotDto("stdio", "", 0, false),
+                new FuzzSnapshotDto(false, false, "projects/x.yaml"),
                 DateTimeOffset.UtcNow, null,
                 new OracleScore(72, [new OracleScoreTerm("crash", 60, "AV")], "+60 crash"));
 
             var intel = CrashIntelligenceBuilder.Build(
                 summary, triage, sidecar, 64, [summary]);
 
+            Assert.NotNull(intel.CanisterContext);
             Assert.Contains("RIP 0x401020", intel.CanisterContext);
-            Assert.Contains("parse_request+0xA", intel.CanisterContext!);
-            Assert.Contains("oracle 72", intel.CanisterContext!);
+            Assert.Contains("parse_request+0xA", intel.CanisterContext);
+            Assert.Contains("oracle 72", intel.CanisterContext);
             Assert.Contains("gray door", intel.FrontierHint!, StringComparison.OrdinalIgnoreCase);
         }
         finally

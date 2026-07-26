@@ -1,5 +1,4 @@
 using Randall.Contracts;
-using Randall.Contracts;
 using Randall.Infrastructure;
 using Xunit;
 
