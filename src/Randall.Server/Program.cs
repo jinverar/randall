@@ -786,6 +786,28 @@ app.MapGet("/api/stalking/{project}/twin-hints", (string project) =>
     }
 });
 
+app.MapGet("/api/crashes/{id:guid}/research-package", (Guid id, bool? rebuild, string? format) =>
+{
+    try
+    {
+        var report = CrashCatalog.GetResearchPackage(id, rebuild: rebuild == true);
+        if (report is null) return Results.NotFound();
+        if (!WebTargetFilter.IsVisibleProject(report.Project))
+            return Results.NotFound();
+        if (string.Equals(format, "md", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(format, "markdown", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Text(ResearchPackageReportBuilder.ToMarkdown(report), "text/markdown; charset=utf-8");
+        }
+
+        return Results.Ok(report);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/crashes/{id:guid}/counterfactual", (Guid id, bool? rebuild, bool? live) =>
 {
     try

@@ -2470,6 +2470,7 @@ static int RunStalk(string[] args)
         "genealogy" or "bug-genealogy" or "lineages" => StalkGenealogy(rest),
         "counterfactual" or "cf" or "boundary" => StalkCounterfactual(rest),
         "twins" or "vuln-twins" or "siblings" => StalkTwins(rest),
+        "research-package" or "rf" or "package" => StalkResearchPackage(rest),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
         "bench" => StalkBench(rest),
@@ -2525,6 +2526,70 @@ static int StalkGenealogy(string[] args)
     catch (Exception ex)
     {
         Console.Error.WriteLine($"genealogy: {ex.Message}");
+        return 1;
+    }
+}
+
+static int StalkResearchPackage(string[] args)
+{
+    Guid? crashId = null;
+    var json = false;
+    var markdown = false;
+    var rebuild = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-i" or "--id" or "--crash" && i + 1 < args.Length && Guid.TryParse(args[++i], out var g))
+            crashId = g;
+        else if (args[i] is "--json") json = true;
+        else if (args[i] is "--md" or "--markdown") markdown = true;
+        else if (args[i] is "--rebuild" or "--refresh") rebuild = true;
+    }
+
+    if (crashId is null)
+    {
+        Console.Error.WriteLine("Usage: randall stalk research-package -i <crash-guid> [--json|--md] [--rebuild]");
+        return 1;
+    }
+
+    try
+    {
+        var report = CrashCatalog.GetResearchPackage(crashId.Value, rebuild: rebuild);
+        if (report is null)
+        {
+            Console.Error.WriteLine("research-package: crash not found");
+            return 1;
+        }
+
+        if (markdown)
+        {
+            Console.WriteLine(ResearchPackageReportBuilder.ToMarkdown(report));
+            return 0;
+        }
+
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+            }));
+            return 0;
+        }
+
+        Console.WriteLine($"{report.ReportId} ({report.Project}) maturity={report.Maturity} conf={report.Confidence}");
+        Console.WriteLine($"  {report.Summary}");
+        if (!string.IsNullOrWhiteSpace(report.RootCause))
+            Console.WriteLine($"  Root cause: {report.RootCause}");
+        if (!string.IsNullOrWhiteSpace(report.SuggestedRemediation))
+            Console.WriteLine($"  Remediation: {report.SuggestedRemediation}");
+        Console.WriteLine($"  Experiments: {report.Experiments.Count}  confirmed={report.Confirmed.Count} disproven={report.Disproven.Count}");
+        Console.WriteLine($"  Open questions: {report.OpenQuestions.Count}  checklist={report.Packages.Count}");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"research-package: {ex.Message}");
         return 1;
     }
 }

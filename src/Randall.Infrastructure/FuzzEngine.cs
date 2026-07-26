@@ -2830,11 +2830,23 @@ public sealed class FuzzEngine
             }
 
             var researchPkg = ResearchPackageReportBuilder.PersistForCrash(
-                crashesDir, crashId, project, advisor, plan, patchHyp);
+                crashesDir, crashId, project, advisor, plan, patchHyp,
+                barriers: null,
+                sidecar: sidecar,
+                triage: triage,
+                debugger: debugger,
+                rootCause: rootCause,
+                influence: influence,
+                primitives: primitives,
+                hypotheses: hypotheses,
+                skeptic: skeptic,
+                counterfactual: counterfactual,
+                corruption: corruption,
+                payload: TryLoadCrashBytes(crashesDir, crashId));
             if (researchPkg is { Ok: true })
             {
                 FuzzAnalystLog.Info(progress,
-                    $"[research-package] {researchPkg.Packages.Count} item(s) [{researchPkg.Confidence}]",
+                    $"[research-package] {researchPkg.ReportId} · {researchPkg.Packages.Count} checklist item(s) [{researchPkg.Confidence}]",
                     iterations);
             }
         }

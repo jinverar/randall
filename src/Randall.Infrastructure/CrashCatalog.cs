@@ -211,6 +211,53 @@ public static class CrashCatalog
         return BugGenealogyEngine.PersistForProject(project, repoRoot);
     }
 
+    /// <summary>Per-crash RF-#### research package — rebuilds from sidecars when missing.</summary>
+    public static ResearchPackageReportDto? GetResearchPackage(
+        Guid crashId,
+        string? repoRoot = null,
+        bool rebuild = false)
+    {
+        repoRoot ??= FindRepoRoot();
+        if (repoRoot is null) return null;
+        var summary = ListAll(repoRoot).FirstOrDefault(c => c.Id == crashId);
+        if (summary is null) return null;
+        var crashesDir = Path.Combine(repoRoot, "data", "crashes", summary.Project);
+        if (!rebuild)
+        {
+            var existing = ResearchPackageReportBuilder.TryReadForCrash(crashesDir, crashId);
+            if (existing is not null) return existing;
+        }
+
+        byte[]? bytes = null;
+        if (File.Exists(summary.InputPath))
+        {
+            try { bytes = File.ReadAllBytes(summary.InputPath); }
+            catch { /* ignore */ }
+        }
+
+        var sidecar = CrashSidecarWriter.TryRead(summary.SidecarPath);
+        var debugger = ScreamInvestigator.TryRead(ScreamInvestigator.ObservationPathFor(crashesDir, crashId));
+        var root = RootCauseEngine.TryRead(RootCauseEngine.PathFor(crashesDir, crashId));
+        var influence = InfluenceEngine.TryRead(InfluenceEngine.PathFor(crashesDir, crashId));
+        var primitives = PrimitiveEngine.TryReadForCrash(crashesDir, crashId);
+        var plan = ResearchPlannerEngine.TryReadForCrash(crashesDir, crashId);
+        var skeptic = SkepticEngine.TryReadForCrash(crashesDir, crashId);
+        var hyp = HypothesisEngine.TryReadForCrash(crashesDir, crashId);
+        var cf = CounterfactualEngine.TryReadForCrash(crashesDir, crashId);
+        var corruption = CorruptionChainBuilder.TryRead(CorruptionChainBuilder.PathFor(crashesDir, crashId));
+        var patch = PatchHypothesisEngine.TryRead(PatchHypothesisEngine.PathFor(crashesDir, crashId));
+        var advisor = ExploitabilityAdvisor.TryReadForCrash(crashesDir, crashId);
+        var analysis = CrashAnalysisWriter.TryRead(CrashAnalysisWriter.AnalysisPathFor(crashesDir, crashId));
+        var triage = CrashTriage.Classify(analysis, sidecar, summary, bytes, debugger: debugger);
+
+        return ResearchPackageReportBuilder.PersistForCrash(
+            crashesDir, crashId, summary.Project, advisor, plan, patch,
+            sidecar: sidecar, triage: triage, debugger: debugger, rootCause: root,
+            influence: influence, primitives: primitives, hypotheses: hyp, skeptic: skeptic,
+            counterfactual: cf, corruption: corruption, payload: bytes,
+            inputPath: summary.InputPath, inputHash: summary.InputHash);
+    }
+
     /// <summary>
     /// Per-crash counterfactual report — returns persisted live/plan result when present.
     /// When <paramref name="live"/> is true and a project YAML can be resolved, runs the
