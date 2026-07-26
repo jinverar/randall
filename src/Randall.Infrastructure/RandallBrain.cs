@@ -34,7 +34,8 @@ public sealed class RandallBrain
         GhidraAnalysisOracleHints.HintPack? StaticHints,
         RandallAnalysisDocument? Analysis,
         IReadOnlyList<OracleFindingDto> OracleFindings,
-        IReadOnlyList<ScreamClusterSignal> ScreamClusters);
+        IReadOnlyList<ScreamClusterSignal> ScreamClusters,
+        TargetGravityReportDto? Gravity = null);
 
     public sealed record ScreamClusterSignal(
         string ClusterKey,
@@ -80,18 +81,21 @@ public sealed class RandallBrain
         repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
 
         var frontier = FrontierEngine.TryLoad(project, repoRoot);
+        var gravity = TargetGravityEngine.TryLoad(project, repoRoot)
+                      ?? TargetGravityEngine.Score(project, repoRoot, limit: 20, persist: true);
         var analysis = GhidraAnalysisBridge.TryLoad(project, repoRoot);
         var hints = GhidraAnalysisOracleHints.TryBuild(project, repoRoot);
         var oracleFindings = LoadRecentOracleFindings(project, repoRoot, 8);
         var screams = LoadScreamSignals(project, repoRoot);
 
         var hasData = (frontier?.FrontierCount ?? 0) > 0
+                      || (gravity?.WellCount ?? 0) > 0
                       || hints is not null
                       || oracleFindings.Count > 0
                       || screams.Any(s => !s.Saturated && s.ScreamScore >= 40);
 
-        var summaryLine = BuildSignalsSummary(frontier, hints, oracleFindings.Count, screams, hasData);
-        return new Signals(hasData, summaryLine, frontier, hints, analysis, oracleFindings, screams);
+        var summaryLine = BuildSignalsSummary(frontier, gravity, hints, oracleFindings.Count, screams, hasData);
+        return new Signals(hasData, summaryLine, frontier, hints, analysis, oracleFindings, screams, gravity);
     }
 
     public NextHuntDecision Decide(
@@ -487,13 +491,27 @@ public sealed class RandallBrain
             var frontierBoost = FrontierRichnessBoost(signals);
             foreach (var f in frontiers.Take(4))
             {
-                var score = f.Score + frontierBoost;
+                var score = f.Score + frontierBoost + GravityBoostForAddress(signals.Gravity, f.ToAddress);
                 list.Add(new HuntCandidate(
                     "frontier",
                     LabelFrontier(f),
                     score,
                     f.Detail,
-                    BuildFrontierTerms(f, frontierBoost)));
+                    BuildFrontierTerms(f, frontierBoost, signals.Gravity)));
+            }
+        }
+
+        if (signals.Gravity?.Wells is { Count: > 0 } wells)
+        {
+            foreach (var w in wells.Where(w => w.GravityScore >= 35).Take(2))
+            {
+                var label = w.SinkSymbol ?? w.FunctionName ?? w.Address ?? w.Kind;
+                list.Add(new HuntCandidate(
+                    "gravity",
+                    label,
+                    w.GravityScore,
+                    w.Detail,
+                    BuildGravityTerms(w)));
             }
         }
 
@@ -674,6 +692,7 @@ public sealed class RandallBrain
 
     private static string BuildSignalsSummary(
         FrontierReportDto? frontier,
+        TargetGravityReportDto? gravity,
         GhidraAnalysisOracleHints.HintPack? hints,
         int oracleCount,
         IReadOnlyList<ScreamClusterSignal> screams,
@@ -685,6 +704,8 @@ public sealed class RandallBrain
         var parts = new List<string>();
         if (frontier?.FrontierCount > 0)
             parts.Add($"{frontier.FrontierCount} Scare Door(s)");
+        if (gravity?.WellCount > 0)
+            parts.Add($"gravity {gravity.AggregatePressure}/100");
         if (hints is not null)
             parts.Add("static map");
         if (oracleCount > 0)
@@ -877,12 +898,32 @@ public sealed class RandallBrain
         return 5;
     }
 
-    private static IReadOnlyList<OracleScoreTerm> BuildFrontierTerms(FrontierBranchDto f, int richnessBoost = 0)
+    private static int GravityBoostForAddress(TargetGravityReportDto? gravity, string? address)
+    {
+        if (gravity is null || string.IsNullOrWhiteSpace(address))
+            return 0;
+        return Math.Min(12, TargetGravityEngine.LookupGravityForAddress(gravity, address) / 8);
+    }
+
+    private static IReadOnlyList<OracleScoreTerm> BuildGravityTerms(TargetGravityWellDto w) =>
+    [
+        new("gravity pressure", w.GravityScore, w.Kind),
+        new("sink risk", Math.Min(12, (int)Math.Round(w.Risk / 8)), w.SinkSymbol ?? w.Kind),
+        new("reach distance", Math.Max(1, 10 - w.Distance), $"{w.Distance} hop(s)"),
+    ];
+
+    private static IReadOnlyList<OracleScoreTerm> BuildFrontierTerms(
+        FrontierBranchDto f,
+        int richnessBoost = 0,
+        TargetGravityReportDto? gravity = null)
     {
         var terms = new List<OracleScoreTerm> { new("frontier rank", f.Score, f.Kind) };
         if (richnessBoost > 0)
             terms.Add(new OracleScoreTerm("frontier richness", richnessBoost,
                 $"{f.Score + richnessBoost} boosted"));
+        var gBoost = GravityBoostForAddress(gravity, f.ToAddress);
+        if (gBoost > 0)
+            terms.Add(new OracleScoreTerm("target gravity", gBoost, "sink pull"));
         if (f.UnseenSuccessorCount > 0)
             terms.Add(new OracleScoreTerm("unseen successors", Math.Min(12, f.UnseenSuccessorCount * 3),
                 $"{f.UnseenSuccessorCount}"));

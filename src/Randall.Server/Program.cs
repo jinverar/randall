@@ -672,6 +672,24 @@ app.MapGet("/api/stalking/{project}/frontier", (string project, int? limit, Fuzz
     }
 });
 
+app.MapGet("/api/stalking/{project}/gravity", (string project, int? limit, string? binary, FuzzSessionManager sessions) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        var cached = TargetGravityEngine.TryLoad(project);
+        if (cached is not null && cached.Wells.Count > 0)
+            return Results.Ok(cached);
+        return Results.Ok(TargetGravityEngine.Score(
+            project, limit: limit ?? 40, liveStatus: sessions.Status, binaryPath: binary));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/stalking/{project}/map", (string project, int? limit, string? binary, FuzzSessionManager sessions) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

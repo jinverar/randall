@@ -41,4 +41,7 @@ public sealed record StalkMapHotspotDto(
     IReadOnlyList<string> NearbyImports,
     /// <summary>string-adjacent | import-adjacent | code | data | unknown</summary>
     string SurfaceKind,
-    int BoostedScore);
+    int BoostedScore,
+    /// <summary>Reachability pressure toward nearby sinks (0 when gravity not scored).</summary>
+    int GravityScore = 0,
+    string? GravityKind = null);

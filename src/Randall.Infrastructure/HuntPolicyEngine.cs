@@ -182,11 +182,17 @@ public static class HuntPolicyEngine
             case "frontier":
                 terms.Add(new OracleScoreTerm("frontier distance", Math.Min(18, candidate.Score / 4), candidate.Detail));
                 value += Math.Min(12, candidate.Score / 6);
+                ApplyOptionalGravityBoost(candidate, ctx, terms, ref value);
+                break;
+            case "gravity":
+                terms.Add(new OracleScoreTerm("reachability pressure", Math.Min(20, candidate.Score / 4), candidate.Detail));
+                value += Math.Min(14, candidate.Score / 5);
                 break;
             case "static":
             case "patch":
                 terms.Add(new OracleScoreTerm("static target", Math.Min(16, candidate.Score / 5), candidate.Kind));
                 value += Math.Min(10, candidate.Score / 7);
+                ApplyOptionalGravityBoost(candidate, ctx, terms, ref value);
                 break;
             case "oracle":
                 terms.Add(new OracleScoreTerm("oracle interestingness", Math.Min(20, candidate.Score / 4), candidate.Label));
@@ -231,6 +237,21 @@ public static class HuntPolicyEngine
 
         value = Math.Max(1, value);
         return new ScoredCandidate(candidate, value, terms);
+    }
+
+    private static void ApplyOptionalGravityBoost(
+        RandallBrain.HuntCandidate candidate,
+        Context ctx,
+        List<OracleScoreTerm> terms,
+        ref int value)
+    {
+        var pressure = TargetGravityEngine.TryGetTopPressure(ctx.Project, ctx.RepoRoot);
+        if (pressure is not { Score: >= 45 })
+            return;
+
+        var boost = Math.Min(10, pressure.Value.Score / 10);
+        terms.Add(new OracleScoreTerm("target gravity", boost, pressure.Value.Label));
+        value += boost;
     }
 
     private static void ApplyScreamScoring(
@@ -325,6 +346,9 @@ public static class HuntPolicyEngine
         if (top.Candidate.Kind is "frontier" or "patch" && huntValue >= 35)
             return HuntExecutionMode.HavocExplore;
 
+        if (top.Candidate.Kind == "gravity" && huntValue >= 32)
+            return HuntExecutionMode.HavocExplore;
+
         var stagnant = ctx.Signals.ScreamClusters.Count(s => s.Saturated || s.IsStagnantNullDeref);
         var lowYield = huntValue < 28 && ctx.CoverageFraction >= 0.5;
         if (lowYield || stagnant >= 2)
@@ -355,6 +379,7 @@ public static class HuntPolicyEngine
             "static" => PickFirst(ctx.Mutators, "dictionary", "havoc", "interesting"),
             "patch" => PickFirst(ctx.Mutators, "havoc", "bitflip", "interesting"),
             "frontier" => PickFirst(ctx.Mutators, "havoc", "splice", "bitflip"),
+            "gravity" => PickFirst(ctx.Mutators, "havoc", "interesting", "dictionary", "splice"),
             "oracle" => PickFirst(ctx.Mutators, "interesting", "boundary", "havoc"),
             "scream" => PickFirst(ctx.Mutators, "cyclic", "pattern", "havoc", "expand"),
             _ => ctx.MutatorRows.FirstOrDefault()?.Name,
