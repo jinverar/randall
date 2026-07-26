@@ -196,6 +196,76 @@ public static class CrashCatalog
             .ToList();
     }
 
+    /// <summary>Project bug genealogy (N probable vulns / M failures) — builds if missing.</summary>
+    public static BugGenealogyReportDto? GetBugGenealogy(string project, string? repoRoot = null, bool rebuild = false)
+    {
+        if (string.IsNullOrWhiteSpace(project)) return null;
+        repoRoot ??= FindRepoRoot();
+        if (repoRoot is null) return null;
+        if (!rebuild)
+        {
+            var existing = BugGenealogyEngine.TryLoad(project, repoRoot);
+            if (existing is not null) return existing;
+        }
+
+        return BugGenealogyEngine.PersistForProject(project, repoRoot);
+    }
+
+    /// <summary>Per-crash counterfactual report — builds a pending plan if missing.</summary>
+    public static CounterfactualReportDto? GetCounterfactual(Guid crashId, string? repoRoot = null, bool rebuild = false)
+    {
+        repoRoot ??= FindRepoRoot();
+        if (repoRoot is null) return null;
+        var summary = ListAll(repoRoot).FirstOrDefault(c => c.Id == crashId);
+        if (summary is null) return null;
+        var crashesDir = Path.Combine(repoRoot, "data", "crashes", summary.Project);
+        if (!rebuild)
+        {
+            var existing = CounterfactualEngine.TryReadForCrash(crashesDir, crashId);
+            if (existing is not null) return existing;
+        }
+
+        byte[]? bytes = null;
+        if (File.Exists(summary.InputPath))
+        {
+            try { bytes = File.ReadAllBytes(summary.InputPath); }
+            catch { /* ignore */ }
+        }
+
+        var root = RootCauseEngine.TryRead(RootCauseEngine.PathFor(crashesDir, crashId));
+        var influence = InfluenceEngine.TryRead(InfluenceEngine.PathFor(crashesDir, crashId));
+        var corruption = CorruptionChainBuilder.TryRead(CorruptionChainBuilder.PathFor(crashesDir, crashId));
+        return CounterfactualEngine.PersistForCrash(
+            crashesDir, crashId, summary.Project, bytes,
+            stillCrashes: null,
+            influence: influence,
+            rootCause: root,
+            corruption: corruption);
+    }
+
+    /// <summary>Per-crash vulnerability twins — rebuilds from root cause + optional Ghidra map.</summary>
+    public static VulnerabilityTwinReportDto? GetVulnerabilityTwins(Guid crashId, string? repoRoot = null, bool rebuild = false)
+    {
+        repoRoot ??= FindRepoRoot();
+        if (repoRoot is null) return null;
+        var summary = ListAll(repoRoot).FirstOrDefault(c => c.Id == crashId);
+        if (summary is null) return null;
+        var crashesDir = Path.Combine(repoRoot, "data", "crashes", summary.Project);
+        if (!rebuild)
+        {
+            var existing = VulnerabilityTwinEngine.TryReadForCrash(crashesDir, crashId);
+            if (existing is not null) return existing;
+        }
+
+        var root = RootCauseEngine.TryRead(RootCauseEngine.PathFor(crashesDir, crashId));
+        var debugger = ScreamInvestigator.TryRead(ScreamInvestigator.ObservationPathFor(crashesDir, crashId));
+        var sidecar = CrashSidecarWriter.TryRead(summary.SidecarPath);
+        var analysis = CrashAnalysisWriter.TryRead(CrashAnalysisWriter.AnalysisPathFor(crashesDir, crashId));
+        var triage = CrashTriage.Classify(analysis, sidecar, summary, null, debugger: debugger);
+        return VulnerabilityTwinEngine.PersistForCrash(
+            crashesDir, crashId, summary.Project, root, triage, debugger, repoRoot, queueHuntHints: true);
+    }
+
     /// <summary>First non-empty dump path on the crash record (summary, analysis, sidecar).</summary>
     public static string? ResolveDumpPath(CrashDetailDto detail)
     {

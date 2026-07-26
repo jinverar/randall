@@ -755,6 +755,69 @@ app.MapGet("/api/stalking/{project}/hypotheses", (string project) =>
     }
 });
 
+app.MapGet("/api/stalking/{project}/genealogy", (string project, bool? rebuild) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        var report = CrashCatalog.GetBugGenealogy(project, rebuild: rebuild == true);
+        return report is null ? Results.NotFound(new { error = "genealogy unavailable" }) : Results.Ok(report);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/stalking/{project}/twin-hints", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        var queue = VulnerabilityTwinEngine.TryLoadHuntHints(project)
+                    ?? new TwinHuntQueueDto(project, [], DateTimeOffset.UtcNow);
+        return Results.Ok(queue);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/crashes/{id:guid}/counterfactual", (Guid id, bool? rebuild) =>
+{
+    try
+    {
+        var report = CrashCatalog.GetCounterfactual(id, rebuild: rebuild == true);
+        if (report is null) return Results.NotFound();
+        if (!WebTargetFilter.IsVisibleProject(report.Project))
+            return Results.NotFound();
+        return Results.Ok(report);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/crashes/{id:guid}/twins", (Guid id, bool? rebuild) =>
+{
+    try
+    {
+        var report = CrashCatalog.GetVulnerabilityTwins(id, rebuild: rebuild == true);
+        if (report is null) return Results.NotFound();
+        if (!WebTargetFilter.IsVisibleProject(report.Project))
+            return Results.NotFound();
+        return Results.Ok(report);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/stalking/{project}/brain-decision", (string project) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

@@ -2718,6 +2718,32 @@ public sealed class FuzzEngine
             var temporal = TemporalBugEngine.PersistForCrash(
                 crashesDir, crashId, project, backwardTrace, corruption, rootCause, deepScream);
 
+            var counterfactual = CounterfactualEngine.PersistForCrash(
+                crashesDir, crashId, project, TryLoadCrashBytes(crashesDir, crashId),
+                stillCrashes: null,
+                suspectedOffset: corruption?.PatternDepthBytes,
+                influence: influence,
+                rootCause: rootCause,
+                corruption: corruption);
+
+            var twins = VulnerabilityTwinEngine.PersistForCrash(
+                crashesDir, crashId, project, rootCause, triage, debugger, queueHuntHints: true);
+
+            try
+            {
+                var genealogy = BugGenealogyEngine.PersistForProject(project);
+                if (genealogy is { Ok: true })
+                {
+                    FuzzAnalystLog.Info(progress,
+                        $"[genealogy] {genealogy.ProbableVulnCount} probable vuln(s) / {genealogy.FailureCount} failure(s)",
+                        iterations);
+                }
+            }
+            catch (Exception ex)
+            {
+                FuzzAnalystLog.Warn(progress, $"genealogy: {ex.Message}", iterations);
+            }
+
             if (primitives is { Ok: true })
             {
                 FuzzAnalystLog.Info(progress,
@@ -2754,6 +2780,18 @@ public sealed class FuzzEngine
                     $"[temporal] {temporal.Timeline.Count} phase(s) [{temporal.Confidence}] — {Truncate(temporal.Summary, 100)}",
                     iterations);
             }
+            if (counterfactual is { Ok: true })
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[counterfactual] {counterfactual.Probes.Count} probe(s) @ offset {counterfactual.SuspectedOffset?.ToString() ?? "?"} — {Truncate(counterfactual.Summary, 100)}",
+                    iterations);
+            }
+            if (twins is { Ok: true })
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[vuln-twins] {twins.Twins.Count} twin(s) seed={twins.SeedFunction ?? "?"} ghidra={(twins.StaticMapPresent ? "yes" : "stub")}",
+                    iterations);
+            }
 
             var researchPkg = ResearchPackageReportBuilder.PersistForCrash(
                 crashesDir, crashId, project, advisor, plan, patchHyp);
@@ -2772,6 +2810,23 @@ public sealed class FuzzEngine
 
     private static string Truncate(string? text, int max) =>
         string.IsNullOrEmpty(text) ? "" : text.Length <= max ? text : text[..max] + "…";
+
+    private static byte[]? TryLoadCrashBytes(string crashesDir, Guid crashId)
+    {
+        try
+        {
+            var store = new CrashStore(crashesDir);
+            var hit = store.List().FirstOrDefault(c => c.Id == crashId);
+            if (hit is not null && File.Exists(hit.InputPath))
+                return File.ReadAllBytes(hit.InputPath);
+        }
+        catch
+        {
+            /* ignore */
+        }
+
+        return null;
+    }
 
     private async Task TryPersistDeepScream(
         ProjectConfig project, string yamlPath, string crashesDir, SavedCrash saved,

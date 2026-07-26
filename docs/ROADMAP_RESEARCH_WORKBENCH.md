@@ -30,6 +30,9 @@ Living inventory was historically tracked under [ROADMAP_INTELLIGENCE.md](ROADMA
 | **Security-Invariant Language stub** | `SecurityInvariantCompiler` ASSERT→Oracle | ✅ table-driven stub |
 | **Research package / Wave7 report stub** | `{guid}_research_package.json` | ✅ checklist rollup |
 | README reposition | vulnerability research + fuzzing workbench | ✅ one paragraph |
+| **Bug Genealogy** | `bug_genealogy.json` · N probable vulns / M failures | ✅ v1 |
+| **Counterfactual Fuzzing** | `{guid}_counterfactual.json` · sweep/boundary safe vs corrupt | ✅ v1 |
+| **Vulnerability Twins** | `{guid}_vuln_twins.json` · `twin_hunt_hints.json` | ✅ v1 (Ghidra or stub) |
 
 ---
 
@@ -43,6 +46,8 @@ Living inventory was historically tracked under [ROADMAP_INTELLIGENCE.md](ROADMA
 | Cross-campaign Knowledge Graph | Beyond Scream Evolution family index |
 | Family Breeding beyond Scream Evolution | Partial via evolution; full breeding deferred |
 | Patch→Variant Hunter full | Patch-analysis v1 + hypothesis only |
+| Counterfactual live re-exec in fuzz loop | v1 persists probe plans; live `stillCrashes` evaluate is API/test-ready |
+| Twins Investigation UI chips | Engine + API/CLI shipped; richer UI later |
 
 ---
 
@@ -65,4 +70,5 @@ Chip short names: **R0 Crash → R1 Triaged → R2 Root cause → R3 Attributed 
 
 - Interrupted Fable branches (`cursor/wave2-primitive-engine`, `cursor/wave3-research-planner-skeptic`) held uncommitted WIP only; salvage landed via Grok on `main`.
 - Junk `scripts/_*.py` / tmp probes were **not** committed (remain in stash if needed).
+- **Grok overnight killers landed (v1):** Bug Genealogy · Counterfactual Fuzzing · Vulnerability Twins — research/teaching only, no exploit payloads. API: `/api/stalking/{p}/genealogy`, `/api/crashes/{id}/counterfactual`, `/api/crashes/{id}/twins`, `/api/stalking/{p}/twin-hints`. CLI: `stalk genealogy|counterfactual|twins`.
 - R0–R7 UI scale shipped after engine + intelligence DTO fields were already on `main`.

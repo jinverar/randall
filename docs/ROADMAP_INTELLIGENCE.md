@@ -420,6 +420,7 @@ Research-only layers for EXP-301 / SEC760-style benches — **no weaponized expl
 | **ExploitabilityAdvisor** | `{guid}_exploitability_advisor.json` | ✅ teaching packages only |
 | **Instructor levels 0–6** | `InstructorAssistance` · prefs/UI | ✅ extends Wave 5 boolean |
 | **Patch / Temporal / Barriers / SIL / Package** | see [ROADMAP_RESEARCH_WORKBENCH.md](ROADMAP_RESEARCH_WORKBENCH.md) | ✅ overnight stubs |
+| **Bug Genealogy / Counterfactual / Twins** | `bug_genealogy.json` · `_counterfactual.json` · `_vuln_twins.json` | ✅ v1 killers |
 | **Learning vs Research modes** | UI + `academy` YAML | ✅ Wave 5 stub — blurbs vs dense evidence |
 | **Instructor mode** | UI + `academy.instructorMode` / level | ✅ Wave 5+ levels 0–6 |
 | **Silent screams** | Oracle violation canisters | ✅ Wave 5 — `SilentScreamBuilder` + intelligence pipeline |

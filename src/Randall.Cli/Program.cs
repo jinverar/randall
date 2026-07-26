@@ -2438,6 +2438,12 @@ static int RunStalk(string[] args)
                                             Reachability pressure → target_gravity.json
               randall stalk intel -p <project> [--json] [--refresh]
                                             Build/read target_intelligence.json rollup
+              randall stalk genealogy -p <project> [--json] [--rebuild]
+                                            Bug genealogy: N probable vulns / M failures
+              randall stalk counterfactual -i <crash-guid> [--json] [--rebuild]
+                                            Counterfactual probes (safe vs corrupt boundary plan)
+              randall stalk twins -i <crash-guid> | -p <project> [--json] [--rebuild]
+                                            Vulnerability twins + twin hunt hints
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
               randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
             """);
@@ -2461,11 +2467,210 @@ static int RunStalk(string[] args)
         "frontier" or "frontiers" or "doors" => StalkFrontier(rest),
         "gravity" or "target-gravity" or "pressure" => StalkGravity(rest),
         "intel" or "intelligence" or "profile" => StalkIntel(rest),
+        "genealogy" or "bug-genealogy" or "lineages" => StalkGenealogy(rest),
+        "counterfactual" or "cf" or "boundary" => StalkCounterfactual(rest),
+        "twins" or "vuln-twins" or "siblings" => StalkTwins(rest),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
         "bench" => StalkBench(rest),
         _ => Unknown($"stalk {args[0]}"),
     };
+}
+
+static int StalkGenealogy(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    var json = false;
+    var rebuild = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--json") json = true;
+        else if (args[i] is "--rebuild" or "--refresh") rebuild = true;
+    }
+
+    try
+    {
+        var report = CrashCatalog.GetBugGenealogy(project, rebuild: rebuild);
+        if (report is null)
+        {
+            Console.Error.WriteLine("genealogy: unavailable (no repo root?)");
+            return 1;
+        }
+
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+            }));
+            return 0;
+        }
+
+        Console.WriteLine($"Bug genealogy: {report.Project}");
+        Console.WriteLine($"  {report.Summary}");
+        Console.WriteLine($"  Confidence: {report.Confidence}");
+        foreach (var lineage in report.Lineages.Take(12))
+        {
+            Console.WriteLine($"  [{lineage.LineageId}] {lineage.Label} — {lineage.FailureCount} failure(s) [{lineage.Confidence}]");
+            Console.WriteLine($"         {lineage.EducationalNote}");
+        }
+
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"genealogy: {ex.Message}");
+        return 1;
+    }
+}
+
+static int StalkCounterfactual(string[] args)
+{
+    Guid? crashId = null;
+    var json = false;
+    var rebuild = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-i" or "--id" or "--crash" && i + 1 < args.Length && Guid.TryParse(args[++i], out var g))
+            crashId = g;
+        else if (args[i] is "--json") json = true;
+        else if (args[i] is "--rebuild" or "--refresh") rebuild = true;
+    }
+
+    if (crashId is null)
+    {
+        Console.Error.WriteLine("Usage: randall stalk counterfactual -i <crash-guid> [--json] [--rebuild]");
+        return 1;
+    }
+
+    try
+    {
+        var report = CrashCatalog.GetCounterfactual(crashId.Value, rebuild: rebuild);
+        if (report is null)
+        {
+            Console.Error.WriteLine("counterfactual: crash not found");
+            return 1;
+        }
+
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+            }));
+            return 0;
+        }
+
+        Console.WriteLine($"Counterfactual: {report.CrashId:N} ({report.Project})");
+        Console.WriteLine($"  Offset: {report.SuspectedOffset?.ToString() ?? "?"}");
+        Console.WriteLine($"  {report.Summary}");
+        Console.WriteLine($"  Probes: {report.Probes.Count}  safe={report.SafeAdjacentCount} corrupt={report.StillCorruptCount}");
+        if (report.SmallestSafeChange is { } safe)
+            Console.WriteLine($"  Smallest safe: {safe.Description} (Δ{safe.ByteDelta})");
+        foreach (var p in report.Probes.Take(8))
+            Console.WriteLine($"  - [{p.Outcome}] {p.Description}");
+
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"counterfactual: {ex.Message}");
+        return 1;
+    }
+}
+
+static int StalkTwins(string[] args)
+{
+    Guid? crashId = null;
+    string? project = null;
+    var json = false;
+    var rebuild = false;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "-i" or "--id" or "--crash" && i + 1 < args.Length && Guid.TryParse(args[++i], out var g))
+            crashId = g;
+        else if (args[i] is "-p" or "--project" && i + 1 < args.Length)
+            project = args[++i];
+        else if (args[i] is "--json") json = true;
+        else if (args[i] is "--rebuild" or "--refresh") rebuild = true;
+    }
+
+    try
+    {
+        if (crashId is Guid id)
+        {
+            var report = CrashCatalog.GetVulnerabilityTwins(id, rebuild: rebuild);
+            if (report is null)
+            {
+                Console.Error.WriteLine("twins: crash not found");
+                return 1;
+            }
+
+            if (json)
+            {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                    Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+                }));
+                return 0;
+            }
+
+            Console.WriteLine($"Vulnerability twins: {report.CrashId:N} ({report.Project})");
+            Console.WriteLine($"  Seed: {report.SeedFunction ?? "(unresolved)"}  Ghidra: {(report.StaticMapPresent ? "yes" : "stub")}");
+            Console.WriteLine($"  {report.Summary}");
+            foreach (var t in report.Twins.Take(10))
+                Console.WriteLine($"  - [{t.Relation}] {t.FunctionName} score={t.Score} — {t.Rationale}");
+            if (report.HuntHints.Count > 0)
+            {
+                Console.WriteLine("  Hunt hints:");
+                foreach (var h in report.HuntHints.Take(6))
+                    Console.WriteLine($"    [{h.Priority}] {h.FunctionName}: {TrimConsole(h.Hint, 90)}");
+            }
+
+            return 0;
+        }
+
+        project ??= RequireProject(args);
+        if (project is null)
+        {
+            Console.Error.WriteLine("Usage: randall stalk twins -i <crash-guid> | -p <project> [--json]");
+            return 1;
+        }
+
+        var queue = VulnerabilityTwinEngine.TryLoadHuntHints(project)
+                    ?? new TwinHuntQueueDto(project, [], DateTimeOffset.UtcNow);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(queue, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+            }));
+            return 0;
+        }
+
+        Console.WriteLine($"Twin hunt hints: {queue.Project} ({queue.Hints.Count})");
+        foreach (var h in queue.Hints.Take(16))
+            Console.WriteLine($"  [{h.Priority}] {h.FunctionName}: {TrimConsole(h.Hint, 90)}");
+        if (queue.Hints.Count == 0)
+            Console.WriteLine("  (empty — run twins -i <crash> after triage, or import Ghidra map)");
+
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"twins: {ex.Message}");
+        return 1;
+    }
 }
 
 static int StalkMap(string[] args)
