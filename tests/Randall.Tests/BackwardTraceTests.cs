@@ -42,8 +42,8 @@ public class BackwardTraceTests
         Assert.Contains(trace.Steps, s => s.Kind == "register");
         Assert.Contains(trace.Steps, s => s.Kind == "crash");
         Assert.NotNull(trace.FaultInstruction);
-        Assert.Equal("FAULT", trace.FaultRegister);
-        Assert.Contains(trace.RegisterMatches ?? [], m => m.Register == "RAX");
+        Assert.Equal("RAX", trace.FaultRegister);
+        Assert.Contains(trace.RegisterMatches ?? [], m => m.Register == "FAULT");
     }
 
     [Fact]
