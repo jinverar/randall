@@ -66,7 +66,9 @@ public sealed record HypothesisSetDto(
     string Project,
     IReadOnlyList<HypothesisDto> Hypotheses,
     DateTimeOffset At,
-    string? Error = null);
+    string? Error = null,
+    /// <summary>JSON schema version for persisted research artifacts (v1). Absent on legacy files → default 1.</summary>
+    int SchemaVersion = 1);
 
 /// <summary>Queued experiment awaiting fuzz-loop execution budget.</summary>
 public sealed record HypothesisQueueEntryDto(

@@ -44,4 +44,6 @@ public sealed record RootCauseAnalysisDto(
     string EducationalSummary,
     IReadOnlyList<RootCauseCandidate>? Alternatives = null,
     DateTimeOffset At = default,
-    string? Error = null);
+    string? Error = null,
+    /// <summary>JSON schema version for persisted research artifacts (v1). Absent on legacy files → default 1.</summary>
+    int SchemaVersion = 1);

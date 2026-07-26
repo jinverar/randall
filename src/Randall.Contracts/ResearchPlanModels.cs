@@ -75,4 +75,6 @@ public sealed record ResearchPlanDto(
     DateTimeOffset At,
     /// <summary>Plain-language teaching summary for the Investigation UI.</summary>
     string? Summary = null,
-    string? Error = null);
+    string? Error = null,
+    /// <summary>JSON schema version for persisted research artifacts (v1). Absent on legacy files → default 1.</summary>
+    int SchemaVersion = 1);

@@ -68,6 +68,14 @@ Chip short names: **R0 Crash → R1 Triaged → R2 Root cause → R3 Attributed 
 
 ---
 
+## Persistence / schemaVersion
+
+| Item | Status |
+|------|--------|
+| `schemaVersion: 1` on research crash sidecars | **PARTIAL** — Evidence / RootCause / Influence / Primitive / Hypotheses / ResearchPlan / Skeptic DTOs emit `schemaVersion` (default 1). Legacy files without the field deserialize to 1. Not yet universal across all stalk/campaign JSON. |
+| End-to-end research pipeline reload | TESTED — `ResearchPipelineEndToEndTests` (harness-demo known-bad → research stack → reload) |
+| Research artifact golden round-trip | TESTED — `ResearchArtifactPersistenceTests` |
+
 ## Nightly notes
 
 - Interrupted Fable branches (`cursor/wave2-primitive-engine`, `cursor/wave3-research-planner-skeptic`) held uncommitted WIP only; salvage landed via Grok on `main`.

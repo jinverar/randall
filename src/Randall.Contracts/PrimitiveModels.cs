@@ -114,4 +114,6 @@ public sealed record CrashPrimitiveReportDto(
     IReadOnlyList<PrimitiveAssessmentDto> Primitives,
     IReadOnlyList<EvidenceFact> Facts,
     DateTimeOffset At,
-    string? Error = null);
+    string? Error = null,
+    /// <summary>JSON schema version for persisted research artifacts (v1). Absent on legacy files → default 1.</summary>
+    int SchemaVersion = 1);

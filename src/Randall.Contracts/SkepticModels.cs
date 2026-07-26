@@ -55,4 +55,6 @@ public sealed record SkepticReportDto(
     IReadOnlyList<SkepticChallengeDto> Challenges,
     string Summary,
     DateTimeOffset At,
-    string? Error = null);
+    string? Error = null,
+    /// <summary>JSON schema version for persisted research artifacts (v1). Absent on legacy files → default 1.</summary>
+    int SchemaVersion = 1);
