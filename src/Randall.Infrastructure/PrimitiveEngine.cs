@@ -376,6 +376,34 @@ public static class PrimitiveEngine
         _ => "Discovered",
     };
 
+    /// <summary>Compact Investigation/Crashes chip text (R0 Crash … R7 Research package).</summary>
+    internal static string MaturityChipLabel(ResearchMaturity maturity) => maturity switch
+    {
+        ResearchMaturity.R0 => "Crash",
+        ResearchMaturity.R1 => "Triaged",
+        ResearchMaturity.R2 => "Root cause",
+        ResearchMaturity.R3 => "Attributed",
+        ResearchMaturity.R4 => "Primitive",
+        ResearchMaturity.R5 => "Observed",
+        ResearchMaturity.R6 => "Confirmed",
+        ResearchMaturity.R7 => "Research package",
+        _ => "Crash",
+    };
+
+    /// <summary>Learning-mode explanation of what each study-depth level means.</summary>
+    internal static string MaturityTeachingBlurb(ResearchMaturity maturity) => maturity switch
+    {
+        ResearchMaturity.R0 => "Crash discovered — reproduced or observed, but no analysis yet.",
+        ResearchMaturity.R1 => "Triaged — fault classified (signal, severity, or faulting site).",
+        ResearchMaturity.R2 => "Root-caused — a deterministic root-cause category is assigned.",
+        ResearchMaturity.R3 => "Input-attributed — an input region is linked to influenced program state.",
+        ResearchMaturity.R4 => "Primitive candidate — at least one capability primitive is inferred.",
+        ResearchMaturity.R5 => "Primitive observed — a capability is directly seen in evidence.",
+        ResearchMaturity.R6 => "Primitive confirmed — a capability is experimentally confirmed.",
+        ResearchMaturity.R7 => "Research package — multiple confirmed capabilities with high-confidence root cause.",
+        _ => "Crash discovered — reproduced or observed, but no analysis yet.",
+    };
+
     private static string KindLabel(PrimitiveKind kind) => kind switch
     {
         PrimitiveKind.InputInfluencedRead => "input-influenced read",

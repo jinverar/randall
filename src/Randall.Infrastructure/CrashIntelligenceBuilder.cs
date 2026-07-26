@@ -126,6 +126,7 @@ public static class CrashIntelligenceBuilder
             RootCauseConfidence: rootCause?.Candidate.Confidence,
             ResearchMaturity: primitives is { Ok: true } ? primitives.Maturity.ToString() : null,
             ResearchMaturityLabel: primitives is { Ok: true } ? primitives.MaturityLabel : null,
+            ResearchMaturityRationale: primitives is { Ok: true } ? primitives.MaturityRationale : null,
             PrimitiveSummary: primitives?.Summary,
             PrimitiveCount: primitives?.Primitives.Count ?? 0,
             AdvisorSummary: advisor is { Ok: true } ? advisor.Summary : null);
@@ -146,6 +147,8 @@ public static class CrashIntelligenceBuilder
             PrimaryFaultConfidence = intelligence.PrimaryFault?.Confidence,
             SemanticFingerprint = intelligence.SemanticFingerprint,
             DeepScreamCandidate = intelligence.DeepScreamCandidate,
+            ResearchMaturity = intelligence.ResearchMaturity,
+            ResearchMaturityLabel = intelligence.ResearchMaturityLabel,
         };
 
     private static string? BuildFrontierHint(string project, CrashTriageDto? triage, string? repoRoot)

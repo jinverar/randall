@@ -57,7 +57,11 @@ public sealed record CrashSummaryDto(
     /// <summary>Phase D — Deep Scream candidate (gates TTD operator path).</summary>
     bool DeepScreamCandidate = false,
     /// <summary>Wave 5 — bottled from high oracle violation without memory crash.</summary>
-    bool SilentScream = false);
+    bool SilentScream = false,
+    /// <summary>Wave 2 research-maturity level (R0…R7) when primitives were assessed.</summary>
+    string? ResearchMaturity = null,
+    /// <summary>Short maturity label for Crashes list chips, e.g. "Triaged".</summary>
+    string? ResearchMaturityLabel = null);
 
 public sealed record CdbTriageDto(
     bool Ok,

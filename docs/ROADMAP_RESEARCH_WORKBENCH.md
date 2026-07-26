@@ -17,7 +17,8 @@ Living inventory was historically tracked under [ROADMAP_INTELLIGENCE.md](ROADMA
 | Academy lab INDEX | [ACADEMY_LAB_INDEX.md](ACADEMY_LAB_INDEX.md) | ✅ stub |
 | Debugger corpus | `tests` + `data/crashes/debugger-corpus` | ✅ foundation |
 | Scream Evolution / Hunt / Hypothesis / Deep Scream | engines + sidecars | ✅ |
-| **PrimitiveEngine** | `{guid}_primitives.json` · maturity R0–R7 *computed* | ✅ Wave 2 (engine; **UI scale deferred**) |
+| **PrimitiveEngine** | `{guid}_primitives.json` · maturity R0–R7 *computed* | ✅ Wave 2 |
+| **R0–R7 research maturity UI scale** | Investigation chips + progress + Crashes list column | ✅ DONE |
 | **Research Planner + Skeptic** | `{guid}_research_plan.json` · `{guid}_skeptic.json` | ✅ Wave 3 foundations |
 | **ExploitabilityAdvisor** | `{guid}_exploitability_advisor.json` | ✅ teaching packages |
 | **Instructor levels 0–6** | `InstructorAssistance` · UI select · prefs | ✅ extends instructorMode |
@@ -36,7 +37,6 @@ Living inventory was historically tracked under [ROADMAP_INTELLIGENCE.md](ROADMA
 
 | Item | Why deferred |
 |------|----------------|
-| **R0–R7 research maturity UI scale** | Engine computes maturity today; Investigation scale/chips UI is **last** among near-term work |
 | Full Academy labs 01–12 content | Index stub only |
 | Professor grading | Not started |
 | Historical vuln clones | Not started |
@@ -52,8 +52,12 @@ Living inventory was historically tracked under [ROADMAP_INTELLIGENCE.md](ROADMA
 |-------|--------|
 | `ResearchMaturity` enum + `PrimitiveEngine.ComputeMaturity` | ✅ shipped (study-depth ladder, not exploit completion) |
 | Persistence on `{guid}_primitives.json` | ✅ |
-| CrashIntelligence fields (`ResearchMaturity`, label, primitive summary) | ✅ data fields |
-| Investigation UI maturity scale / chips | 🔲 **DEFERRED** |
+| CrashIntelligence fields (`ResearchMaturity`, label, rationale, primitive summary) | ✅ data fields |
+| Investigation UI maturity scale / chips (R0 Crash … R7 Research package) | ✅ **DONE** |
+| Crashes list maturity column | ✅ **DONE** |
+| Learning mode explains each level; Research shows denser rationale | ✅ **DONE** |
+
+Chip short names: **R0 Crash → R1 Triaged → R2 Root cause → R3 Attributed → R4 Primitive → R5 Observed → R6 Confirmed → R7 Research package**.
 
 ---
 
@@ -61,3 +65,4 @@ Living inventory was historically tracked under [ROADMAP_INTELLIGENCE.md](ROADMA
 
 - Interrupted Fable branches (`cursor/wave2-primitive-engine`, `cursor/wave3-research-planner-skeptic`) held uncommitted WIP only; salvage landed via Grok on `main`.
 - Junk `scripts/_*.py` / tmp probes were **not** committed (remain in stash if needed).
+- R0–R7 UI scale shipped after engine + intelligence DTO fields were already on `main`.

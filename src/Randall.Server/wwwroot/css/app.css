@@ -2867,6 +2867,120 @@ tr.mutate-row td { background: #2a2218; }
   background: color-mix(in srgb, var(--warn) 8%, var(--panel));
 }
 
+/* R0–R7 research maturity (study depth — not exploit completion) */
+.maturity-badge {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  color: var(--text);
+  white-space: nowrap;
+}
+.maturity-badge.maturity-r0,
+.maturity-badge.maturity-r1 { color: var(--muted); }
+.maturity-badge.maturity-r2,
+.maturity-badge.maturity-r3 { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.maturity-badge.maturity-r4,
+.maturity-badge.maturity-r5 { color: var(--stalk-green, #2d8a5a); border-color: color-mix(in srgb, var(--stalk-green, #2d8a5a) 40%, var(--border)); }
+.maturity-badge.maturity-r6,
+.maturity-badge.maturity-r7 {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+}
+
+.maturity-scale {
+  margin: 0.55rem 0 0.35rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--code-bg) 80%, var(--panel));
+}
+.maturity-scale.maturity-unassessed { opacity: 0.85; }
+.maturity-scale-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.78rem;
+}
+.maturity-current-label code {
+  font-weight: 700;
+  margin-right: 0.2rem;
+}
+.maturity-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 70%, var(--panel));
+  overflow: hidden;
+  margin-bottom: 0.45rem;
+}
+.maturity-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--muted) 60%, var(--accent)),
+    var(--accent));
+  transition: width 0.25s ease;
+}
+.maturity-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+.maturity-chip {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  padding: 0.12rem 0.35rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  line-height: 1.3;
+}
+.maturity-chip b { font-weight: 700; margin-right: 0.15rem; }
+.maturity-chip.maturity-done {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+.maturity-chip.maturity-current {
+  color: var(--text);
+  font-weight: 600;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.maturity-chip.maturity-todo,
+.maturity-chip.maturity-idle { opacity: 0.65; }
+.maturity-rationale { margin: 0.4rem 0 0; font-size: 0.78rem; }
+.maturity-level-blurb { margin-top: 0.35rem; }
+.maturity-legend {
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+}
+.maturity-legend summary {
+  cursor: pointer;
+  user-select: none;
+}
+.maturity-legend-list {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-muted, var(--muted));
+  line-height: 1.4;
+}
+.maturity-legend-list li.current {
+  color: var(--text);
+  font-weight: 600;
+}
+.crash-maturity { white-space: nowrap; }
+.crash-event-table .maturity-badge { font-size: 0.62rem; }
+
 .crash-sev-pill {
   text-transform: uppercase;
   font-size: 0.66rem;

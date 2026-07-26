@@ -98,7 +98,10 @@ public class CrashIntelligenceBuilderTests
         var intel = new CrashIntelligenceDto(
             "low", 90, "k", 1, 2, "fn+0x10", 4, OracleScore.Empty,
             true, true, DateTimeOffset.UtcNow, 1, null, 55,
-            new FaultSignal(FaultSignalKind.AccessViolation, 0.9, "high", FaultSignalSource.CrashTriage, "AV @ dead"));
+            new FaultSignal(FaultSignalKind.AccessViolation, 0.9, "high", FaultSignalSource.CrashTriage, "AV @ dead"),
+            ResearchMaturity: "R3",
+            ResearchMaturityLabel: "Input-attributed",
+            ResearchMaturityRationale: "input region attributed to influenced program state");
 
         var enriched = CrashIntelligenceBuilder.WithListIntelligence(summary, intel);
 
@@ -108,5 +111,7 @@ public class CrashIntelligenceBuilderTests
         Assert.Equal(1, enriched.SeenCount);
         Assert.Equal("AccessViolation", enriched.PrimaryFaultKind);
         Assert.NotNull(enriched.PrimaryFaultSummary);
+        Assert.Equal("R3", enriched.ResearchMaturity);
+        Assert.Equal("Input-attributed", enriched.ResearchMaturityLabel);
     }
 }

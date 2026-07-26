@@ -166,6 +166,8 @@ public sealed record CrashIntelligenceDto(
     string? ResearchMaturity = null,
     /// <summary>Short label for the maturity level, e.g. "Primitive observed".</summary>
     string? ResearchMaturityLabel = null,
+    /// <summary>Deterministic rationale for the maturity level (dense Research-mode evidence).</summary>
+    string? ResearchMaturityRationale = null,
     /// <summary>One-line primitive capability rollup for Investigation / list chips.</summary>
     string? PrimitiveSummary = null,
     /// <summary>Count of assessed capability primitives (research-only).</summary>

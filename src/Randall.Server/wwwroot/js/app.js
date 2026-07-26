@@ -2856,7 +2856,78 @@ const ACADEMY_BLURBS = {
   evidence: 'Evidence facts are normalized sensor atoms — debugger, oracle, corruption chain, and lineage all speak the same vocabulary. Downstream engines read this list only.',
   influence: 'The influence map links bytes you mutated to program state that went wrong. Confirmed links need replay; inferred links suggest the next experiment.',
   rootCause: 'Root cause explains why the program misbehaved — not just where it stopped. We correlate debugger facts, mutation lineage, and oracle signals deterministically.',
+  maturity: 'Research maturity (R0–R7) is study depth — how well this crash is understood as a research artifact — not exploit completion or weaponization.',
 };
+
+/** R0 Crash … R7 Research package — study-depth ladder (matches PrimitiveEngine chip labels). */
+const RESEARCH_MATURITY_LEVELS = [
+  { id: 'R0', chip: 'Crash', label: 'Discovered', blurb: 'Crash discovered — reproduced or observed, but no analysis yet.' },
+  { id: 'R1', chip: 'Triaged', label: 'Triaged', blurb: 'Triaged — fault classified (signal, severity, or faulting site).' },
+  { id: 'R2', chip: 'Root cause', label: 'Root-caused', blurb: 'Root-caused — a deterministic root-cause category is assigned.' },
+  { id: 'R3', chip: 'Attributed', label: 'Input-attributed', blurb: 'Input-attributed — an input region is linked to influenced program state.' },
+  { id: 'R4', chip: 'Primitive', label: 'Primitive candidate', blurb: 'Primitive candidate — at least one capability primitive is inferred.' },
+  { id: 'R5', chip: 'Observed', label: 'Primitive observed', blurb: 'Primitive observed — a capability is directly seen in evidence.' },
+  { id: 'R6', chip: 'Confirmed', label: 'Primitive confirmed', blurb: 'Primitive confirmed — a capability is experimentally confirmed.' },
+  { id: 'R7', chip: 'Research package', label: 'Research-mature', blurb: 'Research package — multiple confirmed capabilities with high-confidence root cause.' },
+];
+
+function parseResearchMaturityLevel(raw) {
+  if (raw == null || raw === '') return null;
+  const m = String(raw).trim().toUpperCase().match(/^R([0-7])$/);
+  if (!m) return null;
+  return Number(m[1]);
+}
+
+function researchMaturityBadgeHtml(raw, label) {
+  const idx = parseResearchMaturityLevel(raw);
+  if (idx == null) return '';
+  const level = RESEARCH_MATURITY_LEVELS[idx];
+  const title = label || level.label;
+  return `<span class="maturity-badge maturity-r${idx}" title="Research maturity ${level.id}: ${escapeAttr(title)}">${escapeAttr(level.id)}</span>`;
+}
+
+function renderResearchMaturityScale(intel, { compact = false } = {}) {
+  const idx = parseResearchMaturityLevel(intel?.researchMaturity);
+  const assessed = idx != null;
+  const current = assessed ? idx : -1;
+  const level = assessed ? RESEARCH_MATURITY_LEVELS[current] : null;
+  const label = intel?.researchMaturityLabel || level?.label || '';
+  const pct = assessed ? Math.round((current / 7) * 100) : 0;
+  const learning = academyLearningMode();
+  const chips = RESEARCH_MATURITY_LEVELS.map((lv, i) => {
+    const state = !assessed ? 'idle' : i < current ? 'done' : i === current ? 'current' : 'todo';
+    const tip = learning ? lv.blurb : `${lv.id} · ${lv.label}`;
+    return `<span class="maturity-chip maturity-${state}" title="${escapeAttr(tip)}" data-level="${lv.id}">`
+      + `<b>${escapeAttr(lv.id)}</b> ${escapeAttr(compact ? lv.id.replace('R', '') : lv.chip)}`
+      + `</span>`;
+  }).join('');
+  const bar = `<div class="maturity-progress" role="progressbar" aria-valuemin="0" aria-valuemax="7" aria-valuenow="${assessed ? current : 0}" aria-label="Research maturity">`
+    + `<div class="maturity-progress-fill" style="width:${pct}%"></div></div>`;
+  if (compact) {
+    return `<div class="maturity-scale maturity-compact${assessed ? '' : ' maturity-unassessed'}">${chips}</div>`;
+  }
+  const head = assessed
+    ? `<span class="maturity-current-label"><code>${escapeAttr(level.id)}</code> ${escapeAttr(label)}</span>`
+    : `<span class="maturity-current-label hint">not assessed</span>`;
+  const learningBody = learning
+    ? `${academyEduBlurb('maturity')}${assessed ? `<p class="academy-edu-blurb maturity-level-blurb">${escapeAttr(level.blurb)}</p>` : ''}`
+      + `<details class="maturity-legend"><summary class="hint">What R0–R7 mean</summary>`
+      + `<ol class="maturity-legend-list">${RESEARCH_MATURITY_LEVELS.map((lv) =>
+        `<li${assessed && lv.id === level.id ? ' class="current"' : ''}><code>${escapeAttr(lv.id)}</code> <strong>${escapeAttr(lv.chip)}</strong> — ${escapeAttr(lv.blurb)}</li>`
+      ).join('')}</ol></details>`
+    : '';
+  const researchBody = !learning && assessed
+    ? `<p class="hint maturity-rationale">${escapeAttr(intel.researchMaturityRationale || intel.primitiveSummary || label)}`
+      + `${intel.primitiveCount ? ` · <strong>${intel.primitiveCount}</strong> capability(ies)` : ''}</p>`
+    : (!learning && !assessed ? '<p class="hint">No primitive report yet — maturity appears after triage / influence / root-cause engines run.</p>' : '');
+  return `<div class="maturity-scale${assessed ? '' : ' maturity-unassessed'}">`
+    + `<div class="maturity-scale-head"><span class="label">Research maturity</span> ${head}</div>`
+    + bar
+    + `<div class="maturity-chips">${chips}</div>`
+    + learningBody
+    + researchBody
+    + `</div>`;
+}
 
 function academyLearningMode() {
   return document.documentElement.getAttribute('data-presentation-mode') === 'learning';
@@ -3089,13 +3160,18 @@ function renderCrashDetail(detail, title) {
   const hideAdvisor = academyInstructorHide('Advisor');
   const evidenceLimit = academyResearchMode() ? 48 : 16;
   if (metaEl) {
+    const maturityBit = intel?.researchMaturity ? ` · ${intel.researchMaturity}` : '';
     const intelBits = intel
-      ? ` · novelty ${intel.novelty}${intel.oracleScore?.total != null ? ` · oracle ${intel.oracleScore.total}` : ''}`
+      ? ` · novelty ${intel.novelty}${intel.oracleScore?.total != null ? ` · oracle ${intel.oracleScore.total}` : ''}${maturityBit}`
       : '';
     metaEl.textContent = cluster
       ? `score ${intelScore}${intelBits}${evoWarm ? ` · ${evo?.momentumLabel || intel?.screamMomentumLabel || 'warming'} ${evo?.momentumScore ?? intel?.screamMomentum}` : ''} · ${clusterN}× in cluster`
       : `score ${intelScore}${intelBits}${evoWarm ? ` · ${evo?.momentumLabel || intel?.screamMomentumLabel || 'warming'}` : ''}`;
   }
+
+  const maturityScaleHtml = !hidePrimitives
+    ? renderResearchMaturityScale(intel || { researchMaturity: null })
+    : '';
 
   box.innerHTML = `
     <div class="crash-why${intelHot ? ' scream-hot' : ''}${deepScreamCandidate ? ' deep-scream' : ''}">
@@ -3104,9 +3180,11 @@ function renderCrashDetail(detail, title) {
         <h3>${escapeAttr(title)}</h3>
         ${deepScreamCandidate ? '<span class="deep-scream-badge" title="Deep Scream — TTD operator path eligible">⏪ Deep Scream</span>' : ''}
         ${silentScream ? '<span class="silent-scream-badge" title="Oracle violation — no memory crash">🔇 Silent scream</span>' : ''}
+        ${researchMaturityBadgeHtml(intel?.researchMaturity, intel?.researchMaturityLabel)}
         <span class="crash-score-badge" title="Scream intelligence score">★ ${intelScore}</span>
       </div>
       <p class="crash-why-line">${silentScream ? 'Why it screamed (oracle)' : 'Why it crashed'}</p>
+      ${maturityScaleHtml}
       ${primaryFault ? `<p class="crash-primary-fault severity-${(primaryFault.severity || sev).toLowerCase()}">
         <span class="label">Primary fault</span>
         <code>${escapeAttr(faultKindLabel(primaryFault.kind))}</code>
@@ -3205,8 +3283,9 @@ function renderCrashDetail(detail, title) {
         <p class="root-cause-edu">${escapeAttr(intel.rootCauseSummary)}</p>
       </div>` : '')}
       ${!hidePrimitives && (intel?.primitiveSummary || intel?.researchMaturity) ? `<div class="triage-box primitives-box">
-        <h4>Primitives <span class="hint-inline">research maturity</span>${intel.researchMaturity ? ` <span class="hint-inline">[${escapeAttr(intel.researchMaturity)}]</span>` : ''}</h4>
+        <h4>Primitives <span class="hint-inline">capabilities</span>${intel.researchMaturity ? ` ${researchMaturityBadgeHtml(intel.researchMaturity, intel.researchMaturityLabel)}` : ''}</h4>
         <p class="hint">${escapeAttr(intel.primitiveSummary || intel.researchMaturityLabel || '')}${intel.primitiveCount ? ` · ${intel.primitiveCount} capability(ies)` : ''}</p>
+        ${academyResearchMode() && intel.researchMaturityRationale ? `<p class="hint"><span class="label">Maturity</span> ${escapeAttr(intel.researchMaturityRationale)}</p>` : ''}
       </div>` : ''}
       ${!hidePlan && intel?.topHypothesisStatement ? `<div class="triage-box research-plan-box">
         <h4>Research plan / claims <span class="hint-inline">scaffolding</span></h4>
@@ -3269,6 +3348,7 @@ function renderCrashDetail(detail, title) {
           ${!hideOffset && intel.offset != null ? `<dt>Offset</dt><dd><code>${intel.offset}</code> bytes in input</dd>` : ''}
           ${intel.corruptionChainSummary ? `<dt>Corruption chain</dt><dd><span class="severity-${(intel.corruptionConfidence || 'low').toLowerCase()}">${escapeAttr(intel.corruptionConfidence || '')}</span> — ${escapeAttr(intel.corruptionChainSummary)}</dd>` : ''}
           ${!hideRoot && intel.rootCauseSummary ? `<dt>Root cause</dt><dd><code>${escapeAttr(formatRootCauseCategory(intel.rootCauseCategory))}</code> <span class="hint-inline">[${escapeAttr(intel.rootCauseConfidence || '')}]</span> — ${escapeAttr(intel.rootCauseSummary)}</dd>` : ''}
+          ${!hidePrimitives && intel.researchMaturity ? `<dt>Maturity</dt><dd>${researchMaturityBadgeHtml(intel.researchMaturity, intel.researchMaturityLabel)} <code>${escapeAttr(intel.researchMaturity)}</code> ${escapeAttr(intel.researchMaturityLabel || '')}${intel.researchMaturityRationale && academyResearchMode() ? ` — <span class="hint-inline">${escapeAttr(intel.researchMaturityRationale)}</span>` : ''}</dd>` : ''}
           ${intel.oracleScore?.total != null ? `<dt>Oracle</dt><dd><span class="scream-intel-oracle">${intel.oracleScore.total}</span>${intel.oracleScore.summary ? ` — ${escapeAttr(intel.oracleScore.summary)}` : ''}</dd>` : ''}
           ${(evo?.ok || intel?.screamMomentum > 0) ? `<dt>Evolution</dt><dd><span class="severity-${evoWarm ? 'high' : 'medium'}">${escapeAttr(evo?.momentumLabel || intel?.screamMomentumLabel || 'stable')}</span> momentum <strong>${evo?.momentumScore ?? intel?.screamMomentum ?? 0}</strong>${(evo?.generation ?? intel?.screamGeneration) > 0 ? ` · gen ${evo?.generation ?? intel?.screamGeneration}` : ''}${evo?.familySize > 1 ? ` · family×${evo.familySize}` : ''}</dd>` : ''}
           ${evo?.progressionStep ? `<dt>Progression</dt><dd><code>${escapeAttr(evo.progressionStep)}</code>${evo.progressionDelta > 0 ? ` <span class="hint-inline">↑${evo.progressionDelta} vs ancestor</span>` : ''}</dd>` : ''}
@@ -4038,7 +4118,7 @@ function renderCrashEventList(opts = {}) {
   const shown = list.slice(0, CRASH_LIST_CAP);
   const more = list.length - shown.length;
   el.innerHTML = `<table class="crash-event-table"><thead><tr>
-    <th>#</th><th>When</th><th>Sev</th><th>Class</th><th>×</th><th>Mutator</th><th>Fault</th><th>★</th>
+    <th>#</th><th>When</th><th>Sev</th><th>R</th><th>Class</th><th>×</th><th>Mutator</th><th>Fault</th><th>★</th>
   </tr></thead><tbody>${shown.map((c, i) => {
     const sel = c.id === crashState.selectedId ? 'selected' : '';
     const score = scoreCrash(c);
@@ -4047,10 +4127,14 @@ function renderCrashEventList(opts = {}) {
     const whenStr = when.toLocaleString(undefined, {
       month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit',
     });
+    const maturityCell = c.researchMaturity
+      ? researchMaturityBadgeHtml(c.researchMaturity, c.researchMaturityLabel)
+      : '<span class="hint-inline">—</span>';
     return `<tr class="clickable crash-event ${sel}" data-id="${c.id}" data-idx="${i}">
       <td class="crash-idx">${i + 1}</td>
       <td class="crash-when">${whenStr}</td>
       <td class="severity-${crashSev(c)}">${crashSev(c)}</td>
+      <td class="crash-maturity" title="${escapeAttr(c.researchMaturityLabel || c.researchMaturity || 'not assessed')}">${maturityCell}</td>
       <td><code>${escapeAttr(crashClassKey(c))}</code></td>
       <td class="crash-dup" title="cluster size">${n}</td>
       <td title="${escapeAttr(c.mutator)}"><code>${escapeAttr(shortMutator(c.mutator))}</code></td>
