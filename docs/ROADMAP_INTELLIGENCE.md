@@ -187,9 +187,10 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | Journal-backed mutator lineage in Investigation | ✅ | `CrashLineageResolver` · seed + parent hash in panel |
 | ScreamScore drives fuzz stop / campaign goals | 🔲 | Sorting only today; brain uses novelty for hunt bias ✅ |
 | **Scream evolution (Phase A)** | ✅ | `ScreamEvolutionBuilder` · family/momentum/generation · `_scream_evolution.json` · Magician `evolutionBless` · Brain warming bias |
-| **Hunt Policy (Phase B)** | ✅ | `HuntPolicyEngine` · `hunt_policy_last.json` · lineage breed vs havoc vs Joker timing · mutator execution cost · Phase C `needsExperiment` stub |
+| **Hunt Policy (Phase B)** | ✅ | `HuntPolicyEngine` · `hunt_policy_last.json` · lineage breed vs havoc vs Joker timing · mutator execution cost · Phase C `needsExperiment` hook |
+| **Hypothesis Engine (Phase C)** | ✅ | `HypothesisEngine` · `{guid}_hypotheses.json` · `hypothesis_queue.json` · Magician `hypothesisExperiment` · fuzz sweep/hold budget |
 
-**Phase A follow-ups (Phase C+):** Hypothesis Engine (corruption-chain → testable hypotheses), live TTD rewind (currently stub only). See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md#headless-cdb--scream-investigator-windows).
+**Phase A follow-ups (Phase D+):** live TTD rewind (currently stub only). See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md#headless-cdb--scream-investigator-windows).
 
 **Phase B formula (research-only):**
 
@@ -220,7 +221,36 @@ Modes: `LineageBreed` (warming scream families) · `HavocExplore` (frontier/stat
 | Phase C stub | ✅ | `NeedsExperiment` + Magician `rewind_scream_hint.md` append when lineage stalls |
 | UI / logs | ✅ | Scare Floor brain strip · `[hunt policy]` verbose fuzz log · `GET /api/fuzz/brain` + `brain-decision` expose `huntPolicy` |
 
-**Phase C follow-ups:** Hypothesis Engine (corruption-chain → ranked testable hypotheses), live TTD rewind (replace stub), campaign YAML scream-score goals.
+**Phase C follow-ups:** live TTD rewind (replace stub), campaign YAML scream-score goals.
+
+---
+
+## Phase C — Hypothesis Engine ✅ capable
+
+**Goal:** From crash intelligence evidence (corruption chain, debugger observation, lineage, scream evolution, oracle), produce ranked testable hypotheses with confidence %, suggested deterministic experiments (sweeps/holds — research-only), expected observations, and result tracking when experiments run.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| `HypothesisEngine` + `HypothesisDto` | ✅ | Builds from corruption chain · debugger · lineage · evolution · oracle |
+| Persisted artifacts | ✅ | `{guid}_hypotheses.json` per crash · `data/stalk/<project>/hypothesis_queue.json` |
+| Hunt Policy fusion | ✅ | `NeedsExperiment` + `TopHypothesisId` / confidence on `HuntPolicyDecision` |
+| Magician budget | ✅ | `hypothesisExperiment` spell when confidence ≥65% · `rewind_scream_hint.md` human hint |
+| Fuzz-loop execution | ✅ | Dequeue plan · sweep/hold/replay on crash input · `RecordOutcome` updates confidence |
+| Investigation UI | ✅ | Crashes tab hypothesis panel · brain strip `hyp=id (N%)` |
+| API | ✅ | `GET /api/stalking/{project}/hypotheses` · crash detail `hypotheses` field |
+
+**Experiment kinds (research-only):** `HoldMutator` · `SweepOffset` · `ReplayLineage` · `BoundaryProbe` · `MinimizeHold` — uses existing mutators/corpus energy, no exploit payloads. AI/LLM stays off the hot path.
+
+**Phase D follow-ups:** Live WinDbg TTD capture/rewind (replace stub hook), hypothesis-driven campaign YAML goals, SignalR live hypothesis stream.
+
+**Operator visibility:**
+
+- **CLI verbose fuzz:** `[hypothesis] hyp-offset-28 SweepOffset conf=72% sweep=0` · `[hypothesis] recorded outcome …`
+- **Investigation:** ranked hypotheses with confidence, experiment, expected observation, result status
+- **Disk:** `data/crashes/<project>/{guid}_hypotheses.json` · `data/stalk/<project>/hypothesis_queue.json`
+- **Magician:** `hypothesisExperiment` in `spells.jsonl` · append to `rewind_scream_hint.md`
+
+**Done when:** High-confidence hypotheses measurably shift hunt budget and update confidence after queued experiments; Phase D TTD replaces stub rewind.
 
 **Operator visibility:**
 

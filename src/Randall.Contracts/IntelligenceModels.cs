@@ -144,7 +144,11 @@ public sealed record CrashIntelligenceDto(
     /// <summary>Lineage generation (1 = root).</summary>
     int ScreamGeneration = 0,
     /// <summary>One-line evolution summary for Investigation / logs.</summary>
-    string? ScreamEvolutionSummary = null);
+    string? ScreamEvolutionSummary = null,
+    /// <summary>Phase C top hypothesis id for Investigation / hunt policy.</summary>
+    string? TopHypothesisId = null,
+    int TopHypothesisConfidence = 0,
+    string? TopHypothesisStatement = null);
 
 /// <summary>In-process observation collector for a single fuzz run.</summary>
 public sealed class ObservationBus

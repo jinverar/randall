@@ -121,6 +121,8 @@ public static class CrashCatalog
                         row.Debugger,
                         corruptionChain,
                         projectContexts);
+                var hypotheses = HypothesisEngine.TryRead(
+                    HypothesisEngine.PathFor(dir, row.Summary.Id));
                 var intelligence = CrashIntelligenceBuilder.Build(
                     row.Summary,
                     row.Triage,
@@ -133,7 +135,8 @@ public static class CrashCatalog
                     row.Summary.TriageTag,
                     row.Debugger,
                     corruptionChain,
-                    evolution);
+                    evolution,
+                    hypotheses);
                 results.Add(CrashIntelligenceBuilder.WithListIntelligence(row.Summary, intelligence));
             }
         }
@@ -235,6 +238,8 @@ public static class CrashCatalog
                     debugger,
                     corruptionChain,
                     projectContexts);
+            var hypotheses = HypothesisEngine.TryRead(
+                HypothesisEngine.PathFor(crashesDir, summary.Id));
             var pageHeapEnabled = TryResolvePageHeap(sidecar, repoRoot);
             var projectSummaries = ListAll(repoRoot).Where(x => x.Project == summary.Project).ToList();
             var intelligence = CrashIntelligenceBuilder.Build(
@@ -249,7 +254,8 @@ public static class CrashCatalog
                 summary.TriageTag,
                 debugger,
                 corruptionChain,
-                evolution);
+                evolution,
+                hypotheses);
             return new CrashDetailDto(
                 CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
                 bytes.Length,
@@ -262,7 +268,8 @@ public static class CrashCatalog
                 intelligence,
                 debugger,
                 corruptionChain,
-                evolution);
+                evolution,
+                hypotheses);
         }
         return null;
     }

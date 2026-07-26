@@ -704,6 +704,27 @@ app.MapGet("/api/stalking/{project}/intelligence", (string project) =>
     }
 });
 
+app.MapGet("/api/stalking/{project}/hypotheses", (string project) =>
+{
+    if (WebTargetFilter.IsHiddenProject(project))
+        return Results.NotFound(new { error = "project not found" });
+    try
+    {
+        var queue = HypothesisEngine.TryLoadQueue(project);
+        var top = HypothesisEngine.FindTopForProject(project);
+        return Results.Ok(new
+        {
+            project,
+            queue,
+            topHypothesis = top,
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
 app.MapGet("/api/stalking/{project}/brain-decision", (string project) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))

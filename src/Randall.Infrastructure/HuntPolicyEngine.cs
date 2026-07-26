@@ -28,7 +28,9 @@ public static class HuntPolicyEngine
         double CoverageFraction,
         int Iteration,
         double MemoryConfidence = 1.0,
-        double BaseJokerChance = 0.0);
+        double BaseJokerChance = 0.0,
+        string? Project = null,
+        string? RepoRoot = null);
 
     public static string LastPolicyPath(string project, string? repoRoot = null) =>
         Path.Combine(StalkCampaignStore.ProjectDir(project, repoRoot), LastPolicyFileName);
@@ -74,9 +76,14 @@ public static class HuntPolicyEngine
         var preferredMutator = ResolvePreferredMutator(top.Candidate, ctx, mode);
         var lineageChain = ResolveLineageChain(ctx, mode, preferredMutator);
         var jokerChance = ResolveJokerChance(ctx, mode, huntValue, exhausted, stagnantNull);
-        var (needsExperiment, experimentHint) = ResolveExperimentStub(ctx, top.Candidate);
+        var (needsExperiment, experimentHint, topHypothesis) = ResolveExperiment(ctx, top.Candidate);
 
         var summary = BuildSummary(mode, top.Candidate, huntValue, jokerChance, preferredMutator);
+        if (topHypothesis is not null && needsExperiment)
+        {
+            summary +=
+                $" · hyp={topHypothesis.Id} ({topHypothesis.ConfidencePercent}%)";
+        }
 
         return new HuntPolicyDecision(
             huntValue,
@@ -90,7 +97,10 @@ public static class HuntPolicyEngine
             top.Candidate.Label,
             top.Candidate.Score,
             preferredMutator,
-            lineageChain);
+            lineageChain,
+            topHypothesis?.Id,
+            topHypothesis?.ConfidencePercent ?? 0,
+            topHypothesis?.Statement);
     }
 
     public static bool ShouldInvokeJoker(HuntPolicyDecision? policy, ProjectConfig project, Random rng)
@@ -409,28 +419,40 @@ public static class HuntPolicyEngine
         return Math.Clamp(chance, 0, 0.35);
     }
 
-    private static (bool NeedsExperiment, string? Hint) ResolveExperimentStub(
+    private static (bool NeedsExperiment, string? Hint, HypothesisDto? Top) ResolveExperiment(
         Context ctx,
         RandallBrain.HuntCandidate top)
     {
+        var project = ctx.Project;
+        HypothesisDto? topHyp = null;
+        if (!string.IsNullOrWhiteSpace(project))
+            topHyp = HypothesisEngine.FindTopForProject(project, ctx.RepoRoot);
+
         var stalledWarm = ctx.Signals.ScreamClusters
             .FirstOrDefault(s => s.MomentumScore is >= 35 and < 50
                                  && s.Generation >= 2
                                  && !s.Saturated);
 
+        if (topHyp is { ConfidencePercent: >= HypothesisEngine.MinExperimentConfidence })
+        {
+            var hint =
+                $"Hypothesis {topHyp.Id} ({topHyp.ConfidencePercent}%): {topHyp.Statement} " +
+                $"→ {topHyp.Experiment.Kind} ({topHyp.Experiment.Description})";
+            return (true, hint, topHyp);
+        }
+
         if (stalledWarm is not null)
         {
             return (true,
-                $"Phase C: corruption chain on {stalledWarm.FamilyId ?? stalledWarm.ClusterKey} " +
-                $"gen {stalledWarm.Generation} — live TTD / hypothesis experiment suggested");
+                $"Stalled warming family {stalledWarm.FamilyId ?? stalledWarm.ClusterKey} " +
+                $"gen {stalledWarm.Generation} — hypothesis queue / TTD stub (Phase D live rewind)",
+                topHyp);
         }
 
         if (top.Kind == "scream" && top.Score >= 60)
-        {
-            return (false, null);
-        }
+            return (false, null, topHyp);
 
-        return (false, null);
+        return (false, null, topHyp);
     }
 
     private static string BuildSummary(

@@ -35,7 +35,11 @@ public sealed record HuntPolicyDecision(
     int FocusScore,
     string? PreferredMutator,
     /// <summary>Lineage chain to breed when <see cref="Mode"/> is <see cref="HuntExecutionMode.LineageBreed"/>.</summary>
-    IReadOnlyList<string>? LineageChain = null)
+    IReadOnlyList<string>? LineageChain = null,
+    /// <summary>Phase C — top pending hypothesis id when <see cref="NeedsExperiment"/> is set.</summary>
+    string? TopHypothesisId = null,
+    int TopHypothesisConfidence = 0,
+    string? TopHypothesisStatement = null)
 {
     public static HuntPolicyDecision Inactive(string reason = "Hunt policy idle — no signals") =>
         new(0, HuntExecutionMode.Baseline, reason, 0, false, null, [], null, null, 0, null);

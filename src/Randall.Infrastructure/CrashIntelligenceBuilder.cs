@@ -18,7 +18,8 @@ public static class CrashIntelligenceBuilder
         string? rppTag = null,
         DebuggerObservation? debugger = null,
         CrashCorruptionChainDto? corruptionChain = null,
-        ScreamEvolutionDto? evolution = null)
+        ScreamEvolutionDto? evolution = null,
+        HypothesisSetDto? hypotheses = null)
     {
         var clusterKey = triage?.ClusterKey ?? summary.ClusterKey;
         var clusterMembers = string.IsNullOrWhiteSpace(clusterKey)
@@ -67,6 +68,8 @@ public static class CrashIntelligenceBuilder
         var canisterContext = BuildCanisterContext(
             triage, function, oracleScore, frontierHint, debugger, corruptionChain);
 
+        var topHypothesis = HypothesisEngine.TopPending(hypotheses);
+
         return new CrashIntelligenceDto(
             severity,
             novelty,
@@ -94,7 +97,10 @@ public static class CrashIntelligenceBuilder
             evolution?.MomentumScore ?? 0,
             evolution?.MomentumLabel,
             evolution?.Generation ?? 0,
-            evolution?.Summary);
+            evolution?.Summary,
+            topHypothesis?.Id,
+            topHypothesis?.ConfidencePercent ?? 0,
+            topHypothesis?.Statement);
     }
 
     public static CrashSummaryDto WithListIntelligence(

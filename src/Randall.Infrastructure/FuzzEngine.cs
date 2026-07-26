@@ -631,6 +631,7 @@ public sealed class FuzzEngine
                 var iterFlowBias = flowBias;
                 var iterGraphBias = project.Fuzz.SessionGraphBias;
                 var uniqueCrashThisIter = false;
+                HypothesisExperimentPlan? hypothesisPlan = null;
                 IMutator mutator;
                 if (brainActive)
                 {
@@ -661,6 +662,12 @@ public sealed class FuzzEngine
                     {
                         MagicianEngine.OnHuntPolicyNeedsExperiment(
                             project, yamlPath, huntDecision.HuntPolicy, iterations, progress);
+                    }
+
+                    if (huntDecision.HuntPolicy is { NeedsExperiment: true }
+                        or { TopHypothesisConfidence: >= HypothesisEngine.MinExperimentConfidence })
+                    {
+                        hypothesisPlan = HypothesisEngine.TryDequeuePlan(project.Name, repoRoot);
                     }
                 }
 
@@ -773,6 +780,30 @@ public sealed class FuzzEngine
                     else
                     {
                         continue;
+                    }
+                }
+                else if (hypothesisPlan?.CrashInputPath is { } hypInput && File.Exists(hypInput))
+                {
+                    var basePayload = File.ReadAllBytes(hypInput);
+                    payload = HypothesisEngine.ApplyExperiment(
+                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng)
+                           ?? basePayload;
+                    parentInputHash = InputHash.StackHash(basePayload);
+                    seedSource = $"hypothesis/{hypothesisPlan.HypothesisId}";
+                    if (!string.IsNullOrWhiteSpace(hypothesisPlan.Experiment.Mutator))
+                    {
+                        var hypMut = mutators.FirstOrDefault(m =>
+                            m.Name.Equals(hypothesisPlan.Experiment.Mutator, StringComparison.OrdinalIgnoreCase));
+                        if (hypMut is not null)
+                            mutator = hypMut;
+                    }
+                    if (verbose)
+                    {
+                        FuzzAnalystLog.Info(progress,
+                            $"[hypothesis] {hypothesisPlan.HypothesisId} " +
+                            $"{hypothesisPlan.Experiment.Kind} conf={hypothesisPlan.ConfidencePercent}% " +
+                            $"sweep={hypothesisPlan.SweepIndex}",
+                            iterations);
                     }
                 }
                 else if (project.SessionGraph is not null &&
@@ -1819,6 +1850,10 @@ public sealed class FuzzEngine
                         TryPersistScreamEvolution(
                             project, yamlPath, crashesDir, saved, mutatorChain,
                             corpus, mutators, mutatorCredit, iterations, progress);
+
+                        TryPersistHypotheses(
+                            project, crashesDir, saved, sidecar: CrashSidecarWriter.TryRead(saved.SidecarPath),
+                            iterations, progress);
                     }
 
                     if (DebuggerSession.ShouldOpenDumpOnCrash(debuggerOpenOnCrash) && saved.MiniDumpPath is not null)
@@ -1884,6 +1919,25 @@ public sealed class FuzzEngine
 
                 mutatorCredit.RecordWithChain(mutator.Name, mutatorChain, newEdges, uniqueCrashThisIter);
                 mutatorChainTracker.RecordLineage(fullLineageChain, newEdges, uniqueCrashThisIter);
+
+                if (hypothesisPlan is not null)
+                {
+                    HypothesisEngine.RecordOutcome(
+                        project.Name,
+                        hypothesisPlan,
+                        iterations,
+                        result.Crashed,
+                        result.Detail,
+                        result.ExitCode?.ToString(),
+                        repoRoot);
+                    if (verbose)
+                    {
+                        FuzzAnalystLog.Info(progress,
+                            $"[hypothesis] recorded outcome for {hypothesisPlan.HypothesisId} " +
+                            $"crash={result.Crashed}",
+                            iterations);
+                    }
+                }
                 lastPrimaryMutator = mutator.Name;
                 if (jokerTrick is not null && jokerDeck is not null)
                 {
@@ -2333,6 +2387,60 @@ public sealed class FuzzEngine
         catch (Exception ex)
         {
             FuzzAnalystLog.Warn(progress, $"scream evolution: {ex.Message}", iterations);
+        }
+    }
+
+    private void TryPersistHypotheses(
+        ProjectConfig project,
+        string crashesDir,
+        SavedCrash saved,
+        CrashSidecarDto? sidecar,
+        int iterations,
+        IFuzzProgressSink? progress)
+    {
+        try
+        {
+            var debugger = ScreamInvestigator.TryRead(
+                ScreamInvestigator.ObservationPathFor(crashesDir, saved.Id));
+            var corruption = CorruptionChainBuilder.TryRead(
+                CorruptionChainBuilder.PathFor(crashesDir, saved.Id));
+            var evolution = ScreamEvolutionBuilder.TryRead(
+                ScreamEvolutionBuilder.PathFor(crashesDir, saved.Id));
+
+            byte[]? payload = null;
+            if (File.Exists(saved.InputPath))
+            {
+                try { payload = File.ReadAllBytes(saved.InputPath); }
+                catch { /* ignore */ }
+            }
+
+            var summary = new CrashSummaryDto(
+                saved.Id, project.Name, iterations, sidecar?.Mutator ?? "?",
+                saved.InputHash, saved.InputPath, saved.MiniDumpPath,
+                sidecar?.ExitCode?.ToString(), sidecar?.TriageTag, saved.SidecarPath,
+                sidecar?.RunId, DateTimeOffset.UtcNow);
+            var triage = CrashTriage.Classify(null, sidecar, summary, payload, debugger: debugger);
+            var oracleScore = sidecar?.RandallScore;
+
+            var set = HypothesisEngine.PersistForCrash(
+                crashesDir, saved.Id, project.Name, sidecar, triage,
+                debugger, corruption, evolution, oracleScore);
+
+            if (set is not { Ok: true, Hypotheses.Count: > 0 })
+                return;
+
+            var top = HypothesisEngine.TopPending(set);
+            if (top is not null)
+            {
+                Console.WriteLine($"  hypotheses: {set.Hypotheses.Count} ranked · top {top.Id} ({top.ConfidencePercent}%)");
+                FuzzAnalystLog.Info(progress,
+                    $"[hypothesis] top {top.Id} ({top.ConfidencePercent}%) — {top.Statement}",
+                    iterations);
+            }
+        }
+        catch (Exception ex)
+        {
+            FuzzAnalystLog.Warn(progress, $"hypotheses: {ex.Message}", iterations);
         }
     }
 

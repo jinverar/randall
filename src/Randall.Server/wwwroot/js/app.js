@@ -826,6 +826,9 @@ function scareBrainDecisionLine(brain, intel) {
   if (hunt?.needsExperiment && !line.includes('needs-experiment')) {
     line = `${line} · needs-experiment`;
   }
+  if (hunt?.topHypothesisId && !line.includes('hyp=')) {
+    line = `${line} · hyp=${hunt.topHypothesisId} (${hunt.topHypothesisConfidence || 0}%)`;
+  }
   if (memoryMsg && !line.includes('Prior knowledge retained')) {
     line = line ? `${line} · ${memoryMsg}` : memoryMsg;
   } else if (memoryConf != null && memoryConf < 0.999 && !line.includes('memory=')) {
@@ -2898,6 +2901,7 @@ function renderCrashDetail(detail, title) {
   const dbg = detail.debuggerObservation;
   const chain = detail.corruptionChain;
   const evo = detail.screamEvolution;
+  const hypos = detail.hypotheses;
   const regs = a?.registers;
   const dump = detail.summary.miniDumpPath || a?.dumpPath || '';
   const windbgCmd = dump ? `windbg -z "${dump}"` : '';
@@ -2962,6 +2966,18 @@ function renderCrashDetail(detail, title) {
         ).join('')}</ol>` : ''}
         ${chain.suspectedMutator ? `<p class="hint">Mutator <code>${escapeAttr(chain.suspectedMutator)}</code>${chain.suspectedField ? ` · field <code>${escapeAttr(chain.suspectedField)}</code>` : ''}</p>` : ''}
       </div>` : ''}
+      ${hypos?.ok && hypos.hypotheses?.length ? `<div class="triage-box hypothesis-box">
+        <h4>Hypotheses <span class="hint-inline">Phase C</span></h4>
+        <ol class="hypothesis-list">${hypos.hypotheses.slice(0, 5).map((h) =>
+          `<li><code>${escapeAttr(h.id)}</code> <strong>${h.confidencePercent}%</strong> — ${escapeAttr(h.statement)}
+            <div class="hint">experiment: ${escapeAttr(h.experiment?.kind || '')} — ${escapeAttr(h.experiment?.description || '')}</div>
+            <div class="hint">expect: ${escapeAttr(h.expectedObservation || '')}${h.result ? ` · result: ${escapeAttr(h.result.status)} (${h.result.confidenceAfter}%)` : ''}</div>
+          </li>`
+        ).join('')}</ol>
+      </div>` : (intel?.topHypothesisStatement ? `<div class="triage-box hypothesis-box">
+        <h4>Top hypothesis</h4>
+        <p class="hint"><code>${escapeAttr(intel.topHypothesisId || '')}</code> <strong>${intel.topHypothesisConfidence || 0}%</strong> — ${escapeAttr(intel.topHypothesisStatement)}</p>
+      </div>` : '')}
       <p class="crash-why-detail"><code>${escapeAttr(why)}</code>
         ${a?.faultAddress ? ` @ <code>${escapeAttr(a.faultAddress)}</code>` : ''}
         ${a?.faultModule ? ` in <code>${escapeAttr(a.faultModule)}</code>` : ''}

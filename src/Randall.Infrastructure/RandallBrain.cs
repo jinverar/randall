@@ -114,7 +114,7 @@ public sealed class RandallBrain
 
         var huntPolicy = HuntPolicyEngine.Evaluate(new HuntPolicyEngine.Context(
             signals, mutatorRows, chainRows, mutators, coverageFraction, iteration,
-            memoryConfidence, baseJokerChance));
+            memoryConfidence, baseJokerChance, project, repoRoot));
 
         var candidates = BuildCandidates(signals, mutatorRows);
         var focus = TryLoadFocus(project, repoRoot);

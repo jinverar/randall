@@ -30,6 +30,7 @@ public static class MagicianEngine
         "capitalizeJoker",
         "rewindScream",
         "evolutionBless",
+        "hypothesisExperiment",
     ];
 
     public static bool IsEnabled(ProjectConfig project) =>
@@ -310,7 +311,7 @@ public static class MagicianEngine
         return cast;
     }
 
-    /// <summary>Phase C stub — Hunt Policy flagged a stalled warming lineage that needs live experiment.</summary>
+    /// <summary>Phase C — Hunt Policy flagged experiment; queue hypothesis and bless budget.</summary>
     public static void OnHuntPolicyNeedsExperiment(
         ProjectConfig project,
         string yamlPath,
@@ -321,25 +322,108 @@ public static class MagicianEngine
         if (policy is not { NeedsExperiment: true })
             return;
 
-        var cfg = GetConfig(project);
-        if (cfg is not { Enabled: true, PersistSpells: true })
+        HypothesisDto? hypothesis = null;
+        if (!string.IsNullOrWhiteSpace(policy.TopHypothesisId))
+        {
+            hypothesis = HypothesisEngine.FindTopForProject(project.Name);
+            if (hypothesis is not null
+                && !hypothesis.Id.Equals(policy.TopHypothesisId, StringComparison.OrdinalIgnoreCase))
+                hypothesis = null;
+        }
+
+        hypothesis ??= HypothesisEngine.FindTopForProject(project.Name);
+
+        if (hypothesis is { ConfidencePercent: >= HypothesisEngine.MinExperimentConfidence })
+        {
+            HypothesisEngine.EnqueueFromHypothesis(project.Name, hypothesis, iteration);
+            var cfg = GetConfig(project);
+            if (cfg is { Enabled: true })
+            {
+                project.Magician ??= cfg;
+                if (hypothesis.ConfidencePercent >= HypothesisEngine.MagicianBudgetConfidence)
+                {
+                    var cast = OnHypothesisQueued(
+                        project, yamlPath, hypothesis, policy, iteration, progress);
+                    if (!string.IsNullOrEmpty(cast?.Summary))
+                        FuzzAnalystLog.Info(progress, $"Magician hypothesis: {cast.Summary}", iteration);
+                }
+            }
+
+            FuzzAnalystLog.Info(progress,
+                HypothesisEngine.FormatVerbose(hypothesis), iteration);
+            return;
+        }
+
+        var cfg2 = GetConfig(project);
+        if (cfg2 is not { Enabled: true, PersistSpells: true })
         {
             FuzzAnalystLog.Info(progress,
-                $"Hunt policy needs-experiment (Phase C stub): {policy.ExperimentHint}", iteration);
+                $"Hunt policy needs-experiment: {policy.ExperimentHint}", iteration);
             return;
         }
 
         var dir = Path.Combine(
             ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir),
             "_magician");
-        Directory.CreateDirectory(dir);
-        var hintPath = Path.Combine(dir, "rewind_scream_hint.md");
-        var line =
-            $"[{DateTimeOffset.UtcNow:u}] iter={iteration} · {policy.ExperimentHint}{Environment.NewLine}";
-        File.AppendAllText(hintPath, line);
+        HypothesisEngine.AppendMagicianHint(dir, new HypothesisDto(
+            "hyp-stub", null, policy.ExperimentHint ?? "needs experiment", 0,
+            new HypothesisExperimentDto(HypothesisExperimentKind.ReplayLineage, "await crash hypotheses"),
+            "Phase C hypothesis or Phase D TTD", HypothesisStatus.Pending),
+            iteration, policy.ExperimentHint);
 
         FuzzAnalystLog.Info(progress,
-            $"Hunt policy needs-experiment → {hintPath}: {policy.ExperimentHint}", iteration);
+            $"Hunt policy needs-experiment → {dir}: {policy.ExperimentHint}", iteration);
+    }
+
+    /// <summary>Magician blesses a high-confidence hypothesis with small execution budget.</summary>
+    public static MagicianCastResult? OnHypothesisQueued(
+        ProjectConfig project,
+        string yamlPath,
+        HypothesisDto hypothesis,
+        HuntPolicyDecision policy,
+        int iteration,
+        IFuzzProgressSink? progress)
+    {
+        var cfg = GetConfig(project);
+        if (cfg is not { Enabled: true })
+            return null;
+
+        project.Magician ??= cfg;
+        var needs = new List<OracleNeedDto>
+        {
+            new("hypothesis", hypothesis.Statement, "hypothesis", hypothesis.Id, "nearMiss"),
+            new("energy", $"Hypothesis budget — {hypothesis.Experiment.Kind}", "hypothesis", hypothesis.Id, "nearMiss"),
+        };
+
+        var cast = Cast(project, yamlPath, needs, iteration, corpus: null, payload: null,
+            mutators: null, progress, force: true);
+
+        var dir = Path.Combine(
+            ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir),
+            "_magician");
+        var hintPath = HypothesisEngine.AppendMagicianHint(dir, hypothesis, iteration, policy.ExperimentHint);
+
+        var spell = new MagicianSpellDto(
+            Guid.NewGuid().ToString("N")[..12],
+            project.Name,
+            "hypothesisExperiment",
+            "hypothesis",
+            hypothesis.Statement,
+            "hypothesis",
+            hypothesis.Id,
+            iteration,
+            $"{hypothesis.Experiment.Kind} conf={hypothesis.ConfidencePercent}% → {hintPath}",
+            DateTimeOffset.UtcNow);
+        if (cfg.PersistSpells)
+            new MagicianSpellStore(dir).Append(spell);
+
+        return cast with
+        {
+            Spells = cast.Spells.Concat([spell]).ToList(),
+            Summary = string.IsNullOrEmpty(cast.Summary)
+                ? "hypothesisExperiment→hypothesis"
+                : $"hypothesisExperiment→hypothesis; {cast.Summary}",
+        };
     }
 
     /// <summary>Manual / CLI cast for an explicit need (knight, army, bots, joker, …).</summary>
@@ -459,6 +543,7 @@ public static class MagicianEngine
         sb.AppendLine("| playJokerCard | joker | Queue a legendary Joker Card draw from the deck |");
         sb.AppendLine("| rewindScream | ttd | (stub) Write TTD record/replay hint on crash — no capture |");
         sb.AppendLine("| evolutionBless | — | (auto) High scream momentum — energy + army on warming lineage |");
+        sb.AppendLine("| hypothesisExperiment | hypothesis | (auto) Phase C hypothesis queue — sweep/hold budget |");
         sb.AppendLine();
         sb.AppendLine("Oracle need → spell map: dictionary→dictionaryBoost; energy→energyBless;");
         sb.AppendLine("hunter→summonHunter; knight→summonKnight; army→summonArmy; bots→summonBots;");
@@ -517,6 +602,12 @@ public static class MagicianEngine
                 if (cfg.AllowSummonArmy)
                     yield return "summonArmy";
                 yield return "havocSurge";
+                break;
+            case "hypothesis":
+                yield return "hypothesisExperiment";
+                yield return "energyBless";
+                if (cfg.AllowSummonArmy)
+                    yield return "summonArmy";
                 break;
             default:
                 // Treat unknown request as a direct spell id if it matches the catalog.
@@ -655,6 +746,16 @@ public static class MagicianEngine
                 if (GetConfig(project).AllowSummonArmy)
                     EnsureMutator(project, mutators, yamlPath, corpus, "splice", mutatorsEnsured);
                 return (true, null, $"evolution bless on {lineage} (+energy, havoc live)");
+            }
+            case "hypothesisExperiment":
+            {
+                var hypId = need.RuleId ?? "hypothesis";
+                EnsureMutator(project, mutators, yamlPath, corpus, "bitflip", mutatorsEnsured);
+                EnsureMutator(project, mutators, yamlPath, corpus, "interesting", mutatorsEnsured);
+                if (GetConfig(project).AllowSummonArmy)
+                    EnsureMutator(project, mutators, yamlPath, corpus, "splice", mutatorsEnsured);
+                extraEnergy += 3;
+                return (true, "hypothesis", $"hypothesis experiment armed — {hypId} (+3 energy budget)");
             }
             default:
                 return (false, null, $"unknown spell {spellId}");
