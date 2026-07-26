@@ -1,0 +1,16 @@
+﻿{
+  "caseId": "ascii-read",
+  "description": "Read ACCESS_VIOLATION at ASCII-controlled address 0x41414141.",
+  "stub": false,
+  "exception": {
+    "code": "c0000005",
+    "hintContains": "ACCESS_VIOLATION"
+  },
+  "access": "Read",
+  "addressClass": "AsciiPattern",
+  "inputInfluence": "HIGH",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "ascii-read"
+  }
+}

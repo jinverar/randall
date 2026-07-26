@@ -1,0 +1,16 @@
+﻿{
+  "caseId": "double-free",
+  "description": "Double-free — stub/fixture; native PageHeap harness TODO.",
+  "stub": true,
+  "exception": {
+    "code": "c0000374",
+    "hintContains": "heap"
+  },
+  "access": "Unknown",
+  "addressClass": "Freed",
+  "inputInfluence": "UNKNOWN",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "double-free"
+  }
+}

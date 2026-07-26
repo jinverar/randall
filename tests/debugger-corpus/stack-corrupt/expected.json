@@ -1,0 +1,16 @@
+﻿{
+  "caseId": "stack-corrupt",
+  "description": "Stack corruption / smash — managed fixture (Stackish address class).",
+  "stub": true,
+  "exception": {
+    "code": "c0000005",
+    "hintContains": "ACCESS_VIOLATION"
+  },
+  "access": "Write",
+  "addressClass": "Stackish",
+  "inputInfluence": "UNKNOWN",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "stack-corrupt"
+  }
+}

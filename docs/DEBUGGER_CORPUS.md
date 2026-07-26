@@ -38,13 +38,17 @@ Default 1.5s delay gives Scream/cdb time to attach before the fault fires.
 | Case | argv | Alternate lab target |
 |------|------|----------------------|
 | `null-deref` | `null-deref` | `scream_crash.exe` (`randall scream selftest`) |
+| `null-read` | `null-read` | — |
 | `av-read` | `av-read` | — |
 | `av-write` | `av-write` | VulnDrone TCP `HELLO` + expand |
 | `ascii-write` | `ascii-write` | `randall-screamcrash` + `SCREAM` |
+| `ascii-read` | `ascii-read` | — |
 | `divide-zero` | `divide-zero` | — |
 | `illegal-instruction` | `illegal-instruction` | — |
-| `heap-overflow` | stub (exit 2) | **TODO** |
-| `uaf` | stub (exit 2) | **TODO** |
+| `heap-overflow` / `oob-write` | stub (exit 2) | managed Heapish fixture |
+| `uaf` / `double-free` | stub (exit 2) | managed Freed fixture |
+| `stack-corrupt` | stub (exit 2) | managed Stackish fixture |
+| `integer-trunc` | stub (exit 2) | managed size-mismatch fixture |
 
 ## cdb probe pipeline
 

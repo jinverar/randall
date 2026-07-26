@@ -9,16 +9,22 @@ Each case folder contains:
 
 ## Cases
 
-| Case | Status | Harness argv |
-|------|--------|--------------|
-| `null-deref` | live | `null-deref` |
-| `av-read` | live | `av-read` |
-| `av-write` | live | `av-write` |
-| `ascii-write` | live | `ascii-write` |
-| `divide-zero` | live | `divide-zero` |
-| `illegal-instruction` | live | `illegal-instruction` |
-| `heap-overflow` | **stub** | exits 2 — TODO native heap bug |
-| `uaf` | **stub** | exits 2 — TODO PageHeap / free-list |
+| Case | Status | Harness argv | Notes |
+|------|--------|--------------|-------|
+| `null-deref` | live | `null-deref` | NULL write |
+| `null-read` | live | `null-read` | NULL read |
+| `av-read` | live | `av-read` | wild read |
+| `av-write` | live | `av-write` | wild write |
+| `ascii-write` | live | `ascii-write` | ASCII-controlled write addr |
+| `ascii-read` | live | `ascii-read` | ASCII-controlled read addr |
+| `divide-zero` | live | `divide-zero` | arithmetic |
+| `illegal-instruction` | live | `illegal-instruction` | #UD-style |
+| `heap-overflow` | **stub** | exits 2 | managed Heapish fixture |
+| `oob-write` | **stub** | exits 2 | OOB / heap overrun fixture |
+| `uaf` | **stub** | exits 2 | Freed-class fixture |
+| `double-free` | **stub** | exits 2 | Freed-class fixture |
+| `stack-corrupt` | **stub** | exits 2 | Stackish fixture |
+| `integer-trunc` | **stub** | exits 2 | size/truncation narrative fixture |
 
 ## expected.json fields
 
@@ -40,7 +46,7 @@ Each case folder contains:
 
 ## Running integration tests
 
-Requires Windows + cdb (Debugging Tools). CI on Linux skips automatically.
+Requires Windows + cdb (Debugging Tools). CI on Linux skips live cdb automatically; managed `ParseBlocks` fixtures still run.
 
 ```powershell
 scripts/build-debugger-corpus.ps1

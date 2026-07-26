@@ -1,0 +1,16 @@
+﻿{
+  "caseId": "integer-trunc",
+  "description": "Integer truncation / size mismatch leading to bounded write fault — fixture.",
+  "stub": true,
+  "exception": {
+    "code": "c0000005",
+    "hintContains": "ACCESS_VIOLATION"
+  },
+  "access": "Write",
+  "addressClass": "Other",
+  "inputInfluence": "UNKNOWN",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "integer-trunc"
+  }
+}

@@ -1,0 +1,16 @@
+﻿{
+  "caseId": "null-read",
+  "description": "Read ACCESS_VIOLATION at address 0 (null page).",
+  "stub": false,
+  "exception": {
+    "code": "c0000005",
+    "hintContains": "ACCESS_VIOLATION"
+  },
+  "access": "Read",
+  "addressClass": "NullPage",
+  "inputInfluence": "UNKNOWN",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "null-read"
+  }
+}
