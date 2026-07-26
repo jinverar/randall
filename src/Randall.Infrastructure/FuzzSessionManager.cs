@@ -81,7 +81,11 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                             Iterations = result.Iterations,
                             Crashes = result.CrashesFound,
                             CorpusAdded = result.CorpusAdded,
-                            LastMessage = $"Done — {result.Iterations} iterations, {result.CrashesFound} crashes",
+                            LastMessage = result.StopGoalMet
+                                ? $"Stop goal met — {result.StopReason}"
+                                : $"Done — {result.Iterations} iterations, {result.CrashesFound} crashes",
+                            StopGoalMet = result.StopGoalMet,
+                            StopReason = result.StopReason,
                         };
                     }
                 }

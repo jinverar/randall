@@ -618,11 +618,13 @@ public sealed class FuzzEngine
             jokerDeck = new JokerCardDeck(JokerCardDeck.DefaultPath(mageDir));
         }
 
+        var stopGoals = IntelligenceStopGoalEvaluator.Resolve(project.Fuzz);
+        var stopGoalReached = false;
+        string? stopReason = null;
+
         try
         {
-            var screamGoal = project.Fuzz.ScreamScoreGoal;
-            var screamGoalReached = false;
-            for (var i = 0; i < maxIterations && !cancellationToken.IsCancellationRequested && !screamGoalReached; i++)
+            for (var i = 0; i < maxIterations && !cancellationToken.IsCancellationRequested && !stopGoalReached; i++)
             {
                 try
                 {
@@ -1596,17 +1598,25 @@ public sealed class FuzzEngine
                     var saved = savedResult.Crash;
                     uniqueCrashThisIter = savedResult.IsNew;
 
-                    if (screamGoal > 0 && savedResult.IsNew && repoRoot is not null)
+                    if (stopGoals.IsEnabled && savedResult.IsNew && repoRoot is not null)
                     {
                         var projectCrashes = CrashCatalog.ListAll(repoRoot, project.Name);
-                        if (ScreamScoreHelper.GoalReached(screamGoal, projectCrashes))
+                        var evolutions = stopGoals.UniqueScreamsWithMomentum is { Count: > 0, MinMomentum: > 0 }
+                            ? IntelligenceStopGoalEvaluator.LoadEvolutions(repoRoot, project.Name, projectCrashes)
+                            : null;
+                        var goalEval = IntelligenceStopGoalEvaluator.Evaluate(stopGoals, projectCrashes, evolutions);
+                        if (goalEval.Met)
                         {
-                            var maxScore = projectCrashes.Max(c => c.ScreamScore);
-                            var hotCount = projectCrashes.Count(ScreamScoreHelper.IsHot);
-                            FuzzAnalystLog.Info(progress,
-                                $"Scream score goal {screamGoal} reached (max={maxScore}, hot={hotCount}) — stopping",
-                                iterations);
-                            screamGoalReached = true;
+                            stopReason = goalEval.Reason;
+                            FuzzAnalystLog.Info(progress, $"{stopReason} — stopping", iterations);
+                            stopGoalReached = true;
+                            if (stopGoals.QueueTopClustersOnGoal)
+                            {
+                                var queued = IntelligenceStopGoalEvaluator.TryQueueTopClusters(
+                                    project.Name, projectCrashes, repoRoot, iterations);
+                                if (queued > 0)
+                                    FuzzAnalystLog.Info(progress, $"Queued {queued} top cluster(s) for replay/minimize", iterations);
+                            }
                         }
                     }
 
@@ -2087,7 +2097,7 @@ public sealed class FuzzEngine
             catch { /* intel write-back must not break teardown */ }
         }
 
-        var runResult = new FuzzRunResult(iterations, corpusAdded, crashCount, crashes);
+        var runResult = new FuzzRunResult(iterations, corpusAdded, crashCount, crashes, stopGoalReached, stopReason);
         TryNotifyCompleted(options.Progress, runResult);
         return runResult;
         }
