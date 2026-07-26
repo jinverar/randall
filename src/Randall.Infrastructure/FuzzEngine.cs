@@ -2711,6 +2711,13 @@ public sealed class FuzzEngine
             var advisor = ExploitabilityAdvisor.PersistForCrash(
                 crashesDir, crashId, project, rootCause, influence, primitives, debugger, triage, skeptic);
 
+            var backwardTrace = BackwardTraceBuilder.TryRead(BackwardTraceBuilder.PathFor(crashesDir, crashId));
+            var deepScream = DeepScreamBuilder.TryRead(DeepScreamBuilder.PathFor(crashesDir, crashId));
+            var patchHyp = PatchHypothesisEngine.PersistForCrash(
+                crashesDir, crashId, project, rootCause, influence, primitives, triage, debugger);
+            var temporal = TemporalBugEngine.PersistForCrash(
+                crashesDir, crashId, project, backwardTrace, corruption, rootCause, deepScream);
+
             if (primitives is { Ok: true })
             {
                 FuzzAnalystLog.Info(progress,
@@ -2733,6 +2740,18 @@ public sealed class FuzzEngine
             {
                 FuzzAnalystLog.Info(progress,
                     $"[advisor] {advisor.OverallLabel} [{advisor.Confidence}] — {Truncate(advisor.Summary, 100)}",
+                    iterations);
+            }
+            if (patchHyp is { Ok: true })
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[patch-hypothesis] [{patchHyp.Confidence}] — {Truncate(patchHyp.RemediationText, 100)}",
+                    iterations);
+            }
+            if (temporal is { Ok: true })
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[temporal] {temporal.Timeline.Count} phase(s) [{temporal.Confidence}] — {Truncate(temporal.Summary, 100)}",
                     iterations);
             }
         }
