@@ -176,6 +176,19 @@ public static class RandfuzzDbgWalk
         if (detail.DebuggerObservation?.Diagnosis is { } diag)
             lines.Add($".echo Investigator: {diag.Replace("\"", "'", StringComparison.Ordinal)}");
 
+        var analyzePath = WindowsCdbCrashAnalysisWriter.AnalyzeTextPathFor(crashesDir, crashId);
+        var headlessAnalyze = File.Exists(analyzePath) && new FileInfo(analyzePath).Length > 80;
+        if (headlessAnalyze)
+        {
+            lines.Add($".echo Headless cdb !analyze already saved: {analyzePath.Replace('\\', '/')}");
+            lines.Add(".echo (see Crashes tab or open *_analyze.txt in an editor)");
+        }
+        else
+        {
+            lines.Add(".echo Running !analyze -v (headless cdb did not run or produced no output)");
+            lines.Add("!analyze -v");
+        }
+
         lines.Add(".echo === registers / stack ===");
         lines.Add("r");
         lines.Add("k");

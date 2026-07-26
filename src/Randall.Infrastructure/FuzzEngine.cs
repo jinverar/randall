@@ -452,7 +452,7 @@ public sealed class FuzzEngine
                 }
             }
 
-            // Only one debugger can attach. "both" = scream wait + open GUI after crash (not live dual-attach).
+            // Only one debugger can attach. "both" = same Scream wait as "wait"; GUI open is debuggerOpenOnCrash only.
             if (debuggerMode is "attach")
             {
                 var attach = DebuggerSession.Attach(proc.Id, debuggerKind, go: true);
@@ -1801,11 +1801,11 @@ public sealed class FuzzEngine
                         }
                     }
 
-                    if ((debuggerOpenOnCrash || debuggerMode is "both") && saved.MiniDumpPath is not null)
+                    if (DebuggerSession.ShouldOpenDumpOnCrash(debuggerOpenOnCrash) && saved.MiniDumpPath is not null)
                     {
                         try
                         {
-                            var opened = DebuggerSession.OpenDump(saved.MiniDumpPath, debuggerKind);
+                            var opened = DebuggerSession.OpenDump(saved.MiniDumpPath, debuggerKind, saved.Id);
                             Console.WriteLine(opened.Ok
                                 ? $"  debugger open: {opened.Message}"
                                 : $"  debugger open skipped: {opened.Message}");

@@ -658,8 +658,12 @@ public static class LabDoctor
                 Add("debuggerMode", "ok", "Scream watcher (built-in) will debug-attach for dumps");
             if (mode is "attach" && dbg.PreferredGui is null)
                 Add("debuggerMode", "warn", "debuggerMode attach needs WinDbg or WinDbg Preview");
-            if (mode is "both" && dbg.PreferredGui is null)
-                Add("debuggerMode", "warn", "both opens dumps after crash — install WinDbg Preview for GUI");
+            if (project.Fuzz.DebuggerOpenOnCrash && dbg.PreferredGui is null)
+                Add("debuggerMode", "warn",
+                    "debuggerOpenOnCrash needs WinDbg Preview or classic WinDbg for GUI dump open");
+            if (mode is "both" && !project.Fuzz.DebuggerOpenOnCrash)
+                Add("debuggerMode", "ok",
+                    "both = Scream wait (same as wait); enable debuggerOpenOnCrash to open dumps in GUI");
             if (!project.Target.LongLived)
                 Add("debuggerMode", "warn", "attach/wait work best with target.longLived: true");
         }

@@ -5494,11 +5494,19 @@ function maybeWarnDebuggerProcdumpConflict() {
   showDebuggerProcdumpConflictModal();
 }
 
+function syncDebuggerModeControls() {
+  const mode = (document.getElementById('fuzz-debugger')?.value || 'none').toLowerCase();
+  const openCb = document.getElementById('fuzz-open-on-crash');
+  if (!openCb) return;
+  if (mode === 'both') openCb.checked = true;
+}
+
 function initDebuggerProcdumpConflictDialog() {
   const modal = document.getElementById('dbg-procdump-conflict-modal');
   if (!modal) return;
 
   document.getElementById('fuzz-debugger')?.addEventListener('change', () => {
+    syncDebuggerModeControls();
     maybeWarnDebuggerProcdumpConflict();
     applyAttachDbgButtonState(fuzzStatusCache || { phase: 'idle', running: false });
   });

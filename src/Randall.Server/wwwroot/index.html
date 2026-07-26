@@ -422,7 +422,7 @@
                 <option value="none">None — no dump capture</option>
                 <option value="wait">Wait — Scream dump on exception</option>
                 <option value="attach">Attach — WinDbg / Preview live</option>
-                <option value="both">Both — Scream wait + open dump after crash</option>
+                <option value="both">Both — Wait + check "Open dump" below</option>
               </select>
             </label>
             <label>
@@ -445,7 +445,8 @@
             <details class="fuzz-debugger-setup" id="fuzz-debugger-setup">
               <summary>Debugger setup</summary>
               <p class="hint">
-                <strong>Scream / Wait / Both</strong> attach as the process debugger and write minidumps for Investigator + WinDbg.
+                <strong>Scream / Wait / Both</strong> attach as the process debugger and write minidumps for headless cdb + Investigator.
+                Check <strong>Open dump in debugger after crash</strong> (or pick Both) to launch WinDbg GUI — otherwise analysis stays headless.
                 <strong>ProcDump on crash</strong> also attaches as a debugger — Windows allows only one. Prefer Scream; leave ProcDump off
                 when Debugger is not None.
                 <button type="button" class="linkish" data-help="RECORDING.md#procdump-vs-scream">Help</button>

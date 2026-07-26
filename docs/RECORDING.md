@@ -291,9 +291,10 @@ Artifacts: `data/runs/<runId>/sysinternals/`.
 
 ```yaml
 fuzz:
-  debuggerMode: wait              # none | wait | attach | both
+  debuggerMode: wait              # none | wait | attach | both (both = wait; GUI via debuggerOpenOnCrash)
   debuggerKind: auto
-  debuggerOpenOnCrash: false
+  debuggerOpenOnCrash: false      # GUI WinDbg — off for headless-only (recommended with cdbAnalyzeCrash)
+  cdbAnalyzeCrash: true           # headless cdb !analyze -v → *_analyze.txt + *_debugger_observation.json
   procmonCapture: true            # → fuzz.pml
   etwCapture: false               # → fuzz-etw.etl (WPR light profiles; opt-in)
   tcpvconCapture: true            # → tcpvcon/
@@ -325,6 +326,9 @@ Template: [templates/tcp-runtime.yaml](templates/tcp-runtime.yaml).
 ### UI (Fuzz → Campaign)
 
 - **Debugger** → None / Wait (Scream) / Attach / Both  
+  - **Wait** (recommended): Scream minidumps + headless `cdb !analyze` when **cdb !analyze on crash dump** is checked — no WinDbg GUI.  
+  - **Open dump in debugger after crash**: opt-in GUI (WinDbg Preview runs a `-cf` script with `!analyze -v` or a note that headless cdb already ran).  
+  - **Both**: same as Wait but auto-checks **Open dump**; uncheck it for headless-only.
 - **Recording profile** → Off · First triage · Network / protocol · Deep dive · **Parser / RE** · Custom  
 - **RE companions** → API Monitor + Frida guidance (not injected; expand with Parser / RE)  
 - **Advanced** → Procmon · ETW/WPR · TCPVCon · ProcDump · pktmon · **tshark pcap** · DebugView · snapshots · Strings  

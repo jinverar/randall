@@ -13,6 +13,15 @@ public static class DebuggerSession
 {
     private static readonly ConcurrentDictionary<string, int> OpenDumpProcesses = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// GUI dump open follows <paramref name="openOnCrash"/> / fuzz.debuggerOpenOnCrash only.
+    /// <c>debuggerMode: both</c> enables Scream wait like <c>wait</c>; it does not imply GUI open.
+    /// </summary>
+    public static bool ShouldOpenDumpOnCrash(bool openOnCrash) => openOnCrash;
+
+    /// <summary>Cap auto-open storms during high crash rates (fuzz loop still saves dumps + headless cdb).</summary>
+    public const int MaxConcurrentAutoOpenDumps = 2;
+
     public static DebuggerLaunchResultDto OpenDump(string dumpPath, string kind = DebuggerTools.KindAuto, Guid? crashId = null)
     {
         dumpPath = Path.GetFullPath(dumpPath);
@@ -21,6 +30,13 @@ public static class DebuggerSession
 
         if (TryReuseOpenDump(dumpPath, out var existing))
             return existing!;
+
+        if (OpenDumpProcesses.Count >= MaxConcurrentAutoOpenDumps)
+        {
+            return Fail(kind,
+                $"{OpenDumpProcesses.Count} debugger windows already open (max {MaxConcurrentAutoOpenDumps}) — " +
+                "close one or open dumps manually from the Crashes tab");
+        }
 
         var resolvedKind = DebuggerTools.ResolveGuiKind(kind);
         var exe = DebuggerTools.ResolveGuiPath(resolvedKind);
