@@ -1,0 +1,16 @@
+{
+  "caseId": "av-read",
+  "description": "Read ACCESS_VIOLATION from unmapped address 0xDEADBEEF.",
+  "stub": false,
+  "exception": {
+    "code": "c0000005",
+    "hintContains": "ACCESS_VIOLATION"
+  },
+  "access": "Read",
+  "addressClass": "Other",
+  "inputInfluence": "UNKNOWN",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "av-read"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "caseId": "illegal-instruction",
+  "description": "STATUS_ILLEGAL_INSTRUCTION via RaiseException(0xC000001D).",
+  "stub": false,
+  "exception": {
+    "code": "c000001d",
+    "hintContains": "ILLEGAL"
+  },
+  "access": "Unknown",
+  "addressClass": "Unknown",
+  "inputInfluence": "UNKNOWN",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "illegal-instruction"
+  }
+}

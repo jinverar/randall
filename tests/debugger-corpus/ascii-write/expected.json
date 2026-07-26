@@ -1,0 +1,17 @@
+{
+  "caseId": "ascii-write",
+  "description": "Write AV with ASCII-pattern fault address 0x41414141.",
+  "stub": false,
+  "exception": {
+    "code": "c0000005",
+    "hintContains": "ACCESS_VIOLATION"
+  },
+  "access": "Write",
+  "addressClass": "AsciiPattern",
+  "inputInfluence": "HIGH",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "ascii-write",
+    "alternateTarget": "randall-screamcrash SCREAM token"
+  }
+}

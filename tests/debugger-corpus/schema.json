@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DebuggerCorpusExpected",
+  "type": "object",
+  "required": ["caseId", "exception", "access", "addressClass", "inputInfluence", "stub"],
+  "properties": {
+    "caseId": { "type": "string" },
+    "description": { "type": "string" },
+    "stub": { "type": "boolean" },
+    "exception": {
+      "type": "object",
+      "properties": {
+        "code": { "type": "string", "description": "NTSTATUS hex without 0x prefix" },
+        "hintContains": { "type": "string" }
+      }
+    },
+    "access": {
+      "enum": ["Unknown", "Read", "Write", "Execute"]
+    },
+    "addressClass": {
+      "enum": [
+        "Unknown", "NullPage", "SmallOffset", "AsciiPattern", "NonCanonical",
+        "ModuleRange", "Stackish", "Heapish", "Freed", "Other"
+      ]
+    },
+    "inputInfluence": {
+      "enum": ["UNKNOWN", "LOW", "MEDIUM", "HIGH"]
+    },
+    "harness": {
+      "type": "object",
+      "properties": {
+        "executable": { "type": "string" },
+        "arg": { "type": "string" },
+        "alternateTarget": { "type": "string" }
+      }
+    }
+  }
+}

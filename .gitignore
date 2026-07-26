@@ -64,6 +64,8 @@ targets/vulnai/*
 !targets/vulnai/.gitkeep
 targets/screamcrash/*
 !targets/screamcrash/.gitkeep
+targets/debugger-corpus/*.exe
+!targets/debugger-corpus/.gitkeep
 # VulnLab: keep the C source, ignore compiled tier binaries
 targets/vulnlab/vulnlab-*
 targets/forksrv-demo/forksrv_demo

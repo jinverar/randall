@@ -1,0 +1,16 @@
+{
+  "caseId": "divide-zero",
+  "description": "Integer divide by zero — STATUS_INTEGER_DIVIDE_BY_ZERO.",
+  "stub": false,
+  "exception": {
+    "code": "c0000094",
+    "hintContains": "INTEGER_DIVIDE"
+  },
+  "access": "Unknown",
+  "addressClass": "Unknown",
+  "inputInfluence": "UNKNOWN",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "divide-zero"
+  }
+}

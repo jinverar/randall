@@ -1,0 +1,17 @@
+{
+  "caseId": "heap-overflow",
+  "description": "Heap buffer overflow — TODO: native harness with small heap allocation + overrun.",
+  "stub": true,
+  "exception": {
+    "code": "c0000005",
+    "hintContains": "ACCESS_VIOLATION"
+  },
+  "access": "Write",
+  "addressClass": "Heapish",
+  "inputInfluence": "MEDIUM",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "heap-overflow"
+  },
+  "todo": "Implement one-byte heap overrun; optional PageHeap / !heap probes for Heapish class."
+}

@@ -1,0 +1,17 @@
+{
+  "caseId": "uaf",
+  "description": "Use-after-free — TODO: free + dangling read/write with !address Free memory probe.",
+  "stub": true,
+  "exception": {
+    "code": "c0000005",
+    "hintContains": "ACCESS_VIOLATION"
+  },
+  "access": "Read",
+  "addressClass": "Freed",
+  "inputInfluence": "UNKNOWN",
+  "harness": {
+    "executable": "targets/debugger-corpus/debugger_corpus_fault.exe",
+    "arg": "uaf"
+  },
+  "todo": "Implement malloc/free/use; rely on ScreamInvestigator Freed class from !address output."
+}
