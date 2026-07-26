@@ -30,7 +30,7 @@ public static class CrashTriage
         var severity = ScoreSeverity(crashClass, ipControlled, stackSmashed, analysis?.Ok == true, exploitableClassification);
         var summaryText = BuildSummary(crashClass, severity, fault, module, ipControlled, stackSmashed);
         var clusterKey = BuildClusterKey(summary?.Project ?? "?", crashClass, fault, module, debugger);
-        var (depth, depthNote) = FindPatternDepth(payload, rip, fault, rsp);
+        var (depth, depthNote) = FindPatternDepth(payload, rip, fault, rsp, debugger?.RegistersText);
         var semanticFingerprint = SemanticCrashFingerprint.Build(
             crashClass,
             debugger,
@@ -62,60 +62,49 @@ public static class CrashTriage
         byte[]? payload,
         string? rip,
         string? fault,
-        string? rsp)
+        string? rsp,
+        string? registersText = null)
     {
         if (payload is null || payload.Length == 0)
             return (null, null);
 
-        foreach (var (label, addr) in new[] { ("RIP", rip), ("fault", fault), ("RSP", rsp) })
+        var candidates = new List<(string Label, string? Addr)>
+        {
+            ("RIP", rip),
+            ("fault", fault),
+            ("RSP", rsp),
+        };
+
+        if (!string.IsNullOrWhiteSpace(registersText))
+        {
+            foreach (var (reg, addr) in InputAttributionEngine.ParseRegisters(registersText))
+            {
+                if (reg is "rip" or "rsp" or "fault")
+                    continue;
+                candidates.Add((reg.ToUpperInvariant(), addr));
+            }
+        }
+
+        foreach (var (label, addr) in candidates)
         {
             if (string.IsNullOrWhiteSpace(addr))
                 continue;
-            var needle = AddrToLittleEndianBytes(addr, 4);
+            var needle = InputAttributionEngine.AddrToLittleEndianBytes(addr, 4);
             if (needle is null)
                 continue;
-            var idx = IndexOf(payload, needle);
+            var idx = InputAttributionEngine.IndexOf(payload, needle);
             if (idx >= 0)
                 return (idx, $"{label} dword found in input at offset {idx} (depth triage)");
 
-            var needle8 = AddrToLittleEndianBytes(addr, 8);
+            var needle8 = InputAttributionEngine.AddrToLittleEndianBytes(addr, 8);
             if (needle8 is null)
                 continue;
-            idx = IndexOf(payload, needle8);
+            idx = InputAttributionEngine.IndexOf(payload, needle8);
             if (idx >= 0)
                 return (idx, $"{label} qword found in input at offset {idx} (depth triage)");
         }
 
         return (null, null);
-    }
-
-    private static byte[]? AddrToLittleEndianBytes(string addr, int width)
-    {
-        var hex = addr.Trim();
-        if (hex.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-            hex = hex[2..];
-        if (!ulong.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out var value))
-            return null;
-        var bytes = BitConverter.GetBytes(value);
-        return bytes.AsSpan(0, width).ToArray();
-    }
-
-    private static int IndexOf(byte[] haystack, byte[] needle)
-    {
-        for (var i = 0; i <= haystack.Length - needle.Length; i++)
-        {
-            var ok = true;
-            for (var j = 0; j < needle.Length; j++)
-            {
-                if (haystack[i + j] != needle[j])
-                {
-                    ok = false;
-                    break;
-                }
-            }
-            if (ok) return i;
-        }
-        return -1;
     }
 
     public static string BuildClusterKey(

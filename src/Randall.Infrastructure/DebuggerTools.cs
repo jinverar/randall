@@ -270,11 +270,45 @@ public static class DebuggerTools
         var preview = FindWinDbgPreview();
         var tracer = FindTtdTracer();
         var present = preview is not null || tracer is not null;
+        var canRecord = tracer is not null || preview is not null;
+        var canReplay = preview is not null;
+        var recordVia = tracer is not null ? "tttracer -out <trace.run> <target>"
+            : preview is not null ? "WinDbg Preview attach → !tt.record … !tt.stop"
+            : null;
         var summary = preview is not null && tracer is not null ? "WinDbg Preview + tttracer"
             : preview is not null ? "WinDbg Preview (attach/!tt.record)"
             : tracer is not null ? "tttracer only — install WinDbg Preview for replay"
             : "install WinDbg Preview from Microsoft Store";
-        return new TtdToolsProbe(present, summary, preview, tracer);
+        return new TtdToolsProbe(present, summary, preview, tracer, canRecord, canReplay, recordVia);
+    }
+
+    /// <summary>
+    /// Best-effort detached launch of WinDbg Preview on a minidump with a Randfuzz TTD query script.
+    /// Does not record traces — OS/session policy may block; returns a human note either way.
+    /// </summary>
+    public static (bool Attempted, string Note) TryLaunchTtdReplay(
+        string? winDbgPreviewPath, string? dumpPath, string? queryScriptPath)
+    {
+        if (!OperatingSystem.IsWindows())
+            return (false, "TTD replay launch skipped — Windows only");
+        if (string.IsNullOrWhiteSpace(winDbgPreviewPath) || !File.Exists(winDbgPreviewPath))
+            return (false, "WinDbg Preview not found — use playbook record/replay scripts");
+        if (string.IsNullOrWhiteSpace(dumpPath) || !File.Exists(dumpPath))
+            return (false, "No minidump on disk — record a TTD trace manually first");
+
+        var args = $"-z \"{dumpPath}\" {FormatSymbolCommandLineArgs()}";
+        if (!string.IsNullOrWhiteSpace(queryScriptPath) && File.Exists(queryScriptPath))
+            args += $" -cf \"{queryScriptPath}\"";
+
+        try
+        {
+            Process.Start(BuildDetachedStartInfo(winDbgPreviewPath, args));
+            return (true, "WinDbg Preview launched on dump (replay script attached if present)");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"WinDbg Preview launch blocked ({ex.Message}) — run replay .cmd manually");
+        }
     }
 
     public static string? FindProcDump() => FirstExisting(

@@ -41,13 +41,9 @@ public static class CorruptionChainBuilder
                     ?? sidecar?.MutatorChain?.ToList()
                     ?? (sidecar?.Mutator is { } m ? new List<string> { m } : []);
 
-        var (depth, depthNote) = triage?.PatternDepthBytes is int d
-            ? (triage.PatternDepthBytes, triage.PatternNote)
-            : CrashTriage.FindPatternDepth(
-                payload,
-                debugger?.Rip ?? triage?.Rip,
-                debugger?.FaultAddress ?? triage?.FaultAddress,
-                triage?.Rsp);
+        var attribution = InputAttributionEngine.Analyze(payload, debugger, triage, sidecar, chain);
+        var depth = attribution.PatternDepthBytes;
+        var depthNote = attribution.PatternNote;
 
         var steps = new List<CorruptionChainStepDto>();
         var order = 0;
@@ -57,17 +53,29 @@ public static class CorruptionChainBuilder
 
         for (var i = 0; i < chain.Count; i++)
         {
+            var isAttributed = attribution.SuspectedMutatorStep == i;
             steps.Add(new CorruptionChainStepDto(
                 ++order,
                 "mutation",
                 chain[i],
-                i == chain.Count - 1 ? "last mutator before crash" : null));
+                isAttributed
+                    ? "attributed mutation step"
+                    : i == chain.Count - 1 ? "last mutator before crash" : null));
         }
 
         if (!string.IsNullOrWhiteSpace(sidecar?.Command))
-            steps.Add(new CorruptionChainStepDto(++order, "command", sidecar.Command, "session / protocol node"));
+            steps.Add(new CorruptionChainStepDto(++order, "field", sidecar.Command, "session / protocol node"));
 
-        if (depth is int off)
+        foreach (var match in attribution.RegisterMatches.Take(6))
+        {
+            steps.Add(new CorruptionChainStepDto(
+                ++order,
+                "register",
+                $"{match.Register}={match.ValueHex}",
+                $"input+{match.PayloadOffset} ({match.MatchKind}) · {match.Note}"));
+        }
+
+        if (depth is int off && attribution.RegisterMatches.All(m => m.PayloadOffset != off))
             steps.Add(new CorruptionChainStepDto(
                 ++order, "input-offset", $"input+0x{off:X}", depthNote ?? "address dword/qword found in payload"));
 
@@ -77,9 +85,13 @@ public static class CorruptionChainBuilder
                 steps.Add(new CorruptionChainStepDto(++order, "access", debugger.Access.ToString(),
                     debugger.FaultAddressClass.ToString()));
             if (!string.IsNullOrWhiteSpace(debugger.FaultingFunction))
+            {
+                var sinkDetail = InferSinkDetail(debugger);
                 steps.Add(new CorruptionChainStepDto(++order, "function",
                     $"{debugger.FaultingModule ?? "?"}!{debugger.FaultingFunction}{debugger.FunctionOffset ?? ""}",
-                    debugger.Rip));
+                    sinkDetail ?? debugger.Rip));
+            }
+
             if (!string.IsNullOrWhiteSpace(debugger.FaultAddress))
                 steps.Add(new CorruptionChainStepDto(++order, "fault-address", debugger.FaultAddress!,
                     debugger.FaultAddressClass.ToString()));
@@ -94,26 +106,30 @@ public static class CorruptionChainBuilder
                 triage.ExceptionHint ?? triage.Class, triage.Summary));
         }
 
-        var suspectedMutator = chain.Count > 0 ? chain[^1] : sidecar?.Mutator;
-        var suspectedField = InferField(sidecar?.Command, depth, depthNote, debugger);
-        var confidence = ScoreConfidence(debugger, depth, chain.Count);
-        var summary = BuildSummary(suspectedMutator, suspectedField, debugger, depth, confidence);
+        var suspectedMutator = attribution.SuspectedMutator ?? (chain.Count > 0 ? chain[^1] : sidecar?.Mutator);
+        var suspectedField = InferField(sidecar?.Command, depth, depthNote, debugger, attribution.PrimaryMatch);
+        var diagnosis = MergeDiagnosis(debugger?.Diagnosis, attribution.Narrative);
 
         return new CrashCorruptionChainDto(
             Ok: steps.Count > 0,
             CrashId: crashId,
             Project: project,
-            Confidence: confidence,
-            Summary: summary,
+            Confidence: attribution.Confidence,
+            Summary: attribution.Summary,
             SuspectedField: suspectedField,
             SuspectedMutator: suspectedMutator,
             PatternDepthBytes: depth,
             PatternNote: depthNote,
             MutatorLineage: chain,
             Steps: steps,
-            DebuggerDiagnosis: debugger?.Diagnosis,
+            DebuggerDiagnosis: diagnosis,
             StackHash: debugger?.StackHash,
-            At: DateTimeOffset.UtcNow);
+            At: DateTimeOffset.UtcNow,
+            SuspectedMutatorStep: attribution.SuspectedMutatorStep,
+            RegisterMatches: attribution.RegisterMatches,
+            PrimaryRegister: attribution.PrimaryMatch?.Register,
+            Narrative: attribution.Narrative,
+            AttributionScreamBonus: attribution.AttributionScreamBonus);
     }
 
     public static CrashCorruptionChainDto PersistForCrash(
@@ -142,8 +158,11 @@ public static class CorruptionChainBuilder
         string? command,
         int? depth,
         string? depthNote,
-        DebuggerObservation? debugger)
+        DebuggerObservation? debugger,
+        RegisterPayloadMatchDto? primaryMatch)
     {
+        if (primaryMatch is not null)
+            return $"payload+{primaryMatch.PayloadOffset}" + (command is null ? "" : $" ({command})");
         if (depth is int d && !string.IsNullOrWhiteSpace(depthNote))
             return $"payload+{d}" + (command is null ? "" : $" ({command})");
         if (debugger?.FaultAddressClass == DebuggerAddressClass.AsciiPattern)
@@ -153,43 +172,25 @@ public static class CorruptionChainBuilder
         return "unknown field";
     }
 
-    private static string ScoreConfidence(DebuggerObservation? dbg, int? depth, int chainLen)
+    private static string? InferSinkDetail(DebuggerObservation debugger)
     {
-        var score = 0;
-        if (dbg is { Ok: true }) score += 2;
-        if (dbg?.SuspectedInputInfluence == "HIGH") score += 3;
-        else if (dbg?.SuspectedInputInfluence == "MEDIUM") score += 1;
-        if (dbg?.FaultAddressClass == DebuggerAddressClass.AsciiPattern) score += 2;
-        if (depth is not null) score += 2;
-        if (chainLen >= 2) score += 1;
-        return score switch
-        {
-            >= 6 => "HIGH",
-            >= 3 => "MEDIUM",
-            >= 1 => "LOW",
-            _ => "UNKNOWN",
-        };
+        var fn = (debugger.FaultingFunction ?? "").ToLowerInvariant();
+        var disasm = (debugger.DisasmNearRip ?? "").ToLowerInvariant();
+        if (fn.Contains("memcpy") || fn.Contains("memmove") || disasm.Contains("memcpy"))
+            return "length→memcpy-style sink";
+        if (debugger.Access == DebuggerAccessKind.Write)
+            return "controlled write sink";
+        return null;
     }
 
-    private static string BuildSummary(
-        string? mutator,
-        string? field,
-        DebuggerObservation? dbg,
-        int? depth,
-        string confidence)
+    private static string? MergeDiagnosis(string? debuggerDiagnosis, string? narrative)
     {
-        var parts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(mutator))
-            parts.Add($"mutation '{mutator}'");
-        if (!string.IsNullOrWhiteSpace(field))
-            parts.Add($"field {field}");
-        if (depth is int d)
-            parts.Add($"pattern @ +{d}");
-        if (dbg?.Access is DebuggerAccessKind.Write or DebuggerAccessKind.Execute)
-            parts.Add($"{dbg.Access.ToString().ToLowerInvariant()} AV");
-        if (dbg?.FaultingFunction is not null)
-            parts.Add($"in {dbg.FaultingModule}!{dbg.FaultingFunction}");
-        var body = parts.Count == 0 ? "insufficient evidence for attribution" : string.Join(" → ", parts);
-        return $"[{confidence}] {body}";
+        if (string.IsNullOrWhiteSpace(narrative))
+            return debuggerDiagnosis;
+        if (string.IsNullOrWhiteSpace(debuggerDiagnosis))
+            return narrative;
+        if (debuggerDiagnosis.Contains(narrative, StringComparison.OrdinalIgnoreCase))
+            return debuggerDiagnosis;
+        return $"{debuggerDiagnosis} Attribution: {narrative}";
     }
 }

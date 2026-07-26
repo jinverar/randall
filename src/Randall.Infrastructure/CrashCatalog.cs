@@ -279,6 +279,12 @@ public static class CrashCatalog
                     corruptionChain,
                     projectContexts);
             var hypotheses = HypothesisEngine.TryReadForCrash(crashesDir, summary.Id);
+            var backwardTrace = BackwardTraceBuilder.TryRead(
+                BackwardTraceBuilder.PathFor(crashesDir, summary.Id))
+                ?? (corruptionChain is not null || debugger is not null
+                    ? BackwardTraceBuilder.Build(
+                        summary.Id, summary.Project, sidecar, debugger, triage, corruptionChain, bytes)
+                    : null);
             var pageHeapEnabled = TryResolvePageHeap(sidecar, repoRoot);
             var projectSummaries = ListAll(repoRoot).Where(x => x.Project == summary.Project).ToList();
             var intelligence = CrashIntelligenceBuilder.Build(
@@ -326,7 +332,8 @@ public static class CrashCatalog
                 corruptionChain,
                 evolution,
                 hypotheses,
-                deepScream);
+                deepScream,
+                backwardTrace);
         }
         return null;
     }

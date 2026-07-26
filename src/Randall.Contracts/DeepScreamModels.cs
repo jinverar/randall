@@ -18,6 +18,7 @@ public sealed record DeepScreamDto(
     string? DumpPath = null,
     string? EvolutionPath = null,
     string? CorruptionChainPath = null,
+    string? BackwardTracePath = null,
     string? HypothesisPath = null,
     string? SemanticFingerprint = null,
     string? FamilyId = null,
@@ -30,6 +31,9 @@ public sealed record DeepScreamDto(
     bool TtdToolsPresent = false,
     string? TtdToolsSummary = null,
     string? TtdHintPath = null,
+    string? TtdRecordScriptPath = null,
+    string? TtdReplayScriptPath = null,
+    string? TtdLaunchNote = null,
     DateTimeOffset At = default,
     string? Error = null);
 

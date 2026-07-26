@@ -18,6 +18,15 @@ public static class DeepScreamBuilder
     public static string TtdHintPathFor(string crashesDir, Guid crashId) =>
         Path.Combine(crashesDir, $"{crashId:N}_deep_scream_ttd.md");
 
+    public static string TtdRecordScriptPathFor(string crashesDir, Guid crashId) =>
+        Path.Combine(crashesDir, $"{crashId:N}_deep_scream_ttd_record.cmd");
+
+    public static string TtdReplayScriptPathFor(string crashesDir, Guid crashId) =>
+        Path.Combine(crashesDir, $"{crashId:N}_deep_scream_ttd_replay.cmd");
+
+    public static string TtdQueryScriptPathFor(string crashesDir, Guid crashId) =>
+        Path.Combine(crashesDir, $"{crashId:N}_deep_scream_ttd_queries.txt");
+
     public static string FamilyRegistryPathFor(string crashesDir) =>
         Path.Combine(crashesDir, "_deep_scream_families.json");
 
@@ -73,6 +82,7 @@ public static class DeepScreamBuilder
             DumpPath: dumpPath,
             EvolutionPath: string.IsNullOrWhiteSpace(crashesDir) ? null : ScreamEvolutionBuilder.PathFor(crashesDir, crashId),
             CorruptionChainPath: string.IsNullOrWhiteSpace(crashesDir) ? null : CorruptionChainBuilder.PathFor(crashesDir, crashId),
+            BackwardTracePath: string.IsNullOrWhiteSpace(crashesDir) ? null : BackwardTraceBuilder.PathFor(crashesDir, crashId),
             HypothesisPath: string.IsNullOrWhiteSpace(crashesDir) ? null : HypothesisEngine.PathFor(crashesDir, crashId),
             SemanticFingerprint: semanticFingerprint, FamilyId: familyId,
             IsMarked: isMarked && candidate, FamilySuppressed: familySuppressed,
@@ -209,6 +219,24 @@ public static class DeepScreamBuilder
         return updated;
     }
 
+    public static DeepScreamDto WithTtdArtifacts(
+        string crashesDir, DeepScreamDto dto, string ttdHintPath,
+        string? replayScriptPath, string? launchNote)
+    {
+        var recordScript = dto.TtdRecordScriptPath ?? TtdRecordScriptPathFor(crashesDir, dto.CrashId);
+        if (!File.Exists(recordScript)) recordScript = null;
+        var updated = dto with
+        {
+            TtdHintPath = ttdHintPath,
+            TtdRecordScriptPath = recordScript,
+            TtdReplayScriptPath = replayScriptPath,
+            TtdLaunchNote = launchNote,
+            At = DateTimeOffset.UtcNow,
+        };
+        Write(crashesDir, updated);
+        return updated;
+    }
+
     public static string FormatSummary(DeepScreamDto dto)
     {
         if (dto.FamilySuppressed) return $"Deep Scream suppressed (family) — prior `{dto.PriorFamilyCrashId:N}`";
@@ -223,10 +251,15 @@ public static class DeepScreamBuilder
         Directory.CreateDirectory(crashesDir);
         var path = TtdHintPathFor(crashesDir, crashId);
         var ttd = DebuggerTools.ProbeTtd();
+        var dbg = TryReadDebuggerObservation(crashesDir, crashId);
+        WriteTtdQueryScript(crashesDir, crashId, dbg);
+        var (recordScript, replayScript, launchNote) =
+            WriteTtdLaunchArtifacts(crashesDir, crashId, dumpPath, inputPath, ttd, dbg);
         var sb = new StringBuilder();
-        sb.AppendLine("# Deep Scream — TTD operator playbook (Phase D)");
+        sb.AppendLine("# Deep Scream — TTD operator playbook");
         sb.AppendLine();
-        sb.AppendLine("Randfuzz does **not** capture TTD traces. This crash is **marked** — use WinDbg Preview externally.");
+        sb.AppendLine("**Research-only.** Randfuzz does **not** capture TTD traces during fuzz (OS/session policy blocks hot-path record).");
+        sb.AppendLine("This crash is **marked** for Deep Scream — use WinDbg Preview + scripts below externally.");
         sb.AppendLine($"Crash: `{crashId:N}` · project `{project}` · screamScore **{deepScream.ScreamScore}**");
         if (!string.IsNullOrWhiteSpace(deepScream.FamilyId)) sb.AppendLine($"Family: `{deepScream.FamilyId}`");
         if (!string.IsNullOrWhiteSpace(deepScream.SemanticFingerprint)) sb.AppendLine($"Semantic fingerprint: `{deepScream.SemanticFingerprint}`");
@@ -235,24 +268,194 @@ public static class DeepScreamBuilder
         if (!string.IsNullOrWhiteSpace(deepScream.MinimizedInputPath)) sb.AppendLine($"Minimized input: `{deepScream.MinimizedInputPath}`");
         if (!string.IsNullOrWhiteSpace(deepScream.EvolutionPath)) sb.AppendLine($"Evolution: `{deepScream.EvolutionPath}`");
         if (!string.IsNullOrWhiteSpace(deepScream.CorruptionChainPath)) sb.AppendLine($"Corruption chain: `{deepScream.CorruptionChainPath}`");
+        if (!string.IsNullOrWhiteSpace(deepScream.BackwardTracePath)) sb.AppendLine($"Backward trace: `{deepScream.BackwardTracePath}`");
         if (!string.IsNullOrWhiteSpace(deepScream.HypothesisPath)) sb.AppendLine($"Hypotheses: `{deepScream.HypothesisPath}`");
         sb.AppendLine($"Deep Scream artifact: `{PathFor(crashesDir, crashId)}`");
         sb.AppendLine();
         sb.AppendLine("## TTD toolchain");
         sb.AppendLine($"- Status: {(ttd.Present ? "tools detected" : "not detected")}");
         sb.AppendLine($"- Summary: {ttd.Summary}");
+        sb.AppendLine($"- Can record: {(ttd.CanRecord ? "yes" : "no")} · Can replay: {(ttd.CanReplay ? "yes" : "no")}");
+        if (ttd.RecordVia is not null) sb.AppendLine($"- Record via: `{ttd.RecordVia}`");
         if (ttd.WinDbgPreviewPath is not null) sb.AppendLine($"- WinDbg Preview: `{ttd.WinDbgPreviewPath}`");
         if (ttd.TtdTracerPath is not null) sb.AppendLine($"- tttracer: `{ttd.TtdTracerPath}`");
+        if (recordScript is not null) sb.AppendLine($"- Record script: `{recordScript}`");
+        if (replayScript is not null) sb.AppendLine($"- Replay script: `{replayScript}`");
+        if (!string.IsNullOrWhiteSpace(launchNote)) sb.AppendLine($"- Launch: {launchNote}");
         sb.AppendLine();
-        sb.AppendLine("## Steps");
-        sb.AppendLine($"1. `randall replay -i {crashId:N}`");
-        sb.AppendLine("2. WinDbg Preview: `.attach <pid>` → `!tt.record` … reproduce … `!tt.stop`");
-        if (ttd.TtdTracerPath is not null)
-            sb.AppendLine($"   Or: `\"{ttd.TtdTracerPath}\" -out deep_scream_{crashId:N}.run <target.exe> <args>`");
-        sb.AppendLine($"3. `randall debug open -i {crashId:N} --kind windbg-preview`");
+        sb.AppendLine("## Record / replay (automated launch scripts)");
+        sb.AppendLine("1. `randall replay -i " + crashId.ToString("N") + "` — reproduce with saved input");
+        if (recordScript is not null)
+            sb.AppendLine($"2. Double-click or run `{Path.GetFileName(recordScript)}` — edit TARGET/ARGS inside first");
+        else
+            sb.AppendLine("2. WinDbg Preview: `.attach <pid>` → `!tt.record` … reproduce … `!tt.stop`");
+        if (replayScript is not null)
+            sb.AppendLine($"3. Run `{Path.GetFileName(replayScript)}` — opens dump + backward-query script in WinDbg Preview");
+        else
+            sb.AppendLine($"3. `randall debug open -i {crashId:N} --kind windbg-preview`");
         sb.AppendLine("4. In trace: `!tt` · `g-` · `!analyze -v`");
+        sb.AppendLine();
+        AppendExploitBackwardQueries(sb, dbg, crashId, crashesDir);
         File.WriteAllText(path, sb.ToString());
         return path;
+    }
+
+    /// <summary>
+    /// Writes record/replay .cmd launchers and a WinDbg -cf query script. Returns paths + launch note.
+    /// </summary>
+    public static (string? RecordScript, string? ReplayScript, string? LaunchNote) WriteTtdLaunchArtifacts(
+        string crashesDir, Guid crashId, string? dumpPath, string? inputPath, TtdToolsProbe ttd,
+        DebuggerObservation? debugger = null)
+    {
+        if (!ttd.Present) return (null, null, "TTD tools not detected — install WinDbg Preview");
+
+        string? recordScript = null;
+        string? replayScript = null;
+        var notes = new List<string>();
+
+        if (ttd.CanRecord)
+        {
+            recordScript = TtdRecordScriptPathFor(crashesDir, crashId);
+            var traceOut = Path.Combine(crashesDir, $"deep_scream_{crashId:N}.run");
+            var sb = new StringBuilder();
+            sb.AppendLine("@echo off");
+            sb.AppendLine("REM Randfuzz Deep Scream — TTD record launcher (research-only, manual TARGET edit)");
+            sb.AppendLine("REM Randfuzz does NOT auto-record during fuzz — run this after reproducing the crash.");
+            if (ttd.TtdTracerPath is not null)
+            {
+                sb.AppendLine($"set TRACE=\"{traceOut}\"");
+                sb.AppendLine("set TARGET=<edit-me.exe>");
+                sb.AppendLine("set ARGS=<edit-args-or-leave-empty>");
+                sb.AppendLine($"\"{ttd.TtdTracerPath}\" -out %TRACE% %TARGET% %ARGS%");
+                sb.AppendLine("echo Trace written: %TRACE%");
+                sb.AppendLine("echo Open trace in WinDbg Preview: File - Open trace");
+            }
+            else if (ttd.WinDbgPreviewPath is not null)
+            {
+                sb.AppendLine($"start \"\" \"{ttd.WinDbgPreviewPath}\"");
+                sb.AppendLine("echo 1) Start target with saved input");
+                sb.AppendLine("echo 2) WinDbg Preview: .attach <pid>");
+                sb.AppendLine("echo 3) !tt.record");
+                sb.AppendLine("echo 4) Reproduce crash (randall replay -i " + crashId.ToString("N") + ")");
+                sb.AppendLine("echo 5) !tt.stop");
+            }
+            if (!string.IsNullOrWhiteSpace(inputPath))
+                sb.AppendLine($"REM Saved input: {inputPath}");
+            File.WriteAllText(recordScript, sb.ToString());
+            notes.Add("record .cmd written");
+        }
+
+        var queryScript = TtdQueryScriptPathFor(crashesDir, crashId);
+        if (ttd.CanReplay && ttd.WinDbgPreviewPath is not null
+            && !string.IsNullOrWhiteSpace(dumpPath) && File.Exists(dumpPath))
+        {
+            replayScript = TtdReplayScriptPathFor(crashesDir, crashId);
+            var sb = new StringBuilder();
+            sb.AppendLine("@echo off");
+            sb.AppendLine("REM Randfuzz Deep Scream — TTD replay launcher (dump + backward queries)");
+            sb.AppendLine($"\"{ttd.WinDbgPreviewPath}\" -z \"{dumpPath}\" {DebuggerTools.FormatSymbolCommandLineArgs()} -cf \"{queryScript}\"");
+            File.WriteAllText(replayScript, sb.ToString());
+            notes.Add("replay .cmd written");
+        }
+
+        var launchNote = notes.Count > 0 ? string.Join("; ", notes) : "scripts skipped — need dump + WinDbg Preview";
+        return (recordScript, replayScript, launchNote);
+    }
+
+    public static string WriteTtdQueryScript(string crashesDir, Guid crashId, DebuggerObservation? debugger = null)
+    {
+        Directory.CreateDirectory(crashesDir);
+        var path = TtdQueryScriptPathFor(crashesDir, crashId);
+        var sb = new StringBuilder();
+        sb.AppendLine(DebuggerTools.FormatSympathScriptCommand());
+        sb.AppendLine($".echo === RANDFUZZ DEEP SCREAM TTD {crashId:N} ===");
+        sb.AppendLine(".echo Exploit-focused backward queries — use g- / !tt after opening a trace");
+        sb.AppendLine("!analyze -v");
+        sb.AppendLine("r");
+        sb.AppendLine("k");
+        if (!string.IsNullOrWhiteSpace(debugger?.Rip))
+        {
+            sb.AppendLine($".echo Fault RIP: {debugger.Rip}");
+            sb.AppendLine($"u {debugger.Rip} L20");
+            sb.AppendLine($".echo Backward: g- until RIP changes, or !tt {debugger.Rip}");
+        }
+        if (!string.IsNullOrWhiteSpace(debugger?.FaultAddress))
+        {
+            sb.AppendLine($".echo Fault address: {debugger.FaultAddress} ({debugger.FaultAddressClass})");
+            sb.AppendLine($"!address {debugger.FaultAddress}");
+            if (debugger.FaultAddressClass is DebuggerAddressClass.Heapish or DebuggerAddressClass.Unknown)
+                sb.AppendLine($"!heap -p -a {debugger.FaultAddress}");
+        }
+        if (!string.IsNullOrWhiteSpace(debugger?.HeapSignal))
+            sb.AppendLine($".echo Heap signal: {debugger.HeapSignal} — walk g- for alloc/free pairs");
+        sb.AppendLine(".echo Register write hunt: dx @rip; dx @rsp; walk g-");
+        sb.AppendLine(".echo Heap history: !heap -stat; !heap -p -a <addr>");
+        sb.AppendLine("lm");
+        File.WriteAllText(path, sb.ToString());
+        return path;
+    }
+
+    private static void AppendExploitBackwardQueries(StringBuilder sb, DebuggerObservation? dbg, Guid crashId, string crashesDir)
+    {
+        sb.AppendLine("## Exploit-focused backward queries");
+        sb.AppendLine();
+        sb.AppendLine("### Dump-only backward trace (no TTD required)");
+        var trace = BackwardTraceBuilder.TryRead(BackwardTraceBuilder.PathFor(crashesDir, crashId));
+        if (trace is { Ok: true })
+        {
+            sb.AppendLine($"- **Story** [{trace.Confidence}]: {trace.Story}");
+            if (trace.FaultInstruction is not null)
+                sb.AppendLine($"- Fault instruction: `{trace.FaultInstruction}`");
+            if (trace.BadPointerSource is not null)
+                sb.AppendLine($"- Bad pointer source: {trace.BadPointerSource}");
+            if (trace.HeapTimeline is not null)
+                sb.AppendLine($"- Heap timeline: {trace.HeapTimeline}");
+            foreach (var step in trace.Steps.Take(8))
+                sb.AppendLine($"  {step.Order}. `{step.Kind}` {step.Label}{(step.Detail is not null ? $" — {step.Detail}" : "")}");
+            sb.AppendLine();
+        }
+        else
+        {
+            sb.AppendLine("- Run with `fuzz.cdbAnalyzeCrash: true` to populate `{guid}_backward_trace.json` from dump probes.".Replace("{guid}", crashId.ToString("N")));
+            sb.AppendLine();
+        }
+        sb.AppendLine("### Live TTD (external — optional)");
+        sb.AppendLine("Use after opening a **TTD trace** (not just a static dump). In WinDbg Preview:");
+        sb.AppendLine();
+        sb.AppendLine("| Goal | Commands |");
+        sb.AppendLine("|------|----------|");
+        sb.AppendLine("| Rewind toward fault | `!analyze -v` then `g-` / `!tt` |");
+        sb.AppendLine("| Where was RIP set? | `u @rip L20` · walk `g-` · `dx @rip` |");
+        sb.AppendLine("| Controlled register origin | Walk backward until `mov`/write to fault reg · compare input offset |");
+        sb.AppendLine("| Heap alloc/free history | `!heap -p -a <fault>` · `!address <fault>` · `!heap -stat` |");
+        sb.AppendLine("| Stack corruption source | `dps @rsp L20` · `g-` until stack slot changes |");
+        sb.AppendLine("| Input influence | Correlate `{guid}_corruption_chain.json` pattern depth with backward writes |".Replace("{guid}", crashId.ToString("N")));
+        if (dbg is { Ok: true })
+        {
+            sb.AppendLine();
+            sb.AppendLine("### Tailored to this crash");
+            if (!string.IsNullOrWhiteSpace(dbg.Rip))
+                sb.AppendLine($"- Fault RIP `{dbg.Rip}` — `u {dbg.Rip} L20` then walk `g-` for last write to RIP/control reg");
+            if (!string.IsNullOrWhiteSpace(dbg.FaultAddress))
+                sb.AppendLine($"- Fault `{dbg.FaultAddress}` ({dbg.FaultAddressClass}) — `!address {dbg.FaultAddress}` · heap walk if heapish");
+            if (!string.IsNullOrWhiteSpace(dbg.HeapSignal))
+                sb.AppendLine($"- Heap: `{dbg.HeapSignal}` — backward search for matching alloc/free");
+            if (dbg.ExploitabilityHint is "HIGH" or "MEDIUM")
+                sb.AppendLine($"- Exploitability `{dbg.ExploitabilityHint}` — prioritize register-write and heap-poison backward steps");
+        }
+        sb.AppendLine();
+        sb.AppendLine("Limits: Randfuzz cannot guarantee TTD record on your OS (UAC, sandbox, driver signing). Scripts are best-effort operator aids only.");
+    }
+
+    private static DebuggerObservation? TryReadDebuggerObservation(string crashesDir, Guid crashId)
+    {
+        var path = Path.Combine(crashesDir, $"{crashId:N}_debugger_observation.json");
+        if (!File.Exists(path)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<DebuggerObservation>(File.ReadAllText(path), JsonOpts);
+        }
+        catch { return null; }
     }
 
     public static void AppendDeepScreamIndex(string crashesDir, Guid crashId, DeepScreamDto deepScream, string ttdPath)
@@ -272,4 +475,11 @@ public static class DeepScreamBuilder
     }
 }
 
-public sealed record TtdToolsProbe(bool Present, string Summary, string? WinDbgPreviewPath = null, string? TtdTracerPath = null);
+public sealed record TtdToolsProbe(
+    bool Present,
+    string Summary,
+    string? WinDbgPreviewPath = null,
+    string? TtdTracerPath = null,
+    bool CanRecord = false,
+    bool CanReplay = false,
+    string? RecordVia = null);
