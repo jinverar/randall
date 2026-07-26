@@ -2440,10 +2440,12 @@ static int RunStalk(string[] args)
                                             Build/read target_intelligence.json rollup
               randall stalk genealogy -p <project> [--json] [--rebuild]
                                             Bug genealogy: N probable vulns / M failures
-              randall stalk counterfactual -i <crash-guid> [--json] [--rebuild]
-                                            Counterfactual probes (safe vs corrupt boundary plan)
+              randall stalk counterfactual -i <crash-guid> [--json] [--rebuild] [--live]
+                                            Counterfactual probes (plan or live execute→observe→persist)
               randall stalk twins -i <crash-guid> | -p <project> [--json] [--rebuild]
-                                            Vulnerability twins + twin hunt hints
+                                            Variant Hunter v2: structural signature + twin hunt hints
+              randall stalk research-package -i <crash-guid> [--json|--md] [--rebuild]
+                                            RF-#### teaching research package export
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
               randall stalk bench -c <project> [--profiles basic,fuzz,fuzzier] [--scale N]
             """);
