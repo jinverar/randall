@@ -47,7 +47,7 @@ public class CorruptionChainTests
         var obs = ScreamInvestigator.ParseBlocks(
             "EXCEPTION_CODE: (c0000005) Access violation\n",
             exr: "Attempt to write to address 41414141\nParameter[1]: 41414141\n",
-            regs: "rip=0000000041414141\n",
+            regs: "rax=0000000041414141\nrip=0000000041414141\n",
             stack: "00000000`0012ff00 00000000`00401000 lab!Parse+0x10",
             sidecar: sidecar);
 
@@ -57,9 +57,13 @@ public class CorruptionChainTests
         Assert.True(chain.Ok);
         Assert.Equal("HIGH", chain.Confidence);
         Assert.Equal("expand", chain.SuspectedMutator);
+        Assert.Equal(1, chain.SuspectedMutatorStep);
         Assert.Contains(chain.Steps, s => s.Kind == "mutation");
-        Assert.Contains(chain.Steps, s => s.Kind == "input-offset");
+        Assert.Contains(chain.Steps, s => s.Kind == "register");
         Assert.NotNull(chain.PatternDepthBytes);
+        Assert.NotNull(chain.Narrative);
+        Assert.True(chain.AttributionScreamBonus >= 6);
+        Assert.Contains(chain.RegisterMatches!, m => m.Register == "RAX");
     }
 
     [Fact]
@@ -156,7 +160,7 @@ public class CorruptionChainTests
                 project, yaml, id, "fake.dmp", deepScream, progress: null);
 
             Assert.NotNull(cast);
-            Assert.Contains(cast!.Spells, s => s.Spell == "deepScream");
+            Assert.Contains(cast!.Spells, s => s.Spell == "rewindScream");
             Assert.True(File.Exists(DeepScreamBuilder.TtdHintPathFor(dir, id)));
         }
         finally { try { Directory.Delete(dir, true); } catch { } }

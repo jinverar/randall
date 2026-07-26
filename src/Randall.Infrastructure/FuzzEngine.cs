@@ -2537,9 +2537,11 @@ public sealed class FuzzEngine
             var triage = CrashTriage.Classify(null, sidecar, summary, payload, debugger: debugger);
             var oracleScore = sidecar?.RandallScore;
 
+            var backwardTrace = BackwardTraceBuilder.TryRead(BackwardTraceBuilder.PathFor(crashesDir, saved.Id));
+
             var set = HypothesisEngine.PersistForCrash(
                 crashesDir, saved.Id, project.Name, sidecar, triage,
-                debugger, corruption, evolution, oracleScore);
+                debugger, corruption, evolution, oracleScore, backwardTrace);
 
             if (set is not { Ok: true, Hypotheses.Count: > 0 })
                 return;

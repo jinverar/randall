@@ -24,6 +24,8 @@ public enum DebuggerAddressClass
     ModuleRange,
     Stackish,
     Heapish,
+    /// <summary>Fault address falls in freed / unallocated heap memory (!address / heap probes).</summary>
+    Freed,
     Other,
 }
 
@@ -57,6 +59,9 @@ public sealed record DebuggerObservation(
     string? RegistersText,
     string? DisasmNearRip,
     string? MemoryNearRsp,
+    string? ModulesText,
+    string? HeapProbeText,
+    string? AddressQueryText,
     string? ExrText,
     string? ExploitableClassification,
     string? ExploitableDescription,
@@ -72,4 +77,8 @@ public sealed record DebuggerObservation(
     int DebuggerScreamBonus,
     bool AnalyzeTimedOut,
     string? Error,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    /// <summary>Register ↔ payload matches (cdb script or post-pass attribution).</summary>
+    IReadOnlyList<RegisterPayloadMatchDto>? RegisterMatches = null,
+    /// <summary>Primary register whose value appears in the crashing input.</summary>
+    string? PrimaryRegisterMatch = null);

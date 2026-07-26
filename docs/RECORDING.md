@@ -484,26 +484,33 @@ Open the run folder on the fuzz host (path printed as `Run journal: ...` at star
 
 ---
 
-## WinDbg TTD — Rewind Scream (stub)
+## WinDbg TTD — Rewind Scream (Deep Scream marked)
 
-Randfuzz does **not** capture Time Travel Debugging (TTD) traces during fuzz. For hard-to-repro screams, enable the Magician stub:
+Randfuzz does **not** capture Time Travel Debugging (TTD) traces during fuzz. For **marked Deep Scream** crashes only, enable the Magician `rewindScream` path:
 
 ```yaml
 fuzz:
-  rewindScream: true   # writes data/crashes/<project>/_magician/rewind_scream_hint.md on crash
+  rewindScream: true   # Magician TTD playbook + launch scripts on marked Deep Scream only
 magician:
   enabled: true
   allowRewindScream: true
 ```
 
-On each new crash the Magician appends a `rewindScream` spell with operator steps:
+On each **marked** Deep Scream crash the Magician casts `rewindScream` and writes:
 
-1. Reproduce with the saved `.bin` input (or replay harness).
-2. In **WinDbg Preview**, attach and record: `!tt.record` … reproduce … `!tt.stop`.
-3. Open the Randfuzz dump with metadata: `randall debug open -i <crash-guid> --kind windbg-preview`.
-4. In the trace, use `!tt` and `g-` to rewind toward the fault.
+1. `{guid}_deep_scream_ttd.md` — operator playbook with exploit backward queries
+2. `{guid}_deep_scream_ttd_record.cmd` / `_replay.cmd` — when WinDbg Preview or tttracer detected
+3. `{guid}_deep_scream_ttd_queries.txt` — WinDbg `-cf` script for register/heap backward steps
+4. Best-effort WinDbg Preview launch on the minidump (may be blocked by OS/session)
 
-Pair TTD with Scream minidumps, `{guid}_corruption_chain.json`, and `{guid}_debugger_observation.json` under `data/crashes/<project>/`. See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md).
+Operator steps:
+
+1. Reproduce with the saved `.bin` input: `randall replay -i <crash-guid>`.
+2. Record: run the record `.cmd` or WinDbg Preview `!tt.record` … `!tt.stop`.
+3. Replay: run the replay `.cmd` or `randall debug open -i <crash-guid> --kind windbg-preview`.
+4. In trace: `!tt` · `g-` · backward queries from the playbook.
+
+Full details: [DEEP_SCREAM_TTD.md](DEEP_SCREAM_TTD.md). Pair with `{guid}_corruption_chain.json` and `{guid}_debugger_observation.json`. See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md).
 
 ---
 

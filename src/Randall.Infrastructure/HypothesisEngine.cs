@@ -112,14 +112,16 @@ public static class HypothesisEngine
         DebuggerObservation? debugger,
         CrashCorruptionChainDto? corruptionChain,
         ScreamEvolutionDto? evolution,
-        OracleScore? oracleScore = null)
+        OracleScore? oracleScore = null,
+        CrashBackwardTraceDto? backwardTrace = null)
     {
         var hypotheses = new List<HypothesisDto>();
-        var evidence = CollectEvidence(sidecar, triage, debugger, corruptionChain, evolution, oracleScore);
+        var evidence = CollectEvidence(sidecar, triage, debugger, corruptionChain, evolution, oracleScore, backwardTrace);
 
         AddPatternDepthHypotheses(hypotheses, crashId, corruptionChain, debugger, sidecar, evidence);
         AddLineageHypotheses(hypotheses, crashId, corruptionChain, evolution, sidecar, evidence);
         AddDebuggerHypotheses(hypotheses, crashId, debugger, corruptionChain, sidecar, evidence);
+        AddBackwardTraceHypotheses(hypotheses, crashId, backwardTrace, corruptionChain, sidecar, evidence);
         AddOracleHypotheses(hypotheses, crashId, oracleScore, sidecar, corruptionChain, evidence);
         AddStagnationHypotheses(hypotheses, crashId, evolution, sidecar, corruptionChain, evidence);
 
@@ -145,9 +147,10 @@ public static class HypothesisEngine
         DebuggerObservation? debugger,
         CrashCorruptionChainDto? corruptionChain,
         ScreamEvolutionDto? evolution,
-        OracleScore? oracleScore = null)
+        OracleScore? oracleScore = null,
+        CrashBackwardTraceDto? backwardTrace = null)
     {
-        var set = Build(crashId, project, sidecar, triage, debugger, corruptionChain, evolution, oracleScore);
+        var set = Build(crashId, project, sidecar, triage, debugger, corruptionChain, evolution, oracleScore, backwardTrace);
         Write(crashesDir, set);
         return set;
     }
@@ -641,17 +644,86 @@ public static class HypothesisEngine
             Evidence: evidence));
     }
 
+    private static void AddBackwardTraceHypotheses(
+        List<HypothesisDto> list,
+        Guid crashId,
+        CrashBackwardTraceDto? trace,
+        CrashCorruptionChainDto? chain,
+        CrashSidecarDto? sidecar,
+        List<string> evidence)
+    {
+        if (trace is not { Ok: true })
+            return;
+
+        if (trace.FaultRegister is not null && trace.PrimaryPayloadOffset is not null)
+        {
+            list.Add(new HypothesisDto(
+                $"hyp-btrace-reg-{trace.FaultRegister.ToLowerInvariant()}",
+                crashId,
+                $"Backward trace: {trace.FaultRegister} from payload{trace.PrimaryPayloadOffset} drives fault — mutation '{trace.SuspectedMutator ?? chain?.SuspectedMutator ?? "?"}'",
+                Math.Clamp(ScoreBase(trace.Confidence) + 10, 45, 90),
+                new HypothesisExperimentDto(
+                    HypothesisExperimentKind.ReplayLineage,
+                    $"Replay lineage preserving payload{trace.PrimaryPayloadOffset}",
+                    trace.SuspectedMutator ?? chain?.SuspectedMutator ?? "havoc",
+                    MutatorChain: chain?.MutatorLineage,
+                    Command: sidecar?.Command),
+                $"Replay reproduces same {trace.FaultRegister} value at fault",
+                HypothesisStatus.Pending,
+                Evidence: evidence));
+        }
+
+        if (trace.HeapTimeline is not null)
+        {
+            list.Add(new HypothesisDto(
+                "hyp-btrace-heap",
+                crashId,
+                $"Heap timeline ({trace.HeapTimeline}) — UAF/corruption hypothesis from dump probes",
+                Math.Clamp(ScoreBase(trace.Confidence) + 5, 40, 82),
+                new HypothesisExperimentDto(
+                    HypothesisExperimentKind.HoldMutator,
+                    "Hold heap-touching mutator; vary alloc pattern elsewhere",
+                    trace.SuspectedMutator ?? chain?.SuspectedMutator ?? "havoc",
+                    MutatorChain: chain?.MutatorLineage,
+                    Command: sidecar?.Command),
+                $"Same heap signal on replay; refuted if fault class changes without heap involvement",
+                HypothesisStatus.Pending,
+                Evidence: evidence));
+        }
+
+        if (!string.IsNullOrWhiteSpace(trace.BadPointerSource))
+        {
+            list.Add(new HypothesisDto(
+                "hyp-btrace-source",
+                crashId,
+                $"Bad pointer source: {trace.BadPointerSource} — {trace.Story}",
+                Math.Clamp(ScoreBase(trace.Confidence), 38, 85),
+                new HypothesisExperimentDto(
+                    HypothesisExperimentKind.MinimizeHold,
+                    "Preserve attributed bytes; shrink unrelated payload",
+                    trace.SuspectedMutator ?? chain?.SuspectedMutator ?? "expand",
+                    chain?.PatternDepthBytes,
+                    Command: sidecar?.Command),
+                $"Minimized crash retains backward trace story and fault register",
+                HypothesisStatus.Pending,
+                Evidence: evidence));
+        }
+    }
+
     private static List<string> CollectEvidence(
         CrashSidecarDto? sidecar,
         CrashTriageDto? triage,
         DebuggerObservation? debugger,
         CrashCorruptionChainDto? chain,
         ScreamEvolutionDto? evolution,
-        OracleScore? oracleScore)
+        OracleScore? oracleScore,
+        CrashBackwardTraceDto? backwardTrace = null)
     {
         var evidence = new List<string>();
         if (chain is { Ok: true })
             evidence.Add($"corruption:{chain.Confidence}");
+        if (backwardTrace is { Ok: true })
+            evidence.Add($"backwardTrace:{backwardTrace.Confidence}");
         if (debugger is { Ok: true })
             evidence.Add($"debugger:{debugger.Access}/{debugger.FaultAddressClass}");
         if (evolution is { Ok: true })

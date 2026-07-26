@@ -61,7 +61,7 @@ public static class CrashIntelligenceBuilder
         var reproducible = ReproLooksReady(summary, sidecar);
         var minimized = IsMinimized(summary, clusterMembers, inputLength);
         var lineage = BuildLineage(sidecar);
-        var screamScore = ComputeScreamScore(severity, novelty, oracleScore?.Total, seenCount, triage, debugger, evolution);
+        var screamScore = ComputeScreamScore(severity, novelty, oracleScore?.Total, seenCount, triage, debugger, evolution, corruptionChain);
         var faultSignals = FaultSignalMapper.FromCrash(
             triage, analysis, cdb, sidecar, pageHeapEnabled, rppTag ?? summary.TriageTag,
             sidecar?.TargetDetail,
@@ -176,6 +176,8 @@ public static class CrashIntelligenceBuilder
             parts.Add($"pattern @ +{corruptionChain.PatternDepthBytes}");
         if (corruptionChain is { Ok: true, Confidence: "HIGH" or "MEDIUM" })
             parts.Add($"chain {corruptionChain.Confidence.ToLowerInvariant()}");
+        if (corruptionChain?.Narrative is { } narrative)
+            parts.Add(narrative);
         if (oracleScore is { Total: > 0 })
             parts.Add($"oracle {oracleScore.Total}");
         if (!string.IsNullOrWhiteSpace(frontierHint))
@@ -209,7 +211,8 @@ public static class CrashIntelligenceBuilder
         int seenCount,
         CrashTriageDto? triage,
         DebuggerObservation? debugger = null,
-        ScreamEvolutionDto? evolution = null)
+        ScreamEvolutionDto? evolution = null,
+        CrashCorruptionChainDto? corruptionChain = null)
     {
         var sev = severity switch
         {
@@ -228,12 +231,13 @@ public static class CrashIntelligenceBuilder
             : 0;
         var oracleBonus = oracleTotal is > 0 ? Math.Min(25, oracleTotal.Value / 4) : 0;
         var dbgBonus = debugger?.Ok == true ? debugger.DebuggerScreamBonus : 0;
+        var attrBonus = corruptionChain?.AttributionScreamBonus ?? 0;
         var momentumBonus = evolution is { MomentumScore: >= 40 } ev
             ? Math.Min(12, ev.MomentumScore / 8 + (ev.ProgressionDelta > 0 ? 4 : 0))
             : evolution is { MomentumScore: > 0 } warm
                 ? Math.Min(6, warm.MomentumScore / 12)
                 : 0;
-        return Math.Clamp(sev * 12 + novelty / 2 + uniqueBonus + ipBonus + oracleBonus + dbgBonus + momentumBonus, 0, 100);
+        return Math.Clamp(sev * 12 + novelty / 2 + uniqueBonus + ipBonus + oracleBonus + dbgBonus + attrBonus + momentumBonus, 0, 100);
     }
 
     private static bool ReproLooksReady(CrashSummaryDto summary, CrashSidecarDto? sidecar)

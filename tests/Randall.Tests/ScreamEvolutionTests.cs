@@ -259,6 +259,6 @@ public class ScreamEvolutionTests
         DebuggerAddressClass addressClass = DebuggerAddressClass.AsciiPattern) =>
         new(true, null, null, null, "AV", access, "0x41414141",
             addressClass, "0x401000", "mod", fn, "+0x10", [],
-            stackHash, null, null, null, null, null, null, null, "MEDIUM", "MEDIUM", 0.7,
+            stackHash, null, null, null, null, null, null, null, null, null, null, "MEDIUM", "MEDIUM", 0.7,
             "test", 8, false, null, DateTimeOffset.UtcNow);
 }

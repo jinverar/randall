@@ -2911,6 +2911,7 @@ function renderCrashDetail(detail, title) {
   const cdb = detail.cdbTriage;
   const dbg = detail.debuggerObservation;
   const chain = detail.corruptionChain;
+  const backwardTrace = detail.backwardTrace;
   const evo = detail.screamEvolution;
   const hypos = detail.hypotheses;
   const deepScream = detail.deepScream;
@@ -2970,15 +2971,30 @@ function renderCrashDetail(detail, title) {
         ${dbg.faultingFunction ? `<code>${escapeAttr((dbg.faultingModule || '') + '!' + dbg.faultingFunction + (dbg.functionOffset || ''))}</code> · ` : ''}
         ${dbg.exploitabilityHint ? `<span class="hint-inline">exploit ${escapeAttr(dbg.exploitabilityHint)}</span> · ` : ''}
         ${dbg.suspectedInputInfluence && dbg.suspectedInputInfluence !== 'UNKNOWN' ? `<span class="hint-inline">input ${escapeAttr(dbg.suspectedInputInfluence)}</span> · ` : ''}
+        ${dbg.primaryRegisterMatch ? `<span class="hint-inline">${escapeAttr(dbg.primaryRegisterMatch)} in input</span> · ` : ''}
         ${dbg.stackHash ? `<span class="hint-inline">stack ${escapeAttr(dbg.stackHash)}</span>` : ''}
       </p>` : ''}
       ${chain?.ok ? `<div class="triage-box corruption-chain-box">
         <h4>Corruption chain <span class="hint-inline">[${escapeAttr(chain.confidence)}]</span></h4>
         <p class="hint">${escapeAttr(chain.summary)}</p>
+        ${chain.narrative ? `<p class="crash-attribution-narrative"><span class="label">Attribution</span> ${escapeAttr(chain.narrative)}</p>` : ''}
         ${chain.steps?.length ? `<ol class="corruption-chain-steps">${chain.steps.map((s) =>
           `<li><code>${escapeAttr(s.kind)}</code> ${escapeAttr(s.label)}${s.detail ? ` — <span class="hint-inline">${escapeAttr(s.detail)}</span>` : ''}</li>`
         ).join('')}</ol>` : ''}
-        ${chain.suspectedMutator ? `<p class="hint">Mutator <code>${escapeAttr(chain.suspectedMutator)}</code>${chain.suspectedField ? ` · field <code>${escapeAttr(chain.suspectedField)}</code>` : ''}</p>` : ''}
+        ${chain.registerMatches?.length ? `<table class="register-match-table"><thead><tr><th>Reg</th><th>Value</th><th>Input</th><th>Kind</th></tr></thead><tbody>${chain.registerMatches.map((m) =>
+          `<tr><td><code>${escapeAttr(m.register)}</code></td><td><code>${escapeAttr(m.valueHex)}</code></td><td>+${m.payloadOffset}</td><td>${escapeAttr(m.matchKind)}</td></tr>`
+        ).join('')}</tbody></table>` : ''}
+        ${chain.suspectedMutator ? `<p class="hint">Mutator <code>${escapeAttr(chain.suspectedMutator)}</code>${chain.suspectedMutatorStep != null ? ` (step ${chain.suspectedMutatorStep + 1})` : ''}${chain.suspectedField ? ` · field <code>${escapeAttr(chain.suspectedField)}</code>` : ''}${chain.primaryRegister ? ` · ${escapeAttr(chain.primaryRegister)}` : ''}${chain.attributionScreamBonus ? ` · +${chain.attributionScreamBonus} score` : ''}</p>` : ''}
+      </div>` : ''}
+      ${backwardTrace?.ok ? `<div class="triage-box backward-trace-box">
+        <h4>Backward trace <span class="hint-inline">dump-only · no TTD</span> <span class="hint-inline">[${escapeAttr(backwardTrace.confidence)}]</span></h4>
+        <p class="hint backward-trace-story">${escapeAttr(backwardTrace.story)}</p>
+        ${backwardTrace.steps?.length ? `<ol class="backward-trace-steps">${backwardTrace.steps.map((s) =>
+          `<li><code>${escapeAttr(s.kind)}</code> ${escapeAttr(s.label)}${s.detail ? ` — <span class="hint-inline">${escapeAttr(s.detail)}</span>` : ''}${s.confidence && s.confidence !== 'UNKNOWN' ? ` <span class="hint-inline">(${escapeAttr(s.confidence)})</span>` : ''}</li>`
+        ).join('')}</ol>` : ''}
+        ${backwardTrace.faultInstruction ? `<p class="hint">Fault insn: <code>${escapeAttr(backwardTrace.faultInstruction)}</code></p>` : ''}
+        ${backwardTrace.badPointerSource ? `<p class="hint">Bad pointer: <code>${escapeAttr(backwardTrace.badPointerSource)}</code>${backwardTrace.faultRegister ? ` via ${escapeAttr(backwardTrace.faultRegister)}` : ''}</p>` : ''}
+        ${backwardTrace.suspectedMutator ? `<p class="hint">Attributed mutator <code>${escapeAttr(backwardTrace.suspectedMutator)}</code>${backwardTrace.primaryPayloadOffset ? ` · payload${escapeAttr(backwardTrace.primaryPayloadOffset)}` : ''}</p>` : ''}
       </div>` : ''}
       ${hypos?.ok && hypos.hypotheses?.length ? `<div class="triage-box hypothesis-box">
         <h4>Hypotheses <span class="hint-inline">scientific loop</span></h4>
@@ -3016,6 +3032,7 @@ function renderCrashDetail(detail, title) {
         ${deepScream?.dumpPath ? `<p class="hint">Dump: <code>${escapeAttr(deepScream.dumpPath)}</code></p>` : ''}
         ${deepScream?.hypothesisPath ? `<p class="hint">Hypotheses: <code>${escapeAttr(deepScream.hypothesisPath)}</code></p>` : ''}
         ${deepScream?.corruptionChainPath ? `<p class="hint">Corruption: <code>${escapeAttr(deepScream.corruptionChainPath)}</code></p>` : ''}
+        ${deepScream?.backwardTracePath ? `<p class="hint">Backward trace: <code>${escapeAttr(deepScream.backwardTracePath)}</code></p>` : ''}
         ${deepScream?.evolutionPath ? `<p class="hint">Evolution: <code>${escapeAttr(deepScream.evolutionPath)}</code></p>` : ''}
         ${deepScream?.semanticFingerprint ? `<p class="hint">Fingerprint: <code>${escapeAttr(deepScream.semanticFingerprint)}</code></p>` : ''}
         ${deepScream?.minimizedInputPath ? `<p class="hint">Minimized: <code>${escapeAttr(deepScream.minimizedInputPath)}</code></p>` : ''}

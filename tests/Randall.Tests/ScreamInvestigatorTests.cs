@@ -16,6 +16,38 @@ public class ScreamInvestigatorTests
     }
 
     [Fact]
+    public void ClassifyAddress_uses_address_heap_and_lm_probes()
+    {
+        const string stackQuery = """
+            00000000`0012ff00 :
+               Region Type: Stack
+            """;
+        Assert.Equal(DebuggerAddressClass.Stackish,
+            ScreamInvestigator.ClassifyAddress("0x12ff00", stackQuery, null, null));
+
+        const string freedQuery = """
+            000001a2`3b4c5000 :
+               Free memory
+            """;
+        Assert.Equal(DebuggerAddressClass.Freed,
+            ScreamInvestigator.ClassifyAddress("0x1a23b4c5000", freedQuery, null, null));
+
+        const string lm = """
+            start             end               module name
+            00007ff6`12340000 00007ff6`12380000 vulnserver
+            """;
+        Assert.Equal(DebuggerAddressClass.ModuleRange,
+            ScreamInvestigator.ClassifyAddress("0x7ff612345678", null, null, lm));
+    }
+
+    [Theory]
+    [InlineData("Parameter[0]: 00000000", DebuggerAccessKind.Read)]
+    [InlineData("Parameter[0]: 00000001", DebuggerAccessKind.Write)]
+    [InlineData("Parameter[0]: 00000008", DebuggerAccessKind.Execute)]
+    public void InferAccess_reads_exception_parameters(string exr, DebuggerAccessKind expected) =>
+        Assert.Equal(expected, ScreamInvestigator.InferAccess(exr, ""));
+
+    [Fact]
     public void ParseBlocks_builds_diagnosis_and_write_av()
     {
         const string analyze = """
@@ -81,9 +113,12 @@ public class ScreamInvestigatorTests
                 "",
                 "",
                 "",
+                "",
+                "",
+                "",
                 "Exploitability Classification: EXPLOITABLE\n",
-                timedOut: false,
-                sidecar: null);
+                false,
+                null);
 
             Assert.True(File.Exists(ScreamInvestigator.ObservationPathFor(dir, id)));
             var loaded = ScreamInvestigator.TryRead(ScreamInvestigator.ObservationPathFor(dir, id));

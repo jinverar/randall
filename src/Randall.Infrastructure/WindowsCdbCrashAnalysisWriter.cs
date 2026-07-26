@@ -118,6 +118,9 @@ public static partial class WindowsCdbCrashAnalysisWriter
         var stackBlock = ExtractBlock(text, "RANDFUZZ_STACK_BEGIN", "RANDFUZZ_STACK_END");
         var disasmBlock = ExtractBlock(text, "RANDFUZZ_DISASM_BEGIN", "RANDFUZZ_DISASM_END");
         var memBlock = ExtractBlock(text, "RANDFUZZ_MEM_BEGIN", "RANDFUZZ_MEM_END");
+        var lmBlock = ExtractBlock(text, "RANDFUZZ_LM_BEGIN", "RANDFUZZ_LM_END");
+        var heapBlock = ExtractBlock(text, "RANDFUZZ_HEAP_BEGIN", "RANDFUZZ_HEAP_END");
+        var addressBlock = ExtractBlock(text, "RANDFUZZ_ADDRESS_BEGIN", "RANDFUZZ_ADDRESS_END");
 
         var analyzePath = AnalyzeTextPathFor(crashesDir, crashId);
         File.WriteAllText(analyzePath, string.IsNullOrWhiteSpace(analyzeBlock) ? text : analyzeBlock);
@@ -173,6 +176,9 @@ public static partial class WindowsCdbCrashAnalysisWriter
                 stackBlock,
                 disasmBlock,
                 memBlock,
+                lmBlock,
+                heapBlock,
+                addressBlock,
                 exploitableBlock,
                 timedOut,
                 crashSidecar);
@@ -201,6 +207,18 @@ public static partial class WindowsCdbCrashAnalysisWriter
                 debuggerObs,
                 triage,
                 payload);
+
+            var corruption = CorruptionChainBuilder.TryRead(
+                CorruptionChainBuilder.PathFor(crashesDir, crashId));
+            BackwardTraceBuilder.PersistForCrash(
+                crashesDir,
+                crashId,
+                crashSidecar?.Project ?? "?",
+                crashSidecar,
+                debuggerObs,
+                triage,
+                corruption,
+                payload);
         }
         catch
         {
@@ -226,24 +244,36 @@ public static partial class WindowsCdbCrashAnalysisWriter
         var lines = new List<string>
         {
             DebuggerTools.FormatSympathScriptCommand(),
+            ".symfix",
+            ".reload /f /n",
             ".echo RANDFUZZ_ANALYZE_BEGIN",
             "!analyze -v",
             ".echo RANDFUZZ_ANALYZE_END",
             ".echo RANDFUZZ_EXR_BEGIN",
             ".exr -1",
             ".echo RANDFUZZ_EXR_END",
+            ".ecxr",
             ".echo RANDFUZZ_REGS_BEGIN",
             "r",
             ".echo RANDFUZZ_REGS_END",
             ".echo RANDFUZZ_STACK_BEGIN",
-            "kv 16",
+            "kv",
             ".echo RANDFUZZ_STACK_END",
+            ".echo RANDFUZZ_LM_BEGIN",
+            "lm",
+            ".echo RANDFUZZ_LM_END",
             ".echo RANDFUZZ_DISASM_BEGIN",
-            "u @rip-20 L16",
+            "u @rip-20 @rip+40",
             ".echo RANDFUZZ_DISASM_END",
             ".echo RANDFUZZ_MEM_BEGIN",
-            "dq @rsp L20",
+            "dq @rsp L40",
             ".echo RANDFUZZ_MEM_END",
+            ".echo RANDFUZZ_HEAP_BEGIN",
+            "!heap -s",
+            ".echo RANDFUZZ_HEAP_END",
+            ".echo RANDFUZZ_ADDRESS_BEGIN",
+            "!address $exceptioninformation[1]",
+            ".echo RANDFUZZ_ADDRESS_END",
         };
         if (msecPath is not null)
         {

@@ -90,8 +90,73 @@ public class DeepScreamTests
                 dir, id, project.Name, 72, 1, true, true, dumpPath: "fake.dmp");
             var cast = MagicianEngine.DeepScreamOnCrash(project, yaml, id, "fake.dmp", "fake.bin", marked, null);
             Assert.NotNull(cast);
-            Assert.Contains(cast!.Spells, s => s.Spell == "deepScream");
+            Assert.Contains(cast!.Spells, s => s.Spell == "rewindScream");
             Assert.True(File.Exists(DeepScreamBuilder.TtdHintPathFor(dir, id)));
+            var playbook = File.ReadAllText(DeepScreamBuilder.TtdHintPathFor(dir, id));
+            Assert.Contains("Exploit-focused backward queries", playbook, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
+    public void ProbeTtd_ReportsCanRecordAndReplay()
+    {
+        var probe = DebuggerTools.ProbeTtd();
+        Assert.False(string.IsNullOrWhiteSpace(probe.Summary));
+        if (probe.Present)
+        {
+            Assert.True(probe.CanRecord);
+            if (probe.WinDbgPreviewPath is not null)
+                Assert.True(probe.CanReplay);
+        }
+    }
+
+    [Fact]
+    public void WriteTtdOperatorHint_includes_backward_queries_and_query_script()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "randall-deep-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var id = Guid.NewGuid();
+            var dump = Path.Combine(dir, $"{id:N}.dmp");
+            File.WriteAllText(dump, "fake");
+            var dto = DeepScreamBuilder.Evaluate(id, "lab", 70, 1, true, true, dump, dir, isMarked: true,
+                ttdToolsPresent: true, ttdToolsSummary: "test tools");
+            var path = DeepScreamBuilder.WriteTtdOperatorHint(dir, id, "lab", dto, dump, "input.bin");
+            var text = File.ReadAllText(path);
+            Assert.Contains("Exploit-focused backward queries", text, StringComparison.OrdinalIgnoreCase);
+            Assert.True(File.Exists(DeepScreamBuilder.TtdQueryScriptPathFor(dir, id)));
+            var script = File.ReadAllText(DeepScreamBuilder.TtdQueryScriptPathFor(dir, id));
+            Assert.Contains("RANDFUZZ DEEP SCREAM TTD", script, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
+    public void DeepScreamOnCrash_skips_when_not_marked()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "randall-deep-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+            var yaml = Path.Combine(root, "projects", "file-text.yaml");
+            if (!File.Exists(yaml)) return;
+
+            var project = ProjectLoader.Load(yaml);
+            project.Fuzz.RewindScream = true;
+            project.Fuzz.CrashesDir = dir;
+            project.Magician ??= new MagicianConfig();
+            project.Magician.Enabled = true;
+            project.Magician.AllowRewindScream = true;
+
+            var id = Guid.NewGuid();
+            var candidate = DeepScreamBuilder.PersistForCrash(
+                dir, id, project.Name, 72, 2, true, true, dumpPath: "fake.dmp");
+            Assert.False(candidate.IsMarked);
+            var cast = MagicianEngine.DeepScreamOnCrash(project, yaml, id, "fake.dmp", null, candidate, null);
+            Assert.Null(cast);
         }
         finally { try { Directory.Delete(dir, true); } catch { } }
     }

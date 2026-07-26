@@ -205,8 +205,9 @@ public static class MagicianEngine
     }
 
     /// <summary>
-    /// Stub hook when <see cref="FuzzConfig.RewindScream"/> is on — logs TTD record/replay hint (no capture).
-    /// See docs/RECORDING.md#windbg-ttd-rewind-scream-stub.
+    /// Magician <c>rewindScream</c> when <see cref="FuzzConfig.RewindScream"/> is on — writes TTD playbook,
+    /// record/replay launch scripts, and best-effort WinDbg Preview open (no hot-path TTD capture).
+    /// Gated to Deep Scream <c>IsMarked</c> crashes only. See docs/DEEP_SCREAM_TTD.md.
     /// </summary>
     public static MagicianCastResult? DeepScreamOnCrash(
         ProjectConfig project, string yamlPath, Guid crashId, string? dumpPath, string? inputPath,
@@ -218,15 +219,27 @@ public static class MagicianEngine
         project.Magician ??= cfg;
         var crashesDir = Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir));
         var ttdPath = DeepScreamBuilder.WriteTtdOperatorHint(crashesDir, crashId, project.Name, deepScream, dumpPath, inputPath);
-        DeepScreamBuilder.WithTtdHint(crashesDir, deepScream, ttdPath);
-        DeepScreamBuilder.AppendDeepScreamIndex(crashesDir, crashId, deepScream, ttdPath);
-        var spell = new MagicianSpellDto(Guid.NewGuid().ToString("N")[..12], project.Name, "deepScream", "ttd",
-            $"Deep Scream marked — scream={deepScream.ScreamScore} family={deepScream.FamilyId ?? "—"}",
+        var ttd = DebuggerTools.ProbeTtd();
+        var queryScript = DeepScreamBuilder.TtdQueryScriptPathFor(crashesDir, crashId);
+        var replayScriptPath = DeepScreamBuilder.TtdReplayScriptPathFor(crashesDir, crashId);
+        var replayScript = File.Exists(replayScriptPath) ? replayScriptPath : null;
+        var (launchAttempted, launchResult) = DebuggerTools.TryLaunchTtdReplay(
+            ttd.WinDbgPreviewPath, dumpPath, queryScript);
+        var launchNote = replayScript is not null ? "replay .cmd written" : "replay script skipped (need dump + WinDbg Preview)";
+        var fullLaunchNote = launchAttempted
+            ? $"{launchNote}; {launchResult}"
+            : $"{launchNote}; auto-launch skipped ({launchResult})";
+        var updated = DeepScreamBuilder.WithTtdArtifacts(crashesDir, deepScream, ttdPath, replayScript, fullLaunchNote);
+        DeepScreamBuilder.AppendDeepScreamIndex(crashesDir, crashId, updated, ttdPath);
+        var spell = new MagicianSpellDto(Guid.NewGuid().ToString("N")[..12], project.Name, "rewindScream", "ttd",
+            $"rewindScream — Deep Scream marked scream={deepScream.ScreamScore} family={deepScream.FamilyId ?? "—"}",
             null, null, 0, ttdPath, DateTimeOffset.UtcNow);
         if (cfg.PersistSpells)
             new MagicianSpellStore(Path.Combine(crashesDir, "_magician")).Append(spell);
-        FuzzAnalystLog.Info(progress, $"[deep-scream] marked → TTD playbook {ttdPath} ({deepScream.TtdToolsSummary ?? "tools unknown"})", 0);
-        return new MagicianCastResult([spell], [], [], 0, false, false, "deepScream→ttd");
+        FuzzAnalystLog.Info(progress,
+            $"[rewind-scream] spell cast — playbook `{ttdPath}` · tools={deepScream.TtdToolsSummary ?? ttd.Summary} · {fullLaunchNote}",
+            0);
+        return new MagicianCastResult([spell], [], [], 0, false, false, "rewindScream→ttd");
     }
 
     public static MagicianCastResult? RewindScreamOnCrash(
@@ -508,7 +521,7 @@ public static class MagicianEngine
         sb.AppendLine("| summonJoker | joker | Call the Joker — boost chaotic random tricks (encore) |");
         sb.AppendLine("| capitalizeJoker | joker | (auto) After Joker crash — energy + army + corpus |");
         sb.AppendLine("| playJokerCard | joker | Queue a legendary Joker Card draw from the deck |");
-        sb.AppendLine("| rewindScream | ttd | (stub) Write TTD record/replay hint on crash — no capture |");
+        sb.AppendLine("| rewindScream | ttd | Deep Scream marked → TTD playbook + record/replay scripts (no hot-path capture) |");
         sb.AppendLine("| evolutionBless | — | (auto) High scream momentum — energy + army on warming lineage |");
         sb.AppendLine("| hypothesisExperiment | hypothesis | (auto) Phase C hypothesis queue — sweep/hold budget |");
         sb.AppendLine();
@@ -694,7 +707,7 @@ public static class MagicianEngine
             case "rewindScream":
                 if (!GetConfig(project).AllowRewindScream || !project.Fuzz.RewindScream)
                     return (false, null, "rewindScream disabled — set fuzz.rewindScream: true");
-                return (true, "ttd", "rewindScream armed — Deep Scream candidates get TTD operator hints");
+                return (true, "ttd", "rewindScream armed — marked Deep Scream crashes get TTD playbook + launch scripts");
             case "evolutionBless":
             {
                 var lineage = need.RuleId ?? need.RuleClass ?? "lineage";
