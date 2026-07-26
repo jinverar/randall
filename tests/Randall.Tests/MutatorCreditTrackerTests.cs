@@ -82,6 +82,46 @@ public class MutatorCreditTrackerTests
     }
 
     [Fact]
+    public void Record_AccumulatesStaleRuns_WhenNoProgress()
+    {
+        var tracker = new MutatorCreditTracker(persistPath: null, biasEnabled: true);
+        tracker.Record("truncate", newEdges: 0, uniqueCrash: false);
+        tracker.Record("truncate", newEdges: 0, uniqueCrash: false);
+        tracker.Record("truncate", newEdges: 1, uniqueCrash: false);
+
+        var row = tracker.SnapshotRows().Single();
+        Assert.Equal(2, row.StaleRuns);
+        Assert.True(row.FailureRate > 0.5);
+    }
+
+    [Fact]
+    public void SaveAndLoad_PersistsStaleRuns()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "randall-credit-" + Guid.NewGuid().ToString("N"));
+        var persist = Path.Combine(dir, "mutator_credit.txt");
+        try
+        {
+            var first = new MutatorCreditTracker(persist, biasEnabled: true);
+            first.Record("expand", newEdges: 4, uniqueCrash: true);
+            first.Record("expand", newEdges: 0, uniqueCrash: false);
+            first.Save();
+
+            var second = new MutatorCreditTracker(persist, biasEnabled: true);
+            var row = second.SnapshotRows().Single();
+            Assert.Equal("expand", row.Name);
+            Assert.Equal(2, row.Runs);
+            Assert.Equal(4, row.NewEdges);
+            Assert.Equal(1, row.UniqueCrashes);
+            Assert.Equal(1, row.StaleRuns);
+            Assert.Equal(140, row.Score);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* */ }
+        }
+    }
+
+    [Fact]
     public void SaveAndLoad_PersistsAcrossRuns()
     {
         var dir = Path.Combine(Path.GetTempPath(), "randall-credit-" + Guid.NewGuid().ToString("N"));

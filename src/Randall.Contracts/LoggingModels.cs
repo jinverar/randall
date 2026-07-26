@@ -102,7 +102,11 @@ public sealed record MutatorCreditRowDto(
     int NewEdges,
     int UniqueCrashes,
     double Score,
-    int SelectionWeight);
+    int SelectionWeight,
+    /// <summary>Runs with zero new edges — Hunt Policy execution cost.</summary>
+    int StaleRuns = 0,
+    /// <summary>Fraction of runs with no edges and no unique crash [0–1].</summary>
+    double FailureRate = 0);
 
 /// <summary>Run-scoped mutator credit export under data/runs/&lt;runId&gt;/.</summary>
 public sealed record MutatorCreditRunDto(

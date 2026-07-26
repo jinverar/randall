@@ -187,10 +187,48 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | Journal-backed mutator lineage in Investigation | ✅ | `CrashLineageResolver` · seed + parent hash in panel |
 | ScreamScore drives fuzz stop / campaign goals | 🔲 | Sorting only today; brain uses novelty for hunt bias ✅ |
 | **Scream evolution (Phase A)** | ✅ | `ScreamEvolutionBuilder` · family/momentum/generation · `_scream_evolution.json` · Magician `evolutionBless` · Brain warming bias |
+| **Hunt Policy (Phase B)** | ✅ | `HuntPolicyEngine` · `hunt_policy_last.json` · lineage breed vs havoc vs Joker timing · mutator execution cost · Phase C `needsExperiment` stub |
 
-**Phase A follow-ups (Phase B+):** Hunt Policy engine (explicit lineage breeding rules), Hypothesis Engine (corruption-chain → testable hypotheses), live TTD rewind (currently stub only). See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md#headless-cdb--scream-investigator-windows).
+**Phase A follow-ups (Phase C+):** Hypothesis Engine (corruption-chain → testable hypotheses), live TTD rewind (currently stub only). See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md#headless-cdb--scream-investigator-windows).
+
+**Phase B formula (research-only):**
+
+```text
+HuntValue ≈ CoverageNovelty + StaticTargetValue + OracleInterestingness
+          + CrashProgression/Momentum + MutationSuccess + FrontierDistance
+          + DebuggerInfluence − ExecutionCost − DuplicatePenalty
+```
+
+Modes: `LineageBreed` (warming scream families) · `HavocExplore` (frontier/static gaps) · `JokerInvoke` (stagnant/low-yield — Joker stays dumb, only *when*) · `Baseline`.
 
 **Done when:** Campaign YAML can target “N unique screams above score S” and auto-prioritize replay/minimize for top clusters.
+
+---
+
+## Phase B — Hunt Policy ✅ capable
+
+**Goal:** Consolidate intelligence scores into one explainable budget decision — where to spend the next iteration (lineage breeding vs havoc vs Joker timing), deprioritizing exhausted areas and duplicate NULL-deref families.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| `HuntPolicyEngine` + `HuntPolicyDecision` | ✅ | `HuntValue` terms · `HuntExecutionMode` · persisted `hunt_policy_last.json` |
+| Brain fusion | ✅ | `RandallBrain.Decide` attaches `HuntPolicy` on `NextHuntDecision` · `brain_last.json` |
+| Lineage breed vs havoc | ✅ | `PickMutator` + `MutatorChainTracker` bias when `LineageBreed`; havoc preference when `HavocExplore` |
+| Joker timing (not smart Joker) | ✅ | `HuntPolicyEngine.ShouldInvokeJoker` adjusts chance; `JokerEngine` tricks unchanged |
+| Mutator execution cost | ✅ | `MutatorCreditTracker` tracks `staleRuns` / `failureRate`; suppresses low-ROI mutators |
+| Duplicate / NULL-deref penalty | ✅ | Saturated + stagnant READ-only scream families penalized in HuntValue |
+| Phase C stub | ✅ | `NeedsExperiment` + Magician `rewind_scream_hint.md` append when lineage stalls |
+| UI / logs | ✅ | Scare Floor brain strip · `[hunt policy]` verbose fuzz log · `GET /api/fuzz/brain` + `brain-decision` expose `huntPolicy` |
+
+**Phase C follow-ups:** Hypothesis Engine (corruption-chain → ranked testable hypotheses), live TTD rewind (replace stub), campaign YAML scream-score goals.
+
+**Operator visibility:**
+
+- **CLI verbose fuzz:** `Hunt policy: LineageBreed [62] joker=5% chain=seed→splice — +18 crash progression · +6 debugger influence`
+- **Scare Floor:** brain decision line appends `Hunt breed lineage → scream …` and foot shows Hunt value + term chips
+- **Disk:** `data/stalk/<project>/hunt_policy_last.json` alongside `brain_last.json`
+
+**Done when:** Hunt policy drives Joker invoke rate and lineage breeding measurably on warming families; Phase C hooks fire on stalled gen≥2 lineages.
 
 ---
 

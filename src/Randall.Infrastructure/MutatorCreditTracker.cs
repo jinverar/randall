@@ -30,13 +30,13 @@ public sealed class MutatorCreditTracker
     public static double ComputeScore(int newEdges, int uniqueCrashes) =>
         newEdges * 10.0 + uniqueCrashes * 100.0;
 
-    public IMutator Pick(IReadOnlyList<IMutator> mutators, Random rng)
+    public IMutator Pick(IReadOnlyList<IMutator> mutators, Random rng, HuntPolicyDecision? policy = null)
     {
         if (mutators.Count == 0)
             throw new InvalidOperationException("No mutators available.");
         if (mutators.Count == 1 || !_biasEnabled)
             return mutators[rng.Next(mutators.Count)];
-        return WeightedPick(mutators, rng);
+        return WeightedPick(mutators, rng, policy);
     }
 
     /// <summary>
@@ -77,6 +77,8 @@ public sealed class MutatorCreditTracker
         var entry = GetOrCreate(mutatorName);
         entry.Runs++;
         entry.NewEdges += Math.Max(0, newEdges);
+        if (newEdges <= 0 && !uniqueCrash)
+            entry.StaleRuns++;
         if (uniqueCrash)
             entry.UniqueCrashes++;
         entry.Score = ComputeScore(entry.NewEdges, entry.UniqueCrashes);
@@ -111,12 +113,28 @@ public sealed class MutatorCreditTracker
         }
     }
 
-    public int GetSelectionWeight(string mutatorName)
+    public int GetSelectionWeight(string mutatorName, HuntPolicyDecision? policy = null)
     {
         if (!_entries.TryGetValue(mutatorName, out var entry) || entry.Runs <= 0)
             return 1;
         var avg = entry.Score / entry.Runs;
-        return Math.Max(1, (int)avg + 1);
+        var weight = Math.Max(1, (int)avg + 1);
+
+        if (entry.StaleRuns >= 5 && entry.NewEdges <= 1)
+            weight = Math.Max(1, weight - Math.Min(6, entry.StaleRuns / 3));
+
+        if (entry.FailureRate >= 0.9 && entry.Runs >= 8)
+            weight = Math.Max(1, weight - 3);
+
+        if (policy?.Mode == HuntExecutionMode.LineageBreed
+            && policy.PreferredMutator?.Equals(mutatorName, StringComparison.OrdinalIgnoreCase) == true)
+            weight += 4;
+
+        if (policy?.Mode == HuntExecutionMode.HavocExplore
+            && mutatorName.Equals("havoc", StringComparison.OrdinalIgnoreCase))
+            weight += 3;
+
+        return Math.Max(1, weight);
     }
 
     public IReadOnlyList<MutatorCreditRowDto> SnapshotRows()
@@ -126,7 +144,8 @@ public sealed class MutatorCreditTracker
             .ThenByDescending(e => e.NewEdges)
             .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase)
             .Select(e => new MutatorCreditRowDto(
-                e.Name, e.Runs, e.NewEdges, e.UniqueCrashes, e.Score, GetSelectionWeight(e.Name)))
+                e.Name, e.Runs, e.NewEdges, e.UniqueCrashes, e.Score, GetSelectionWeight(e.Name),
+                e.StaleRuns, e.FailureRate))
             .ToList();
     }
 
@@ -191,13 +210,13 @@ public sealed class MutatorCreditTracker
         return string.Join(Environment.NewLine, lines);
     }
 
-    private IMutator WeightedPick(IReadOnlyList<IMutator> mutators, Random rng)
+    private IMutator WeightedPick(IReadOnlyList<IMutator> mutators, Random rng, HuntPolicyDecision? policy = null)
     {
         var total = 0;
         var weights = new int[mutators.Count];
         for (var i = 0; i < mutators.Count; i++)
         {
-            var w = GetSelectionWeight(mutators[i].Name);
+            var w = GetSelectionWeight(mutators[i].Name, policy);
             weights[i] = w;
             total += w;
         }
@@ -238,7 +257,8 @@ public sealed class MutatorCreditTracker
     }
 
     internal static string FormatPersistLine(MutatorCreditEntry entry) =>
-        $"{entry.Name} runs={entry.Runs} newEdges={entry.NewEdges} uniqueCrashes={entry.UniqueCrashes} score={entry.Score:0}";
+        $"{entry.Name} runs={entry.Runs} newEdges={entry.NewEdges} uniqueCrashes={entry.UniqueCrashes} " +
+        $"score={entry.Score:0} staleRuns={entry.StaleRuns}";
 
     internal static bool TryParsePersistLine(string line, out MutatorCreditEntry entry)
     {
@@ -268,10 +288,14 @@ public sealed class MutatorCreditTracker
                 case "score":
                     if (double.TryParse(val, out var score)) entry.Score = score;
                     break;
+                case "staleRuns":
+                    if (int.TryParse(val, out var stale)) entry.StaleRuns = stale;
+                    break;
             }
         }
         if (entry.Score <= 0 && (entry.NewEdges > 0 || entry.UniqueCrashes > 0))
             entry.Score = ComputeScore(entry.NewEdges, entry.UniqueCrashes);
+        entry.RecomputeFailureRate();
         return !string.IsNullOrWhiteSpace(entry.Name);
     }
 
@@ -281,6 +305,12 @@ public sealed class MutatorCreditTracker
         public int Runs { get; set; }
         public int NewEdges { get; set; }
         public int UniqueCrashes { get; set; }
+        public int StaleRuns { get; set; }
         public double Score { get; set; }
+
+        public double FailureRate =>
+            Runs <= 0 ? 0 : Math.Clamp((double)StaleRuns / Runs, 0, 1);
+
+        public void RecomputeFailureRate() { /* computed property */ }
     }
 }

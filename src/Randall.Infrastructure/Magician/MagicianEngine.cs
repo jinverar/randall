@@ -310,6 +310,38 @@ public static class MagicianEngine
         return cast;
     }
 
+    /// <summary>Phase C stub — Hunt Policy flagged a stalled warming lineage that needs live experiment.</summary>
+    public static void OnHuntPolicyNeedsExperiment(
+        ProjectConfig project,
+        string yamlPath,
+        HuntPolicyDecision policy,
+        int iteration,
+        IFuzzProgressSink? progress)
+    {
+        if (policy is not { NeedsExperiment: true })
+            return;
+
+        var cfg = GetConfig(project);
+        if (cfg is not { Enabled: true, PersistSpells: true })
+        {
+            FuzzAnalystLog.Info(progress,
+                $"Hunt policy needs-experiment (Phase C stub): {policy.ExperimentHint}", iteration);
+            return;
+        }
+
+        var dir = Path.Combine(
+            ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir),
+            "_magician");
+        Directory.CreateDirectory(dir);
+        var hintPath = Path.Combine(dir, "rewind_scream_hint.md");
+        var line =
+            $"[{DateTimeOffset.UtcNow:u}] iter={iteration} · {policy.ExperimentHint}{Environment.NewLine}";
+        File.AppendAllText(hintPath, line);
+
+        FuzzAnalystLog.Info(progress,
+            $"Hunt policy needs-experiment → {hintPath}: {policy.ExperimentHint}", iteration);
+    }
+
     /// <summary>Manual / CLI cast for an explicit need (knight, army, bots, joker, …).</summary>
     public static MagicianCastResult CastNeed(
         ProjectConfig project,

@@ -43,7 +43,9 @@ public sealed record NextHuntDecision(
     /// <summary>Soft extra corpus energy after interesting iterations (0–8).</summary>
     int RecommendedEnergyBoost,
     IReadOnlyList<OracleScoreTerm> WhyTerms,
-    OracleScore ScoreBreakdown)
+    OracleScore ScoreBreakdown,
+    /// <summary>Phase B consolidated hunt policy (lineage vs havoc vs Joker timing).</summary>
+    HuntPolicyDecision? HuntPolicy = null)
 {
     /// <summary>Maps internal hunt fields to the reviewer <c>RandallDecision</c> contract.</summary>
     public RandallDecisionDto ToRandallDecision()
@@ -102,6 +104,12 @@ public sealed record NextHuntDecision(
             return "duplicatePenalty";
         if (normalized.Contains("memory confidence"))
             return "memoryConfidence";
+        if (normalized.Contains("execution cost") || normalized.Contains("exhaustion"))
+            return "executionCost";
+        if (normalized.Contains("debugger influence"))
+            return "debuggerInfluence";
+        if (normalized.Contains("crash progression") || normalized.Contains("evolution momentum"))
+            return "crashProgression";
         return normalized.Replace(' ', '_');
     }
 
@@ -144,7 +152,9 @@ public sealed record BrainDecisionSnapshotDto(
     /// <summary>Reviewer <c>RandallDecision</c> alias — inputId, score, reasons, actions.</summary>
     RandallDecisionDto? Decision = null,
     double MemoryConfidence = 1.0,
-    string? MemoryMessage = null)
+    string? MemoryMessage = null,
+    /// <summary>Phase B hunt policy snapshot (also on <see cref="LastDecision"/>.<c>HuntPolicy</c>).</summary>
+    HuntPolicyDecision? HuntPolicy = null)
 {
     public static BrainDecisionSnapshotDto FromDecision(
         NextHuntDecision? decision,
@@ -155,5 +165,15 @@ public sealed record BrainDecisionSnapshotDto(
         string? memoryMessage = null) =>
         decision is null
             ? new BrainDecisionSnapshotDto(project, enabled, false, null, null, emptyHint, null, memoryConfidence, memoryMessage)
-            : new BrainDecisionSnapshotDto(project, enabled, decision.Active, decision, decision.At, emptyHint, decision.ToRandallDecision(), memoryConfidence, memoryMessage);
+            : new BrainDecisionSnapshotDto(
+                project,
+                enabled,
+                decision.Active,
+                decision,
+                decision.At,
+                emptyHint,
+                decision.ToRandallDecision(),
+                memoryConfidence,
+                memoryMessage,
+                decision.HuntPolicy);
 }

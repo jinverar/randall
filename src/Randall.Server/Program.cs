@@ -730,6 +730,8 @@ app.MapGet("/api/stalking/{project}/brain-decision", (string project) =>
             snapshot?.PersistedAt,
             snapshot?.EmptyHint,
             snapshot?.Decision,
+            huntPolicy = snapshot?.HuntPolicy ?? snapshot?.LastDecision?.HuntPolicy
+                ?? HuntPolicyEngine.TryLoadSnapshot(project)?.Policy,
             focus,
         });
     }
@@ -1257,7 +1259,11 @@ app.MapGet("/api/fuzz/brain", (string? project) =>
 
         return Results.Ok(snapshot.Decision is null && snapshot.LastDecision is not null
             ? BrainDecisionSnapshotDto.FromDecision(snapshot.LastDecision, snapshot.Project, snapshot.Enabled, snapshot.EmptyHint)
-            : snapshot);
+            : snapshot with
+            {
+                HuntPolicy = snapshot.HuntPolicy ?? snapshot.LastDecision?.HuntPolicy
+                    ?? HuntPolicyEngine.TryLoadSnapshot(name)?.Policy,
+            });
     }
     catch (Exception ex)
     {

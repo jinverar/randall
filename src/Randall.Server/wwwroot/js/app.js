@@ -811,6 +811,21 @@ function scareBrainDecisionLine(brain, intel) {
   else if (brain?.lastDecision?.summary) line = brain.lastDecision.summary;
   else if (typeof brain?.lastDecision === 'string') line = brain.lastDecision;
   else line = brain?.summary || brain?.line || brain?.message || brain?.decision || '';
+  const hunt = brain?.huntPolicy || brain?.lastDecision?.huntPolicy;
+  if (hunt?.summary && !line.includes('Hunt ')) {
+    line = line ? `${line} · ${hunt.summary}` : hunt.summary;
+  } else if (hunt?.mode && hunt.mode !== 'Baseline' && !line.includes('hunt=')) {
+    const modeLabel = hunt.mode === 'LineageBreed' ? 'breed lineage'
+      : hunt.mode === 'HavocExplore' ? 'havoc explore'
+      : hunt.mode === 'JokerInvoke' ? 'invoke Joker' : hunt.mode;
+    line = line ? `${line} · hunt=${modeLabel}` : `Hunt ${modeLabel}`;
+  }
+  if (hunt?.jokerInvokeChance > 0 && !line.includes('joker')) {
+    line = `${line} · joker≤${Math.round(hunt.jokerInvokeChance * 100)}%`;
+  }
+  if (hunt?.needsExperiment && !line.includes('needs-experiment')) {
+    line = `${line} · needs-experiment`;
+  }
   if (memoryMsg && !line.includes('Prior knowledge retained')) {
     line = line ? `${line} · ${memoryMsg}` : memoryMsg;
   } else if (memoryConf != null && memoryConf < 0.999 && !line.includes('memory=')) {
@@ -1179,6 +1194,15 @@ async function refreshScareFloorBrain(opts = {}) {
       }
       if (intel.brainMemoryMessage) {
         parts.push(escapeAttr(intel.brainMemoryMessage));
+      }
+      const hunt = brainDecision?.huntPolicy || brainDecision?.lastDecision?.huntPolicy;
+      if (hunt?.huntValue > 0) {
+        parts.push(`Hunt value <strong>${hunt.huntValue}</strong>${hunt.mode && hunt.mode !== 'Baseline' ? ` · ${escapeAttr(hunt.mode)}` : ''}`);
+      }
+      if (hunt?.terms?.length) {
+        const huntTerms = hunt.terms.slice(0, 4).map((t) =>
+          `<span class="scare-brain-mut-chip" title="${escapeAttr(t.detail || '')}">${escapeAttr(t.label)} ${t.points >= 0 ? '+' : ''}${t.points}</span>`).join('');
+        parts.push(`Hunt policy: <span class="scare-brain-mutators">${huntTerms}</span>`);
       }
       if (parts.length) {
         footEl.innerHTML = parts.join('<br/>');

@@ -77,6 +77,7 @@ public sealed class FuzzEngine
         string? lastPrimaryMutator = null;
 
         BrainDecisionStore.Clear();
+        HuntPolicyStore.Clear();
         var brain = new RandallBrain();
         var brainSignals = brain.LoadSignals(project.Name, repoRoot);
         var brainActive = RandallBrain.ShouldActivate(project, brainSignals);
@@ -633,6 +634,10 @@ public sealed class FuzzEngine
                 IMutator mutator;
                 if (brainActive)
                 {
+                    var coverageFraction = brainSignals.StaticHints?.CoverageSummary?.CoverageFraction ?? 0;
+                    if (coverageFraction <= 0 && coverage.TotalEdges > 0)
+                        coverageFraction = Math.Min(1.0, coverage.TotalEdges / 5000.0);
+
                     huntDecision = brain.Decide(
                         project.Name,
                         brainSignals,
@@ -641,15 +646,25 @@ public sealed class FuzzEngine
                         iterations,
                         repoRoot,
                         chainRows: mutatorChainTracker.SnapshotRows(),
-                        memoryConfidence: brainMemory.MemoryConfidence);
+                        memoryConfidence: brainMemory.MemoryConfidence,
+                        coverageFraction: coverageFraction,
+                        baseJokerChance: JokerEngine.EffectiveChance(project));
                     brain.PersistLast(huntDecision, repoRoot);
                     if (verbose)
                     {
                         FuzzAnalystLog.Info(progress, RandallBrain.FormatVerbose(huntDecision), iterations);
+                        if (huntDecision.HuntPolicy is not null)
+                            FuzzAnalystLog.Info(progress, HuntPolicyEngine.FormatVerbose(huntDecision.HuntPolicy), iterations);
+                    }
+
+                    if (huntDecision.HuntPolicy is { NeedsExperiment: true })
+                    {
+                        MagicianEngine.OnHuntPolicyNeedsExperiment(
+                            project, yamlPath, huntDecision.HuntPolicy, iterations, progress);
                     }
                 }
 
-                if (JokerEngine.ShouldPlay(project, rng) && mutators.Count > 0)
+                if (HuntPolicyEngine.ShouldInvokeJoker(huntDecision?.HuntPolicy, project, rng) && mutators.Count > 0)
                 {
                     jokerTrick = JokerEngine.StartTrick(project, mutators, rng, jokerDeck);
                     mutator = jokerTrick.PrimaryMutator;
@@ -670,7 +685,8 @@ public sealed class FuzzEngine
                 }
                 else if (brainActive && huntDecision is { Active: true })
                 {
-                    mutator = brain.PickMutator(huntDecision, mutators, mutatorCredit, rng);
+                    mutator = brain.PickMutator(huntDecision, mutators, mutatorCredit, rng,
+                        mutatorChainTracker, lastPrimaryMutator);
                 }
                 else
                 {

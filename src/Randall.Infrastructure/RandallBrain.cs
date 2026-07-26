@@ -46,7 +46,18 @@ public sealed class RandallBrain
         int MomentumScore = 0,
         string? MomentumLabel = null,
         int Generation = 0,
-        string? FamilyId = null);
+        string? FamilyId = null,
+        ScreamProgressionStep ProgressionStep = ScreamProgressionStep.Unknown,
+        int DebuggerInfluence = 0,
+        string? DebuggerExploitability = null)
+    {
+        /// <summary>Repeated READ-only NULL-deref family with low momentum — duplicate penalty target.</summary>
+        public bool IsStagnantNullDeref =>
+            ProgressionStep == ScreamProgressionStep.ReadViolation
+            && MomentumScore < 35
+            && SeenCount >= 4
+            && Novelty < 40;
+    }
 
     public sealed record HuntCandidate(
         string Kind,
@@ -91,13 +102,20 @@ public sealed class RandallBrain
         int iteration,
         string? repoRoot = null,
         IReadOnlyList<MutatorChainRowDto>? chainRows = null,
-        double memoryConfidence = 1.0)
+        double memoryConfidence = 1.0,
+        double coverageFraction = 0,
+        double baseJokerChance = 0)
     {
         memoryConfidence = Math.Clamp(memoryConfidence, 0.05, 1.0);
         if (!signals.HasData)
             return NextHuntDecision.Inactive(project, iteration);
 
         repoRoot ??= CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
+
+        var huntPolicy = HuntPolicyEngine.Evaluate(new HuntPolicyEngine.Context(
+            signals, mutatorRows, chainRows, mutators, coverageFraction, iteration,
+            memoryConfidence, baseJokerChance));
+
         var candidates = BuildCandidates(signals, mutatorRows);
         var focus = TryLoadFocus(project, repoRoot);
         if (focus is not null)
@@ -109,9 +127,17 @@ public sealed class RandallBrain
             return NextHuntDecision.Inactive(project, iteration);
 
         var top = candidates[0];
-        var why = new List<OracleScoreTerm>(top.Terms);
 
-        var preferredMutator = ResolvePreferredMutator(top, mutatorRows, signals, mutators, chainRows);
+        var why = new List<OracleScoreTerm>(top.Terms);
+        foreach (var term in huntPolicy.Terms)
+        {
+            if (!why.Any(t => t.Label.Equals(term.Label, StringComparison.OrdinalIgnoreCase)))
+                why.Add(term);
+        }
+
+        var preferredMutator = huntPolicy.Mode is HuntExecutionMode.LineageBreed or HuntExecutionMode.HavocExplore
+            ? huntPolicy.PreferredMutator ?? ResolvePreferredMutator(top, mutatorRows, signals, mutators, chainRows, huntPolicy)
+            : ResolvePreferredMutator(top, mutatorRows, signals, mutators, chainRows, huntPolicy);
         if (preferredMutator is not null)
             why.Add(new OracleScoreTerm("mutator pick", 6, preferredMutator));
 
@@ -158,11 +184,14 @@ public sealed class RandallBrain
         var total = Math.Clamp(why.Sum(t => t.Points), 0, 100);
         var breakdown = new OracleScore(total, why, top.Detail);
         var summary =
-            $"Randall thinks: {top.Kind} ΓåÆ {top.Label} [{top.Score}]" +
-            (focus is not null ? " ┬╖ pinned focus" : "") +
+            $"Randall thinks: {top.Kind} → {top.Label} [{top.Score}]" +
+            (focus is not null ? " · pinned focus" : "") +
             (preferredMutator is not null ? $" · mutator={preferredMutator}" : "") +
             (memoryConfidence < 0.999 ? $" · memory={memoryConfidence:P0}" : "") +
-            $" · corpus={corpusBias:P0} energy+{energyBoost}";
+            $" · corpus={corpusBias:P0} energy+{energyBoost}" +
+            (huntPolicy.Mode != HuntExecutionMode.Baseline ? $" · hunt={huntPolicy.Mode}" : "");
+
+        HuntPolicyEngine.PersistLast(huntPolicy, project, iteration, repoRoot);
 
         return new NextHuntDecision(
             iteration,
@@ -177,7 +206,8 @@ public sealed class RandallBrain
             corpusBias,
             energyBoost,
             why,
-            breakdown);
+            breakdown,
+            huntPolicy);
     }
 
     public IMutator PickMutator(
@@ -193,17 +223,45 @@ public sealed class RandallBrain
         if (mutators.Count == 1)
             return mutators[0];
 
+        var policy = decision.HuntPolicy;
+        if (policy?.Mode == HuntExecutionMode.LineageBreed && chains is not null && chains.BiasEnabled)
+        {
+            if (policy.LineageChain is { Count: >= 2 })
+            {
+                var tail = policy.LineageChain[^1];
+                var lineageMutator = mutators.FirstOrDefault(m =>
+                    m.Name.Equals(tail, StringComparison.OrdinalIgnoreCase));
+                if (lineageMutator is not null && rng.NextDouble() < 0.72)
+                    return lineageMutator;
+            }
+
+            if (!string.IsNullOrWhiteSpace(previousMutator) && rng.NextDouble() < 0.55)
+                return chains.BlendPick(mutators, credit, previousMutator, rng);
+        }
+
+        if (policy?.Mode == HuntExecutionMode.HavocExplore)
+        {
+            var havoc = mutators.FirstOrDefault(m => m.Name.Equals("havoc", StringComparison.OrdinalIgnoreCase));
+            if (havoc is not null && rng.NextDouble() < 0.58)
+                return havoc;
+        }
+
         if (!decision.Active || string.IsNullOrWhiteSpace(decision.PreferredMutator))
-            return PickWithOptionalChain(credit, chains, previousMutator, mutators, rng);
+            return PickWithOptionalChain(credit, chains, previousMutator, mutators, rng, policy);
 
         var preferred = mutators.FirstOrDefault(m =>
             m.Name.Equals(decision.PreferredMutator, StringComparison.OrdinalIgnoreCase));
         if (preferred is null)
-            return PickWithOptionalChain(credit, chains, previousMutator, mutators, rng);
+            return PickWithOptionalChain(credit, chains, previousMutator, mutators, rng, policy);
 
-        if (rng.NextDouble() < 0.62)
+        var preferChance = policy?.Mode == HuntExecutionMode.LineageBreed ? 0.74
+            : policy?.Mode == HuntExecutionMode.HavocExplore ? 0.68
+            : 0.62;
+
+        if (rng.NextDouble() < preferChance)
         {
             if (chains is not null && chains.BiasEnabled && !string.IsNullOrWhiteSpace(previousMutator)
+                && policy?.Mode != HuntExecutionMode.HavocExplore
                 && rng.NextDouble() < 0.08)
             {
                 var chainPick = chains.BlendPick(mutators, credit, previousMutator, rng);
@@ -213,7 +271,7 @@ public sealed class RandallBrain
             return preferred;
         }
 
-        return PickWithOptionalChain(credit, chains, previousMutator, mutators, rng);
+        return PickWithOptionalChain(credit, chains, previousMutator, mutators, rng, policy);
     }
 
     private static IMutator PickWithOptionalChain(
@@ -221,10 +279,15 @@ public sealed class RandallBrain
         MutatorChainTracker? chains,
         string? previousMutator,
         IReadOnlyList<IMutator> mutators,
-        Random rng) =>
+        Random rng,
+        HuntPolicyDecision? policy = null) =>
         chains is not null && chains.BiasEnabled
+            && policy?.Mode == HuntExecutionMode.LineageBreed
+            && !string.IsNullOrWhiteSpace(previousMutator)
             ? chains.BlendPick(mutators, credit, previousMutator, rng)
-            : credit.Pick(mutators, rng);
+            : chains is not null && chains.BiasEnabled
+                ? chains.BlendPick(mutators, credit, previousMutator, rng)
+                : credit.Pick(mutators, rng, policy);
 
     private static List<HuntCandidate> ApplyMemoryConfidence(IReadOnlyList<HuntCandidate> candidates, double factor)
     {
@@ -396,17 +459,21 @@ public sealed class RandallBrain
     public static string FormatVerbose(NextHuntDecision decision)
     {
         if (!decision.Active)
-            return $"Brain: idle ΓÇö {decision.Summary}";
+            return $"Brain: idle — {decision.Summary}";
 
         var terms = decision.WhyTerms.Count == 0
             ? decision.ScoreBreakdown.Summary
-            : string.Join(" ┬╖ ", decision.WhyTerms.Select(t =>
+            : string.Join(" · ", decision.WhyTerms.Select(t =>
                 t.Points >= 0 ? $"+{t.Points} {t.Label}" : $"{t.Points} {t.Label}"));
+
+        var policyLine = decision.HuntPolicy is not null
+            ? $" | {HuntPolicyEngine.FormatVerbose(decision.HuntPolicy)}"
+            : "";
 
         return
             $"Brain: {decision.FocusKind} {decision.FocusLabel} [{decision.FocusScore}] " +
             $"mutator={(decision.PreferredMutator ?? "credit")} " +
-            $"corpus={decision.CorpusPriorityBias:P0} energy+{decision.RecommendedEnergyBoost} ΓÇö {terms}";
+            $"corpus={decision.CorpusPriorityBias:P0} energy+{decision.RecommendedEnergyBoost} — {terms}{policyLine}";
     }
 
     internal static IReadOnlyList<HuntCandidate> BuildCandidates(
@@ -509,7 +576,8 @@ public sealed class RandallBrain
         IReadOnlyList<MutatorCreditRowDto> mutatorRows,
         Signals signals,
         IReadOnlyList<IMutator> mutators,
-        IReadOnlyList<MutatorChainRowDto>? chainRows = null)
+        IReadOnlyList<MutatorChainRowDto>? chainRows = null,
+        HuntPolicyDecision? huntPolicy = null)
     {
         if (top.Kind == "mutator")
             return ResolveMutatorName(mutators, top.Label);
@@ -655,7 +723,13 @@ public sealed class RandallBrain
             .Select(c =>
             {
                 evolutions.TryGetValue(c.Id, out var evo);
-                return new { Crash = c, Evolution = evo };
+                DebuggerObservation? debugger = null;
+                if (Directory.Exists(crashesDir))
+                {
+                    debugger = ScreamInvestigator.TryRead(
+                        ScreamInvestigator.ObservationPathFor(crashesDir, c.Id));
+                }
+                return new { Crash = c, Evolution = evo, Debugger = debugger };
             })
             .GroupBy(x => x.Evolution?.FamilyId ?? x.Crash.ClusterKey ?? x.Crash.Id.ToString(),
                 StringComparer.OrdinalIgnoreCase);
@@ -670,6 +744,20 @@ public sealed class RandallBrain
                 var novelty = lead.Crash.Novelty > 0 ? lead.Crash.Novelty : Math.Max(0, 100 - seen * 8);
                 var screamScore = lead.Crash.ScreamScore;
                 var saturated = seen >= 8 && novelty < 35 && (lead.Evolution?.MomentumScore ?? 0) < 40;
+                var progression = lead.Evolution?.ProgressionStep ?? ScreamProgressionStep.Unknown;
+                var debuggerBonus = 0;
+                string? exploitHint = null;
+                if (lead.Debugger?.ExploitabilityHint is { } exp)
+                {
+                    exploitHint = exp;
+                    debuggerBonus = exp.Equals("HIGH", StringComparison.OrdinalIgnoreCase) ? 12
+                        : exp.Equals("MEDIUM", StringComparison.OrdinalIgnoreCase) ? 6 : 0;
+                }
+                else if ((lead.Debugger?.Diagnosis?.Length ?? 0) > 0)
+                {
+                    debuggerBonus = 4;
+                }
+
                 return new ScreamClusterSignal(
                     g.Key,
                     screamScore,
@@ -680,7 +768,10 @@ public sealed class RandallBrain
                     lead.Evolution?.MomentumScore ?? 0,
                     lead.Evolution?.MomentumLabel,
                     lead.Evolution?.Generation ?? 0,
-                    lead.Evolution?.FamilyId);
+                    lead.Evolution?.FamilyId,
+                    progression,
+                    debuggerBonus,
+                    exploitHint);
             })
             .OrderByDescending(s => s.MomentumScore)
             .ThenByDescending(s => s.ScreamScore)
