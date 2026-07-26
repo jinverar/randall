@@ -81,4 +81,6 @@ public sealed record DebuggerObservation(
     /// <summary>Register ↔ payload matches (cdb script or post-pass attribution).</summary>
     IReadOnlyList<RegisterPayloadMatchDto>? RegisterMatches = null,
     /// <summary>Primary register whose value appears in the crashing input.</summary>
-    string? PrimaryRegisterMatch = null);
+    string? PrimaryRegisterMatch = null,
+    /// <summary>Provenance for key facts (CDB source command + confidence).</summary>
+    DebuggerObservationProvenance? Provenance = null);

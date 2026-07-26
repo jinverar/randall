@@ -323,6 +323,7 @@ dotnet run --project src/Randall.Server
 |------|--------|
 | Layered stalk compare + IDA/Ghidra export | ✅ |
 | WinDbg attach / open dump + Scream watcher | ✅ |
+| **CDB Probe Engine** (`CdbProbePlan` / `CdbScriptBuilder` / marker parse + provenance) | ✅ [CDB_PROBE_ENGINE.md](CDB_PROBE_ENGINE.md) |
 | Case builder + Help tab (served docs) | ✅ |
 | Procmon bookends (`fuzz.procmonCapture` / UI checkbox) | ✅ |
 | TCPVCon network snapshots (`fuzz.tcpvconCapture`) | ✅ |

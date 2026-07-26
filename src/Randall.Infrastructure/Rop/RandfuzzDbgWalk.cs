@@ -157,48 +157,40 @@ public static class RandfuzzDbgWalk
 
         var chain = CorruptionChainBuilder.TryRead(CorruptionChainBuilder.PathFor(crashesDir, crashId));
         var scriptDir = ScriptsDir(repoRoot).Replace('\\', '/');
-        var lines = new List<string>
+        var preamble = new List<string>
         {
-            DebuggerTools.FormatSympathScriptCommand(),
             $".echo === RANDFUZZ OPEN {crashId:N} ===",
             $".echo Project: {detail.Summary.Project}",
         };
 
         if (chain is { Ok: true })
         {
-            lines.Add($".echo Corruption chain [{chain.Confidence}]: {chain.Summary}");
+            preamble.Add($".echo Corruption chain [{chain.Confidence}]: {chain.Summary}");
             if (!string.IsNullOrWhiteSpace(chain.SuspectedMutator))
-                lines.Add($".echo Mutator: {chain.SuspectedMutator}");
+                preamble.Add($".echo Mutator: {chain.SuspectedMutator}");
             if (chain.PatternDepthBytes is int depth)
-                lines.Add($".echo Pattern depth: input+{depth}");
+                preamble.Add($".echo Pattern depth: input+{depth}");
         }
 
         if (detail.DebuggerObservation?.Diagnosis is { } diag)
-            lines.Add($".echo Investigator: {diag.Replace("\"", "'", StringComparison.Ordinal)}");
+            preamble.Add($".echo Investigator: {diag.Replace("\"", "'", StringComparison.Ordinal)}");
 
         var analyzePath = WindowsCdbCrashAnalysisWriter.AnalyzeTextPathFor(crashesDir, crashId);
         var headlessAnalyze = File.Exists(analyzePath) && new FileInfo(analyzePath).Length > 80;
-        if (headlessAnalyze)
-        {
-            lines.Add($".echo Headless cdb !analyze already saved: {analyzePath.Replace('\\', '/')}");
-            lines.Add(".echo (see Crashes tab or open *_analyze.txt in an editor)");
-        }
-        else
-        {
-            lines.Add(".echo Running !analyze -v (headless cdb did not run or produced no output)");
-            lines.Add("!analyze -v");
-        }
-
-        lines.Add(".echo === registers / stack ===");
-        lines.Add("r");
-        lines.Add("k");
-        lines.Add("lm");
-        lines.Add($".echo Full walk: $$>a< {scriptDir}/rf_walk.txt");
 
         var path = Path.Combine(crashesDir, $"{crashId:N}_windbg_open.txt");
         try
         {
-            File.WriteAllText(path, string.Join(Environment.NewLine, lines));
+            var script = CdbScriptBuilder.BuildFile(
+                CdbProbePlan.InteractiveOpen,
+                new CdbScriptOptions
+                {
+                    PreambleEchoes = preamble,
+                    RunAnalyzeIfMissing = !headlessAnalyze,
+                    AnalyzeAlreadySavedPath = headlessAnalyze ? analyzePath : null,
+                    WalkScriptHint = $"{scriptDir}/rf_walk.txt",
+                });
+            File.WriteAllText(path, script);
             return path;
         }
         catch

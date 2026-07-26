@@ -209,13 +209,10 @@ public static class DebuggerSession
 
     private static DebuggerWaitHandle StartCdbWait(string cdb, int pid, string dumpPath)
     {
-        // Attach, go; on next break write dump and quit/detach.
-        var scriptPath = Path.Combine(Path.GetTempPath(), $"randfuzz_cdb_{pid}_{Guid.NewGuid():N}.txt");
-        File.WriteAllText(scriptPath, $"""
-            g
-            .dump /ma "{dumpPath}"
-            qd
-            """);
+        var scriptPath = CdbScriptBuilder.WriteTempScript(
+            CdbProbePlan.WaitAttach,
+            new CdbScriptOptions { DumpPath = dumpPath },
+            prefix: $"randfuzz_cdb_{pid}");
         var args = $"-p {pid} -cf \"{scriptPath}\"";
         if (OperatingSystem.IsWindows())
             args = $"{DebuggerTools.FormatSymbolCommandLineArgs()} {args}";

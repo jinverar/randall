@@ -95,7 +95,7 @@ public static partial class WindowsCdbCrashAnalysisWriter
         }
 
         var msec = runExploitable ? DebuggerTools.FindMsecDll() : null;
-        var script = BuildScript(msec);
+        var script = BuildScript(msec, CdbProbePlan.StandardCrash);
         var timedOut = false;
         string text;
         try
@@ -111,16 +111,17 @@ public static partial class WindowsCdbCrashAnalysisWriter
             return new AutoAnalyzeResult(fail, $"cdb triage failed: {ex.Message}");
         }
 
-        var analyzeBlock = ExtractBlock(text, "RANDFUZZ_ANALYZE_BEGIN", "RANDFUZZ_ANALYZE_END");
-        var exploitableBlock = ExtractBlock(text, "RANDFUZZ_EXPLOITABLE_BEGIN", "RANDFUZZ_EXPLOITABLE_END");
-        var exrBlock = ExtractBlock(text, "RANDFUZZ_EXR_BEGIN", "RANDFUZZ_EXR_END");
-        var regsBlock = ExtractBlock(text, "RANDFUZZ_REGS_BEGIN", "RANDFUZZ_REGS_END");
-        var stackBlock = ExtractBlock(text, "RANDFUZZ_STACK_BEGIN", "RANDFUZZ_STACK_END");
-        var disasmBlock = ExtractBlock(text, "RANDFUZZ_DISASM_BEGIN", "RANDFUZZ_DISASM_END");
-        var memBlock = ExtractBlock(text, "RANDFUZZ_MEM_BEGIN", "RANDFUZZ_MEM_END");
-        var lmBlock = ExtractBlock(text, "RANDFUZZ_LM_BEGIN", "RANDFUZZ_LM_END");
-        var heapBlock = ExtractBlock(text, "RANDFUZZ_HEAP_BEGIN", "RANDFUZZ_HEAP_END");
-        var addressBlock = ExtractBlock(text, "RANDFUZZ_ADDRESS_BEGIN", "RANDFUZZ_ADDRESS_END");
+        var transcript = CdbMarkerParser.Parse(text);
+        var analyzeBlock = transcript.Get(CdbProbeSection.Analyze);
+        var exploitableBlock = transcript.Get(CdbProbeSection.Exploitable);
+        var exrBlock = transcript.Get(CdbProbeSection.Exception);
+        var regsBlock = transcript.Get(CdbProbeSection.Regs);
+        var stackBlock = transcript.Get(CdbProbeSection.Stack);
+        var disasmBlock = transcript.Get(CdbProbeSection.Disasm);
+        var memBlock = transcript.Get(CdbProbeSection.Memory);
+        var lmBlock = transcript.Get(CdbProbeSection.Modules);
+        var heapBlock = transcript.Get(CdbProbeSection.Heap);
+        var addressBlock = transcript.Get(CdbProbeSection.Address);
 
         var analyzePath = AnalyzeTextPathFor(crashesDir, crashId);
         File.WriteAllText(analyzePath, string.IsNullOrWhiteSpace(analyzeBlock) ? text : analyzeBlock);
@@ -239,53 +240,8 @@ public static partial class WindowsCdbCrashAnalysisWriter
     /// <summary>
     /// Headless CDB script: !analyze plus register/stack/disasm/memory probes for Scream Investigator.
     /// </summary>
-    internal static string BuildScript(string? msecPath)
-    {
-        var lines = new List<string>
-        {
-            DebuggerTools.FormatSympathScriptCommand(),
-            ".symfix",
-            ".reload /f /n",
-            ".echo RANDFUZZ_ANALYZE_BEGIN",
-            "!analyze -v",
-            ".echo RANDFUZZ_ANALYZE_END",
-            ".echo RANDFUZZ_EXR_BEGIN",
-            ".exr -1",
-            ".echo RANDFUZZ_EXR_END",
-            ".ecxr",
-            ".echo RANDFUZZ_REGS_BEGIN",
-            "r",
-            ".echo RANDFUZZ_REGS_END",
-            ".echo RANDFUZZ_STACK_BEGIN",
-            "kv",
-            ".echo RANDFUZZ_STACK_END",
-            ".echo RANDFUZZ_LM_BEGIN",
-            "lm",
-            ".echo RANDFUZZ_LM_END",
-            ".echo RANDFUZZ_DISASM_BEGIN",
-            "u @rip-20 @rip+40",
-            ".echo RANDFUZZ_DISASM_END",
-            ".echo RANDFUZZ_MEM_BEGIN",
-            "dq @rsp L40",
-            ".echo RANDFUZZ_MEM_END",
-            ".echo RANDFUZZ_HEAP_BEGIN",
-            "!heap -s",
-            ".echo RANDFUZZ_HEAP_END",
-            ".echo RANDFUZZ_ADDRESS_BEGIN",
-            "!address $exceptioninformation[1]",
-            ".echo RANDFUZZ_ADDRESS_END",
-        };
-        if (msecPath is not null)
-        {
-            lines.Add(".echo RANDFUZZ_EXPLOITABLE_BEGIN");
-            lines.Add($".load \"{msecPath.Replace("\"", "\\\"")}\"");
-            lines.Add("!exploitable");
-            lines.Add(".echo RANDFUZZ_EXPLOITABLE_END");
-        }
-
-        lines.Add("qd");
-        return string.Join("; ", lines);
-    }
+    internal static string BuildScript(string? msecPath, CdbProbePlan plan = CdbProbePlan.StandardCrash) =>
+        CdbScriptBuilder.BuildInline(plan, new CdbScriptOptions { MsecDllPath = msecPath });
 
     internal static (string Text, bool TimedOut) RunCdb(string cdb, string dumpPath, string script, int timeoutMs)
     {
@@ -314,27 +270,8 @@ public static partial class WindowsCdbCrashAnalysisWriter
         return (text, timedOut);
     }
 
-    public static string ExtractBlock(string text, string begin, string end)
-    {
-        var lines = new List<string>();
-        var started = false;
-        foreach (var raw in text.Split('\n'))
-        {
-            var line = raw.TrimEnd('\r');
-            if (line.Contains(begin, StringComparison.Ordinal))
-            {
-                started = true;
-                continue;
-            }
-
-            if (line.Contains(end, StringComparison.Ordinal))
-                break;
-            if (started)
-                lines.Add(line);
-        }
-
-        return string.Join('\n', lines).Trim();
-    }
+    public static string ExtractBlock(string text, string begin, string end) =>
+        CdbMarkerParser.ExtractBlock(text, begin, end);
 
     public sealed record ParsedAnalyze(
         string? ExceptionCode,

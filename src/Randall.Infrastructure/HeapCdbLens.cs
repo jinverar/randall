@@ -32,10 +32,11 @@ public static class HeapCdbLens
 
         try
         {
+            var scriptInline = CdbScriptBuilder.BuildInline(CdbProbePlan.HeapCrash);
             var psi = new ProcessStartInfo
             {
                 FileName = cdb,
-                Arguments = $"-z \"{dumpPath}\" -c \".echo RANDFUZZ_HEAP_BEGIN; !heap -s; .echo RANDFUZZ_HEAP_END; .echo RANDFUZZ_PAGEHEAP_BEGIN; !heap -p; .echo RANDFUZZ_PAGEHEAP_END; qd\"",
+                Arguments = $"-z \"{dumpPath}\" -c \"{scriptInline.Replace("\"", "\\\"")}\"",
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -59,8 +60,9 @@ public static class HeapCdbLens
             }
 
             var text = stdoutTask.GetAwaiter().GetResult() + "\n" + stderrTask.GetAwaiter().GetResult();
-            var heapLines = ExtractBlock(text, "RANDFUZZ_HEAP_BEGIN", "RANDFUZZ_HEAP_END");
-            var pageLines = ExtractBlock(text, "RANDFUZZ_PAGEHEAP_BEGIN", "RANDFUZZ_PAGEHEAP_END");
+            var transcript = CdbMarkerParser.Parse(text);
+            var heapLines = transcript.Get(CdbProbeSection.Heap).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
+            var pageLines = transcript.Get(CdbProbeSection.PageHeap).Split('\n', StringSplitOptions.RemoveEmptyEntries).ToList();
             var summary = new List<string>();
             summary.AddRange(SummarizeHeap(heapLines));
             var pageHeap = DetectPageHeap(pageLines, text);
@@ -96,28 +98,6 @@ public static class HeapCdbLens
                 HeapSummaryLines = [$"cdb heap enrich failed: {ex.Message}"],
             };
         }
-    }
-
-    private static List<string> ExtractBlock(string text, string begin, string end)
-    {
-        var lines = new List<string>();
-        var started = false;
-        foreach (var raw in text.Split('\n'))
-        {
-            var line = raw.TrimEnd('\r');
-            if (line.Contains(begin, StringComparison.Ordinal))
-            {
-                started = true;
-                continue;
-            }
-
-            if (line.Contains(end, StringComparison.Ordinal))
-                break;
-            if (started && !string.IsNullOrWhiteSpace(line))
-                lines.Add(line.Trim());
-        }
-
-        return lines;
     }
 
     private static List<string> SummarizeHeap(IReadOnlyList<string> heapLines)

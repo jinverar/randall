@@ -85,7 +85,9 @@ public static partial class ScreamInvestigator
         }
 
         var msec = runExploitable ? DebuggerTools.FindMsecDll() : null;
-        var script = WindowsCdbCrashAnalysisWriter.BuildScript(msec);
+        var script = CdbScriptBuilder.BuildInline(
+            CdbProbePlan.StandardCrash,
+            new CdbScriptOptions { MsecDllPath = msec });
         string text;
         bool timedOut;
         try
@@ -99,16 +101,17 @@ public static partial class ScreamInvestigator
             return fail;
         }
 
-        var analyze = WindowsCdbCrashAnalysisWriter.ExtractBlock(text, "RANDFUZZ_ANALYZE_BEGIN", "RANDFUZZ_ANALYZE_END");
-        var exr = WindowsCdbCrashAnalysisWriter.ExtractBlock(text, "RANDFUZZ_EXR_BEGIN", "RANDFUZZ_EXR_END");
-        var regs = WindowsCdbCrashAnalysisWriter.ExtractBlock(text, "RANDFUZZ_REGS_BEGIN", "RANDFUZZ_REGS_END");
-        var stack = WindowsCdbCrashAnalysisWriter.ExtractBlock(text, "RANDFUZZ_STACK_BEGIN", "RANDFUZZ_STACK_END");
-        var disasm = WindowsCdbCrashAnalysisWriter.ExtractBlock(text, "RANDFUZZ_DISASM_BEGIN", "RANDFUZZ_DISASM_END");
-        var mem = WindowsCdbCrashAnalysisWriter.ExtractBlock(text, "RANDFUZZ_MEM_BEGIN", "RANDFUZZ_MEM_END");
-        var lm = WindowsCdbCrashAnalysisWriter.ExtractBlock(text, "RANDFUZZ_LM_BEGIN", "RANDFUZZ_LM_END");
-        var heap = WindowsCdbCrashAnalysisWriter.ExtractBlock(text, "RANDFUZZ_HEAP_BEGIN", "RANDFUZZ_HEAP_END");
-        var address = WindowsCdbCrashAnalysisWriter.ExtractBlock(text, "RANDFUZZ_ADDRESS_BEGIN", "RANDFUZZ_ADDRESS_END");
-        var exploitable = WindowsCdbCrashAnalysisWriter.ExtractBlock(text, "RANDFUZZ_EXPLOITABLE_BEGIN", "RANDFUZZ_EXPLOITABLE_END");
+        var transcript = CdbMarkerParser.Parse(text);
+        var analyze = transcript.Get(CdbProbeSection.Analyze);
+        var exr = transcript.Get(CdbProbeSection.Exception);
+        var regs = transcript.Get(CdbProbeSection.Regs);
+        var stack = transcript.Get(CdbProbeSection.Stack);
+        var disasm = transcript.Get(CdbProbeSection.Disasm);
+        var mem = transcript.Get(CdbProbeSection.Memory);
+        var lm = transcript.Get(CdbProbeSection.Modules);
+        var heap = transcript.Get(CdbProbeSection.Heap);
+        var address = transcript.Get(CdbProbeSection.Address);
+        var exploitable = transcript.Get(CdbProbeSection.Exploitable);
 
         // Keep raw analyze text updated (investigator may be the only CDB pass).
         var analyzePath = WindowsCdbCrashAnalysisWriter.AnalyzeTextPathFor(crashesDir, crashId);
@@ -239,6 +242,8 @@ public static partial class ScreamInvestigator
         var diagnosis = BuildDiagnosis(
             parsed, access, faultAddr, addrClass, fn, mod, fnOff, exploitHint, inputInfluence, sidecar, heapSignal,
             registerMatches, primaryRegister);
+        var provenance = BuildProvenance(
+            parsed, exr, access, faultAddr, addrClass, rip, mod, fn, exp.Classification, heapSignal);
 
         var ok = !timedOut && (!string.IsNullOrWhiteSpace(parsed.ExceptionCode)
                                || !string.IsNullOrWhiteSpace(faultAddr)
@@ -278,7 +283,8 @@ public static partial class ScreamInvestigator
             Error: error,
             At: DateTimeOffset.UtcNow,
             RegisterMatches: registerMatches.Count > 0 ? registerMatches : null,
-            PrimaryRegisterMatch: primaryRegister);
+            PrimaryRegisterMatch: primaryRegister,
+            Provenance: provenance);
     }
 
     private static DebuggerObservation Empty(string? dumpPath, string? obsPath, string error) =>
@@ -286,7 +292,65 @@ public static partial class ScreamInvestigator
             false, dumpPath, obsPath, null, null, DebuggerAccessKind.Unknown, null,
             DebuggerAddressClass.Unknown, null, null, null, null, [], null, null, null, null, null, null, null,
             null, null, null, null, "UNKNOWN", "UNKNOWN", 0, error, 0, false, error, DateTimeOffset.UtcNow,
-            RegisterMatches: null, PrimaryRegisterMatch: null);
+            RegisterMatches: null, PrimaryRegisterMatch: null, Provenance: null);
+
+    private static DebuggerObservationProvenance BuildProvenance(
+        WindowsCdbCrashAnalysisWriter.ParsedAnalyze parsed,
+        string exr,
+        DebuggerAccessKind access,
+        string? faultAddr,
+        DebuggerAddressClass addrClass,
+        string? rip,
+        string? mod,
+        string? fn,
+        string? exploitableClass,
+        string? heapSignal)
+    {
+        var exrFault = ExtractFaultAddressFromExr(exr);
+        var faultSource = exrFault is not null ? ".exr -1" : "!analyze -v";
+        var faultConf = exrFault is not null ? DebuggerFactConfidence.High : DebuggerFactConfidence.Medium;
+
+        DebuggerFactConfidence accessConf = DebuggerFactConfidence.Unknown;
+        if (Regex.IsMatch(exr, @"Parameter\[0\]:", RegexOptions.IgnoreCase))
+            accessConf = DebuggerFactConfidence.High;
+        else if (access != DebuggerAccessKind.Unknown)
+            accessConf = DebuggerFactConfidence.Medium;
+
+        DebuggerFactConfidence addrClassConf = addrClass switch
+        {
+            DebuggerAddressClass.Unknown => DebuggerFactConfidence.Unknown,
+            DebuggerAddressClass.Other => DebuggerFactConfidence.Low,
+            _ => DebuggerFactConfidence.Medium,
+        };
+
+        return new DebuggerObservationProvenance(
+            ExceptionCode: Fact(parsed.ExceptionCode, "!analyze -v", DebuggerFactConfidence.Medium),
+            ExceptionHint: Fact(parsed.ExceptionHint ?? parsed.ExceptionCode, "!analyze -v", DebuggerFactConfidence.Medium),
+            FaultAddress: Fact(faultAddr, faultSource, faultConf),
+            Access: Fact(access, accessConf >= DebuggerFactConfidence.Medium ? ".exr -1" : "!analyze -v", accessConf),
+            Rip: Fact(rip, "r", rip is not null ? DebuggerFactConfidence.High : DebuggerFactConfidence.Unknown),
+            FaultingModule: Fact(mod ?? parsed.FaultModule, mod is not null ? "kv" : "!analyze -v",
+                mod is not null ? DebuggerFactConfidence.High : DebuggerFactConfidence.Medium),
+            FaultingFunction: Fact(fn, fn is not null ? "kv" : "!analyze -v",
+                fn is not null ? DebuggerFactConfidence.High : DebuggerFactConfidence.Medium),
+            FaultAddressClass: Fact(addrClass, "!address / heuristics", addrClassConf, DebuggerFactKind.Inferred),
+            ExploitableClassification: Fact(exploitableClass, "!exploitable",
+                exploitableClass is not null ? DebuggerFactConfidence.High : DebuggerFactConfidence.Unknown),
+            HeapSignal: Fact(heapSignal, "!heap / !address / !exploitable",
+                heapSignal is not null ? DebuggerFactConfidence.Medium : DebuggerFactConfidence.Unknown,
+                DebuggerFactKind.Inferred));
+    }
+
+    private static DebuggerFactDto<T>? Fact<T>(
+        T? value,
+        string source,
+        DebuggerFactConfidence confidence,
+        DebuggerFactKind kind = DebuggerFactKind.Observed) =>
+        value is null || (value is string s && string.IsNullOrWhiteSpace(s))
+            || (value is DebuggerAccessKind ak && ak == DebuggerAccessKind.Unknown)
+            || (value is DebuggerAddressClass ac && ac == DebuggerAddressClass.Unknown)
+            ? null
+            : new DebuggerFactDto<T>(value, source, confidence, kind);
 
     private static IReadOnlyList<RegisterPayloadMatchDto> FindRegisterMatches(
         byte[]? payload,
