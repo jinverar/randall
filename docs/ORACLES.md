@@ -208,6 +208,8 @@ oracles:
 
 Reference must accept `@@` or `{file}` like other file harnesses. This is **oracle differential**, not BinDiff instruction-level fuzzing — pair with `randall stalk ghidra-diff` for static `changedFunctions[]`.
 
+Wave 5 stub: [DIFFERENTIAL_ORACLE.md](DIFFERENTIAL_ORACLE.md) documents the `DifferentialOracleHook` surface for future A/B parser compare.
+
 ## What this is not
 
 - Not a bug-hunter / campaign planner (see [BUG_HUNTER.md](BUG_HUNTER.md))

@@ -90,8 +90,14 @@ app.MapPut("/api/ui/prefs", (UiPrefsUpdateRequest request) =>
 
     var screamCanisters = request.ScreamCanisters ?? current.ScreamCanisters;
     var screamAnimations = request.ScreamAnimations ?? current.ScreamAnimations;
+    var presentationMode = request.PresentationMode ?? current.PresentationMode;
+    if (!UiPrefsStore.IsValidPresentationMode(presentationMode))
+        return Results.BadRequest(new { error = "presentationMode must be learning or research" });
+    var instructorMode = request.InstructorMode ?? current.InstructorMode;
 
-    var saved = UiPrefsStore.Save(new UiPrefsDto(theme, platform, null, screamCanisters, screamAnimations));
+    var saved = UiPrefsStore.Save(new UiPrefsDto(
+        theme, platform, null, screamCanisters, screamAnimations,
+        UiPrefsStore.NormalizePresentationMode(presentationMode), instructorMode));
     return Results.Ok(saved);
 });
 

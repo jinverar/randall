@@ -331,6 +331,7 @@ public static class HypothesisEngine
             .Select(h => h.Id.Equals(updated.Id, StringComparison.OrdinalIgnoreCase) ? updated : h)
             .ToList();
         Write(crashesDir, set with { Hypotheses = hypotheses });
+        InfluenceEngine.RefreshFromHypotheses(crashesDir, plan.CrashId, set with { Hypotheses = hypotheses });
 
         var snap = TryLoadQueue(project, repoRoot);
         if (snap?.Queue.Count is not > 0)
@@ -734,6 +735,29 @@ public static class HypothesisEngine
             evidence.Add($"oracle:{oracleScore.Total}");
         if (triage?.PatternDepthBytes is int d)
             evidence.Add($"patternDepth:{d}");
+        return evidence;
+    }
+
+    /// <summary>Merge influence-map evidence tags when the sidecar exists on disk.</summary>
+    public static List<string> CollectEvidenceWithInfluence(
+        string crashesDir,
+        Guid crashId,
+        CrashSidecarDto? sidecar,
+        CrashTriageDto? triage,
+        DebuggerObservation? debugger,
+        CrashCorruptionChainDto? chain,
+        ScreamEvolutionDto? evolution,
+        OracleScore? oracleScore,
+        CrashBackwardTraceDto? backwardTrace = null)
+    {
+        var evidence = CollectEvidence(sidecar, triage, debugger, chain, evolution, oracleScore, backwardTrace);
+        var influence = InfluenceEngine.TryRead(InfluenceEngine.PathFor(crashesDir, crashId));
+        if (influence is { Ok: true })
+        {
+            evidence.Add($"influence:{influence.Confidence}");
+            foreach (var link in influence.Links.Take(3))
+                evidence.Add($"influenceLink:{link.Status}:{link.Mechanism}");
+        }
         return evidence;
     }
 

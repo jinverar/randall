@@ -2721,6 +2721,42 @@ tr.mutate-row td { background: #2a2218; }
   margin-right: 0.35rem;
 }
 
+.silent-scream-badge {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: hsl(210 90% 96%);
+  background: linear-gradient(135deg, hsl(205 75% 42%), hsl(230 70% 38%));
+  box-shadow: 0 0 0 1px color-mix(in srgb, hsl(210 80% 50%) 45%, transparent);
+}
+
+.crash-why-head .silent-scream-badge {
+  margin-right: 0.35rem;
+}
+
+.academy-edu-blurb {
+  margin: 0.35rem 0 0.65rem;
+  padding: 0.55rem 0.75rem;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+[data-presentation-mode="research"] .academy-edu-blurb {
+  display: none;
+}
+
+.root-cause-edu {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0.35rem 0 0.65rem;
+}
+
 .deep-scream-box h4 {
   color: hsl(280 75% 62%);
 }
@@ -2750,6 +2786,60 @@ tr.mutate-row td { background: #2a2218; }
 .scream-intel-oracle {
   color: var(--warn);
   font-weight: 700;
+}
+
+.evidence-facts-box {
+  border-left: 3px solid color-mix(in srgb, var(--stalk-purple) 55%, var(--border));
+}
+
+.evidence-fact-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin-top: 0.35rem;
+}
+
+.evidence-fact-table th,
+.evidence-fact-table td {
+  text-align: left;
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.evidence-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.12rem 0.35rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.evidence-badge-observed {
+  background: color-mix(in srgb, #3d9970 22%, transparent);
+  color: #3d9970;
+  border: 1px solid color-mix(in srgb, #3d9970 40%, var(--border));
+}
+
+.evidence-badge-inferred {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border));
+}
+
+.evidence-badge-hypothesized {
+  background: color-mix(in srgb, var(--stalk-purple) 18%, transparent);
+  color: var(--stalk-purple);
+  border: 1px solid color-mix(in srgb, var(--stalk-purple) 35%, var(--border));
+}
+
+.evidence-badge-experimentallyconfirmed {
+  background: color-mix(in srgb, #0074d9 18%, transparent);
+  color: #0074d9;
+  border: 1px solid color-mix(in srgb, #0074d9 35%, var(--border));
 }
 
 .crash-why-head {
@@ -3136,7 +3226,24 @@ html[data-theme="cyber"] .stalker-meta .status-crash {
   color: var(--text);
   font-size: 0.85rem;
 }
-.triage-box h4 { margin: 0 0 0.4rem; font-size: 0.8rem; color: var(--muted); text-transform: uppercase; }
+.influence-link-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin-top: 0.5rem;
+}
+.influence-link-table th,
+.influence-link-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.35rem 0.5rem;
+  vertical-align: top;
+  text-align: left;
+}
+.influence-status-observed { color: var(--stalk-green); font-weight: 600; }
+.influence-status-confirmed { color: var(--stalk-green); font-weight: 700; }
+.influence-status-candidate { color: var(--warn); }
+.influence-status-unknown { color: var(--muted); }
+
 .reg-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

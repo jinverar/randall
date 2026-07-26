@@ -64,6 +64,12 @@ public sealed class ProjectConfig
 
     /// <summary>Email / Discord alerts on unique crashes — see docs/NOTIFICATIONS.md.</summary>
     public NotificationsConfig? Notifications { get; set; }
+
+    /// <summary>
+    /// Academy presentation — Learning vs Research modes, instructor toggles, silent oracle screams.
+    /// YAML: <c>academy:</c>. See docs/ACADEMY_LAB_INDEX.md.
+    /// </summary>
+    public AcademyConfig? Academy { get; set; }
 }
 
 public sealed class SessionGraphConfig

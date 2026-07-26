@@ -1399,6 +1399,21 @@ public sealed class FuzzEngine
                     }
                 }
 
+                if (!result.Crashed && oracleEval is not null)
+                {
+                    var iterMutatorLabel = jokerTrick is null
+                        ? $"{commandName}/{mutator.Name}"
+                        : $"{commandName}/joker:{jokerTrick.TrickName}";
+                    var silent = SilentScreamBuilder.Promote(
+                        project, yamlPath, crashStore, crashesDir, iterations, iterMutatorLabel,
+                        commandName, mutator.Name, payload, payloadHash, result, oracleEval,
+                        mutatorChain, parentInputHash, seedSource, seedFiles,
+                        newEdges, coverage.TotalEdges, coverageGuided, dryRun,
+                        stalkBackend, iterTracePath, journal?.RunId, progress);
+                    if (silent is { IsNew: true })
+                        uniqueCrashThisIter = true;
+                }
+
                 if (jokerTrick is not null && !result.Crashed)
                 {
                     MagicianEngine.WatchJoker(
@@ -2254,6 +2269,19 @@ public sealed class FuzzEngine
                 $"  Oracle rules: auth={o.Auth.Count} state={o.State.Count} integer={o.Integer.Count} " +
                 $"structure={o.Structure.Count} resource={o.Resource.Count} " +
                 $"invariants={o.Invariants.Count} differential={o.Differential.Count} metamorphic={o.Metamorphic.Count}");
+            if (DifferentialOracleHook.IsArmed(project))
+                FuzzAnalystLog.Info(progress, $"  {DifferentialOracleHook.Describe(project)}");
+        }
+        var academy = project.Academy;
+        if (academy is not null)
+        {
+            FuzzAnalystLog.Info(progress,
+                $"  Academy: mode={academy.PresentationMode} instructor={academy.InstructorMode} " +
+                $"silentScreams={academy.SilentScreams}");
+        }
+        else if (SilentScreamBuilder.IsEnabled(project))
+        {
+            FuzzAnalystLog.Info(progress, "  Academy: silentScreams=on (default)");
         }
         if (m is { Enabled: true })
         {
@@ -2543,6 +2571,25 @@ public sealed class FuzzEngine
                 crashesDir, saved.Id, project.Name, sidecar, triage,
                 debugger, corruption, evolution, oracleScore, backwardTrace);
 
+            TryPersistRootCause(crashesDir, saved.Id, project.Name, sidecar, triage,
+                debugger, corruption, backwardTrace, oracleScore);
+
+            TryPersistInfluenceMap(crashesDir, saved.Id, project.Name, sidecar, triage,
+                debugger, corruption, backwardTrace, set, oracleScore, payload);
+
+            EvidenceFactBuilder.PersistForCrash(
+                crashesDir,
+                saved.Id,
+                project.Name,
+                sidecar,
+                triage,
+                debugger,
+                corruption,
+                backwardTrace,
+                evolution,
+                oracleScore,
+                set);
+
             if (set is not { Ok: true, Hypotheses.Count: > 0 })
                 return;
 
@@ -2560,6 +2607,83 @@ public sealed class FuzzEngine
             FuzzAnalystLog.Warn(progress, $"hypotheses: {ex.Message}", iterations);
         }
     }
+
+    private void TryPersistRootCause(
+        string crashesDir,
+        Guid crashId,
+        string project,
+        CrashSidecarDto? sidecar,
+        CrashTriageDto? triage,
+        DebuggerObservation? debugger,
+        CrashCorruptionChainDto? corruption,
+        CrashBackwardTraceDto? backwardTrace,
+        OracleScore? oracleScore,
+        IFuzzProgressSink? progress = null,
+        int iterations = 0)
+    {
+        try
+        {
+            var analysis = RootCauseEngine.PersistForCrash(
+                crashesDir, crashId, project, sidecar, triage, debugger, corruption, backwardTrace, oracleScore);
+            if (analysis is { Ok: true })
+            {
+                var cat = analysis.Candidate.Category.ToString();
+                FuzzAnalystLog.Info(progress,
+                    $"[root-cause] {cat} ({analysis.Candidate.Confidence}) — {Truncate(analysis.EducationalSummary, 120)}",
+                    iterations);
+            }
+        }
+        catch (Exception ex)
+        {
+            FuzzAnalystLog.Warn(progress, $"root-cause: {ex.Message}", iterations);
+        }
+    }
+
+    private void TryPersistInfluenceMap(
+        string crashesDir,
+        Guid crashId,
+        string project,
+        CrashSidecarDto? sidecar,
+        CrashTriageDto? triage,
+        DebuggerObservation? debugger,
+        CrashCorruptionChainDto? corruption,
+        CrashBackwardTraceDto? backwardTrace,
+        HypothesisSetDto? hypotheses,
+        OracleScore? oracleScore,
+        byte[]? payload,
+        IFuzzProgressSink? progress = null,
+        int iterations = 0)
+    {
+        try
+        {
+            var facts = EvidenceFactBuilder.CollectFacts(
+                crashId,
+                project,
+                sidecar,
+                triage,
+                debugger,
+                corruption,
+                backwardTrace,
+                oracleScore: oracleScore,
+                hypotheses: hypotheses);
+            var map = InfluenceEngine.PersistForCrash(
+                crashesDir, crashId, project, sidecar, triage, debugger, corruption,
+                backwardTrace, hypotheses, facts, payload);
+            if (map is { Ok: true, Links.Count: > 0 })
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[influence] {map.Links.Count} link(s) [{map.Confidence}] — {Truncate(map.Summary, 100)}",
+                    iterations);
+            }
+        }
+        catch (Exception ex)
+        {
+            FuzzAnalystLog.Warn(progress, $"influence: {ex.Message}", iterations);
+        }
+    }
+
+    private static string Truncate(string? text, int max) =>
+        string.IsNullOrEmpty(text) ? "" : text.Length <= max ? text : text[..max] + "…";
 
     private async Task TryPersistDeepScream(
         ProjectConfig project, string yamlPath, string crashesDir, SavedCrash saved,

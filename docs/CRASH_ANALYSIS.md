@@ -50,7 +50,9 @@ Research-only — richer exploitability evidence for Scream Investigator; no she
 | `<guid>_cdb_triage.json` | Parsed summary + paths |
 | `<guid>_debugger_observation.json` | **Scream Investigator** — structured `DebuggerObservation` (READ/WRITE/EXECUTE access from `.exr`, fault address class from `!address`/`lm`/heuristics including null/ASCII/heap/stack/freed/module/non-canonical, stack hash, diagnosis, exploitability hint, input-influence guess) |
 | `<guid>_corruption_chain.json` | **Corruption chain** — research-only input→mutation→fault attribution (lineage + register↔payload joins + pattern depth + debugger evidence) |
+| `<guid>_influence.json` | **Influence map** — input region → program state links with confirmation status (see [INFLUENCE_ENGINE.md](INFLUENCE_ENGINE.md)) |
 | `<guid>_backward_trace.json` | **Backward trace** — dump-only exploit narrative (mutation → register → bad-pointer source → fault instruction → crash); no live TTD |
+| `<guid>_root_cause.json` | **Root cause** — deterministic `RootCauseCandidate` + educational summary from correlated evidence facts |
 | `<guid>_scream_evolution.json` | **Scream evolution** — family phenotype, generation/ancestor, momentum (READ→WRITE→controlled WRITE), warming label |
 
 **Semantic fingerprint** — each crash also gets a derived `SemanticFingerprint` on triage/intelligence (not a separate on-disk file). It buckets by exception class, access kind, fault address class, faulting function, top normalized stack frames, heap signal, controlled input offset, oracle violation, coverage tail, and corruption-chain signature hash. `CrashCluster` groups by this key when present (falls back to legacy `ClusterKey`). Existing clusters remain readable — fingerprints are computed from existing artifacts at catalog load time.
@@ -87,6 +89,24 @@ When the crashing input is available beside the canister, `InputAttributionEngin
 | `sink` / `crash` | Faulting function + ACCESS_VIOLATION |
 
 Artifacts feed **HypothesisEngine** (`hyp-btrace-*` hypotheses), **Deep Scream** TTD playbook (dump-only section first; live TTD remains external), and the Investigation **Backward trace** panel. Built automatically when `fuzz.cdbAnalyzeCrash: true` on Windows.
+
+### Root cause engine (Wave 1 — deterministic)
+
+`RootCauseEngine` correlates normalized **`EvidenceFact`** atoms from Ghidra static (when present), CDB/`DebuggerObservation`, mutation lineage, corruption chain, oracle score, and backward trace into a single **`RootCauseCandidate`**:
+
+| Field | Source |
+|-------|--------|
+| `Category` | Scored rules — bounds violation, integer conversion, size mismatch, lifetime violation, unexpected object state, uninitialized, parser state, format interpretation |
+| `FaultingFunction` / `SuspectedSink` | Debugger faulting symbol or Ghidra static map |
+| `SuspectedSourceFunction` | Stack caller, attributed mutator, or static hint |
+| `InputRegion` | Pattern depth / register↔payload offset |
+| `AllocationSite` / `CorruptionSite` | Heap probes, fault instruction, fault address class |
+| `Evidence[]` | `EvidenceFact` list (stub contract — EvidenceFact agent may extend kinds) |
+| `ObservedFacts` / `Inferences` / `Unknowns` | Direct observations vs deterministic conclusions vs gaps |
+
+Persisted as `<guid>_root_cause.json`. Investigation UI shows an educational summary plus observed/inferred/unknown lists. **Research only** — no LLM on the hot path.
+
+When the dedicated EvidenceFact agent lands, it should emit `EvidenceFact[]`; `RootCauseEngine.CollectEvidenceFacts` remains the integration point until then.
 
 **msec.dll** (Microsoft Exploitability Index extension) is optional:
 

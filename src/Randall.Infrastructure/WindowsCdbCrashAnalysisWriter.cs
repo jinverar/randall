@@ -220,6 +220,50 @@ public static partial class WindowsCdbCrashAnalysisWriter
                 triage,
                 corruption,
                 payload);
+
+            var backwardTrace = BackwardTraceBuilder.TryRead(
+                BackwardTraceBuilder.PathFor(crashesDir, crashId));
+            EvidenceFactBuilder.PersistForCrash(
+                crashesDir,
+                crashId,
+                crashSidecar?.Project ?? "?",
+                crashSidecar,
+                triage,
+                debuggerObs,
+                corruption,
+                backwardTrace,
+                oracleScore: crashSidecar?.RandallScore);
+            RootCauseEngine.PersistForCrash(
+                crashesDir,
+                crashId,
+                crashSidecar?.Project ?? "?",
+                crashSidecar,
+                triage,
+                debuggerObs,
+                corruption,
+                backwardTrace,
+                crashSidecar?.RandallScore);
+
+            var rootCauseFacts = EvidenceFactBuilder.CollectFacts(
+                crashId,
+                crashSidecar?.Project ?? "?",
+                crashSidecar,
+                triage,
+                debuggerObs,
+                corruption,
+                backwardTrace,
+                oracleScore: crashSidecar?.RandallScore);
+            InfluenceEngine.PersistForCrash(
+                crashesDir,
+                crashId,
+                crashSidecar?.Project ?? "?",
+                crashSidecar,
+                triage,
+                debuggerObs,
+                corruption,
+                backwardTrace,
+                externalFacts: rootCauseFacts,
+                payload: payload);
         }
         catch
         {

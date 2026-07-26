@@ -114,7 +114,10 @@ public static class CrashCatalog
                     triage.ClusterKey,
                     triage.IpLooksControlled,
                     staticFn is not null ? CrashStaticFunctionMapper.FormatOneLine(staticFn) : null,
-                    SemanticFingerprint: triage.SemanticFingerprint);
+                    SemanticFingerprint: triage.SemanticFingerprint,
+                    SilentScream: sidecar?.SilentScream == true
+                        || string.Equals(c.TriageTag, SilentScreamBuilder.TriageTag, StringComparison.OrdinalIgnoreCase)
+                        || triage.Class == "oracle_only");
 
                 projectRows.Add((enrichedSummary, triage, sidecar, analysis, MapCdbTriage(cdbSidecar), inputLength, debugger));
             }
@@ -279,8 +282,68 @@ public static class CrashCatalog
                     corruptionChain,
                     projectContexts);
             var hypotheses = HypothesisEngine.TryReadForCrash(crashesDir, summary.Id);
+            var backwardTrace = BackwardTraceBuilder.TryRead(
+                    BackwardTraceBuilder.PathFor(crashesDir, summary.Id))
+                ?? BackwardTraceBuilder.Build(
+                    summary.Id,
+                    summary.Project,
+                    sidecar,
+                    debugger,
+                    triage,
+                    corruptionChain,
+                    bytes);
+            var rootCauseFacts = EvidenceFactBuilder.CollectFacts(
+                summary.Id,
+                summary.Project,
+                sidecar,
+                triage,
+                debugger,
+                corruptionChain,
+                backwardTrace,
+                evolution,
+                sidecar?.RandallScore,
+                hypotheses);
+            var influenceMap = InfluenceEngine.TryRead(InfluenceEngine.PathFor(crashesDir, summary.Id))
+                ?? InfluenceEngine.Build(
+                    summary.Id,
+                    summary.Project,
+                    sidecar,
+                    triage,
+                    debugger,
+                    corruptionChain,
+                    backwardTrace,
+                    hypotheses,
+                    rootCauseFacts,
+                    bytes);
+            var rootCause = RootCauseEngine.TryRead(
+                    RootCauseEngine.PathFor(crashesDir, summary.Id))
+                ?? RootCauseEngine.Build(
+                    summary.Id,
+                    summary.Project,
+                    sidecar,
+                    triage,
+                    debugger,
+                    corruptionChain,
+                    backwardTrace,
+                    sidecar?.RandallScore);
             var pageHeapEnabled = TryResolvePageHeap(sidecar, repoRoot);
             var projectSummaries = ListAll(repoRoot).Where(x => x.Project == summary.Project).ToList();
+            var evidence = EvidenceFactBuilder.TryReadForCrash(crashesDir, summary.Id)
+                ?? EvidenceFactBuilder.Build(
+                    summary.Id,
+                    summary.Project,
+                    sidecar,
+                    triage,
+                    debugger,
+                    corruptionChain,
+                    backwardTrace,
+                    evolution,
+                    sidecar?.RandallScore,
+                    hypotheses,
+                    analysis,
+                    cdbTriage,
+                    pageHeapEnabled,
+                    summary.TriageTag);
             var intelligence = CrashIntelligenceBuilder.Build(
                 summary,
                 triage,
@@ -294,7 +357,9 @@ public static class CrashCatalog
                 debugger,
                 corruptionChain,
                 evolution,
-                hypotheses);
+                hypotheses,
+                rootCause,
+                evidence.Facts);
             var deepScream = DeepScreamBuilder.TryRead(
                     DeepScreamBuilder.PathFor(crashesDir, summary.Id))
                 ?? DeepScreamBuilder.Evaluate(
@@ -326,7 +391,11 @@ public static class CrashCatalog
                 corruptionChain,
                 evolution,
                 hypotheses,
-                deepScream);
+                deepScream,
+                backwardTrace,
+                rootCause,
+                influenceMap,
+                evidence);
         }
         return null;
     }

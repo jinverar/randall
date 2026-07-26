@@ -55,7 +55,9 @@ public sealed record CrashSummaryDto(
     /// <summary>Primary fault confidence 0–1 when known.</summary>
     double? PrimaryFaultConfidence = null,
     /// <summary>Phase D — Deep Scream candidate (gates TTD operator path).</summary>
-    bool DeepScreamCandidate = false);
+    bool DeepScreamCandidate = false,
+    /// <summary>Wave 5 — bottled from high oracle violation without memory crash.</summary>
+    bool SilentScream = false);
 
 public sealed record CdbTriageDto(
     bool Ok,
@@ -81,7 +83,11 @@ public sealed record CrashDetailDto(
     CrashCorruptionChainDto? CorruptionChain = null,
     ScreamEvolutionDto? ScreamEvolution = null,
     HypothesisSetDto? Hypotheses = null,
-    DeepScreamDto? DeepScream = null);
+    DeepScreamDto? DeepScream = null,
+    CrashBackwardTraceDto? BackwardTrace = null,
+    RootCauseAnalysisDto? RootCause = null,
+    CrashInfluenceMapDto? InfluenceMap = null,
+    CrashEvidenceDto? Evidence = null);
 
 public sealed record SessionGraphReportDto(
     string Project,

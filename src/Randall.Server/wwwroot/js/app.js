@@ -2835,6 +2835,97 @@ function faultKindLabel(kind) {
   return names[kind] || String(kind);
 }
 
+function formatRootCauseCategory(category) {
+  if (category == null || category === '') return 'Unknown';
+  const s = String(category);
+  const labels = {
+    BoundsViolation: 'Bounds violation',
+    IntegerConversion: 'Integer conversion',
+    SizeMismatch: 'Size mismatch',
+    LifetimeViolation: 'Lifetime violation',
+    UnexpectedObjectState: 'Unexpected object state',
+    Uninitialized: 'Uninitialized / null deref',
+    ParserState: 'Parser state error',
+    FormatInterpretation: 'Format interpretation',
+    Unknown: 'Unknown',
+  };
+  return labels[s] || s.replace(/([A-Z])/g, ' $1').trim();
+}
+
+const ACADEMY_BLURBS = {
+  evidence: 'Evidence facts are normalized sensor atoms — debugger, oracle, corruption chain, and lineage all speak the same vocabulary. Downstream engines read this list only.',
+  influence: 'The influence map links bytes you mutated to program state that went wrong. Confirmed links need replay; inferred links suggest the next experiment.',
+  rootCause: 'Root cause explains why the program misbehaved — not just where it stopped. We correlate debugger facts, mutation lineage, and oracle signals deterministically.',
+};
+
+function academyLearningMode() {
+  return document.documentElement.getAttribute('data-presentation-mode') === 'learning';
+}
+
+function academyResearchMode() {
+  return !academyLearningMode();
+}
+
+function academyInstructorMode() {
+  return document.documentElement.getAttribute('data-instructor-mode') === 'on';
+}
+
+function academyEduBlurb(key) {
+  if (!academyLearningMode()) return '';
+  const text = ACADEMY_BLURBS[key];
+  return text ? `<p class="academy-edu-blurb">${escapeAttr(text)}</p>` : '';
+}
+
+function applyAcademyPrefs({ presentationMode, instructorMode, persist = true } = {}) {
+  const mode = presentationMode === 'learning' ? 'learning' : 'research';
+  const instructor = instructorMode === true;
+  document.documentElement.setAttribute('data-presentation-mode', mode);
+  document.documentElement.setAttribute('data-instructor-mode', instructor ? 'on' : 'off');
+  const sel = document.getElementById('academy-presentation-mode');
+  const chk = document.getElementById('academy-instructor-mode');
+  if (sel) sel.value = mode;
+  if (chk) chk.checked = instructor;
+  if (persist) {
+    try {
+      localStorage.setItem('randfuzz.presentationMode', mode);
+      localStorage.setItem('randfuzz.instructorMode', instructor ? '1' : '0');
+    } catch { /* ignore */ }
+  }
+  if (crashState.detail) {
+    const title = document.querySelector('.crash-row.selected h4')?.textContent || 'Investigation';
+    renderCrashDetail(crashState.detail, title);
+  }
+}
+
+async function initAcademyPrefs() {
+  let mode = 'research';
+  let instructor = false;
+  try {
+    const localMode = localStorage.getItem('randfuzz.presentationMode');
+    if (localMode === 'learning' || localMode === 'research') mode = localMode;
+    instructor = localStorage.getItem('randfuzz.instructorMode') === '1';
+  } catch { /* ignore */ }
+  try {
+    const prefs = await api.get('/api/ui/prefs');
+    if (prefs?.presentationMode === 'learning' || prefs?.presentationMode === 'research') mode = prefs.presentationMode;
+    if (typeof prefs?.instructorMode === 'boolean') instructor = prefs.instructorMode;
+  } catch { /* keep local */ }
+  applyAcademyPrefs({ presentationMode: mode, instructorMode: instructor, persist: true });
+}
+
+function evidenceTypeBadge(observationType) {
+  const t = String(observationType || 'Observed');
+  const key = t.toLowerCase().replace(/[^a-z]/g, '');
+  const labels = {
+    observed: 'Observed',
+    experimentallyconfirmed: 'Confirmed',
+    inferred: 'Inferred',
+    hypothesized: 'Hypothesized',
+  };
+  const label = labels[key] || t;
+  return `<span class="evidence-badge evidence-badge-${key || 'observed'}" title="${escapeAttr(t)}">${escapeAttr(label)}</span>`;
+}
+
 function shortFault(c) {
   const pf = c.primaryFaultSummary || c.primaryFaultKind || '';
   if (pf) {
@@ -2912,6 +3003,9 @@ function renderCrashDetail(detail, title) {
   const dbg = detail.debuggerObservation;
   const chain = detail.corruptionChain;
   const backwardTrace = detail.backwardTrace;
+  const rootCause = detail.rootCause;
+  const influenceMap = detail.influenceMap;
+  const evidence = detail.evidence;
   const evo = detail.screamEvolution;
   const hypos = detail.hypotheses;
   const deepScream = detail.deepScream;
@@ -2926,6 +3020,7 @@ function renderCrashDetail(detail, title) {
   const clusterN = cluster?.count || clusterCountFor(detail.summary);
   const score = scoreCrash(detail.summary);
   const intel = detail.intelligence;
+  const evidenceFacts = (evidence?.facts?.length ? evidence.facts : intel?.evidenceFacts) || [];
   const deepScreamCandidate = deepScream?.isCandidate || intel?.deepScreamCandidate;
   const why = dbg?.diagnosis
     || intel?.debuggerDiagnosis
@@ -2940,6 +3035,9 @@ function renderCrashDetail(detail, title) {
       || (intel.screamMomentum ?? 0) >= 40
     : screamHot(detail.summary);
   const evoWarm = (evo?.momentumScore ?? intel?.screamMomentum ?? 0) >= 40;
+  const silentScream = detail.summary?.silentScream || s?.silentScream || t?.class === 'oracle_only';
+  const instructor = academyInstructorMode();
+  const evidenceLimit = academyResearchMode() ? 48 : 16;
   if (metaEl) {
     const intelBits = intel
       ? ` · novelty ${intel.novelty}${intel.oracleScore?.total != null ? ` · oracle ${intel.oracleScore.total}` : ''}`
@@ -2955,9 +3053,10 @@ function renderCrashDetail(detail, title) {
         <span class="severity-${sev} crash-sev-pill">${sev}</span>
         <h3>${escapeAttr(title)}</h3>
         ${deepScreamCandidate ? '<span class="deep-scream-badge" title="Deep Scream — TTD operator path eligible">⏪ Deep Scream</span>' : ''}
+        ${silentScream ? '<span class="silent-scream-badge" title="Oracle violation — no memory crash">🔇 Silent scream</span>' : ''}
         <span class="crash-score-badge" title="Scream intelligence score">★ ${intelScore}</span>
       </div>
-      <p class="crash-why-line">Why it crashed</p>
+      <p class="crash-why-line">${silentScream ? 'Why it screamed (oracle)' : 'Why it crashed'}</p>
       ${primaryFault ? `<p class="crash-primary-fault severity-${(primaryFault.severity || sev).toLowerCase()}">
         <span class="label">Primary fault</span>
         <code>${escapeAttr(faultKindLabel(primaryFault.kind))}</code>
@@ -2974,6 +3073,43 @@ function renderCrashDetail(detail, title) {
         ${dbg.primaryRegisterMatch ? `<span class="hint-inline">${escapeAttr(dbg.primaryRegisterMatch)} in input</span> · ` : ''}
         ${dbg.stackHash ? `<span class="hint-inline">stack ${escapeAttr(dbg.stackHash)}</span>` : ''}
       </p>` : ''}
+      ${evidenceFacts.length ? `<div class="triage-box evidence-facts-box">
+        <h4>Evidence facts <span class="hint-inline">${evidenceFacts.length} atom(s)</span>${academyResearchMode() ? ' <span class="hint-inline">dense</span>' : ''}</h4>
+        ${academyEduBlurb('evidence')}
+        <table class="evidence-fact-table"><thead><tr><th>Type</th><th>Name</th><th>Value</th><th>Source</th><th>Conf</th></tr></thead><tbody>${evidenceFacts.slice(0, evidenceLimit).map((f) => {
+          const conf = f.confidence != null ? `${Math.round(f.confidence * 100)}%` : '—';
+          const artifact = f.sourceArtifact ? `<br><span class="hint-inline">${escapeAttr(f.sourceArtifact)}</span>` : '';
+          return `<tr>
+            <td>${evidenceTypeBadge(f.observationType)}</td>
+            <td><code>${escapeAttr(f.name || '')}</code>${f.relatedFacts?.length ? `<br><span class="hint-inline">↔ ${f.relatedFacts.map((r) => escapeAttr(r)).join(', ')}</span>` : ''}</td>
+            <td>${escapeAttr(f.value || '—')}</td>
+            <td>${escapeAttr(f.source || '')}${artifact}</td>
+            <td>${conf}</td>
+          </tr>`;
+        }).join('')}</tbody></table>
+        ${evidenceFacts.length > evidenceLimit ? `<p class="hint">Showing ${evidenceLimit} of ${evidenceFacts.length} facts — see <code>${escapeAttr(detail.summary?.id?.replace(/-/g, '') || '')}_evidence.json</code></p>` : ''}
+      </div>` : ''}
+      ${!instructor && influenceMap?.ok && influenceMap.links?.length ? `<div class="triage-box influence-box">
+        <h4>Influence map <span class="hint-inline">input → state</span> <span class="hint-inline">[${escapeAttr(influenceMap.confidence)}]</span></h4>
+        ${academyEduBlurb('influence')}
+        <p class="hint">${escapeAttr(influenceMap.summary)}</p>
+        ${influenceMap.narrative ? `<p class="crash-attribution-narrative"><span class="label">Story</span> ${escapeAttr(influenceMap.narrative)}</p>` : ''}
+        <table class="influence-link-table"><thead><tr><th>Region</th><th>→</th><th>State</th><th>Mechanism</th><th>Status</th></tr></thead><tbody>${influenceMap.links.map((l) => {
+          const r = l.region || {};
+          const s = l.state || {};
+          const regionLabel = r.endOffset != null && r.endOffset > r.startOffset + 1
+            ? `+${r.startOffset}..+${r.endOffset}`
+            : r.widthBytes > 1 ? `+${r.startOffset} (${r.widthBytes}B)` : `+${r.startOffset}`;
+          return `<tr>
+            <td><code>${escapeAttr(regionLabel)}</code>${r.fieldLabel ? `<br><span class="hint-inline">${escapeAttr(r.fieldLabel)}</span>` : ''}${r.mutator ? `<br><span class="hint-inline">via ${escapeAttr(r.mutator)}</span>` : ''}</td>
+            <td>→</td>
+            <td><code>${escapeAttr(s.kind || '')}</code> ${escapeAttr(s.label || '')}${s.value ? `<br><code class="hint-inline">${escapeAttr(s.value)}</code>` : ''}</td>
+            <td>${escapeAttr(l.mechanism || '')}</td>
+            <td><span class="influence-status-${String(l.status || 'unknown').toLowerCase()}">${escapeAttr(l.status || '')}</span>${l.suggestedExperiment ? `<br><span class="hint-inline">${escapeAttr(l.suggestedExperiment.kind || '')}</span>` : ''}</td>
+          </tr>`;
+        }).join('')}</tbody></table>
+        ${influenceMap.facts?.length ? `<p class="hint">${influenceMap.facts.length} evidence fact(s) · ${influenceMap.facts.slice(0, 3).map((f) => escapeAttr(`${f.name}${f.value ? ': ' + f.value : ''}`)).join(' · ')}</p>` : ''}
+      </div>` : ''}
       ${chain?.ok ? `<div class="triage-box corruption-chain-box">
         <h4>Corruption chain <span class="hint-inline">[${escapeAttr(chain.confidence)}]</span></h4>
         <p class="hint">${escapeAttr(chain.summary)}</p>
@@ -2996,6 +3132,28 @@ function renderCrashDetail(detail, title) {
         ${backwardTrace.badPointerSource ? `<p class="hint">Bad pointer: <code>${escapeAttr(backwardTrace.badPointerSource)}</code>${backwardTrace.faultRegister ? ` via ${escapeAttr(backwardTrace.faultRegister)}` : ''}</p>` : ''}
         ${backwardTrace.suspectedMutator ? `<p class="hint">Attributed mutator <code>${escapeAttr(backwardTrace.suspectedMutator)}</code>${backwardTrace.primaryPayloadOffset ? ` · payload${escapeAttr(backwardTrace.primaryPayloadOffset)}` : ''}</p>` : ''}
       </div>` : ''}
+      ${!instructor && rootCause?.ok ? `<div class="triage-box root-cause-box">
+        <h4>Root cause <span class="hint-inline">deterministic</span> <span class="hint-inline">[${escapeAttr(rootCause.candidate?.confidence || intel?.rootCauseConfidence || 'UNKNOWN')}]</span></h4>
+        ${academyEduBlurb('rootCause')}
+        <p class="root-cause-edu">${escapeAttr(intel?.rootCauseSummary || rootCause.educationalSummary || '')}</p>
+        ${rootCause.candidate ? `<dl class="root-cause-dl">
+          <dt>Category</dt><dd><code>${escapeAttr(formatRootCauseCategory(rootCause.candidate.category || intel?.rootCauseCategory))}</code></dd>
+          ${rootCause.candidate.faultingFunction ? `<dt>Faulting fn</dt><dd><code>${escapeAttr(rootCause.candidate.faultingFunction)}</code></dd>` : ''}
+          ${rootCause.candidate.suspectedSourceFunction ? `<dt>Source fn</dt><dd><code>${escapeAttr(rootCause.candidate.suspectedSourceFunction)}</code></dd>` : ''}
+          ${rootCause.candidate.suspectedSink ? `<dt>Sink</dt><dd><code>${escapeAttr(rootCause.candidate.suspectedSink)}</code></dd>` : ''}
+          ${rootCause.candidate.inputRegion ? `<dt>Input region</dt><dd><code>${escapeAttr(rootCause.candidate.inputRegion)}</code></dd>` : ''}
+          ${rootCause.candidate.allocationSite ? `<dt>Allocation</dt><dd><code>${escapeAttr(rootCause.candidate.allocationSite)}</code></dd>` : ''}
+          ${rootCause.candidate.corruptionSite ? `<dt>Corruption</dt><dd><code>${escapeAttr(rootCause.candidate.corruptionSite)}</code></dd>` : ''}
+        </dl>` : ''}
+        ${rootCause.candidate?.observedFacts?.length ? `<p class="label">Observed</p><ul class="root-cause-facts">${rootCause.candidate.observedFacts.slice(0, 6).map((f) => `<li>${escapeAttr(f)}</li>`).join('')}</ul>` : ''}
+        ${rootCause.candidate?.inferences?.length ? `<p class="label">Inferences</p><ul class="root-cause-facts">${rootCause.candidate.inferences.slice(0, 5).map((f) => `<li>${escapeAttr(f)}</li>`).join('')}</ul>` : ''}
+        ${rootCause.candidate?.unknowns?.length ? `<p class="label">Unknowns</p><ul class="root-cause-unknowns">${rootCause.candidate.unknowns.map((f) => `<li class="hint">${escapeAttr(f)}</li>`).join('')}</ul>` : ''}
+        ${rootCause.alternatives?.length ? `<p class="hint">Alternatives: ${rootCause.alternatives.map((a) => `<code>${escapeAttr(formatRootCauseCategory(a.category))}</code>`).join(', ')}</p>` : ''}
+      </div>` : (!instructor && intel?.rootCauseSummary ? `<div class="triage-box root-cause-box">
+        <h4>Root cause</h4>
+        ${academyEduBlurb('rootCause')}
+        <p class="root-cause-edu">${escapeAttr(intel.rootCauseSummary)}</p>
+      </div>` : '')}
       ${hypos?.ok && hypos.hypotheses?.length ? `<div class="triage-box hypothesis-box">
         <h4>Hypotheses <span class="hint-inline">scientific loop</span></h4>
         <ol class="hypothesis-list">${hypos.hypotheses.slice(0, 5).map((h) => {
@@ -3046,8 +3204,9 @@ function renderCrashDetail(detail, title) {
           <dt>Cluster</dt><dd><code title="${escapeAttr(intel.clusterKey || '')}">${intel.seenCount}×</code>${intel.clusterKey ? ` · <code>${escapeAttr(intel.clusterKey.slice(0, 48))}${intel.clusterKey.length > 48 ? '…' : ''}</code>` : ''}</dd>
           ${intel.coverageDelta != null ? `<dt>Coverage Δ</dt><dd>+${intel.coverageDelta} edges</dd>` : ''}
           ${intel.function ? `<dt>Function</dt><dd><code>${escapeAttr(intel.function)}</code></dd>` : ''}
-          ${intel.offset != null ? `<dt>Offset</dt><dd><code>${intel.offset}</code> bytes in input</dd>` : ''}
+          ${!instructor && intel.offset != null ? `<dt>Offset</dt><dd><code>${intel.offset}</code> bytes in input</dd>` : ''}
           ${intel.corruptionChainSummary ? `<dt>Corruption chain</dt><dd><span class="severity-${(intel.corruptionConfidence || 'low').toLowerCase()}">${escapeAttr(intel.corruptionConfidence || '')}</span> — ${escapeAttr(intel.corruptionChainSummary)}</dd>` : ''}
+          ${!instructor && intel.rootCauseSummary ? `<dt>Root cause</dt><dd><code>${escapeAttr(formatRootCauseCategory(intel.rootCauseCategory))}</code> <span class="hint-inline">[${escapeAttr(intel.rootCauseConfidence || '')}]</span> — ${escapeAttr(intel.rootCauseSummary)}</dd>` : ''}
           ${intel.oracleScore?.total != null ? `<dt>Oracle</dt><dd><span class="scream-intel-oracle">${intel.oracleScore.total}</span>${intel.oracleScore.summary ? ` — ${escapeAttr(intel.oracleScore.summary)}` : ''}</dd>` : ''}
           ${(evo?.ok || intel?.screamMomentum > 0) ? `<dt>Evolution</dt><dd><span class="severity-${evoWarm ? 'high' : 'medium'}">${escapeAttr(evo?.momentumLabel || intel?.screamMomentumLabel || 'stable')}</span> momentum <strong>${evo?.momentumScore ?? intel?.screamMomentum ?? 0}</strong>${(evo?.generation ?? intel?.screamGeneration) > 0 ? ` · gen ${evo?.generation ?? intel?.screamGeneration}` : ''}${evo?.familySize > 1 ? ` · family×${evo.familySize}` : ''}</dd>` : ''}
           ${evo?.progressionStep ? `<dt>Progression</dt><dd><code>${escapeAttr(evo.progressionStep)}</code>${evo.progressionDelta > 0 ? ` <span class="hint-inline">↑${evo.progressionDelta} vs ancestor</span>` : ''}</dd>` : ''}
@@ -3085,7 +3244,7 @@ function renderCrashDetail(detail, title) {
       ${cdb?.exploitableClassification ? `<p class="severity-${(cdb.exploitableClassification || '').toLowerCase().includes('not') ? 'medium' : 'critical'}">!exploitable: <code>${escapeAttr(cdb.exploitableClassification)}</code></p>` : ''}
       ${cdb?.analyzeTextPath ? `<p class="hint">!analyze log: <code>${escapeAttr(cdb.analyzeTextPath)}</code></p>` : ''}
       ${cdb?.error && !cdb?.ok ? `<p class="hint">${escapeAttr(cdb.error)}</p>` : ''}
-      ${t.patternDepthBytes != null ? `<p>Pattern depth: <code>offset ${t.patternDepthBytes}</code>${t.patternNote ? ` — ${escapeAttr(t.patternNote)}` : ''}</p>` : ''}
+      ${!instructor && t.patternDepthBytes != null ? `<p>Pattern depth: <code>offset ${t.patternDepthBytes}</code>${t.patternNote ? ` — ${escapeAttr(t.patternNote)}` : ''}</p>` : ''}
       ${!dump ? '<p class="hint">No minidump on this hit — set Debugger to Scream wait or Both and re-fuzz for Memory lens / ROP walks. Canisters are UI harvest only.</p>' : ''}
     </div>` : ''}
     <dl class="crash-meta-dl">
@@ -5211,6 +5370,18 @@ document.getElementById('scream-harvest-show-idle')?.addEventListener('change', 
   harvestState.showIdle = !!e.target.checked;
   persistHarvestFilterPrefs();
   paintHarvestViews();
+});
+
+document.getElementById('academy-presentation-mode')?.addEventListener('change', async (e) => {
+  const mode = e.target.value === 'learning' ? 'learning' : 'research';
+  applyAcademyPrefs({ presentationMode: mode, instructorMode: academyInstructorMode() });
+  try { await api.put('/api/ui/prefs', { presentationMode: mode }); } catch { /* localStorage still restores */ }
+});
+
+document.getElementById('academy-instructor-mode')?.addEventListener('change', async (e) => {
+  const instructor = !!e.target.checked;
+  applyAcademyPrefs({ presentationMode: academyLearningMode() ? 'learning' : 'research', instructorMode: instructor });
+  try { await api.put('/api/ui/prefs', { instructorMode: instructor }); } catch { /* localStorage still restores */ }
 });
 
 async function initScreamHarvestPrefs() {
@@ -8813,6 +8984,7 @@ async function init() {
   await initThemePicker();
   await initPlatformPicker();
   await initScreamHarvestPrefs();
+  await initAcademyPrefs();
   initRecipeCatalog();
   applyRemoteLabChrome();
   await loadHealth();

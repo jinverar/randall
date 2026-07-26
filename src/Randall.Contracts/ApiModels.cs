@@ -71,13 +71,19 @@ public sealed record UiPrefsDto(
     string Platform = "auto",
     string? HostPlatform = null,
     bool ScreamCanisters = true,
-    bool ScreamAnimations = false);
+    bool ScreamAnimations = false,
+    /// <summary>learning | research — Investigation panel density and educational blurbs.</summary>
+    string PresentationMode = "research",
+    /// <summary>Hide root-cause, offset, and primitive panels for guided instruction.</summary>
+    bool InstructorMode = false);
 
 public sealed record UiPrefsUpdateRequest(
     string? Theme = null,
     string? Platform = null,
     bool? ScreamCanisters = null,
-    bool? ScreamAnimations = null);
+    bool? ScreamAnimations = null,
+    string? PresentationMode = null,
+    bool? InstructorMode = null);
 
 public sealed record FuzzStartRequest(
     string ConfigPath,

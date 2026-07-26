@@ -54,7 +54,12 @@ public sealed record CrashSidecarDto(
     /// <summary>Analysis-oriented intel (exploit-test probes + GDB) — triage only, no payloads.</summary>
     CrashIntelDto? Intel = null,
     /// <summary>Unified Randall interestingness score at crash time (oracle + coverage terms).</summary>
-    OracleScore? RandallScore = null);
+    OracleScore? RandallScore = null,
+    /// <summary>True when bottled from a high oracle violation without a memory crash (Wave 5 silent scream).</summary>
+    bool SilentScream = false,
+    string? OracleFindingId = null,
+    string? OracleRuleClass = null,
+    string? OracleRuleId = null);
 
 /// <summary>
 /// Post-crash intelligence for analysts: what to probe next and which GDB commands to run.

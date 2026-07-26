@@ -19,6 +19,31 @@ public static class CrashTriage
             ?? (summary?.TargetExitCode is { } x ? $"exit {x}" : null)
             ?? "unknown";
 
+        if (sidecar?.SilentScream == true
+            || string.Equals(summary?.TriageTag, SilentScreamBuilder.TriageTag, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(sidecar?.TriageTag, SilentScreamBuilder.TriageTag, StringComparison.OrdinalIgnoreCase))
+        {
+            var oracleTotal = sidecar?.RandallScore?.Total ?? summary?.OracleScoreTotal ?? 0;
+            var sev = oracleTotal >= 60 ? "high" : "medium";
+            var detail = sidecar?.TargetDetail ?? $"oracle-only: {codeHint}";
+            var oracleClusterKey = BuildClusterKey(summary?.Project ?? sidecar?.Project ?? "?", "oracle_only", null, null, debugger);
+            return new CrashTriageDto(
+                "oracle_only",
+                sev,
+                detail,
+                false,
+                false,
+                oracleClusterKey,
+                "oracle-only (silent scream)",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                SemanticFingerprint: SemanticCrashFingerprint.Build("oracle_only", debugger, sidecar));
+        }
+
         var fault = analysis?.FaultAddress ?? debugger?.FaultAddress;
         var rip = analysis?.Registers?.Rip ?? debugger?.Rip;
         var rsp = analysis?.Registers?.Rsp;

@@ -19,7 +19,9 @@ public static class CrashIntelligenceBuilder
         DebuggerObservation? debugger = null,
         CrashCorruptionChainDto? corruptionChain = null,
         ScreamEvolutionDto? evolution = null,
-        HypothesisSetDto? hypotheses = null)
+        HypothesisSetDto? hypotheses = null,
+        RootCauseAnalysisDto? rootCause = null,
+        IReadOnlyList<EvidenceFact>? evidenceFacts = null)
     {
         var clusterKey = triage?.ClusterKey ?? summary.ClusterKey;
         var semanticFingerprint = triage?.SemanticFingerprint ?? summary.SemanticFingerprint;
@@ -115,7 +117,11 @@ public static class CrashIntelligenceBuilder
             semanticFingerprint,
             DeepScreamCandidate: deepCandidate,
             DeepScreamSummary: deepSummary,
-            DeepScreamMinimizedBonus: minimized && deepCandidate);
+            DeepScreamMinimizedBonus: minimized && deepCandidate,
+            EvidenceFacts: evidenceFacts,
+            RootCauseCategory: rootCause is { Ok: true } ? rootCause.Candidate.Category.ToString() : null,
+            RootCauseSummary: rootCause?.EducationalSummary,
+            RootCauseConfidence: rootCause?.Candidate.Confidence);
     }
 
     public static CrashSummaryDto WithListIntelligence(

@@ -83,6 +83,8 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | **Engine adapters** | AFL++/honggfuzz as optional Linux grinders | [ENGINE_ADAPTERS.md](ENGINE_ADAPTERS.md) |
 | **External worker ingest** | `IExternalWorkerIngest` stub for LibAFL/WinAFL companions | [EXTERNAL_WORKERS.md](EXTERNAL_WORKERS.md) |
 | **FaultSignal taxonomy** | CrashTriage + cdb + Page Heap + sanitizer → unified DTO | [FAULT_SIGNALS.md](FAULT_SIGNALS.md) |
+| **EvidenceFact backbone** | Normalized evidence atoms + `{guid}_evidence.json` + Investigation badges | [EVIDENCE_FACT.md](EVIDENCE_FACT.md) |
+| **Root cause + influence (Wave 1)** | Deterministic `{guid}_root_cause.json` + `{guid}_influence.json` from shared facts | RootCauseEngine · InfluenceEngine |
 | **RPP plugins** | mutate · post_receive · post_crash · **observe** hooks | [RPP.md](RPP.md) |
 
 ---
@@ -401,3 +403,35 @@ Smoke on `main` @ `39a4e27` (Release build, 231/231 tests after maturation fixes
 | file-text lab | `scripts/build-file-text.ps1` + doctor | OK — native `app.exe` resolves |
 
 **Honest gaps on stock Windows lab:** DynamoRIO/Ghidra not installed → frontier stays empty, static map unavailable; corpus-novelty / path-coverage only until DR layers exist. Intelligence loop **consumes** artifacts correctly; producing Ghidra map + BB coverage remains operator/setup work.
+
+---
+
+## Exploit-research workbench stack (Wave 1+)
+
+Research-only layers for EXP-301 / SEC760-style benches — **no weaponized exploits**:
+
+| Layer | Artifact | Status |
+|-------|----------|--------|
+| **EvidenceFact** | `{guid}_evidence.json` | ✅ Wave 1 — shared sensor vocabulary |
+| **RootCause** | `{guid}_root_cause.json` | ✅ deterministic categories from facts |
+| **Influence** | `{guid}_influence.json` | ✅ input region → state links |
+| **Primitive** | TBD | 🔲 future — control primitives from confirmed facts |
+| **Learning vs Research modes** | UI + `academy` YAML | ✅ Wave 5 stub — blurbs vs dense evidence |
+| **Instructor mode** | UI + `academy.instructorMode` | ✅ Wave 5 stub — hides root-cause/offset panels |
+| **Silent screams** | Oracle violation canisters | ✅ Wave 5 — `SilentScreamBuilder` + intelligence pipeline |
+| **Differential oracle A/B** | `DifferentialOracleHook` | ✅ Wave 5 stub — see [DIFFERENTIAL_ORACLE.md](DIFFERENTIAL_ORACLE.md) |
+| **Academy lab index** | [ACADEMY_LAB_INDEX.md](ACADEMY_LAB_INDEX.md) | ✅ Wave 5 stub |
+
+See [EVIDENCE_FACT.md](EVIDENCE_FACT.md) for how engines consume facts.
+
+---
+
+## Wave 5–6 (Academy + silent oracle screams)
+
+| Deliverable | Artifact | Notes |
+|-------------|----------|-------|
+| Silent Screams | `SilentScreamBuilder` · `silent-scream` triage tag | High oracle invariant violations → canister without minidump |
+| Learning / Research | `academy.presentationMode` · UI prefs | Educational blurbs vs dense evidence table |
+| Instructor mode | `academy.instructorMode` · UI checkbox | Hides root-cause, offset, pattern depth |
+| Differential hook | `DifferentialOracleHook` | File A/B today; parser compare stub |
+| Academy index | [ACADEMY_LAB_INDEX.md](ACADEMY_LAB_INDEX.md) | Vuln labs + debugger-corpus entry points |

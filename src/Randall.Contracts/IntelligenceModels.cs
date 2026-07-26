@@ -153,7 +153,15 @@ public sealed record CrashIntelligenceDto(
     string? SemanticFingerprint = null,
     bool DeepScreamCandidate = false,
     string? DeepScreamSummary = null,
-    bool DeepScreamMinimizedBonus = false);
+    bool DeepScreamMinimizedBonus = false,
+    /// <summary>Normalized evidence facts for Investigation UI and downstream engines.</summary>
+    IReadOnlyList<EvidenceFact>? EvidenceFacts = null,
+    /// <summary>Wave 1 root-cause category label for Investigation.</summary>
+    string? RootCauseCategory = null,
+    /// <summary>Educational root-cause summary (deterministic engine).</summary>
+    string? RootCauseSummary = null,
+    /// <summary>HIGH / MEDIUM / LOW / UNKNOWN</summary>
+    string? RootCauseConfidence = null);
 
 /// <summary>In-process observation collector for a single fuzz run.</summary>
 public sealed class ObservationBus
