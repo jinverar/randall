@@ -199,7 +199,7 @@ public static partial class InputAttributionEngine
         return null;
     }
 
-    private static RegisterPayloadMatchDto? PickPrimaryMatch(
+    internal static RegisterPayloadMatchDto? PickPrimaryMatch(
         IReadOnlyList<RegisterPayloadMatchDto> matches,
         DebuggerObservation? debugger)
     {
@@ -210,15 +210,21 @@ public static partial class InputAttributionEngine
         {
             var named = matches.FirstOrDefault(m =>
                 m.Register.Equals(debugger.PrimaryRegisterMatch, StringComparison.OrdinalIgnoreCase));
-            if (named is not null)
+            if (named is not null && !IsSyntheticRegister(named.Register))
                 return named;
         }
 
+        // Prefer GP registers that carry input-derived values over synthetic fault/rip aliases.
         return matches
-            .OrderBy(m => RegisterPriority(m.Register))
+            .OrderBy(m => IsSyntheticRegister(m.Register) ? 1 : 0)
+            .ThenBy(m => RegisterPriority(m.Register))
             .ThenBy(m => m.MatchKind == "ascii" ? 0 : 1)
             .First();
     }
+
+    private static bool IsSyntheticRegister(string register) =>
+        register.Equals("FAULT", StringComparison.OrdinalIgnoreCase)
+        || register.Equals("RIP", StringComparison.OrdinalIgnoreCase);
 
     private static (string? Mutator, int? Step, string? Note) AttributeMutatorStep(
         IReadOnlyList<string> chain,

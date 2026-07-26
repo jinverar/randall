@@ -233,7 +233,7 @@ public static partial class ScreamInvestigator
         if (registerMatches.Count > 0 && inputInfluence is "UNKNOWN" or "MEDIUM")
             inputInfluence = "HIGH";
 
-        var primaryRegister = registerMatches.FirstOrDefault()?.Register;
+        var primaryRegister = InputAttributionEngine.PickPrimaryMatch(registerMatches, null)?.Register;
         var bonus = ComputeDebuggerBonus(
             exp.Classification, access, addrClass, inputInfluence, frames.Count, registerMatches.Count);
         var diagnosis = BuildDiagnosis(
