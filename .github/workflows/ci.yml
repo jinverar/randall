@@ -44,5 +44,14 @@ jobs:
           dotnet run --no-build -c Release --project src/Randall.Cli -- doctor -c projects/file-text.yaml
       - name: Short file-text fuzz smoke
         run: |
-          timeout 45s dotnet run --no-build -c Release --project src/Randall.Cli -- \
-            fuzz -c projects/file-text.yaml --max-iterations 30 || true
+          set +e
+          timeout 90s dotnet run --no-build -c Release --project src/Randall.Cli -- \
+            fuzz -c projects/file-text.yaml --max-iterations 30
+          code=$?
+          # 124 = GNU timeout wall-clock kill; tolerate only that soft cap.
+          # Real Randall/dotnet failures (non-zero, non-124) must fail CI.
+          if [ "$code" -eq 124 ]; then
+            echo "Fuzz smoke hit wall-clock timeout (exit 124); treating as soft pass."
+            exit 0
+          fi
+          exit "$code"

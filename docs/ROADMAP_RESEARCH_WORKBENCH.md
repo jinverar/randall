@@ -4,35 +4,37 @@ Randfuzz as a **vulnerability research + fuzzing workbench** — evidence, root 
 
 Living inventory was historically tracked under [ROADMAP_INTELLIGENCE.md](ROADMAP_INTELLIGENCE.md) § *Exploit-research workbench stack*. This file is the honest overnight status board for research-workbench items.
 
+**Maturity vocabulary (prefer these over bare ✅):** `STUB` → `EXPERIMENTAL` → `TESTED` → `INTEGRATED` → `VALIDATED`.
+
 ---
 
 ## Shipped (main)
 
 | Item | Artifact | Status |
 |------|----------|--------|
-| EvidenceFact / RootCause / Influence | `{guid}_evidence/root_cause/influence.json` | ✅ Wave 1 |
-| Silent Screams | `SilentScreamBuilder` | ✅ Wave 5 |
-| Learning / Research modes | `academy.presentationMode` | ✅ Wave 5 stub |
-| Differential Oracle stub | `DifferentialOracleHook` | ✅ Wave 5 |
-| Academy lab INDEX | [ACADEMY_LAB_INDEX.md](ACADEMY_LAB_INDEX.md) | ✅ stub |
-| Debugger corpus | `tests` + `data/crashes/debugger-corpus` | ✅ foundation |
-| Scream Evolution / Hunt / Hypothesis / Deep Scream | engines + sidecars | ✅ |
-| **PrimitiveEngine** | `{guid}_primitives.json` · maturity R0–R7 *computed* | ✅ Wave 2 |
-| **R0–R7 research maturity UI scale** | Investigation chips + progress + Crashes list column | ✅ DONE |
-| **Research Planner + Skeptic** | `{guid}_research_plan.json` · `{guid}_skeptic.json` | ✅ Wave 3 foundations |
-| **ExploitabilityAdvisor** | `{guid}_exploitability_advisor.json` | ✅ teaching packages |
-| **Instructor levels 0–6** | `InstructorAssistance` · UI select · prefs | ✅ extends instructorMode |
-| **Patch Hypothesis** | `{guid}_patch_hypothesis.json` | ✅ remediation text + patched-lab hook |
-| **Patch-analysis workflow v1** | `PatchAnalysisWorkflow` · Ghidra JSON diff | ✅ security-relevant fn hints |
-| **Temporal Bug Reasoning** | `{guid}_temporal.json` | ✅ Corruption→Crash→RootCause timeline |
-| **Why Haven't I Found It?** | `barrier_diagnosis.json` | ✅ campaign barrier diagnosis |
-| **Campaign postmortem** | `campaign_postmortem_last.json` | ✅ teaching narrative |
-| **Security-Invariant Language stub** | `SecurityInvariantCompiler` ASSERT→Oracle | ✅ table-driven stub |
-| **Research package / Wave7 report stub** | `{guid}_research_package.json` | ✅ checklist rollup |
-| README reposition | vulnerability research + fuzzing workbench | ✅ one paragraph |
-| **Bug Genealogy** | `bug_genealogy.json` · N probable vulns / M failures | ✅ v1 |
-| **Counterfactual Fuzzing** | `{guid}_counterfactual.json` · sweep/boundary safe vs corrupt | ✅ v1 |
-| **Vulnerability Twins** | `{guid}_vuln_twins.json` · `twin_hunt_hints.json` | ✅ v1 (Ghidra or stub) |
+| EvidenceFact / RootCause / Influence | `{guid}_evidence/root_cause/influence.json` | TESTED · Wave 1 |
+| Silent Screams | `SilentScreamBuilder` | TESTED · Wave 5 |
+| Learning / Research modes | `academy.presentationMode` | STUB · Wave 5 |
+| Differential Oracle stub | `DifferentialOracleHook` | STUB · Wave 5 |
+| Academy lab INDEX | [ACADEMY_LAB_INDEX.md](ACADEMY_LAB_INDEX.md) | STUB |
+| Debugger corpus | `tests` + `data/crashes/debugger-corpus` | EXPERIMENTAL · foundation |
+| Scream Evolution / Hunt / Hypothesis / Deep Scream | engines + sidecars | INTEGRATED |
+| **PrimitiveEngine** | `{guid}_primitives.json` · maturity R0–R7 *computed* | TESTED · Wave 2 |
+| **R0–R7 research maturity UI scale** | Investigation chips + progress + Crashes list column | INTEGRATED |
+| **Research Planner + Skeptic** | `{guid}_research_plan.json` · `{guid}_skeptic.json` | EXPERIMENTAL · Wave 3 |
+| **ExploitabilityAdvisor** | `{guid}_exploitability_advisor.json` | TESTED · teaching packages |
+| **Instructor levels 0–6** | `InstructorAssistance` · UI select · prefs | INTEGRATED |
+| **Patch Hypothesis** | `{guid}_patch_hypothesis.json` | EXPERIMENTAL · remediation text |
+| **Patch-analysis workflow v1** | `PatchAnalysisWorkflow` · Ghidra JSON diff | EXPERIMENTAL |
+| **Temporal Bug Reasoning** | `{guid}_temporal.json` | TESTED |
+| **Why Haven't I Found It?** | `barrier_diagnosis.json` | EXPERIMENTAL |
+| **Campaign postmortem** | `campaign_postmortem_last.json` | EXPERIMENTAL |
+| **Security-Invariant Language stub** | `SecurityInvariantCompiler` ASSERT→Oracle | STUB |
+| **Research package / Wave7 report stub** | `{guid}_research_package.json` | STUB · checklist rollup |
+| README reposition | vulnerability research + fuzzing workbench | INTEGRATED |
+| **Bug Genealogy** | `bug_genealogy.json` · N probable vulns / M failures | EXPERIMENTAL · v1 |
+| **Counterfactual Fuzzing** | `{guid}_counterfactual.json` · sweep/boundary safe vs corrupt | EXPERIMENTAL · v1 |
+| **Vulnerability Twins** | `{guid}_vuln_twins.json` · `twin_hunt_hints.json` | EXPERIMENTAL · v1 (Ghidra or stub) |
 
 ---
 
