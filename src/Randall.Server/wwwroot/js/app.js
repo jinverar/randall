@@ -267,7 +267,8 @@ function applyFuzzSessionStatus(s) {
 
   if (active) {
     const iter = Number(s.iterations) > 0 ? `iter ${s.iterations} · ` : '';
-    setStatus(`${iter}${s.phase}: ${s.lastMessage || '…'}`);
+    const goal = s.stopGoalMet ? ' 🎯 goal met · ' : '';
+    setStatus(`${iter}${goal}${s.phase}: ${s.lastMessage || '…'}`);
     return;
   }
 
@@ -279,7 +280,8 @@ function applyFuzzSessionStatus(s) {
     return;
   }
 
-  setStatus(`${s.phase}: ${s.lastMessage || ''}`);
+  const goalDone = s.stopGoalMet ? '🎯 stop goal met · ' : '';
+  setStatus(`${goalDone}${s.phase}: ${s.lastMessage || ''}`);
   startBtn.disabled = false;
   stopBtn.disabled = true;
 }
@@ -6061,9 +6063,10 @@ async function loadCampaignView() {
   }
 
   const st = await api.get('/api/campaign/status');
+  const goal = st.stopGoalMet ? '🎯 stop goal met · ' : '';
   document.getElementById('campaign-status').textContent = st.running
     ? `${st.phase}: ${st.completedRuns}/${st.totalRuns} runs, ${st.totalCrashes} crashes — ${st.lastMessage || ''}`
-    : (st.lastMessage || 'Idle');
+    : (st.lastMessage ? `${goal}${st.lastMessage}` : 'Idle');
 }
 
 document.getElementById('campaign-form').addEventListener('submit', async (e) => {

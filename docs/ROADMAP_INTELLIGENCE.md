@@ -185,7 +185,7 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | Canister mood + EIP/RIP seal | ✅ | Harvest rack on by default |
 | Minimization + reproducibility flags | ✅ | Cluster-shortest input heuristic |
 | Journal-backed mutator lineage in Investigation | ✅ | `CrashLineageResolver` · seed + parent hash in panel |
-| ScreamScore drives fuzz stop / campaign goals | 🔲 | Sorting only today; brain uses novelty for hunt bias ✅ |
+| ScreamScore drives fuzz stop / campaign goals | ✅ | `IntelligenceStopGoalEvaluator` · project `fuzz.stopGoals` · campaign `stopGoals` · API/UI `stopGoalMet` |
 | **Scream evolution (Phase A)** | ✅ | `ScreamEvolutionBuilder` · family/momentum/generation · `_scream_evolution.json` · Magician `evolutionBless` · Brain warming bias |
 | **Hunt Policy (Phase B)** | ✅ | `HuntPolicyEngine` · `hunt_policy_last.json` · lineage breed vs havoc vs Joker timing · mutator execution cost · Phase C `needsExperiment` hook |
 | **Hypothesis Engine (Phase C)** | ✅ | `HypothesisEngine` · `{guid}_hypotheses.json` · `hypothesis_queue.json` · Magician `hypothesisExperiment` · fuzz sweep/hold budget |
@@ -203,7 +203,7 @@ HuntValue ≈ CoverageNovelty + StaticTargetValue + OracleInterestingness
 
 Modes: `LineageBreed` (warming scream families) · `HavocExplore` (frontier/static gaps) · `JokerInvoke` (stagnant/low-yield — Joker stays dumb, only *when*) · `Baseline`.
 
-**Done when:** Campaign YAML can target “N unique screams above score S” and auto-prioritize replay/minimize for top clusters.
+**Done when:** Campaign YAML can target “N unique screams above score S” and auto-prioritize replay/minimize for top clusters. ✅ See [CAMPAIGN_STOP_GOALS.md](CAMPAIGN_STOP_GOALS.md).
 
 ---
 
@@ -222,7 +222,7 @@ Modes: `LineageBreed` (warming scream families) · `HavocExplore` (frontier/stat
 | Phase C stub | ✅ | `NeedsExperiment` + Magician `rewind_scream_hint.md` append when lineage stalls |
 | UI / logs | ✅ | Scare Floor brain strip · `[hunt policy]` verbose fuzz log · `GET /api/fuzz/brain` + `brain-decision` expose `huntPolicy` |
 
-**Phase C follow-ups:** live TTD rewind (replace stub), campaign YAML scream-score goals.
+**Phase C follow-ups:** live TTD rewind (replace stub). Campaign YAML scream-score goals ✅ — see [CAMPAIGN_STOP_GOALS.md](CAMPAIGN_STOP_GOALS.md).
 
 ---
 

@@ -78,4 +78,6 @@ public sealed record FuzzRunResult(
     int Iterations,
     int CorpusAdded,
     int CrashesFound,
-    IReadOnlyList<CrashRecord> Crashes);
+    IReadOnlyList<CrashRecord> Crashes,
+    bool StopGoalMet = false,
+    string? StopReason = null);

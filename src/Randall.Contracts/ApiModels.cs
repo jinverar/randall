@@ -117,7 +117,10 @@ public sealed record FuzzSessionStatusDto(
     int? TargetPid = null,
     string? DebuggerMode = null,
     /// <summary>Target profile name (<c>project.name</c> from YAML) while a session is active.</summary>
-    string? Project = null);
+    string? Project = null,
+    bool StopGoalMet = false,
+    string? StopReason = null,
+    IntelligenceStopGoalProgressDto? GoalProgress = null);
 
 /// <summary>One recorder stopped during fuzz teardown or <c>randall recorders stop</c>.</summary>
 public sealed record RecordingStopItemDto(string Name, string? Path, string Status);
