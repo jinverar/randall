@@ -657,7 +657,7 @@ public sealed class FuzzEngine
                     {
                         FuzzAnalystLog.Info(progress, RandallBrain.FormatVerbose(huntDecision), iterations);
                         if (huntDecision.HuntPolicy is not null)
-                            FuzzAnalystLog.Info(progress, HuntPolicyEngine.FormatVerbose(huntDecision.HuntPolicy, project.Name, CrashCatalog.FindRepoRoot()), iterations);
+                            FuzzAnalystLog.Info(progress, HuntPolicyEngine.FormatVerbose(huntDecision.HuntPolicy), iterations);
                     }
 
                     if (huntDecision.HuntPolicy is { NeedsExperiment: true })
@@ -788,7 +788,7 @@ public sealed class FuzzEngine
                 {
                     var basePayload = File.ReadAllBytes(hypInput);
                     payload = HypothesisEngine.ApplyExperiment(
-                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng, mutators)
+                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng)
                            ?? basePayload;
                     parentInputHash = InputHash.StackHash(basePayload);
                     seedSource = $"hypothesis/{hypothesisPlan.HypothesisId}";
@@ -2572,7 +2572,8 @@ public sealed class FuzzEngine
                 CorruptionChainBuilder.PathFor(crashesDir, saved.Id));
             var evolution = ScreamEvolutionBuilder.TryRead(
                 ScreamEvolutionBuilder.PathFor(crashesDir, saved.Id));
-            var hypotheses = HypothesisEngine.TryReadForCrash(crashesDir, saved.Id);
+            var hypotheses = HypothesisEngine.TryRead(
+                HypothesisEngine.PathFor(crashesDir, saved.Id));
 
             byte[]? payload = null;
             if (File.Exists(saved.InputPath))

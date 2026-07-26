@@ -154,7 +154,8 @@ public sealed record BrainDecisionSnapshotDto(
     double MemoryConfidence = 1.0,
     string? MemoryMessage = null,
     /// <summary>Phase B hunt policy snapshot (also on <see cref="LastDecision"/>.<c>HuntPolicy</c>).</summary>
-    HuntPolicyDecision? HuntPolicy = null)
+    HuntPolicyDecision? HuntPolicy = null,
+    ScreamEvolutionTelemetryDto? ScreamEvolution = null)
 {
     public static BrainDecisionSnapshotDto FromDecision(
         NextHuntDecision? decision,
@@ -162,9 +163,10 @@ public sealed record BrainDecisionSnapshotDto(
         bool enabled = true,
         string? emptyHint = null,
         double memoryConfidence = 1.0,
-        string? memoryMessage = null) =>
+        string? memoryMessage = null,
+        ScreamEvolutionTelemetryDto? screamEvolution = null) =>
         decision is null
-            ? new BrainDecisionSnapshotDto(project, enabled, false, null, null, emptyHint, null, memoryConfidence, memoryMessage)
+            ? new BrainDecisionSnapshotDto(project, enabled, false, null, null, emptyHint, null, memoryConfidence, memoryMessage, null, screamEvolution)
             : new BrainDecisionSnapshotDto(
                 project,
                 enabled,
@@ -175,5 +177,6 @@ public sealed record BrainDecisionSnapshotDto(
                 decision.ToRandallDecision(),
                 memoryConfidence,
                 memoryMessage,
-                decision.HuntPolicy);
+                decision.HuntPolicy,
+                screamEvolution);
 }

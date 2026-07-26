@@ -186,7 +186,15 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | Minimization + reproducibility flags | ✅ | Cluster-shortest input heuristic |
 | Journal-backed mutator lineage in Investigation | ✅ | `CrashLineageResolver` · seed + parent hash in panel |
 | ScreamScore drives fuzz stop / campaign goals | ✅ | `IntelligenceStopGoalEvaluator` · project `fuzz.stopGoals` · campaign `stopGoals` · API/UI `stopGoalMet` |
-| **Scream evolution (Phase A)** | ✅ | `ScreamEvolutionBuilder` · family/momentum/generation · `_scream_evolution.json` · Magician `evolutionBless` · Brain warming bias |
+| **Scream evolution (Phase A)** | ✅ | `ScreamEvolutionBuilder` · family/momentum/generation · `_scream_evolution.json` · `scream_family_index.json` · Magician `evolutionBless` · Brain warming bias · campaign-ready decay/breeding |
+
+| Signal | Proven (deterministic) | Heuristic (research triage) |
+|--------|------------------------|-----------------------------|
+| Family membership | Phenotype key: faulting fn + stack hash + corruption field + seed root + lineage head (`ComputeFamilyKey`) | Momentum score 0–100 from progression delta + scream delta + debugger influence |
+| Generation | Parent input hash chain when present; else temporal ancestor in same family; cross-run `MaxGeneration` in index | Single-crash `_scream_evolution.json` alone can under-count without index |
+| Momentum labels | `stagnant` after ≥3 non-progress runs with decay (`−5`/run from peak) | `warming`/`hot` thresholds (40/65) on effective momentum |
+| Lineage breeding | `BestLineageChain` from index when hunt mode is `LineageBreed` | Corpus energy boost + Magician `evolutionBless` timing |
+| Telemetry | `brain_last.json` · `hunt_policy_last.json` · `[scream-evolution]` fuzz logs expose family counters | Not a ground-truth exploitability verdict |
 | **Hunt Policy (Phase B)** | ✅ | `HuntPolicyEngine` · `hunt_policy_last.json` · lineage breed vs havoc vs Joker timing · mutator execution cost · Phase C `needsExperiment` hook |
 | **Hypothesis Engine (Phase C)** | ✅ | `HypothesisEngine` · `{guid}_hypotheses.json` · `hypothesis_queue.json` · Magician `hypothesisExperiment` · fuzz sweep/hold budget |
 | **Deep Scream / TTD gate (Phase D)** | ✅ | `DeepScreamBuilder` · `{guid}_deep_scream.json` · gated `rewindScream` · Investigation ⏪ badge |

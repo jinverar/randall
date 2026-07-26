@@ -128,6 +128,99 @@ public class ScreamEvolutionTests
     }
 
     [Fact]
+    public void Build_MultiGenerationChain_WithoutParentHash_UsesTemporalAncestor()
+    {
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        var id3 = Guid.NewGuid();
+        var fn = "vuln!parse";
+
+        var dbg1 = MakeDebugger(fn, DebuggerAccessKind.Read, "stack-x", DebuggerAddressClass.NullPage);
+        var dbg2 = dbg1 with { Access = DebuggerAccessKind.Read };
+        var dbg3 = dbg1 with { Access = DebuggerAccessKind.Write };
+
+        var sidecar1 = MakeSidecar(id1, "h1", null, ["havoc"]);
+        var sidecar2 = MakeSidecar(id2, "h2", null, ["havoc", "expand"]);
+        var sidecar3 = MakeSidecar(id3, "h3", null, ["havoc", "expand", "bitflip"]);
+
+        var ctx1 = new ScreamEvolutionBuilder.CrashContext(
+            id1, "demo", sidecar1, null, dbg1, null, "h1", 0, DateTimeOffset.UtcNow.AddHours(-3));
+        var ctx2 = new ScreamEvolutionBuilder.CrashContext(
+            id2, "demo", sidecar2, null, dbg2, null, "h2", 0, DateTimeOffset.UtcNow.AddHours(-2));
+        var ctx3 = new ScreamEvolutionBuilder.CrashContext(
+            id3, "demo", sidecar3, null, dbg3, null, "h3", 0, DateTimeOffset.UtcNow.AddHours(-1));
+
+        var evo3 = ScreamEvolutionBuilder.Build(id3, "demo", sidecar3, null, dbg3, null, [ctx1, ctx2, ctx3]);
+
+        Assert.True(evo3.Ok);
+        Assert.Equal(3, evo3.Generation);
+        Assert.Equal(id2, evo3.AncestorCrashId);
+        Assert.Equal(3, evo3.FamilySize);
+        Assert.True(evo3.ProgressionDelta > 0);
+    }
+
+    [Fact]
+    public void FamilyIndex_CrossRunPersistence_DecaysStagnantMomentum()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "randall-evo-idx-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "data", "stalk", "demo"));
+
+        var id = Guid.NewGuid();
+        var evolution = new ScreamEvolutionDto(
+            true, id, "demo", "demo|fam|deadbeef", "fn", 2,
+            Guid.NewGuid(), "parent", 55, "warming",
+            ScreamProgressionStep.ReadViolation, ScreamProgressionStep.ReadViolation,
+            0, [id], 2, "summary", DateTimeOffset.UtcNow);
+
+        try
+        {
+            ScreamFamilyIndex.Update("demo", evolution, null, "h1", root);
+            ScreamFamilyIndex.Update("demo", evolution, null, "h1", root);
+            ScreamFamilyIndex.Update("demo", evolution, null, "h1", root);
+            ScreamFamilyIndex.Update("demo", evolution, null, "h1", root);
+
+            var index = ScreamFamilyIndex.TryLoad("demo", root);
+            Assert.NotNull(index);
+            var entry = Assert.Single(index.Families);
+            Assert.True(entry.StagnantRuns >= 3);
+            Assert.True(entry.EffectiveMomentumScore < entry.PeakMomentumScore);
+            Assert.Equal("stagnant", entry.MomentumLabel);
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public void FamilyIndex_BestLineageChain_ReturnsWarmingFamilyChain()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "randall-evo-chain-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(root, "data", "stalk", "demo"));
+
+        var id = Guid.NewGuid();
+        var sidecar = MakeSidecar(id, "h1", null, ["seed", "havoc", "expand"]);
+        var evolution = new ScreamEvolutionDto(
+            true, id, "demo", "demo|fam|chain1", "fn", 2,
+            null, null, 50, "warming",
+            ScreamProgressionStep.WriteViolation, ScreamProgressionStep.ReadViolation,
+            1, [id], 1, "summary", DateTimeOffset.UtcNow);
+
+        try
+        {
+            ScreamFamilyIndex.Update("demo", evolution, sidecar, "h1", root);
+            var chain = ScreamFamilyIndex.BestLineageChain("demo", root);
+            Assert.NotNull(chain);
+            Assert.Equal(3, chain.Count);
+            Assert.Equal("expand", chain[^1]);
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
     public void PersistAndRead_RoundTrip()
     {
         var dir = Path.Combine(Path.GetTempPath(), "randall-evo-" + Guid.NewGuid().ToString("N"));

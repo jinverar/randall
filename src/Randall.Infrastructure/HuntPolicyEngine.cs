@@ -124,7 +124,12 @@ public static class HuntPolicyEngine
         if (!string.IsNullOrEmpty(dir))
             Directory.CreateDirectory(dir);
 
-        var snap = new HuntPolicySnapshotDto(project, iteration, DateTimeOffset.UtcNow, policy);
+        ScreamEvolutionTelemetryDto? evo = null;
+        var index = ScreamFamilyIndex.TryLoad(project, repoRoot);
+        if (index is not null)
+            evo = ScreamFamilyIndex.ComputeTelemetry(index);
+
+        var snap = new HuntPolicySnapshotDto(project, iteration, DateTimeOffset.UtcNow, policy, evo);
         File.WriteAllText(path, JsonSerializer.Serialize(snap, JsonOptions));
         HuntPolicyStore.SetLive(project, policy);
     }
@@ -398,6 +403,10 @@ public static class HuntPolicyEngine
             .Where(s => s.MomentumScore >= 40 && !s.Saturated)
             .OrderByDescending(s => s.MomentumScore)
             .FirstOrDefault();
+
+        var indexChain = ScreamFamilyIndex.BestLineageChain(ctx.Project ?? "", ctx.RepoRoot);
+        if (indexChain is { Count: >= 2 })
+            return indexChain;
 
         var chain = ctx.ChainRows?
             .Where(c => c.Chain.Count >= 2)

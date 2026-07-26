@@ -50,4 +50,5 @@ public sealed record HuntPolicySnapshotDto(
     string Project,
     int Iteration,
     DateTimeOffset At,
-    HuntPolicyDecision Policy);
+    HuntPolicyDecision Policy,
+    ScreamEvolutionTelemetryDto? ScreamEvolution = null);

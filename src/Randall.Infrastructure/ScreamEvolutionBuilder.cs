@@ -38,7 +38,8 @@ public static class ScreamEvolutionBuilder
         CrashTriageDto? triage,
         DebuggerObservation? debugger,
         CrashCorruptionChainDto? corruptionChain,
-        IReadOnlyList<CrashContext> projectCrashes)
+        IReadOnlyList<CrashContext> projectCrashes,
+        string? repoRoot = null)
     {
         try
         {
@@ -55,8 +56,8 @@ public static class ScreamEvolutionBuilder
                 .OrderBy(c => c.ObservedAt)
                 .ToList();
 
-            var ancestor = ResolveAncestor(self, projectCrashes);
-            var generation = ancestor is null ? 1 : Math.Max(1, ancestor.Generation + 1);
+            var ancestor = ResolveAncestor(self, projectCrashes, familyKey);
+            var generation = ResolveGeneration(self, ancestor, familyMembers, crashId, project, familyKey, repoRoot);
             var ancestorStep = ancestor?.Progression ?? ScreamProgressionStep.Unknown;
             var progressionDelta = (int)progression - (int)ancestorStep;
 
@@ -69,7 +70,7 @@ public static class ScreamEvolutionBuilder
             var momentumScore = ComputeMomentum(
                 progression, bestPriorStep, ancestorStep, progressionDelta,
                 self.ScreamScore, ancestor?.ScreamScore ?? 0, debugger, triage);
-            var momentumLabel = LabelMomentum(momentumScore, progressionDelta);
+            var momentumLabel = ScreamFamilyIndex.Relabel(momentumScore, progressionDelta, stagnantRuns: 0);
 
             var memberIds = familyMembers.Select(c => c.Id).ToList();
             if (!memberIds.Contains(crashId))
@@ -107,6 +108,44 @@ public static class ScreamEvolutionBuilder
         }
     }
 
+    public static ScreamEvolutionDto ApplyFamilyIndex(
+        ScreamEvolutionDto evolution,
+        CrashSidecarDto? sidecar,
+        string? seedRootHash,
+        string? repoRoot = null)
+    {
+        if (evolution is not { Ok: true })
+            return evolution;
+
+        var entry = ScreamFamilyIndex.TryGetEntry(evolution.Project, evolution.FamilyId, repoRoot);
+        if (entry is null)
+            return evolution;
+
+        var effective = ScreamFamilyIndex.ApplyDecay(
+            Math.Max(entry.PeakMomentumScore, evolution.MomentumScore),
+            entry.StagnantRuns);
+        var label = ScreamFamilyIndex.Relabel(
+            effective, evolution.ProgressionDelta, entry.StagnantRuns, entry.MemberCount);
+
+        if (effective == evolution.MomentumScore && label == evolution.MomentumLabel)
+            return evolution;
+
+        var summary = BuildSummary(
+            evolution.FamilyLabel, evolution.Generation, label, effective,
+            evolution.ProgressionStep,
+            evolution.AncestorProgressionStep ?? ScreamProgressionStep.Unknown,
+            evolution.ProgressionDelta,
+            evolution.FamilySize,
+            seedRootHash ?? entry.SeedRootHash);
+
+        return evolution with
+        {
+            MomentumScore = effective,
+            MomentumLabel = label,
+            Summary = summary,
+        };
+    }
+
     public static ScreamEvolutionDto PersistForCrash(
         string crashesDir,
         Guid crashId,
@@ -115,9 +154,17 @@ public static class ScreamEvolutionBuilder
         CrashTriageDto? triage,
         DebuggerObservation? debugger,
         CrashCorruptionChainDto? corruptionChain,
-        IReadOnlyList<CrashContext> projectCrashes)
+        IReadOnlyList<CrashContext> projectCrashes,
+        string? repoRoot = null)
     {
-        var evolution = Build(crashId, project, sidecar, triage, debugger, corruptionChain, projectCrashes);
+        repoRoot ??= CrashCatalog.FindRepoRoot();
+        var evolution = Build(crashId, project, sidecar, triage, debugger, corruptionChain, projectCrashes, repoRoot);
+        var seedRoot = ResolveSeedRootHash(
+            projectCrashes.FirstOrDefault(c => c.Id == crashId)
+            ?? new CrashContext(crashId, project, sidecar, triage, debugger, corruptionChain, sidecar?.InputHash, 0, DateTimeOffset.UtcNow),
+            projectCrashes);
+
+        evolution = ApplyFamilyIndex(evolution, sidecar, seedRoot, repoRoot);
         Write(crashesDir, evolution);
         return evolution;
     }
@@ -251,14 +298,35 @@ public static class ScreamEvolutionBuilder
     }
 
     public static string LabelMomentum(int momentumScore, int progressionDelta) =>
-        momentumScore switch
-        {
-            >= 65 when progressionDelta > 0 => "hot",
-            >= 40 when progressionDelta > 0 => "warming",
-            >= 40 => "warming",
-            <= 15 when progressionDelta < 0 => "cooling",
-            _ => "stable",
-        };
+        ScreamFamilyIndex.Relabel(momentumScore, progressionDelta, stagnantRuns: 0);
+
+    private static int ResolveGeneration(
+        CrashContext self,
+        AncestorInfo? ancestor,
+        IReadOnlyList<CrashContext> familyMembers,
+        Guid crashId,
+        string project,
+        string familyKey,
+        string? repoRoot)
+    {
+        var fromAncestor = ancestor is null ? 1 : Math.Max(1, ancestor.Generation + 1);
+        var priorInFamily = familyMembers.Count(c => c.Id != crashId && c.ObservedAt < self.ObservedAt);
+        var fromTemporal = Math.Max(1, priorInFamily + 1);
+
+        var fromHash = self.Generation > 0 ? self.Generation : ComputeGenerationDepth(self,
+            familyMembers.Where(c => !string.IsNullOrWhiteSpace(c.InputHash))
+                .GroupBy(c => c.InputHash!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase),
+            familyMembers);
+
+        var generation = Math.Max(fromAncestor, Math.Max(fromTemporal, fromHash));
+
+        var indexEntry = ScreamFamilyIndex.TryGetEntry(project, familyKey, repoRoot);
+        if (indexEntry is not null && priorInFamily > 0)
+            generation = Math.Max(generation, indexEntry.MaxGeneration + 1);
+
+        return generation;
+    }
 
     internal static string ComputeFamilyKey(CrashContext ctx)
     {
@@ -326,30 +394,50 @@ public static class ScreamEvolutionBuilder
         return current.InputHash ?? self.InputHash;
     }
 
-    private static AncestorInfo? ResolveAncestor(CrashContext self, IReadOnlyList<CrashContext> projectCrashes)
+    private static AncestorInfo? ResolveAncestor(
+        CrashContext self,
+        IReadOnlyList<CrashContext> projectCrashes,
+        string familyKey)
     {
         var parentHash = self.Sidecar?.ParentInputHash;
-        if (string.IsNullOrWhiteSpace(parentHash))
-            return null;
+        if (!string.IsNullOrWhiteSpace(parentHash))
+        {
+            var parent = projectCrashes
+                .Where(c => parentHash.Equals(c.InputHash, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(c => c.ObservedAt)
+                .FirstOrDefault();
 
-        var parent = projectCrashes
-            .Where(c => parentHash.Equals(c.InputHash, StringComparison.OrdinalIgnoreCase))
+            if (parent is not null)
+            {
+                return new AncestorInfo(
+                    parent.Id,
+                    parent.InputHash,
+                    parent.Generation > 0 ? parent.Generation : ComputeGenerationDepth(parent,
+                        projectCrashes.Where(c => !string.IsNullOrWhiteSpace(c.InputHash))
+                            .GroupBy(c => c.InputHash!, StringComparer.OrdinalIgnoreCase)
+                            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase),
+                        projectCrashes),
+                    ClassifyProgression(parent.Triage, parent.Debugger, parent.CorruptionChain),
+                    parent.ScreamScore);
+            }
+        }
+
+        var temporal = projectCrashes
+            .Where(c => c.Id != self.Id
+                        && ComputeFamilyKey(c) == familyKey
+                        && c.ObservedAt < self.ObservedAt)
             .OrderByDescending(c => c.ObservedAt)
             .FirstOrDefault();
 
-        if (parent is null)
+        if (temporal is null)
             return null;
 
         return new AncestorInfo(
-            parent.Id,
-            parent.InputHash,
-            parent.Generation > 0 ? parent.Generation : ComputeGenerationDepth(parent,
-                projectCrashes.Where(c => !string.IsNullOrWhiteSpace(c.InputHash))
-                    .GroupBy(c => c.InputHash!, StringComparer.OrdinalIgnoreCase)
-                    .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase),
-                projectCrashes),
-            ClassifyProgression(parent.Triage, parent.Debugger, parent.CorruptionChain),
-            parent.ScreamScore);
+            temporal.Id,
+            temporal.InputHash,
+            temporal.Generation > 0 ? temporal.Generation : 1,
+            ClassifyProgression(temporal.Triage, temporal.Debugger, temporal.CorruptionChain),
+            temporal.ScreamScore);
     }
 
     private static int ComputeGenerationDepth(
