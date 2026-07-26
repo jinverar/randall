@@ -17,7 +17,8 @@ public static class CrashIntelligenceBuilder
         bool pageHeapEnabled = false,
         string? rppTag = null,
         DebuggerObservation? debugger = null,
-        CrashCorruptionChainDto? corruptionChain = null)
+        CrashCorruptionChainDto? corruptionChain = null,
+        ScreamEvolutionDto? evolution = null)
     {
         var clusterKey = triage?.ClusterKey ?? summary.ClusterKey;
         var clusterMembers = string.IsNullOrWhiteSpace(clusterKey)
@@ -54,7 +55,7 @@ public static class CrashIntelligenceBuilder
         var reproducible = ReproLooksReady(summary, sidecar);
         var minimized = IsMinimized(summary, clusterMembers, inputLength);
         var lineage = BuildLineage(sidecar);
-        var screamScore = ComputeScreamScore(severity, novelty, oracleScore?.Total, seenCount, triage, debugger);
+        var screamScore = ComputeScreamScore(severity, novelty, oracleScore?.Total, seenCount, triage, debugger, evolution);
         var faultSignals = FaultSignalMapper.FromCrash(
             triage, analysis, cdb, sidecar, pageHeapEnabled, rppTag ?? summary.TriageTag,
             sidecar?.TargetDetail,
@@ -88,7 +89,12 @@ public static class CrashIntelligenceBuilder
             debugger?.Diagnosis,
             debugger?.ExploitabilityHint,
             corruptionChain?.Summary,
-            corruptionChain?.Confidence);
+            corruptionChain?.Confidence,
+            evolution?.FamilyId,
+            evolution?.MomentumScore ?? 0,
+            evolution?.MomentumLabel,
+            evolution?.Generation ?? 0,
+            evolution?.Summary);
     }
 
     public static CrashSummaryDto WithListIntelligence(
@@ -179,7 +185,8 @@ public static class CrashIntelligenceBuilder
         int? oracleTotal,
         int seenCount,
         CrashTriageDto? triage,
-        DebuggerObservation? debugger = null)
+        DebuggerObservation? debugger = null,
+        ScreamEvolutionDto? evolution = null)
     {
         var sev = severity switch
         {
@@ -198,7 +205,12 @@ public static class CrashIntelligenceBuilder
             : 0;
         var oracleBonus = oracleTotal is > 0 ? Math.Min(25, oracleTotal.Value / 4) : 0;
         var dbgBonus = debugger?.Ok == true ? debugger.DebuggerScreamBonus : 0;
-        return Math.Clamp(sev * 12 + novelty / 2 + uniqueBonus + ipBonus + oracleBonus + dbgBonus, 0, 100);
+        var momentumBonus = evolution is { MomentumScore: >= 40 } ev
+            ? Math.Min(12, ev.MomentumScore / 8 + (ev.ProgressionDelta > 0 ? 4 : 0))
+            : evolution is { MomentumScore: > 0 } warm
+                ? Math.Min(6, warm.MomentumScore / 12)
+                : 0;
+        return Math.Clamp(sev * 12 + novelty / 2 + uniqueBonus + ipBonus + oracleBonus + dbgBonus + momentumBonus, 0, 100);
     }
 
     private static bool ReproLooksReady(CrashSummaryDto summary, CrashSidecarDto? sidecar)

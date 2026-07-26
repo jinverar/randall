@@ -186,6 +186,9 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | Minimization + reproducibility flags | ✅ | Cluster-shortest input heuristic |
 | Journal-backed mutator lineage in Investigation | ✅ | `CrashLineageResolver` · seed + parent hash in panel |
 | ScreamScore drives fuzz stop / campaign goals | 🔲 | Sorting only today; brain uses novelty for hunt bias ✅ |
+| **Scream evolution (Phase A)** | ✅ | `ScreamEvolutionBuilder` · family/momentum/generation · `_scream_evolution.json` · Magician `evolutionBless` · Brain warming bias |
+
+**Phase A follow-ups (Phase B+):** Hunt Policy engine (explicit lineage breeding rules), Hypothesis Engine (corruption-chain → testable hypotheses), live TTD rewind (currently stub only). See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md#headless-cdb--scream-investigator-windows).
 
 **Done when:** Campaign YAML can target “N unique screams above score S” and auto-prioritize replay/minimize for top clusters.
 

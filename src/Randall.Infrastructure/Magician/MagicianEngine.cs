@@ -29,6 +29,7 @@ public static class MagicianEngine
         "playJokerCard",
         "capitalizeJoker",
         "rewindScream",
+        "evolutionBless",
     ];
 
     public static bool IsEnabled(ProjectConfig project) =>
@@ -265,6 +266,50 @@ public static class MagicianEngine
         return new MagicianCastResult([spell], [], [], 0, false, false, "rewindScream→ttd");
     }
 
+    /// <summary>
+    /// When scream evolution momentum is high, bless the warming lineage: corpus energy,
+    /// mutator army / havoc, and optional dictionary pressure on the family mutators.
+    /// </summary>
+    public static MagicianCastResult? OnScreamEvolutionWarm(
+        ProjectConfig project,
+        string yamlPath,
+        ScreamEvolutionDto evolution,
+        CrashSidecarDto? sidecar,
+        CorpusTracker? corpus,
+        List<IMutator>? mutators,
+        int iteration,
+        IFuzzProgressSink? progress)
+    {
+        if (evolution is not { Ok: true, MomentumScore: >= 40 })
+            return null;
+
+        var cfg = GetConfig(project);
+        if (cfg is not { Enabled: true })
+            return null;
+
+        project.Magician ??= cfg;
+        var lineage = sidecar?.MutatorChain?.ToList()
+                      ?? (sidecar?.Mutator is { } m ? new List<string> { m } : []);
+
+        var reason =
+            $"Scream evolution {evolution.MomentumLabel} (momentum={evolution.MomentumScore}, gen={evolution.Generation}) — {evolution.Summary}";
+        var needs = new List<OracleNeedDto>
+        {
+            new("evolution", reason, "scream", evolution.FamilyId, "violation"),
+            new("energy", $"Warm lineage energy — {evolution.ProgressionStep}", "scream", evolution.FamilyId, "violation"),
+        };
+
+        if (lineage.Count >= 2)
+            needs.Add(new("army", $"Breed mutator chain on warming scream family", "scream", evolution.FamilyId, "violation"));
+
+        var cast = Cast(project, yamlPath, needs, iteration, corpus, null, mutators, progress, force: true);
+
+        if (!string.IsNullOrEmpty(cast.Summary))
+            FuzzAnalystLog.Info(progress, $"Magician evolution: {cast.Summary}", iteration);
+
+        return cast;
+    }
+
     /// <summary>Manual / CLI cast for an explicit need (knight, army, bots, joker, …).</summary>
     public static MagicianCastResult CastNeed(
         ProjectConfig project,
@@ -381,10 +426,11 @@ public static class MagicianEngine
         sb.AppendLine("| capitalizeJoker | joker | (auto) After Joker crash — energy + army + corpus |");
         sb.AppendLine("| playJokerCard | joker | Queue a legendary Joker Card draw from the deck |");
         sb.AppendLine("| rewindScream | ttd | (stub) Write TTD record/replay hint on crash — no capture |");
+        sb.AppendLine("| evolutionBless | — | (auto) High scream momentum — energy + army on warming lineage |");
         sb.AppendLine();
         sb.AppendLine("Oracle need → spell map: dictionary→dictionaryBoost; energy→energyBless;");
         sb.AppendLine("hunter→summonHunter; knight→summonKnight; army→summonArmy; bots→summonBots;");
-        sb.AppendLine("rearm→rearmOracles; joker→summonJoker.");
+        sb.AppendLine("rearm→rearmOracles; joker→summonJoker; evolution→evolutionBless+energyBless.");
         return sb.ToString();
     }
 
@@ -432,6 +478,13 @@ public static class MagicianEngine
                 break;
             case "rearm":
                 yield return "rearmOracles";
+                break;
+            case "evolution":
+                yield return "evolutionBless";
+                yield return "energyBless";
+                if (cfg.AllowSummonArmy)
+                    yield return "summonArmy";
+                yield return "havocSurge";
                 break;
             default:
                 // Treat unknown request as a direct spell id if it matches the catalog.
@@ -552,6 +605,25 @@ public static class MagicianEngine
                 if (!GetConfig(project).AllowRewindScream || !project.Fuzz.RewindScream)
                     return (false, null, "rewindScream disabled — set fuzz.rewindScream: true");
                 return (true, "ttd", "rewindScream stub armed — hint written on next crash");
+            case "evolutionBless":
+            {
+                var lineage = need.RuleId ?? need.RuleClass ?? "lineage";
+                if (corpus is not null && payload is { Length: > 0 })
+                {
+                    var boost = 8;
+                    corpus.BoostEnergy(payload, boost);
+                    extraEnergy += boost;
+                }
+                else
+                {
+                    extraEnergy += 4;
+                }
+
+                EnsureMutator(project, mutators, yamlPath, corpus, "havoc", mutatorsEnsured);
+                if (GetConfig(project).AllowSummonArmy)
+                    EnsureMutator(project, mutators, yamlPath, corpus, "splice", mutatorsEnsured);
+                return (true, null, $"evolution bless on {lineage} (+energy, havoc live)");
+            }
             default:
                 return (false, null, $"unknown spell {spellId}");
         }

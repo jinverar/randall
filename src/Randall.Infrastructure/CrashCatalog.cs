@@ -106,8 +106,21 @@ public static class CrashCatalog
             }
 
             var projectSummaries = projectRows.Select(r => r.Summary).ToList();
+            var projectContexts = ScreamEvolutionBuilder.LoadProjectContexts(dir, projectName);
             foreach (var row in projectRows)
             {
+                var corruptionChain = CorruptionChainBuilder.TryRead(
+                    CorruptionChainBuilder.PathFor(dir, row.Summary.Id));
+                var evolution = ScreamEvolutionBuilder.TryRead(
+                        ScreamEvolutionBuilder.PathFor(dir, row.Summary.Id))
+                    ?? ScreamEvolutionBuilder.Build(
+                        row.Summary.Id,
+                        projectName,
+                        row.Sidecar,
+                        row.Triage,
+                        row.Debugger,
+                        corruptionChain,
+                        projectContexts);
                 var intelligence = CrashIntelligenceBuilder.Build(
                     row.Summary,
                     row.Triage,
@@ -119,7 +132,8 @@ public static class CrashCatalog
                     pageHeapEnabled,
                     row.Summary.TriageTag,
                     row.Debugger,
-                    CorruptionChainBuilder.TryRead(CorruptionChainBuilder.PathFor(dir, row.Summary.Id)));
+                    corruptionChain,
+                    evolution);
                 results.Add(CrashIntelligenceBuilder.WithListIntelligence(row.Summary, intelligence));
             }
         }
@@ -210,6 +224,17 @@ public static class CrashCatalog
             var cdbTriage = MapCdbTriage(cdbSidecar);
             var corruptionChain = CorruptionChainBuilder.TryRead(
                 CorruptionChainBuilder.PathFor(crashesDir, summary.Id));
+            var projectContexts = ScreamEvolutionBuilder.LoadProjectContexts(crashesDir, summary.Project);
+            var evolution = ScreamEvolutionBuilder.TryRead(
+                    ScreamEvolutionBuilder.PathFor(crashesDir, summary.Id))
+                ?? ScreamEvolutionBuilder.Build(
+                    summary.Id,
+                    summary.Project,
+                    sidecar,
+                    triage,
+                    debugger,
+                    corruptionChain,
+                    projectContexts);
             var pageHeapEnabled = TryResolvePageHeap(sidecar, repoRoot);
             var projectSummaries = ListAll(repoRoot).Where(x => x.Project == summary.Project).ToList();
             var intelligence = CrashIntelligenceBuilder.Build(
@@ -223,7 +248,8 @@ public static class CrashCatalog
                 pageHeapEnabled,
                 summary.TriageTag,
                 debugger,
-                corruptionChain);
+                corruptionChain,
+                evolution);
             return new CrashDetailDto(
                 CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
                 bytes.Length,
@@ -235,7 +261,8 @@ public static class CrashCatalog
                 cdbTriage,
                 intelligence,
                 debugger,
-                corruptionChain);
+                corruptionChain,
+                evolution);
         }
         return null;
     }

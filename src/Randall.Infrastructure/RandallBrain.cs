@@ -42,7 +42,11 @@ public sealed class RandallBrain
         int Novelty,
         int SeenCount,
         string? Function,
-        bool Saturated);
+        bool Saturated,
+        int MomentumScore = 0,
+        string? MomentumLabel = null,
+        int Generation = 0,
+        string? FamilyId = null);
 
     public sealed record HuntCandidate(
         string Kind,
@@ -120,6 +124,11 @@ public sealed class RandallBrain
         if (hotScreams > 0 && top.Kind != "scream")
             why.Add(new OracleScoreTerm("scream novelty", Math.Min(10, hotScreams * 3),
                 $"{hotScreams} hot cluster(s)"));
+
+        var warmingFamilies = signals.ScreamClusters.Count(s => s.MomentumScore >= 40);
+        if (warmingFamilies > 0)
+            why.Add(new OracleScoreTerm("scream evolution", Math.Min(12, warmingFamilies * 4),
+                $"{warmingFamilies} warming familie(s)"));
 
         if (mutatorRows.Count > 0)
         {
@@ -456,15 +465,19 @@ public sealed class RandallBrain
         }
 
         foreach (var scream in signals.ScreamClusters
-                     .Where(s => !s.Saturated && s.ScreamScore >= 40)
-                     .OrderByDescending(s => s.ScreamScore)
+                     .Where(s => !s.Saturated && (s.ScreamScore >= 40 || s.MomentumScore >= 40))
+                     .OrderByDescending(s => s.MomentumScore)
+                     .ThenByDescending(s => s.ScreamScore)
                      .Take(3))
         {
+            var score = Math.Max(scream.ScreamScore, scream.MomentumScore);
             list.Add(new HuntCandidate(
                 "scream",
-                scream.Function ?? scream.ClusterKey,
-                scream.ScreamScore,
-                $"novelty {scream.Novelty}/100 ┬╖ seen├ù{scream.SeenCount}",
+                scream.Function ?? scream.FamilyId ?? scream.ClusterKey,
+                score,
+                $"novelty {scream.Novelty}/100 · seen×{scream.SeenCount}" +
+                (scream.MomentumScore >= 40 ? $" · {scream.MomentumLabel} momentum={scream.MomentumScore}" : "") +
+                (scream.Generation > 1 ? $" · gen {scream.Generation}" : ""),
                 BuildScreamTerms(scream)));
         }
 
@@ -585,6 +598,9 @@ public sealed class RandallBrain
         if (signals.StaticHints?.CoverageSummary is { CoverageFraction: < 0.5 })
             boost += 1;
 
+        if (top.Kind == "scream" && signals.ScreamClusters.Any(s => s.MomentumScore >= 55))
+            boost += 2;
+
         return Math.Clamp(boost, 0, 8);
     }
 
@@ -606,9 +622,12 @@ public sealed class RandallBrain
         if (oracleCount > 0)
             parts.Add($"{oracleCount} oracle hint(s)");
         var hot = screams.Count(s => !s.Saturated && s.ScreamScore >= 40);
+        var warming = screams.Count(s => s.MomentumScore >= 40);
         if (hot > 0)
             parts.Add($"{hot} hot scream(s)");
-        return string.Join(" ┬╖ ", parts);
+        if (warming > 0)
+            parts.Add($"{warming} warming familie(s)");
+        return string.Join(" · ", parts);
     }
 
     private static IReadOnlyList<ScreamClusterSignal> LoadScreamSignals(string project, string repoRoot)
@@ -619,27 +638,53 @@ public sealed class RandallBrain
         if (crashes.Count == 0)
             return [];
 
-        var byCluster = crashes
-            .GroupBy(c => c.ClusterKey ?? c.Id.ToString(), StringComparer.OrdinalIgnoreCase)
+        var crashesDir = Path.Combine(repoRoot, "data", "crashes", project);
+        var evolutions = new Dictionary<Guid, ScreamEvolutionDto>();
+        if (Directory.Exists(crashesDir))
+        {
+            foreach (var c in crashes)
+            {
+                var evo = ScreamEvolutionBuilder.TryRead(
+                    ScreamEvolutionBuilder.PathFor(crashesDir, c.Id));
+                if (evo is not null)
+                    evolutions[c.Id] = evo;
+            }
+        }
+
+        var byFamily = crashes
+            .Select(c =>
+            {
+                evolutions.TryGetValue(c.Id, out var evo);
+                return new { Crash = c, Evolution = evo };
+            })
+            .GroupBy(x => x.Evolution?.FamilyId ?? x.Crash.ClusterKey ?? x.Crash.Id.ToString(),
+                StringComparer.OrdinalIgnoreCase);
+
+        return byFamily
             .Select(g =>
             {
-                var lead = g.OrderByDescending(c => c.ScreamScore).First();
+                var lead = g.OrderByDescending(x => x.Evolution?.MomentumScore ?? 0)
+                    .ThenByDescending(x => x.Crash.ScreamScore)
+                    .First();
                 var seen = g.Count();
-                var novelty = lead.Novelty > 0 ? lead.Novelty : Math.Max(0, 100 - seen * 8);
-                var screamScore = lead.ScreamScore;
-                var saturated = seen >= 8 && novelty < 35;
+                var novelty = lead.Crash.Novelty > 0 ? lead.Crash.Novelty : Math.Max(0, 100 - seen * 8);
+                var screamScore = lead.Crash.ScreamScore;
+                var saturated = seen >= 8 && novelty < 35 && (lead.Evolution?.MomentumScore ?? 0) < 40;
                 return new ScreamClusterSignal(
                     g.Key,
                     screamScore,
                     novelty,
                     seen,
-                    lead.StaticFunctionSummary,
-                    saturated);
+                    lead.Crash.StaticFunctionSummary,
+                    saturated,
+                    lead.Evolution?.MomentumScore ?? 0,
+                    lead.Evolution?.MomentumLabel,
+                    lead.Evolution?.Generation ?? 0,
+                    lead.Evolution?.FamilyId);
             })
-            .OrderByDescending(s => s.ScreamScore)
+            .OrderByDescending(s => s.MomentumScore)
+            .ThenByDescending(s => s.ScreamScore)
             .ToList();
-
-        return byCluster;
     }
 
     private static IReadOnlyList<OracleFindingDto> LoadRecentOracleFindings(string project, string repoRoot, int limit)
@@ -785,12 +830,21 @@ public sealed class RandallBrain
         new("rule class", 8, f.RuleClass),
     ];
 
-    private static IReadOnlyList<OracleScoreTerm> BuildScreamTerms(ScreamClusterSignal scream) =>
-    [
-        new("scream score", Math.Min(40, scream.ScreamScore / 2), $"{scream.ScreamScore}"),
-        new("novelty", Math.Min(20, scream.Novelty / 5), $"{scream.Novelty}/100"),
-        new("cluster size", scream.SeenCount <= 1 ? 12 : -Math.Min(10, scream.SeenCount), $"seen├ù{scream.SeenCount}"),
-    ];
+    private static IReadOnlyList<OracleScoreTerm> BuildScreamTerms(ScreamClusterSignal scream)
+    {
+        var terms = new List<OracleScoreTerm>
+        {
+            new("scream score", Math.Min(40, scream.ScreamScore / 2), $"{scream.ScreamScore}"),
+            new("novelty", Math.Min(20, scream.Novelty / 5), $"{scream.Novelty}/100"),
+            new("cluster size", scream.SeenCount <= 1 ? 12 : -Math.Min(10, scream.SeenCount), $"seen×{scream.SeenCount}"),
+        };
+        if (scream.MomentumScore >= 40)
+            terms.Add(new OracleScoreTerm("evolution momentum", Math.Min(20, scream.MomentumScore / 4),
+                $"{scream.MomentumLabel} {scream.MomentumScore}"));
+        if (scream.Generation > 1)
+            terms.Add(new OracleScoreTerm("lineage generation", Math.Min(8, scream.Generation), $"gen {scream.Generation}"));
+        return terms;
+    }
 
     private static int ScoreChangedFunction(RandallAnalysisChangedFunctionDto fn) =>
         Math.Clamp((int)Math.Round(fn.ChangeScore * 10) + Math.Abs(fn.FuzzPriorityDelta), 20, 95);

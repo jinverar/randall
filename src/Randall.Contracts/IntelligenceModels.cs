@@ -134,7 +134,17 @@ public sealed record CrashIntelligenceDto(
     /// <summary>Research-only input→fault attribution summary when corruption chain exists.</summary>
     string? CorruptionChainSummary = null,
     /// <summary>HIGH / MEDIUM / LOW / UNKNOWN from corruption chain builder.</summary>
-    string? CorruptionConfidence = null);
+    string? CorruptionConfidence = null,
+    /// <summary>Scream evolution family id (phenotype grouping).</summary>
+    string? ScreamFamilyId = null,
+    /// <summary>0–100 momentum vs ancestors (getting warmer).</summary>
+    int ScreamMomentum = 0,
+    /// <summary>stable | warming | hot | cooling</summary>
+    string? ScreamMomentumLabel = null,
+    /// <summary>Lineage generation (1 = root).</summary>
+    int ScreamGeneration = 0,
+    /// <summary>One-line evolution summary for Investigation / logs.</summary>
+    string? ScreamEvolutionSummary = null);
 
 /// <summary>In-process observation collector for a single fuzz run.</summary>
 public sealed class ObservationBus

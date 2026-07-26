@@ -74,7 +74,8 @@ public sealed record CrashDetailDto(
     CdbTriageDto? CdbTriage = null,
     CrashIntelligenceDto? Intelligence = null,
     DebuggerObservation? DebuggerObservation = null,
-    CrashCorruptionChainDto? CorruptionChain = null);
+    CrashCorruptionChainDto? CorruptionChain = null,
+    ScreamEvolutionDto? ScreamEvolution = null);
 
 public sealed record SessionGraphReportDto(
     string Project,

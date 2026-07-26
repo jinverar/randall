@@ -1799,6 +1799,10 @@ public sealed class FuzzEngine
                         {
                             FuzzAnalystLog.Warn(progress, $"fault republish: {faultEx.Message}", iterations);
                         }
+
+                        TryPersistScreamEvolution(
+                            project, yamlPath, crashesDir, saved, mutatorChain,
+                            corpus, mutators, mutatorCredit, iterations, progress);
                     }
 
                     if (DebuggerSession.ShouldOpenDumpOnCrash(debuggerOpenOnCrash) && saved.MiniDumpPath is not null)
@@ -2242,6 +2246,78 @@ public sealed class FuzzEngine
                 newEdges, newCoverage, coverageEdgeTotal, repoRoot);
         }
         catch { /* hunt pressure must not break fuzz loop */ }
+    }
+
+    private void TryPersistScreamEvolution(
+        ProjectConfig project,
+        string yamlPath,
+        string crashesDir,
+        SavedCrash saved,
+        IReadOnlyList<string> mutatorChain,
+        CorpusTracker corpus,
+        List<IMutator>? mutators,
+        MutatorCreditTracker mutatorCredit,
+        int iterations,
+        IFuzzProgressSink? progress)
+    {
+        try
+        {
+            var sidecar = CrashSidecarWriter.TryRead(saved.SidecarPath);
+            var debugger = ScreamInvestigator.TryRead(
+                ScreamInvestigator.ObservationPathFor(crashesDir, saved.Id));
+            var corruption = CorruptionChainBuilder.TryRead(
+                CorruptionChainBuilder.PathFor(crashesDir, saved.Id));
+
+            byte[]? payload = null;
+            if (File.Exists(saved.InputPath))
+            {
+                try { payload = File.ReadAllBytes(saved.InputPath); }
+                catch { /* ignore */ }
+            }
+
+            var summary = new CrashSummaryDto(
+                saved.Id, project.Name, iterations, sidecar?.Mutator ?? "?",
+                saved.InputHash, saved.InputPath, saved.MiniDumpPath,
+                sidecar?.ExitCode?.ToString(), sidecar?.TriageTag, saved.SidecarPath,
+                sidecar?.RunId, DateTimeOffset.UtcNow);
+
+            var triage = CrashTriage.Classify(null, sidecar, summary, payload, debugger: debugger);
+            var contexts = ScreamEvolutionBuilder.LoadProjectContexts(crashesDir, project.Name);
+            var evolution = ScreamEvolutionBuilder.PersistForCrash(
+                crashesDir, saved.Id, project.Name, sidecar, triage, debugger, corruption, contexts);
+
+            if (evolution is not { Ok: true })
+                return;
+
+            Console.WriteLine($"  scream evolution: {evolution.Summary}");
+            if (evolution.MomentumScore >= 40)
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[scream-evolution] {evolution.MomentumLabel} momentum={evolution.MomentumScore} · {evolution.Summary}",
+                    iterations);
+            }
+
+            mutatorCredit.RecordEvolutionWarmth(mutatorChain, evolution.MomentumScore, evolution.ProgressionDelta);
+
+            if (evolution.MomentumScore >= 40 && File.Exists(saved.InputPath))
+            {
+                try
+                {
+                    var crashPayload = payload ?? File.ReadAllBytes(saved.InputPath);
+                    if (corpus.IsNew(crashPayload) || evolution.MomentumLabel is "warming" or "hot")
+                        corpus.BoostEnergy(crashPayload, Math.Min(15, evolution.MomentumScore / 5 + 3));
+                }
+                catch { /* ignore */ }
+            }
+
+            _ = MagicianEngine.OnScreamEvolutionWarm(
+                project, yamlPath, evolution, sidecar, corpus,
+                mutators, iterations, progress);
+        }
+        catch (Exception ex)
+        {
+            FuzzAnalystLog.Warn(progress, $"scream evolution: {ex.Message}", iterations);
+        }
     }
 
     private void PublishEnrichedCrashFaults(

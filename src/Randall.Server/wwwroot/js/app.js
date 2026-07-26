@@ -2873,6 +2873,7 @@ function renderCrashDetail(detail, title) {
   const cdb = detail.cdbTriage;
   const dbg = detail.debuggerObservation;
   const chain = detail.corruptionChain;
+  const evo = detail.screamEvolution;
   const regs = a?.registers;
   const dump = detail.summary.miniDumpPath || a?.dumpPath || '';
   const windbgCmd = dump ? `windbg -z "${dump}"` : '';
@@ -2894,14 +2895,16 @@ function renderCrashDetail(detail, title) {
   const primaryFault = intel?.primaryFault;
   const intelHot = intel
     ? (intel.novelty >= 70 && ((intel.oracleScore?.total ?? 0) >= 40 || intel.seenCount <= 1))
+      || (intel.screamMomentum ?? 0) >= 40
     : screamHot(detail.summary);
+  const evoWarm = (evo?.momentumScore ?? intel?.screamMomentum ?? 0) >= 40;
   if (metaEl) {
     const intelBits = intel
       ? ` · novelty ${intel.novelty}${intel.oracleScore?.total != null ? ` · oracle ${intel.oracleScore.total}` : ''}`
       : '';
     metaEl.textContent = cluster
-      ? `score ${intelScore}${intelBits} · ${clusterN}× in cluster`
-      : `score ${intelScore}${intelBits}`;
+      ? `score ${intelScore}${intelBits}${evoWarm ? ` · ${evo?.momentumLabel || intel?.screamMomentumLabel || 'warming'} ${evo?.momentumScore ?? intel?.screamMomentum}` : ''} · ${clusterN}× in cluster`
+      : `score ${intelScore}${intelBits}${evoWarm ? ` · ${evo?.momentumLabel || intel?.screamMomentumLabel || 'warming'}` : ''}`;
   }
 
   box.innerHTML = `
@@ -2954,6 +2957,9 @@ function renderCrashDetail(detail, title) {
           ${intel.offset != null ? `<dt>Offset</dt><dd><code>${intel.offset}</code> bytes in input</dd>` : ''}
           ${intel.corruptionChainSummary ? `<dt>Corruption chain</dt><dd><span class="severity-${(intel.corruptionConfidence || 'low').toLowerCase()}">${escapeAttr(intel.corruptionConfidence || '')}</span> — ${escapeAttr(intel.corruptionChainSummary)}</dd>` : ''}
           ${intel.oracleScore?.total != null ? `<dt>Oracle</dt><dd><span class="scream-intel-oracle">${intel.oracleScore.total}</span>${intel.oracleScore.summary ? ` — ${escapeAttr(intel.oracleScore.summary)}` : ''}</dd>` : ''}
+          ${(evo?.ok || intel?.screamMomentum > 0) ? `<dt>Evolution</dt><dd><span class="severity-${evoWarm ? 'high' : 'medium'}">${escapeAttr(evo?.momentumLabel || intel?.screamMomentumLabel || 'stable')}</span> momentum <strong>${evo?.momentumScore ?? intel?.screamMomentum ?? 0}</strong>${(evo?.generation ?? intel?.screamGeneration) > 0 ? ` · gen ${evo?.generation ?? intel?.screamGeneration}` : ''}${evo?.familySize > 1 ? ` · family×${evo.familySize}` : ''}</dd>` : ''}
+          ${evo?.progressionStep ? `<dt>Progression</dt><dd><code>${escapeAttr(evo.progressionStep)}</code>${evo.progressionDelta > 0 ? ` <span class="hint-inline">↑${evo.progressionDelta} vs ancestor</span>` : ''}</dd>` : ''}
+          ${evo?.summary ? `<dt>Evolution note</dt><dd class="hint">${escapeAttr(evo.summary)}</dd>` : (intel?.screamEvolutionSummary ? `<dt>Evolution note</dt><dd class="hint">${escapeAttr(intel.screamEvolutionSummary)}</dd>` : '')}
           <dt>Repro</dt><dd>${intel.reproducible ? 'ready' : 'needs sidecar/input'}</dd>
           <dt>Minimized</dt><dd>${intel.minimized ? 'yes (shortest in cluster)' : 'no'}</dd>
           <dt>First seen</dt><dd>${new Date(intel.firstSeen).toLocaleString()}</dd>

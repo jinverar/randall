@@ -39,6 +39,38 @@ public sealed class MutatorCreditTracker
         return WeightedPick(mutators, rng);
     }
 
+    /// <summary>
+    /// Boost mutator credit when scream evolution shows a warming lineage (READ→WRITE→controlled).
+    /// </summary>
+    public void RecordEvolutionWarmth(
+        IReadOnlyList<string> mutatorChain,
+        int momentumScore,
+        int progressionDelta)
+    {
+        if (!_biasEnabled || momentumScore < 40 || progressionDelta <= 0)
+            return;
+
+        var bonusEdges = Math.Min(5, momentumScore / 20 + progressionDelta);
+        foreach (var name in mutatorChain)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+            if (name.StartsWith("joker:", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var entry = GetOrCreate(name);
+            entry.NewEdges += bonusEdges;
+            entry.Score = ComputeScore(entry.NewEdges, entry.UniqueCrashes);
+        }
+    }
+
+    public int GetLineageWeightBoost(IReadOnlyList<string> mutatorChain, int momentumScore)
+    {
+        if (!_biasEnabled || momentumScore < 40 || mutatorChain.Count == 0)
+            return 0;
+        return Math.Min(8, momentumScore / 12 + mutatorChain.Count);
+    }
+
     /// <summary>Record one iteration outcome for the primary mutator.</summary>
     public void Record(string mutatorName, int newEdges, bool uniqueCrash)
     {
