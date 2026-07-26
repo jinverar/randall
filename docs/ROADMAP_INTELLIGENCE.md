@@ -415,14 +415,19 @@ Research-only layers for EXP-301 / SEC760-style benches — **no weaponized expl
 | **EvidenceFact** | `{guid}_evidence.json` | ✅ Wave 1 — shared sensor vocabulary |
 | **RootCause** | `{guid}_root_cause.json` | ✅ deterministic categories from facts |
 | **Influence** | `{guid}_influence.json` | ✅ input region → state links |
-| **Primitive** | TBD | 🔲 future — control primitives from confirmed facts |
+| **Primitive** | `{guid}_primitives.json` | ✅ Wave 2 — capability assessment + R0–R7 *engine* (UI scale deferred) |
+| **Research Planner + Skeptic** | `{guid}_research_plan.json` · `_skeptic.json` | ✅ Wave 3 foundations |
+| **ExploitabilityAdvisor** | `{guid}_exploitability_advisor.json` | ✅ teaching packages only |
+| **Instructor levels 0–6** | `InstructorAssistance` · prefs/UI | ✅ extends Wave 5 boolean |
+| **Patch / Temporal / Barriers / SIL / Package** | see [ROADMAP_RESEARCH_WORKBENCH.md](ROADMAP_RESEARCH_WORKBENCH.md) | ✅ overnight stubs |
 | **Learning vs Research modes** | UI + `academy` YAML | ✅ Wave 5 stub — blurbs vs dense evidence |
-| **Instructor mode** | UI + `academy.instructorMode` | ✅ Wave 5 stub — hides root-cause/offset panels |
+| **Instructor mode** | UI + `academy.instructorMode` / level | ✅ Wave 5+ levels 0–6 |
 | **Silent screams** | Oracle violation canisters | ✅ Wave 5 — `SilentScreamBuilder` + intelligence pipeline |
 | **Differential oracle A/B** | `DifferentialOracleHook` | ✅ Wave 5 stub — see [DIFFERENTIAL_ORACLE.md](DIFFERENTIAL_ORACLE.md) |
 | **Academy lab index** | [ACADEMY_LAB_INDEX.md](ACADEMY_LAB_INDEX.md) | ✅ Wave 5 stub |
+| **R0–R7 UI maturity scale** | Investigation chips | 🔲 deferred (engine already computes) |
 
-See [EVIDENCE_FACT.md](EVIDENCE_FACT.md) for how engines consume facts.
+See [EVIDENCE_FACT.md](EVIDENCE_FACT.md) · full board: [ROADMAP_RESEARCH_WORKBENCH.md](ROADMAP_RESEARCH_WORKBENCH.md).
 
 ---
 

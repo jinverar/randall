@@ -10,6 +10,8 @@
 
 **A next-generation fuzzer for Windows and Linux** — generation, coverage-guided stalking, semantic oracles, and crash triage in native C#/.NET.
 
+Randfuzz is also a **vulnerability research and fuzzing workbench**: evidence facts, root-cause and influence maps, capability primitives, research plans, and teaching-only advisor packages — so you can study crashes and mitigations without auto-exploit or payload generation. See [docs/ROADMAP_RESEARCH_WORKBENCH.md](docs/ROADMAP_RESEARCH_WORKBENCH.md).
+
 I don't just throw bytes at parsers and hope. I **camouflage** valid-looking traffic, **sneak** into code paths nobody's mapped yet, and **scream** when something breaks — dump and all. Randfuzz pulls the good stuff from the giants before us ([Sulley](https://github.com/OpenRCE/sulley) / [Boofuzz](https://github.com/jtpereyda/boofuzz), [CANAPE](https://github.com/foxitcs/canape), [PaiMei pStalker](https://github.com/OpenRCE/paimei), [DynamoRIO](https://dynamorio.org/)) and runs it as **one stack** — CLI, web UI, portable deploy. Respect to the legends; I'm just the chameleon who wired it together.
 
 <div align="center">

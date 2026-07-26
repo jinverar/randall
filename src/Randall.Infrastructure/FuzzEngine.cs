@@ -2754,6 +2754,15 @@ public sealed class FuzzEngine
                     $"[temporal] {temporal.Timeline.Count} phase(s) [{temporal.Confidence}] — {Truncate(temporal.Summary, 100)}",
                     iterations);
             }
+
+            var researchPkg = ResearchPackageReportBuilder.PersistForCrash(
+                crashesDir, crashId, project, advisor, plan, patchHyp);
+            if (researchPkg is { Ok: true })
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[research-package] {researchPkg.Packages.Count} item(s) [{researchPkg.Confidence}]",
+                    iterations);
+            }
         }
         catch (Exception ex)
         {
