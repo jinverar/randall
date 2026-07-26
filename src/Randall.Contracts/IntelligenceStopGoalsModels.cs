@@ -40,8 +40,16 @@ public sealed class UniqueScreamMomentumGoal
     public int MinMomentum { get; set; }
 }
 
+/// <summary>Per-goal progress for API/UI (current vs needed).</summary>
+public sealed record IntelligenceStopGoalItemProgressDto(
+    string Id,
+    string Label,
+    int Current,
+    int Needed);
+
 /// <summary>Evaluation snapshot for logs, API status, and UI progress chips.</summary>
 public sealed record IntelligenceStopGoalProgressDto(
     bool Met,
     string? Reason,
-    IReadOnlyDictionary<string, int> Counters);
+    IReadOnlyDictionary<string, int> Counters,
+    IReadOnlyList<IntelligenceStopGoalItemProgressDto> Items);

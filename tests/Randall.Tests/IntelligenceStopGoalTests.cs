@@ -121,10 +121,84 @@ public class IntelligenceStopGoalTests
     }
 
     [Fact]
+    public void Evaluate_ReportsProgressItems_WhenNotMet()
+    {
+        var goals = new IntelligenceStopGoalsConfig
+        {
+            UniqueScreamsWithScore = new UniqueScreamScoreGoal { Count = 3, MinScore = 50 },
+        };
+        var result = IntelligenceStopGoalEvaluator.Evaluate(goals, [Crash(score: 55, clusterKey: "a")]);
+        Assert.False(result.Met);
+        Assert.Single(result.Items);
+        Assert.Equal(1, result.Items[0].Current);
+        Assert.Equal(3, result.Items[0].Needed);
+    }
+
+    [Fact]
+    public void EvaluateCampaign_ScopesClustersPerProject()
+    {
+        var goals = new IntelligenceStopGoalsConfig
+        {
+            UniqueScreamsWithScore = new UniqueScreamScoreGoal { Count = 2, MinScore = 40 },
+        };
+        var root = Path.Combine(Path.GetTempPath(), "randall-stopgoal-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var (project, cluster, score) in new[]
+                     {
+                         ("proj-a", "shared-key", 50),
+                         ("proj-b", "shared-key", 45),
+                     })
+            {
+                var dir = Path.Combine(root, "data", "crashes", project);
+                Directory.CreateDirectory(dir);
+                var id = Guid.NewGuid();
+                File.WriteAllText(Path.Combine(dir, $"{id:N}.json"), "{}");
+            }
+
+            var crashesA = new[] { Crash(score: 50, clusterKey: "shared-key") };
+            var crashesB = new[] { Crash(score: 45, clusterKey: "shared-key") };
+            // Simulate catalog by evaluating merged scoped crashes directly
+            var scoped = new[]
+            {
+                crashesA[0] with { Project = "proj-a", ClusterKey = "proj-a:shared-key" },
+                crashesB[0] with { Project = "proj-b", ClusterKey = "proj-b:shared-key" },
+            };
+            var result = IntelligenceStopGoalEvaluator.Evaluate(goals, scoped);
+            Assert.True(result.Met);
+            Assert.Equal(2, result.Counters["uniqueScoreClusters"]);
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { /* ignore */ }
+        }
+    }
+
+    [Fact]
+    public void MergeForRun_ExcludesCampaignGoals()
+    {
+        var project = new IntelligenceStopGoalsConfig
+        {
+            UniqueScreamsWithScore = new UniqueScreamScoreGoal { Count = 1, MinScore = 40 },
+        };
+        var campaign = new IntelligenceStopGoalsConfig
+        {
+            UniqueScreamsWithScore = new UniqueScreamScoreGoal { Count = 5, MinScore = 60 },
+        };
+        var merged = IntelligenceStopGoalEvaluator.MergeForRun(project, null);
+        Assert.Equal(1, merged.UniqueScreamsWithScore!.Count);
+        Assert.Equal(40, merged.UniqueScreamsWithScore.MinScore);
+
+        var withCampaign = IntelligenceStopGoalEvaluator.Merge(project, campaign, null);
+        Assert.Equal(5, withCampaign.UniqueScreamsWithScore!.Count);
+    }
+
+    [Fact]
     public void Evaluate_DisabledWhenNoGoals()
     {
         var result = IntelligenceStopGoalEvaluator.Evaluate(new IntelligenceStopGoalsConfig(), [Crash(score: 99)]);
         Assert.False(result.Met);
         Assert.Null(result.Reason);
+        Assert.Empty(result.Items);
     }
 }

@@ -57,7 +57,9 @@ runs:
         minScore: 50
 ```
 
-Merge order: **project** → **campaign** → **run** (later wins for each field).
+Merge order: **project** → **campaign** → **run** (later wins for each field). Per-run fuzz evaluation uses **project + run** only; campaign thresholds aggregate across **all** campaign projects after each run.
+
+Example lab campaign: [`campaigns/intel-stop-goals.yaml`](../campaigns/intel-stop-goals.yaml).
 
 ## Signals
 
@@ -65,14 +67,14 @@ Merge order: **project** → **campaign** → **run** (later wins for each field
 |---------|----------------|
 | Fuzz analyst log | `Stop goal met: … — stopping` |
 | CLI console | Same via `FuzzAnalystLog` |
-| `GET /api/fuzz/status` | `stopGoalMet`, `stopReason` |
+| `GET /api/fuzz/status` | `stopGoalMet`, `stopReason`, `goalProgress` (items with current/needed) |
 | `GET /api/campaign/status` | `stopGoalMet`, `stopReason`, `goalProgress` |
-| Web UI | 🎯 chip in fuzz/campaign status line |
+| Web UI | 🎯 chip + per-goal `current/needed (pct%)` in fuzz/campaign status line |
 
 ## Evaluation timing
 
-- **Single fuzz run:** checked after each **new** (non-dedup) crash.
-- **Campaign:** checked after each run completes (aggregate across finished projects). Also stops early if a single run hits its per-project goal.
+- **Single fuzz run:** checked after each **new** crash, **after** sidecar/intel/scream-evolution write completes.
+- **Campaign:** checked after each run completes (aggregate across all campaign projects). Per-run project goals may still stop an individual run early.
 
 ## Optional cluster queue
 

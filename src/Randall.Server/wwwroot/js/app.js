@@ -251,6 +251,15 @@ function applyAttachDbgButtonState(s) {
   btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
 }
 
+function formatGoalProgress(goalProgress) {
+  if (!goalProgress?.items?.length) return '';
+  const parts = goalProgress.items.map((item) => {
+    const pct = item.needed > 0 ? Math.min(100, Math.round((item.current / item.needed) * 100)) : 0;
+    return `${item.label} ${item.current}/${item.needed} (${pct}%)`;
+  });
+  return ` 🎯 ${parts.join(' · ')} · `;
+}
+
 function applyFuzzSessionStatus(s) {
   if (!s) return;
   fuzzStatusCache = s;
@@ -267,7 +276,7 @@ function applyFuzzSessionStatus(s) {
 
   if (active) {
     const iter = Number(s.iterations) > 0 ? `iter ${s.iterations} · ` : '';
-    const goal = s.stopGoalMet ? ' 🎯 goal met · ' : '';
+    const goal = s.stopGoalMet ? ' 🎯 goal met · ' : formatGoalProgress(s.goalProgress);
     setStatus(`${iter}${goal}${s.phase}: ${s.lastMessage || '…'}`);
     return;
   }
@@ -280,7 +289,7 @@ function applyFuzzSessionStatus(s) {
     return;
   }
 
-  const goalDone = s.stopGoalMet ? '🎯 stop goal met · ' : '';
+  const goalDone = s.stopGoalMet ? '🎯 stop goal met · ' : formatGoalProgress(s.goalProgress);
   setStatus(`${goalDone}${s.phase}: ${s.lastMessage || ''}`);
   startBtn.disabled = false;
   stopBtn.disabled = true;
@@ -2972,13 +2981,21 @@ function renderCrashDetail(detail, title) {
         ${chain.suspectedMutator ? `<p class="hint">Mutator <code>${escapeAttr(chain.suspectedMutator)}</code>${chain.suspectedField ? ` · field <code>${escapeAttr(chain.suspectedField)}</code>` : ''}</p>` : ''}
       </div>` : ''}
       ${hypos?.ok && hypos.hypotheses?.length ? `<div class="triage-box hypothesis-box">
-        <h4>Hypotheses <span class="hint-inline">Phase C</span></h4>
-        <ol class="hypothesis-list">${hypos.hypotheses.slice(0, 5).map((h) =>
-          `<li><code>${escapeAttr(h.id)}</code> <strong>${h.confidencePercent}%</strong> — ${escapeAttr(h.statement)}
+        <h4>Hypotheses <span class="hint-inline">scientific loop</span></h4>
+        <ol class="hypothesis-list">${hypos.hypotheses.slice(0, 5).map((h) => {
+          const status = h.status || (h.result?.status ?? 'Pending');
+          const conf = h.confidencePercent ?? 0;
+          const before = h.result?.confidenceBefore;
+          const after = h.result?.confidenceAfter ?? conf;
+          const delta = before != null ? after - before : null;
+          const deltaLabel = delta == null ? ''
+            : delta === 0 ? ''
+            : ` <span class="hint-inline">${before}%→${after}% (${delta > 0 ? '+' : ''}${delta})</span>`;
+          return `<li><code>${escapeAttr(h.id)}</code> <span class="severity-${String(status).toLowerCase()}">${escapeAttr(status)}</span> <strong>${conf}%</strong>${deltaLabel} — ${escapeAttr(h.statement)}
             <div class="hint">experiment: ${escapeAttr(h.experiment?.kind || '')} — ${escapeAttr(h.experiment?.description || '')}</div>
-            <div class="hint">expect: ${escapeAttr(h.expectedObservation || '')}${h.result ? ` · result: ${escapeAttr(h.result.status)} (${h.result.confidenceAfter}%)` : ''}</div>
-          </li>`
-        ).join('')}</ol>
+            <div class="hint">expect: ${escapeAttr(h.expectedObservation || '')}${h.result ? ` · ${escapeAttr(h.result.observation || h.result.status)}` : ''}</div>
+          </li>`;
+        }).join('')}</ol>
       </div>` : (intel?.topHypothesisStatement ? `<div class="triage-box hypothesis-box">
         <h4>Top hypothesis</h4>
         <p class="hint"><code>${escapeAttr(intel.topHypothesisId || '')}</code> <strong>${intel.topHypothesisConfidence || 0}%</strong> — ${escapeAttr(intel.topHypothesisStatement)}</p>
@@ -2993,8 +3010,15 @@ function renderCrashDetail(detail, title) {
       ${deepScreamCandidate ? `<div class="triage-box deep-scream-box">
         <h4>Deep Scream <span class="hint-inline">Phase D</span></h4>
         <p class="hint">${escapeAttr(intel?.deepScreamSummary || deepScream?.eligibilityReasons?.join(' · ') || 'TTD operator path eligible')}</p>
-        ${deepScream?.ttdHintPath ? `<p class="hint">TTD hint: <code>${escapeAttr(deepScream.ttdHintPath)}</code></p>` : '<p class="hint">Enable <code>fuzz.rewindScream: true</code> to write per-crash TTD operator steps on save.</p>'}
+        ${deepScream?.isMarked ? '<p class="hint"><strong>Marked</strong> for TTD deep dive</p>' : (deepScream?.familySuppressed ? '<p class="hint">Family dedup — prior crash holds the deep dive</p>' : '')}
+        ${deepScream?.ttdHintPath ? `<p class="hint">TTD playbook: <code>${escapeAttr(deepScream.ttdHintPath)}</code></p>` : '<p class="hint">Enable <code>fuzz.rewindScream: true</code> to write TTD playbooks when marked.</p>'}
+        ${deepScream?.ttdToolsSummary ? `<p class="hint">TTD tools: ${escapeAttr(deepScream.ttdToolsSummary)}</p>` : ''}
         ${deepScream?.dumpPath ? `<p class="hint">Dump: <code>${escapeAttr(deepScream.dumpPath)}</code></p>` : ''}
+        ${deepScream?.hypothesisPath ? `<p class="hint">Hypotheses: <code>${escapeAttr(deepScream.hypothesisPath)}</code></p>` : ''}
+        ${deepScream?.corruptionChainPath ? `<p class="hint">Corruption: <code>${escapeAttr(deepScream.corruptionChainPath)}</code></p>` : ''}
+        ${deepScream?.evolutionPath ? `<p class="hint">Evolution: <code>${escapeAttr(deepScream.evolutionPath)}</code></p>` : ''}
+        ${deepScream?.semanticFingerprint ? `<p class="hint">Fingerprint: <code>${escapeAttr(deepScream.semanticFingerprint)}</code></p>` : ''}
+        ${deepScream?.minimizedInputPath ? `<p class="hint">Minimized: <code>${escapeAttr(deepScream.minimizedInputPath)}</code></p>` : ''}
       </div>` : ''}
       ${intel ? `<div class="scream-intel-box${intelHot ? ' scream-hot' : ''}">
         <h4>Scream intelligence</h4>
@@ -6063,9 +6087,9 @@ async function loadCampaignView() {
   }
 
   const st = await api.get('/api/campaign/status');
-  const goal = st.stopGoalMet ? '🎯 stop goal met · ' : '';
+  const goal = st.stopGoalMet ? '🎯 stop goal met · ' : formatGoalProgress(st.goalProgress);
   document.getElementById('campaign-status').textContent = st.running
-    ? `${st.phase}: ${st.completedRuns}/${st.totalRuns} runs, ${st.totalCrashes} crashes — ${st.lastMessage || ''}`
+    ? `${goal}${st.phase}: ${st.completedRuns}/${st.totalRuns} runs, ${st.totalCrashes} crashes — ${st.lastMessage || ''}`
     : (st.lastMessage ? `${goal}${st.lastMessage}` : 'Idle');
 }
 

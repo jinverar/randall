@@ -39,25 +39,37 @@ public static class IntelligenceStopGoalEvaluator
         return merged;
     }
 
+    /// <summary>Per-run goals: project + optional run override (campaign goals excluded).</summary>
+    public static IntelligenceStopGoalsConfig MergeForRun(
+        IntelligenceStopGoalsConfig? project,
+        IntelligenceStopGoalsConfig? run) =>
+        Merge(project, null, run);
+
     public static IntelligenceStopGoalProgressDto Evaluate(
         IntelligenceStopGoalsConfig goals,
         IReadOnlyList<CrashSummaryDto> crashes,
         IReadOnlyDictionary<Guid, ScreamEvolutionDto>? evolutions = null)
     {
-        if (!goals.IsEnabled || crashes.Count == 0)
-            return new IntelligenceStopGoalProgressDto(false, null, EmptyCounters());
+        if (!goals.IsEnabled)
+            return new IntelligenceStopGoalProgressDto(false, null, EmptyCounters(), []);
 
         var counters = new Dictionary<string, int>(StringComparer.Ordinal);
+        var items = new List<IntelligenceStopGoalItemProgressDto>();
         var reasons = new List<string>();
 
         if (goals.LegacyScreamScoreGoal > 0)
         {
-            var maxScore = crashes.Max(c => c.ScreamScore);
+            var maxScore = crashes.Count == 0 ? 0 : crashes.Max(c => c.ScreamScore);
             var hotCount = crashes.Count(ScreamScoreHelper.IsHot);
             counters["maxScreamScore"] = maxScore;
             counters["hotScreamCount"] = hotCount;
             counters["legacyGoal"] = goals.LegacyScreamScoreGoal;
-            if (ScreamScoreHelper.GoalReached(goals.LegacyScreamScoreGoal, crashes))
+            items.Add(new IntelligenceStopGoalItemProgressDto(
+                "legacy",
+                "Legacy scream goal",
+                Math.Max(maxScore, hotCount),
+                goals.LegacyScreamScoreGoal));
+            if (crashes.Count > 0 && ScreamScoreHelper.GoalReached(goals.LegacyScreamScoreGoal, crashes))
                 reasons.Add($"legacy scream goal {goals.LegacyScreamScoreGoal} (max={maxScore}, hot={hotCount})");
         }
 
@@ -67,6 +79,11 @@ public static class IntelligenceStopGoalEvaluator
             counters["uniqueScoreClusters"] = qualified;
             counters["uniqueScoreClustersRequired"] = scoreGoal.Count;
             counters["uniqueScoreMinScore"] = scoreGoal.MinScore;
+            items.Add(new IntelligenceStopGoalItemProgressDto(
+                "uniqueScore",
+                $"Unique clusters ≥ {scoreGoal.MinScore}",
+                qualified,
+                scoreGoal.Count));
             if (qualified >= scoreGoal.Count)
                 reasons.Add($"{qualified} unique clusters with score ≥ {scoreGoal.MinScore}");
         }
@@ -77,17 +94,23 @@ public static class IntelligenceStopGoalEvaluator
             counters["uniqueMomentumFamilies"] = qualified;
             counters["uniqueMomentumFamiliesRequired"] = momentumGoal.Count;
             counters["uniqueMomentumMin"] = momentumGoal.MinMomentum;
+            items.Add(new IntelligenceStopGoalItemProgressDto(
+                "uniqueMomentum",
+                $"Unique families ≥ {momentumGoal.MinMomentum}",
+                qualified,
+                momentumGoal.Count));
             if (qualified >= momentumGoal.Count)
                 reasons.Add($"{qualified} unique families with momentum ≥ {momentumGoal.MinMomentum}");
         }
 
         if (reasons.Count == 0)
-            return new IntelligenceStopGoalProgressDto(false, null, counters);
+            return new IntelligenceStopGoalProgressDto(false, null, counters, items);
 
         return new IntelligenceStopGoalProgressDto(
             true,
             $"Stop goal met: {string.Join("; ", reasons)}",
-            counters);
+            counters,
+            items);
     }
 
     public static IReadOnlyDictionary<Guid, ScreamEvolutionDto> LoadEvolutions(
@@ -155,6 +178,9 @@ public static class IntelligenceStopGoalEvaluator
         return queued;
     }
 
+    /// <summary>
+    /// Campaign aggregate: unique clusters/families are scoped per project (project:clusterKey).
+    /// </summary>
     public static IntelligenceStopGoalProgressDto EvaluateCampaign(
         IntelligenceStopGoalsConfig goals,
         string repoRoot,
@@ -165,12 +191,23 @@ public static class IntelligenceStopGoalEvaluator
         foreach (var name in projectNames.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var crashes = CrashCatalog.ListAll(repoRoot, name);
-            allCrashes.AddRange(crashes);
-            foreach (var (id, evo) in LoadEvolutions(repoRoot, name, crashes))
-                allEvolutions[id] = evo;
+            foreach (var crash in crashes)
+            {
+                allCrashes.Add(CampaignScopedCrash(name, crash));
+                var evo = ScreamEvolutionBuilder.TryRead(
+                    ScreamEvolutionBuilder.PathFor(Path.Combine(repoRoot, "data", "crashes", name), crash.Id));
+                if (evo is not null)
+                    allEvolutions[crash.Id] = evo;
+            }
         }
 
         return Evaluate(goals, allCrashes, allEvolutions);
+    }
+
+    private static CrashSummaryDto CampaignScopedCrash(string projectName, CrashSummaryDto crash)
+    {
+        var cluster = crash.ClusterKey ?? crash.Id.ToString("N");
+        return crash with { ClusterKey = $"{projectName}:{cluster}" };
     }
 
     private static int CountUniqueClustersAboveScore(IReadOnlyList<CrashSummaryDto> crashes, int minScore) =>
@@ -194,7 +231,8 @@ public static class IntelligenceStopGoalEvaluator
             var family = evo.FamilyId;
             if (string.IsNullOrWhiteSpace(family))
                 continue;
-            families[family] = Math.Max(families.GetValueOrDefault(family), evo.MomentumScore);
+            var scoped = $"{crash.Project}:{family}";
+            families[scoped] = Math.Max(families.GetValueOrDefault(scoped), evo.MomentumScore);
         }
 
         return families.Count(kv => kv.Value >= minMomentum);

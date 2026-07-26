@@ -44,7 +44,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                         project.Fuzz.MaxIterations = request.MaxIterations.Value;
                     ApplySemanticStackOverrides(project, request);
 
-                    var progress = new MultiplexFuzzProgressSink(sink, UpdateFromEvent, UpdatePid);
+                    var progress = new MultiplexFuzzProgressSink(sink, UpdateFromEvent, UpdatePid, UpdateGoalProgress);
                     progress.OnStarted(project.Name, project.Kind);
 
                     var engine = new FuzzEngine();
@@ -86,6 +86,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                                 : $"Done — {result.Iterations} iterations, {result.CrashesFound} crashes",
                             StopGoalMet = result.StopGoalMet,
                             StopReason = result.StopReason,
+                            GoalProgress = _status.GoalProgress,
                         };
                     }
                 }
@@ -212,6 +213,14 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
         }
     }
 
+    private void UpdateGoalProgress(IntelligenceStopGoalProgressDto progress)
+    {
+        lock (_gate)
+        {
+            _status = _status with { GoalProgress = progress };
+        }
+    }
+
     private void UpdatePid(int? pid)
     {
         lock (_gate)
@@ -224,7 +233,8 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
 internal sealed class MultiplexFuzzProgressSink(
     IFuzzProgressSink? outer,
     Action<FuzzIterationEvent>? local,
-    Action<int?>? onPid = null) : IFuzzProgressSink
+    Action<int?>? onPid = null,
+    Action<IntelligenceStopGoalProgressDto>? onGoalProgress = null) : IFuzzProgressSink
 {
     public void OnStarted(string project, string kind) => outer?.OnStarted(project, kind);
 
@@ -241,6 +251,12 @@ internal sealed class MultiplexFuzzProgressSink(
     }
 
     public void OnLog(FuzzLogEvent entry) => outer?.OnLog(entry);
+
+    public void OnGoalProgress(IntelligenceStopGoalProgressDto progress)
+    {
+        onGoalProgress?.Invoke(progress);
+        outer?.OnGoalProgress(progress);
+    }
 
     public void OnCompleted(FuzzRunResult result) => outer?.OnCompleted(result);
     public void OnStopped(string reason) => outer?.OnStopped(reason);

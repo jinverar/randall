@@ -1,0 +1,16 @@
+name: intel-stop-goals
+description: Lab campaign — stop when two unique screams score ≥ 45 across all runs
+stopGoals:
+  uniqueScreamsWithScore:
+    count: 2
+    minScore: 45
+  queueTopClustersOnGoal: true
+runs:
+  - project: projects/harness-demo.yaml
+    maxIterations: 300
+    dryRun: false
+  - project: projects/file-text.yaml
+    maxIterations: 200
+    dryRun: true
+    stopGoals:
+      legacyScreamScoreGoal: 55

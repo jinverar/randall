@@ -16,7 +16,16 @@ public sealed record TargetGravityReportDto(
     /// <summary>Normalized aggregate of top wells (0–100).</summary>
     int AggregatePressure,
     IReadOnlyList<TargetGravityWellDto> Wells,
-    string WorkflowHint);
+    string WorkflowHint,
+    /// <summary>Last persisted top-N wells with human-readable pull reasons (for brain / UI).</summary>
+    IReadOnlyList<TargetGravityTopSnapshotDto> TopSnapshots);
+
+/// <summary>Compact top-well snapshot for persistence and brain quality filtering.</summary>
+public sealed record TargetGravityTopSnapshotDto(
+    string Key,
+    int Score,
+    string Label,
+    string Reason);
 
 /// <summary>
 /// One scored sink or unexplored block under reachability pressure toward a dangerous surface.

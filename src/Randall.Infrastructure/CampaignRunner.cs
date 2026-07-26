@@ -54,6 +54,7 @@ public sealed class CampaignRunner
         var campaignGoalMet = false;
         string? campaignStopReason = null;
         IntelligenceStopGoalProgressDto? campaignGoalProgress = null;
+        var allCampaignProjects = ResolveCampaignProjectNames(campaign, campaignYamlPath);
 
         foreach (var run in campaign.Runs)
         {
@@ -100,7 +101,7 @@ public sealed class CampaignRunner
                 else if (campaignStopGoals is { IsEnabled: true })
                 {
                     campaignGoalProgress = IntelligenceStopGoalEvaluator.EvaluateCampaign(
-                        campaignStopGoals, repoRoot, completedProjects);
+                        campaignStopGoals, repoRoot, allCampaignProjects);
                     if (campaignGoalProgress.Met)
                     {
                         campaignGoalMet = true;
@@ -153,13 +154,37 @@ public sealed class CampaignRunner
         return campaignResult;
     }
 
+    private static IReadOnlyList<string> ResolveCampaignProjectNames(CampaignConfig campaign, string campaignYamlPath)
+    {
+        var repoRoot = CrashCatalog.FindRepoRoot()
+            ?? Path.GetDirectoryName(Path.GetFullPath(campaignYamlPath))
+            ?? Directory.GetCurrentDirectory();
+        var names = new List<string>();
+        foreach (var run in campaign.Runs)
+        {
+            try
+            {
+                var projectPath = Path.IsPathRooted(run.Project)
+                    ? run.Project
+                    : Path.GetFullPath(Path.Combine(repoRoot, run.Project));
+                names.Add(ProjectLoader.Load(projectPath).Name);
+            }
+            catch
+            {
+                names.Add(Path.GetFileNameWithoutExtension(run.Project));
+            }
+        }
+
+        return names;
+    }
+
     private static void ApplyCampaignStopGoals(
         ProjectConfig project,
         IntelligenceStopGoalsConfig? campaignGoals,
         IntelligenceStopGoalsConfig? runGoals)
     {
         var projectGoals = IntelligenceStopGoalEvaluator.Resolve(project.Fuzz);
-        var merged = IntelligenceStopGoalEvaluator.Merge(projectGoals, campaignGoals, runGoals);
+        var merged = IntelligenceStopGoalEvaluator.MergeForRun(projectGoals, runGoals);
         if (!merged.IsEnabled)
             return;
 
@@ -226,6 +251,12 @@ public sealed class CampaignSessionManager(FuzzLiveLogBuffer liveLog)
                 lock (_gate)
                 {
                     _status = _status with { CurrentProject = project, LastMessage = $"Running {project}…" };
+                }
+            }, goalProgress =>
+            {
+                lock (_gate)
+                {
+                    _status = _status with { GoalProgress = goalProgress };
                 }
             });
 
@@ -298,7 +329,10 @@ public sealed class CampaignSessionManager(FuzzLiveLogBuffer liveLog)
     }
 }
 
-internal sealed class CampaignProgressSink(IFuzzProgressSink? inner, Action<string> onProject) : IFuzzProgressSink
+internal sealed class CampaignProgressSink(
+    IFuzzProgressSink? inner,
+    Action<string> onProject,
+    Action<IntelligenceStopGoalProgressDto>? onGoalProgress = null) : IFuzzProgressSink
 {
     public void OnStarted(string project, string kind)
     {
@@ -309,6 +343,11 @@ internal sealed class CampaignProgressSink(IFuzzProgressSink? inner, Action<stri
     public void OnTargetPid(int? pid) => inner?.OnTargetPid(pid);
     public void OnIteration(FuzzIterationEvent iteration) => inner?.OnIteration(iteration);
     public void OnLog(FuzzLogEvent entry) => inner?.OnLog(entry);
+    public void OnGoalProgress(IntelligenceStopGoalProgressDto progress)
+    {
+        onGoalProgress?.Invoke(progress);
+        inner?.OnGoalProgress(progress);
+    }
     public void OnCompleted(FuzzRunResult result) => inner?.OnCompleted(result);
     public void OnStopped(string reason) => inner?.OnStopped(reason);
     public void OnError(string message) => inner?.OnError(message);

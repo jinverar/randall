@@ -313,8 +313,11 @@ public sealed class RandallBrain
             Directory.CreateDirectory(dir);
 
         var memory = BrainMemoryDecay.TryLoad(decision.Project, repoRoot);
+        var screamTelemetry = ScreamFamilyIndex.ComputeTelemetry(
+            ScreamFamilyIndex.TryLoad(decision.Project, repoRoot));
         var snapshot = BrainDecisionSnapshotDto.FromDecision(decision, decision.Project,
-            memoryConfidence: memory?.MemoryConfidence ?? 1.0, memoryMessage: memory?.DecayMessage);
+            memoryConfidence: memory?.MemoryConfidence ?? 1.0, memoryMessage: memory?.DecayMessage,
+            screamEvolution: screamTelemetry);
         File.WriteAllText(path, JsonSerializer.Serialize(snapshot, JsonOptions));
         BrainDecisionStore.SetLive(decision);
 
@@ -728,6 +731,7 @@ public sealed class RandallBrain
             return [];
 
         var crashesDir = Path.Combine(repoRoot, "data", "crashes", project);
+        var familyIndex = ScreamFamilyIndex.TryLoad(project, repoRoot);
         var evolutions = new Dictionary<Guid, ScreamEvolutionDto>();
         if (Directory.Exists(crashesDir))
         {
@@ -761,10 +765,20 @@ public sealed class RandallBrain
                 var lead = g.OrderByDescending(x => x.Evolution?.MomentumScore ?? 0)
                     .ThenByDescending(x => x.Crash.ScreamScore)
                     .First();
+                var familyId = lead.Evolution?.FamilyId;
+                var indexEntry = familyId is not null
+                    ? familyIndex?.Families.FirstOrDefault(f =>
+                        f.FamilyId.Equals(familyId, StringComparison.OrdinalIgnoreCase))
+                    : null;
+                var momentumScore = indexEntry?.EffectiveMomentumScore
+                                    ?? lead.Evolution?.MomentumScore
+                                    ?? 0;
+                var momentumLabel = indexEntry?.MomentumLabel ?? lead.Evolution?.MomentumLabel;
                 var seen = g.Count();
                 var novelty = lead.Crash.Novelty > 0 ? lead.Crash.Novelty : Math.Max(0, 100 - seen * 8);
                 var screamScore = lead.Crash.ScreamScore;
-                var saturated = seen >= 8 && novelty < 35 && (lead.Evolution?.MomentumScore ?? 0) < 40;
+                var saturated = seen >= 8 && novelty < 35 && momentumScore < 40
+                                || momentumLabel is "stagnant";
                 var progression = lead.Evolution?.ProgressionStep ?? ScreamProgressionStep.Unknown;
                 var debuggerBonus = 0;
                 string? exploitHint = null;
@@ -786,10 +800,10 @@ public sealed class RandallBrain
                     seen,
                     lead.Crash.StaticFunctionSummary,
                     saturated,
-                    lead.Evolution?.MomentumScore ?? 0,
-                    lead.Evolution?.MomentumLabel,
-                    lead.Evolution?.Generation ?? 0,
-                    lead.Evolution?.FamilyId,
+                    momentumScore,
+                    momentumLabel,
+                    indexEntry?.MaxGeneration ?? lead.Evolution?.Generation ?? 0,
+                    familyId ?? lead.Evolution?.FamilyId,
                     progression,
                     debuggerBonus,
                     exploitHint);

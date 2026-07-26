@@ -2687,7 +2687,9 @@ static int StalkGravity(string[] args)
 
         if (report.Wells.Count == 0)
         {
-            Console.WriteLine("No gravity wells yet.");
+            Console.WriteLine("No gravity wells yet (surface/oracle mode OK without Ghidra).");
+            if (report.Mode is "surface" or "oracle" or "mixed")
+                Console.WriteLine("  Tip: record stalk layers or run ghidra-analyze for CFG-backed wells.");
             return 0;
         }
 
@@ -2698,6 +2700,14 @@ static int StalkGravity(string[] args)
             Console.WriteLine($"  [{w.GravityScore}] {w.Kind} → {sym}");
             Console.WriteLine(
                 $"         risk={w.Risk:0}  u={w.Unexploredness:P0}  d={w.Distance}  {w.Detail}");
+        }
+
+        if (report.TopSnapshots.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Top pressure snapshots:");
+            foreach (var snap in report.TopSnapshots)
+                Console.WriteLine($"  [{snap.Score}] {snap.Label} — {snap.Reason}");
         }
 
         return 0;

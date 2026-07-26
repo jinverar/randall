@@ -1,3 +1,4 @@
+using Randall.Contracts;
 using Randall.Core;
 
 namespace Randall.Infrastructure;
@@ -9,6 +10,8 @@ public interface IFuzzProgressSink
     void OnIteration(FuzzIterationEvent iteration);
     /// <summary>Boofuzz-style analyst log line (timestamp + color kind).</summary>
     void OnLog(FuzzLogEvent entry) { }
+    /// <summary>Live stop-goal progress (current/needed per threshold).</summary>
+    void OnGoalProgress(IntelligenceStopGoalProgressDto progress) { }
     void OnCompleted(FuzzRunResult result);
     void OnStopped(string reason);
     void OnError(string message);

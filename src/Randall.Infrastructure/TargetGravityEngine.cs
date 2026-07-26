@@ -13,6 +13,9 @@ namespace Randall.Infrastructure;
 public static class TargetGravityEngine
 {
     public const string FileName = "target_gravity.json";
+    private const double StaleWellDecay = 0.82;
+    private const int MinStaleWellScore = 12;
+    private const int DefaultTopSnapshotCount = 5;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -67,10 +70,14 @@ public static class TargetGravityEngine
         wells.AddRange(ScoreSurfaceWells(project, repoRoot, surface, liveStatus));
         wells.AddRange(ScoreOracleWells(oracleFindings, analysis, coverage));
 
+        wells = MergeWithStaleDecay(wells, TryLoad(project, repoRoot));
+
         wells = wells
             .GroupBy(w => w.Key, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.OrderByDescending(x => x.GravityScore).First())
             .OrderByDescending(w => w.GravityScore)
+            .ThenByDescending(w => w.Risk)
+            .ThenBy(w => w.Distance)
             .ThenBy(w => w.Address ?? w.Key, StringComparer.OrdinalIgnoreCase)
             .Take(limit)
             .ToList();
@@ -80,6 +87,7 @@ public static class TargetGravityEngine
             ? 0
             : Math.Clamp((int)Math.Round(wells.Take(5).Average(w => w.GravityScore)), 0, 100);
         var summary = BuildSummary(wells, coverage.Count, analysis);
+        var topSnapshots = BuildTopSnapshots(wells, DefaultTopSnapshotCount);
         var report = new TargetGravityReportDto(
             project,
             DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture),
@@ -89,12 +97,65 @@ public static class TargetGravityEngine
             wells.Count,
             aggregate,
             wells,
-            "Bias seeds toward high-gravity sinks; pair with randall stalk map / frontier gray doors.");
+            "Bias seeds toward high-gravity sinks; pair with randall stalk map / frontier gray doors.",
+            topSnapshots);
 
         if (persist)
             Save(report, repoRoot);
 
         return report;
+    }
+
+    /// <summary>Refresh and persist gravity after stalk map / layer updates (decays stale wells).</summary>
+    public static TargetGravityReportDto RefreshForStalkMap(
+        string project,
+        string? repoRoot = null,
+        int limit = 40,
+        FuzzSessionStatusDto? liveStatus = null,
+        string? binaryPath = null) =>
+        Score(project, repoRoot, limit, liveStatus, persist: true, binaryPath);
+
+    private static List<TargetGravityWellDto> MergeWithStaleDecay(
+        IReadOnlyList<TargetGravityWellDto> fresh,
+        TargetGravityReportDto? prior)
+    {
+        if (prior?.Wells is not { Count: > 0 })
+            return fresh.ToList();
+
+        var merged = fresh.ToList();
+        var freshKeys = new HashSet<string>(fresh.Select(w => w.Key), StringComparer.OrdinalIgnoreCase);
+        foreach (var old in prior.Wells)
+        {
+            if (freshKeys.Contains(old.Key))
+                continue;
+
+            var decayed = Math.Max(1, (int)Math.Round(old.GravityScore * StaleWellDecay));
+            if (decayed < MinStaleWellScore)
+                continue;
+
+            merged.Add(old with
+            {
+                GravityScore = decayed,
+                Detail = $"Stale pressure (decayed): {old.Detail}",
+            });
+        }
+
+        return merged;
+    }
+
+    private static IReadOnlyList<TargetGravityTopSnapshotDto> BuildTopSnapshots(
+        IReadOnlyList<TargetGravityWellDto> wells,
+        int count)
+    {
+        count = Math.Clamp(count, 1, 20);
+        return wells
+            .Take(count)
+            .Select(w => new TargetGravityTopSnapshotDto(
+                w.Key,
+                w.GravityScore,
+                w.SinkSymbol ?? w.FunctionName ?? w.Address ?? w.Kind,
+                w.Detail))
+            .ToList();
     }
 
     public static TargetGravityReportDto? TryLoad(string project, string? repoRoot = null)
@@ -104,7 +165,12 @@ public static class TargetGravityEngine
             return null;
         try
         {
-            return JsonSerializer.Deserialize<TargetGravityReportDto>(File.ReadAllText(path), JsonOptions);
+            var report = JsonSerializer.Deserialize<TargetGravityReportDto>(File.ReadAllText(path), JsonOptions);
+            if (report is null)
+                return null;
+            if (report.TopSnapshots is null or { Count: 0 } && report.Wells.Count > 0)
+                return report with { TopSnapshots = BuildTopSnapshots(report.Wells, DefaultTopSnapshotCount) };
+            return report;
         }
         catch (JsonException)
         {

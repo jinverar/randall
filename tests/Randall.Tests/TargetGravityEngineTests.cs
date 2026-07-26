@@ -68,6 +68,43 @@ public class TargetGravityEngineTests
             var loaded = TargetGravityEngine.TryLoad(project, root);
             Assert.NotNull(loaded);
             Assert.Equal(report.WellCount, loaded!.WellCount);
+            Assert.True(loaded.TopSnapshots.Count > 0);
+        }
+        finally
+        {
+            TryDelete(root);
+        }
+    }
+
+    [Fact]
+    public void Score_StaleWells_DecayOnRefresh()
+    {
+        var root = NewTempRoot();
+        try
+        {
+            const string project = "gravity-decay";
+            TargetGravityEngine.Save(new TargetGravityReportDto(
+                project,
+                DateTime.UtcNow.AddHours(-2).ToString("O"),
+                "surface",
+                "prior",
+                1,
+                1,
+                60,
+                [new TargetGravityWellDto("stale:1", "missed-surface", 60, 50, 0.8, 3, "mod", "0x3000", null, "old well")],
+                "hint",
+                [new TargetGravityTopSnapshotDto("stale:1", 60, "0x3000", "old well")]), root);
+
+            var stalkDir = Path.Combine(root, "data", "stalk", project);
+            Directory.CreateDirectory(stalkDir);
+            File.WriteAllLines(Path.Combine(stalkDir, "inventory.blocks.txt"), ["0:0x00001080:16"]);
+            var corpus = Path.Combine(root, "data", "corpus", project);
+            Directory.CreateDirectory(corpus);
+            File.WriteAllLines(Path.Combine(corpus, "edges.txt"), ["0:0x00002000:16"]);
+
+            var report = TargetGravityEngine.Score(project, root, limit: 10);
+            Assert.Contains(report.Wells, w => w.Key == "stale:1" && w.GravityScore < 60);
+            Assert.True(report.TopSnapshots.Count > 0);
         }
         finally
         {
@@ -118,7 +155,11 @@ public class TargetGravityEngineTests
                     new TargetGravityWellDto("a", "missed-surface", 72, 60, 0.9, 2, "mod", "0x1080", "memcpy", "test"),
                     new TargetGravityWellDto("b", "missed-surface", 40, 40, 0.7, 4, "mod", "0x2000", null, "test"),
                 ],
-                "hint"), root);
+                "hint",
+                [
+                    new TargetGravityTopSnapshotDto("a", 72, "memcpy", "test"),
+                    new TargetGravityTopSnapshotDto("b", 40, "0x2000", "test"),
+                ]), root);
 
             var top = TargetGravityEngine.TryGetTopPressure(project, root);
             Assert.NotNull(top);
@@ -155,7 +196,8 @@ public class TargetGravityEngineTests
             TargetGravityEngine.Save(new TargetGravityReportDto(
                 project, DateTime.UtcNow.ToString("O"), "cfg", "test", 4, 1, 80,
                 [new TargetGravityWellDto("g1", "sink-call", 80, 85, 0.9, 2, "parse", "0x401020", "strcpy", "pull")],
-                "hint"), root);
+                "hint",
+                [new TargetGravityTopSnapshotDto("g1", 80, "strcpy", "pull")]), root);
 
             var brain = new RandallBrain();
             var signals = brain.LoadSignals(project, root);

@@ -115,8 +115,8 @@ public static class StalkMapBuilder
             .Take(40)
             .ToList();
 
-        var gravity = TargetGravityEngine.Score(
-            project, repoRoot, limit: Math.Max(limit, 40), liveStatus, persist: false, binaryPath: resolvedBinary);
+        var gravity = TargetGravityEngine.RefreshForStalkMap(
+            project, repoRoot, limit: Math.Max(limit, 40), liveStatus, binaryPath: resolvedBinary);
         hotspots = EnrichHotspotsWithGravity(hotspots, gravity);
 
         var surfaceIdeas = BuildSurfaceIdeas(project, surface, interestingImports, hotStrings, hotspots);
@@ -363,7 +363,7 @@ public static class StalkMapBuilder
         if (gravity.Wells.Count == 0)
             return hotspots.ToList();
 
-        return hotspots
+        var enriched = hotspots
             .Select(h =>
             {
                 var well = gravity.Wells.FirstOrDefault(w =>
@@ -372,7 +372,8 @@ public static class StalkMapBuilder
                 if (well is null)
                     return h;
 
-                var boosted = Math.Min(100, h.BoostedScore + Math.Min(15, well.GravityScore / 6));
+                var boost = Math.Min(22, well.GravityScore / 4);
+                var boosted = Math.Min(100, h.BoostedScore + boost);
                 return h with
                 {
                     GravityScore = well.GravityScore,
@@ -380,8 +381,49 @@ public static class StalkMapBuilder
                     BoostedScore = boosted,
                 };
             })
+            .ToList();
+
+        foreach (var snap in gravity.TopSnapshots.Take(6))
+        {
+            if (enriched.Any(h => snap.Label.Equals(h.Block.Address, StringComparison.OrdinalIgnoreCase)
+                                  || (snap.Key.Contains("missed:", StringComparison.OrdinalIgnoreCase)
+                                      && h.Block.EdgeKey.Equals(snap.Key["missed:".Length..], StringComparison.OrdinalIgnoreCase))))
+                continue;
+
+            var well = gravity.Wells.FirstOrDefault(w => w.Key.Equals(snap.Key, StringComparison.OrdinalIgnoreCase));
+            if (well?.Address is null)
+                continue;
+
+            var syntheticBlock = new StalkMissedBlockDto(
+                well.Key,
+                well.Address,
+                well.FunctionName ?? "gravity",
+                "gravity-pull",
+                snap.Reason,
+                [new MissedFuzzIdeaDto(
+                    "gravity-well",
+                    "Reach gravity sink",
+                    snap.Reason,
+                    "high",
+                    $"randall stalk gravity -p {gravity.Project}",
+                    "Bias seeds toward this sink")],
+                snap.Score);
+
+            enriched.Add(new StalkMapHotspotDto(
+                syntheticBlock,
+                null,
+                [],
+                [],
+                well.Kind,
+                Math.Min(100, snap.Score + 8),
+                snap.Score,
+                well.Kind));
+        }
+
+        return enriched
             .OrderByDescending(h => h.BoostedScore)
             .ThenByDescending(h => h.GravityScore)
+            .ThenByDescending(h => h.Block.PriorityScore)
             .ToList();
     }
 

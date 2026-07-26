@@ -657,7 +657,7 @@ public sealed class FuzzEngine
                     {
                         FuzzAnalystLog.Info(progress, RandallBrain.FormatVerbose(huntDecision), iterations);
                         if (huntDecision.HuntPolicy is not null)
-                            FuzzAnalystLog.Info(progress, HuntPolicyEngine.FormatVerbose(huntDecision.HuntPolicy), iterations);
+                            FuzzAnalystLog.Info(progress, HuntPolicyEngine.FormatVerbose(huntDecision.HuntPolicy, project.Name, CrashCatalog.FindRepoRoot()), iterations);
                     }
 
                     if (huntDecision.HuntPolicy is { NeedsExperiment: true })
@@ -788,7 +788,7 @@ public sealed class FuzzEngine
                 {
                     var basePayload = File.ReadAllBytes(hypInput);
                     payload = HypothesisEngine.ApplyExperiment(
-                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng)
+                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng, mutators)
                            ?? basePayload;
                     parentInputHash = InputHash.StackHash(basePayload);
                     seedSource = $"hypothesis/{hypothesisPlan.HypothesisId}";
@@ -1598,28 +1598,6 @@ public sealed class FuzzEngine
                     var saved = savedResult.Crash;
                     uniqueCrashThisIter = savedResult.IsNew;
 
-                    if (stopGoals.IsEnabled && savedResult.IsNew && repoRoot is not null)
-                    {
-                        var projectCrashes = CrashCatalog.ListAll(repoRoot, project.Name);
-                        var evolutions = stopGoals.UniqueScreamsWithMomentum is { Count: > 0, MinMomentum: > 0 }
-                            ? IntelligenceStopGoalEvaluator.LoadEvolutions(repoRoot, project.Name, projectCrashes)
-                            : null;
-                        var goalEval = IntelligenceStopGoalEvaluator.Evaluate(stopGoals, projectCrashes, evolutions);
-                        if (goalEval.Met)
-                        {
-                            stopReason = goalEval.Reason;
-                            FuzzAnalystLog.Info(progress, $"{stopReason} — stopping", iterations);
-                            stopGoalReached = true;
-                            if (stopGoals.QueueTopClustersOnGoal)
-                            {
-                                var queued = IntelligenceStopGoalEvaluator.TryQueueTopClusters(
-                                    project.Name, projectCrashes, repoRoot, iterations);
-                                if (queued > 0)
-                                    FuzzAnalystLog.Info(progress, $"Queued {queued} top cluster(s) for replay/minimize", iterations);
-                            }
-                        }
-                    }
-
                     Console.WriteLine(
                         $"CRASH #{crashCount} iter={iterations} {mutatorLabel} " +
                         $"detail={result.Detail} saved={saved.InputPath}" +
@@ -1861,6 +1839,29 @@ public sealed class FuzzEngine
 
                         TryPersistDeepScream(
                             project, yamlPath, crashesDir, saved, iterations, progress);
+
+                        if (stopGoals.IsEnabled && savedResult.IsNew && repoRoot is not null)
+                        {
+                            var projectCrashes = CrashCatalog.ListAll(repoRoot, project.Name);
+                            var evolutions = stopGoals.UniqueScreamsWithMomentum is { Count: > 0, MinMomentum: > 0 }
+                                ? IntelligenceStopGoalEvaluator.LoadEvolutions(repoRoot, project.Name, projectCrashes)
+                                : null;
+                            var goalEval = IntelligenceStopGoalEvaluator.Evaluate(stopGoals, projectCrashes, evolutions);
+                            FuzzProgressGuard.Try(options.Progress, p => p.OnGoalProgress(goalEval));
+                            if (goalEval.Met)
+                            {
+                                stopReason = goalEval.Reason;
+                                FuzzAnalystLog.Info(progress, $"{stopReason} — stopping", iterations);
+                                stopGoalReached = true;
+                                if (stopGoals.QueueTopClustersOnGoal)
+                                {
+                                    var queued = IntelligenceStopGoalEvaluator.TryQueueTopClusters(
+                                        project.Name, projectCrashes, repoRoot, iterations);
+                                    if (queued > 0)
+                                        FuzzAnalystLog.Info(progress, $"Queued {queued} top cluster(s) for replay/minimize", iterations);
+                                }
+                            }
+                        }
                     }
 
                     if (DebuggerSession.ShouldOpenDumpOnCrash(debuggerOpenOnCrash) && saved.MiniDumpPath is not null)
@@ -1892,6 +1893,17 @@ public sealed class FuzzEngine
                             crashTag ?? result.Detail));
                         Console.WriteLine(
                             $"  stalk layer: {stalkLayer.Tag} blocks={stalkLayer.BlockCount} id={stalkLayer.Id}");
+                        if (repoRoot is not null)
+                        {
+                            try
+                            {
+                                TargetGravityEngine.RefreshForStalkMap(project.Name, repoRoot, limit: 40);
+                            }
+                            catch
+                            {
+                                /* gravity refresh must not block crash path */
+                            }
+                        }
                     }
                     catch (Exception stalkEx)
                     {
@@ -2360,17 +2372,48 @@ public sealed class FuzzEngine
 
             var triage = CrashTriage.Classify(null, sidecar, summary, payload, debugger: debugger);
             var contexts = ScreamEvolutionBuilder.LoadProjectContexts(crashesDir, project.Name);
+            var repoRoot = CrashCatalog.FindRepoRoot();
             var evolution = ScreamEvolutionBuilder.PersistForCrash(
-                crashesDir, saved.Id, project.Name, sidecar, triage, debugger, corruption, contexts);
+                crashesDir, saved.Id, project.Name, sidecar, triage, debugger, corruption, contexts, repoRoot);
 
             if (evolution is not { Ok: true })
                 return;
 
-            Console.WriteLine($"  scream evolution: {evolution.Summary}");
-            if (evolution.MomentumScore >= 40)
+            var lineageQueued = TryQueueEvolutionLineageBreeding(
+                evolution, sidecar, crashesDir, project.Name, corpus);
+
+            var seedRoot = sidecar?.InputHash;
+            var (index, telemetry, decayApplied) = ScreamFamilyIndex.Update(
+                project.Name, evolution, sidecar, seedRoot, repoRoot, lineageQueued);
+
+            evolution = ScreamEvolutionBuilder.ApplyFamilyIndex(evolution, sidecar, seedRoot, repoRoot);
+            var indexEntry = index.Families.FirstOrDefault(f =>
+                f.FamilyId.Equals(evolution.FamilyId, StringComparison.OrdinalIgnoreCase));
+            if (indexEntry is not null)
+            {
+                evolution = evolution with
+                {
+                    MomentumScore = indexEntry.EffectiveMomentumScore,
+                    MomentumLabel = indexEntry.MomentumLabel,
+                };
+            }
+            ScreamEvolutionBuilder.Write(crashesDir, evolution);
+
+            if (decayApplied > 0)
             {
                 FuzzAnalystLog.Info(progress,
-                    $"[scream-evolution] {evolution.MomentumLabel} momentum={evolution.MomentumScore} · {evolution.Summary}",
+                    $"[scream-evolution] momentum decay −{decayApplied} on stagnant family {evolution.FamilyId}",
+                    iterations);
+            }
+
+            Console.WriteLine($"  scream evolution: {evolution.Summary}");
+            if (evolution.MomentumScore >= ScreamFamilyIndex.MomentumWarmThreshold
+                || telemetry.FamilyCount > 0)
+            {
+                FuzzAnalystLog.Info(progress,
+                    $"[scream-evolution] {evolution.MomentumLabel} momentum={evolution.MomentumScore} · " +
+                    $"families={telemetry.FamilyCount} warm={telemetry.WarmingFamilies} hot={telemetry.HotFamilies} " +
+                    $"stagnant={telemetry.StagnantFamilies} lineage+={lineageQueued} · {evolution.Summary}",
                     iterations);
             }
 
@@ -2394,6 +2437,67 @@ public sealed class FuzzEngine
         catch (Exception ex)
         {
             FuzzAnalystLog.Warn(progress, $"scream evolution: {ex.Message}", iterations);
+        }
+    }
+
+    private static int TryQueueEvolutionLineageBreeding(
+        ScreamEvolutionDto evolution,
+        CrashSidecarDto? sidecar,
+        string crashesDir,
+        string project,
+        CorpusTracker corpus)
+    {
+        if (evolution.MomentumScore < ScreamFamilyIndex.MomentumWarmThreshold)
+            return 0;
+
+        var queued = 0;
+        var store = new CrashStore(crashesDir);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void QueueHash(string? hash)
+        {
+            if (string.IsNullOrWhiteSpace(hash) || !seen.Add(hash))
+                return;
+            if (TryQueueCrashInput(store, project, hash, corpus))
+                queued++;
+        }
+
+        QueueHash(sidecar?.ParentInputHash);
+        QueueHash(evolution.AncestorInputHash);
+
+        if (evolution.AncestorCrashId is { } ancId)
+        {
+            var anc = store.List(project).FirstOrDefault(c => c.Id == ancId);
+            if (anc is not null && TryQueueCrashInputPath(anc.InputPath, corpus))
+                queued++;
+        }
+
+        if (sidecar?.MutatorChain is { Count: >= 2 })
+            QueueHash(sidecar.InputHash);
+
+        return queued;
+    }
+
+    private static bool TryQueueCrashInput(CrashStore store, string project, string? hash, CorpusTracker corpus)
+    {
+        if (string.IsNullOrWhiteSpace(hash))
+            return false;
+        var crash = store.FindByHash(hash, project);
+        return crash is not null && TryQueueCrashInputPath(crash.InputPath, corpus);
+    }
+
+    private static bool TryQueueCrashInputPath(string? inputPath, CorpusTracker corpus)
+    {
+        if (string.IsNullOrWhiteSpace(inputPath) || !File.Exists(inputPath))
+            return false;
+        try
+        {
+            corpus.AddPriority(File.ReadAllBytes(inputPath));
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -2468,8 +2572,7 @@ public sealed class FuzzEngine
                 CorruptionChainBuilder.PathFor(crashesDir, saved.Id));
             var evolution = ScreamEvolutionBuilder.TryRead(
                 ScreamEvolutionBuilder.PathFor(crashesDir, saved.Id));
-            var hypotheses = HypothesisEngine.TryRead(
-                HypothesisEngine.PathFor(crashesDir, saved.Id));
+            var hypotheses = HypothesisEngine.TryReadForCrash(crashesDir, saved.Id);
 
             byte[]? payload = null;
             if (File.Exists(saved.InputPath))

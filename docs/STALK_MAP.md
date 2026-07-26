@@ -62,10 +62,9 @@ TargetGravity ≈ risk × unexploredness / distance
 randall stalk gravity -p <project> [--limit 40] [--json] [--binary path]
 ```
 
-Persisted to `data/stalk/<project>/target_gravity.json`. The stalk map lightly boosts hotspots
-when a well address overlaps a missed block. Brain adds optional `gravity` hunt candidates;
-Hunt Policy may read aggregate pressure when scoring frontier/static picks (no conflict with
-hypothesis or campaign goals).
+Persisted to `data/stalk/<project>/target_gravity.json` with **top-N snapshots** (label + reason). Refreshed when you build a stalk map or record a crash stalk layer; stale wells decay (~18% per refresh). The stalk map boosts overlapping hotspots and can inject high-gravity-only rows. Brain adds filtered `gravity` hunt candidates (score ≥ 42, skips low-risk surface noise). Hunt Policy may read aggregate pressure when scoring frontier/static picks (no conflict with hypothesis or campaign goals).
+
+Without Ghidra, `randall stalk gravity` exits 0 in surface/oracle mode — inventory + corpus edges are enough for smoke checks.
 
 API: `GET /api/stalking/{project}/gravity?limit=40`
 
