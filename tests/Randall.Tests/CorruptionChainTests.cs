@@ -129,7 +129,7 @@ public class CorruptionChainTests
     }
 
     [Fact]
-    public void RewindScreamOnCrash_writes_hint_when_enabled()
+    public void RewindScreamOnCrash_writes_hint_when_deep_scream_eligible()
     {
         var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
         var yaml = Path.Combine(root, "projects", "file-text.yaml");
@@ -141,16 +141,19 @@ public class CorruptionChainTests
         project.Magician ??= new MagicianConfig();
         project.Magician.Enabled = true;
         project.Magician.AllowRewindScream = true;
+        project.Magician.PersistSpells = false;
 
         var id = Guid.NewGuid();
-        var cast = MagicianEngine.RewindScreamOnCrash(project, yaml, id, "fake.dmp", progress: null);
+        var crashesDir = ProjectLoader.ResolvePath(yaml, project.Fuzz.CrashesDir);
+        var deepScream = DeepScreamBuilder.PersistForCrash(
+            crashesDir, id, project.Name, screamScore: 72, seenCount: 1,
+            reproducible: true, minimized: true, dumpPath: "fake.dmp");
+
+        var cast = MagicianEngine.RewindScreamOnCrash(
+            project, yaml, id, "fake.dmp", deepScream, progress: null);
 
         Assert.NotNull(cast);
         Assert.Contains(cast!.Spells, s => s.Spell == "rewindScream");
-        var hint = Path.Combine(
-            ProjectLoader.ResolvePath(yaml, project.Fuzz.CrashesDir),
-            "_magician",
-            "rewind_scream_hint.md");
-        Assert.True(File.Exists(hint));
+        Assert.True(File.Exists(DeepScreamBuilder.TtdHintPathFor(crashesDir, id)));
     }
 }

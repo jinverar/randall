@@ -2695,6 +2695,36 @@ tr.mutate-row td { background: #2a2218; }
   color: var(--stalk-purple);
 }
 
+.deep-scream-badge {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: linear-gradient(135deg, hsl(265 85% 52%), hsl(290 80% 45%));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--stalk-purple) 40%, transparent);
+}
+
+.deep-scream-badge.inline {
+  font-size: 0.68rem;
+  vertical-align: middle;
+}
+
+.crash-why.deep-scream,
+.deep-scream-box {
+  border-color: color-mix(in srgb, hsl(280 80% 55%) 50%, var(--border));
+}
+
+.crash-why-head .deep-scream-badge {
+  margin-right: 0.35rem;
+}
+
+.deep-scream-box h4 {
+  color: hsl(280 75% 62%);
+}
+
 .scream-intel-dl {
   display: grid;
   grid-template-columns: auto 1fr;

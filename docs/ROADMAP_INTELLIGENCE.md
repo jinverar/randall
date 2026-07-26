@@ -189,6 +189,7 @@ These are **real today**, not slideware. Depth varies; see linked docs for limit
 | **Scream evolution (Phase A)** | ✅ | `ScreamEvolutionBuilder` · family/momentum/generation · `_scream_evolution.json` · Magician `evolutionBless` · Brain warming bias |
 | **Hunt Policy (Phase B)** | ✅ | `HuntPolicyEngine` · `hunt_policy_last.json` · lineage breed vs havoc vs Joker timing · mutator execution cost · Phase C `needsExperiment` hook |
 | **Hypothesis Engine (Phase C)** | ✅ | `HypothesisEngine` · `{guid}_hypotheses.json` · `hypothesis_queue.json` · Magician `hypothesisExperiment` · fuzz sweep/hold budget |
+| **Deep Scream / TTD gate (Phase D)** | ✅ | `DeepScreamBuilder` · `{guid}_deep_scream.json` · gated `rewindScream` · Investigation ⏪ badge |
 
 **Phase A follow-ups (Phase D+):** live TTD rewind (currently stub only). See [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md#headless-cdb--scream-investigator-windows).
 
@@ -259,6 +260,38 @@ Modes: `LineageBreed` (warming scream families) · `HavocExplore` (frontier/stat
 - **Disk:** `data/stalk/<project>/hunt_policy_last.json` alongside `brain_last.json`
 
 **Done when:** Hunt policy drives Joker invoke rate and lineage breeding measurably on warming families; Phase C hooks fire on stalled gen≥2 lineages.
+
+---
+
+## Phase D — Deep Scream / TTD gate ✅ capable
+
+**Goal:** Gate expensive rewind/TTD operator work behind an explainable Deep Scream eligibility check — high screamScore + unique + reproducible (+ optional minimized bonus). No TTD capture in Randfuzz; external WinDbg Preview only.
+
+| Item | Status | Notes |
+|------|--------|-------|
+| `DeepScreamBuilder` + eligibility gate | ✅ | screamScore≥55 · seenCount≤1 · reproducible |
+| Persisted `{guid}_deep_scream.json` | ✅ | Eligibility reasons · missing reasons · dump/evolution/corruption links |
+| Rewind/TTD operator path gated | ✅ | `fuzz.rewindScream` + Magician `rewindScream` only on Deep Scream candidates |
+| Per-crash TTD hint | ✅ | `{guid}_deep_scream_ttd.md` · `_magician/rewind_scream_hint.md` index |
+| Investigation UI flag | ✅ | ⏪ **Deep Scream** badge · Phase D panel · scream intel row |
+| Live TTD capture API | 🔲 | Remains external — stub operator hints only |
+
+**Eligibility (research-only):**
+
+```text
+Deep Scream candidate ⇔ screamScore ≥ 55 AND seenCount ≤ 1 AND reproducible
+Optional bonus: minimized (shortest input in cluster) — listed in eligibilityReasons
+```
+
+**Operator visibility:**
+
+- **CLI verbose fuzz:** `[deep-scream] candidate scream=72 — TTD path gated` · `[deep-scream] rewind skipped — screamScore 42 < 55`
+- **Investigation:** purple ⏪ **Deep Scream** badge on eligible crashes; panel shows eligibility + TTD hint path when `fuzz.rewindScream: true`
+- **Disk:** `data/crashes/<project>/{guid}_deep_scream.json` · `{guid}_deep_scream_ttd.md` (when rewind runs) · `_magician/rewind_scream_hint.md` index
+- **Magician:** `rewindScream` spell in `spells.jsonl` only for Deep Scream candidates
+
+**Done when:** Live WinDbg TTD capture/replay API replaces external-only operator hints.
+
 
 ---
 

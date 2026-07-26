@@ -2902,6 +2902,7 @@ function renderCrashDetail(detail, title) {
   const chain = detail.corruptionChain;
   const evo = detail.screamEvolution;
   const hypos = detail.hypotheses;
+  const deepScream = detail.deepScream;
   const regs = a?.registers;
   const dump = detail.summary.miniDumpPath || a?.dumpPath || '';
   const windbgCmd = dump ? `windbg -z "${dump}"` : '';
@@ -2913,6 +2914,7 @@ function renderCrashDetail(detail, title) {
   const clusterN = cluster?.count || clusterCountFor(detail.summary);
   const score = scoreCrash(detail.summary);
   const intel = detail.intelligence;
+  const deepScreamCandidate = deepScream?.isCandidate || intel?.deepScreamCandidate;
   const why = dbg?.diagnosis
     || intel?.debuggerDiagnosis
     || t?.exceptionHint
@@ -2936,10 +2938,11 @@ function renderCrashDetail(detail, title) {
   }
 
   box.innerHTML = `
-    <div class="crash-why${intelHot ? ' scream-hot' : ''}">
+    <div class="crash-why${intelHot ? ' scream-hot' : ''}${deepScreamCandidate ? ' deep-scream' : ''}">
       <div class="crash-why-head">
         <span class="severity-${sev} crash-sev-pill">${sev}</span>
         <h3>${escapeAttr(title)}</h3>
+        ${deepScreamCandidate ? '<span class="deep-scream-badge" title="Deep Scream — TTD operator path eligible">⏪ Deep Scream</span>' : ''}
         <span class="crash-score-badge" title="Scream intelligence score">★ ${intelScore}</span>
       </div>
       <p class="crash-why-line">Why it crashed</p>
@@ -2985,6 +2988,12 @@ function renderCrashDetail(detail, title) {
       </p>
       ${t?.summary ? `<p class="hint">${escapeAttr(t.summary)}</p>` : ''}
       ${t?.staticFunction ? `<p class="severity-high">Static: <code>${escapeAttr(t.staticFunction.functionName)}${escapeAttr(t.staticFunction.offset)}</code> (${escapeAttr(t.staticFunction.source)})${t.staticFunction.instructionHint ? ` — ${escapeAttr(t.staticFunction.instructionHint)}` : ''}</p>` : (detail.summary.staticFunctionSummary ? `<p class="hint">Static: <code>${escapeAttr(detail.summary.staticFunctionSummary)}</code></p>` : '')}
+      ${deepScreamCandidate ? `<div class="triage-box deep-scream-box">
+        <h4>Deep Scream <span class="hint-inline">Phase D</span></h4>
+        <p class="hint">${escapeAttr(intel?.deepScreamSummary || deepScream?.eligibilityReasons?.join(' · ') || 'TTD operator path eligible')}</p>
+        ${deepScream?.ttdHintPath ? `<p class="hint">TTD hint: <code>${escapeAttr(deepScream.ttdHintPath)}</code></p>` : '<p class="hint">Enable <code>fuzz.rewindScream: true</code> to write per-crash TTD operator steps on save.</p>'}
+        ${deepScream?.dumpPath ? `<p class="hint">Dump: <code>${escapeAttr(deepScream.dumpPath)}</code></p>` : ''}
+      </div>` : ''}
       ${intel ? `<div class="scream-intel-box${intelHot ? ' scream-hot' : ''}">
         <h4>Scream intelligence</h4>
         <dl class="scream-intel-dl">
@@ -3001,7 +3010,8 @@ function renderCrashDetail(detail, title) {
           ${evo?.progressionStep ? `<dt>Progression</dt><dd><code>${escapeAttr(evo.progressionStep)}</code>${evo.progressionDelta > 0 ? ` <span class="hint-inline">↑${evo.progressionDelta} vs ancestor</span>` : ''}</dd>` : ''}
           ${evo?.summary ? `<dt>Evolution note</dt><dd class="hint">${escapeAttr(evo.summary)}</dd>` : (intel?.screamEvolutionSummary ? `<dt>Evolution note</dt><dd class="hint">${escapeAttr(intel.screamEvolutionSummary)}</dd>` : '')}
           <dt>Repro</dt><dd>${intel.reproducible ? 'ready' : 'needs sidecar/input'}</dd>
-          <dt>Minimized</dt><dd>${intel.minimized ? 'yes (shortest in cluster)' : 'no'}</dd>
+          <dt>Minimized</dt><dd>${intel.minimized ? 'yes (shortest in cluster)' : 'no'}${intel.deepScreamMinimizedBonus ? ' · Deep Scream bonus' : ''}</dd>
+          ${intel.deepScreamCandidate ? `<dt>Deep Scream</dt><dd><span class="deep-scream-badge inline">⏪ candidate</span>${intel.deepScreamSummary ? ` — ${escapeAttr(intel.deepScreamSummary)}` : ''}</dd>` : ''}
           <dt>First seen</dt><dd>${new Date(intel.firstSeen).toLocaleString()}</dd>
         </dl>
         ${intel.lineage?.mutatorChain?.length ? `<p class="label">Lineage <span class="hint-inline">${intel.lineage.partial ? 'partial' : 'journal-backed'}</span></p>

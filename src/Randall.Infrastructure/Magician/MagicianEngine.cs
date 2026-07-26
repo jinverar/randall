@@ -213,9 +213,12 @@ public static class MagicianEngine
         string yamlPath,
         Guid crashId,
         string? dumpPath,
+        DeepScreamDto? deepScream,
         IFuzzProgressSink? progress)
     {
         if (!project.Fuzz.RewindScream)
+            return null;
+        if (deepScream is not { Ok: true, IsCandidate: true })
             return null;
 
         var cfg = GetConfig(project);
@@ -223,48 +226,47 @@ public static class MagicianEngine
             return null;
 
         project.Magician ??= cfg;
-        var dir = Path.Combine(
-            ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir),
-            "_magician");
+        var crashesDir = Path.Combine(
+            ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir));
+        var ttdPath = DeepScreamBuilder.WriteTtdOperatorHint(
+            crashesDir, crashId, project.Name, deepScream, dumpPath);
+        DeepScreamBuilder.WithTtdHint(crashesDir, deepScream, ttdPath);
+
+        var dir = Path.Combine(crashesDir, "_magician");
         Directory.CreateDirectory(dir);
-        var hintPath = Path.Combine(dir, "rewind_scream_hint.md");
-        var sb = new StringBuilder();
-        sb.AppendLine("# Rewind Scream (TTD stub)");
-        sb.AppendLine();
-        sb.AppendLine("Randfuzz does **not** capture Time Travel Debugging traces. Use WinDbg Preview TTD externally:");
-        sb.AppendLine();
-        sb.AppendLine($"Crash: `{crashId:N}` · project `{project.Name}`");
-        if (!string.IsNullOrWhiteSpace(dumpPath))
-            sb.AppendLine($"Dump: `{dumpPath}`");
-        sb.AppendLine();
-        sb.AppendLine("```powershell");
-        sb.AppendLine("# 1) Reproduce with a known input, then record (WinDbg Preview):");
-        sb.AppendLine("#    .attach <pid>  then  !tt.record  … reproduce …  !tt.stop");
-        sb.AppendLine($"randall debug open -i {crashId:N} --kind windbg-preview");
-        sb.AppendLine("# 2) In the trace:  !tt  then  g-  to rewind toward the fault");
-        sb.AppendLine("```");
-        sb.AppendLine();
-        sb.AppendLine("Pair with Scream minidump + corruption chain sidecars under `data/crashes/<project>/`.");
-        File.WriteAllText(hintPath, sb.ToString());
+        var indexPath = Path.Combine(dir, "rewind_scream_hint.md");
+        var indexLine = $"- `{crashId:N}` scream={deepScream.ScreamScore} → `{ttdPath}`{Environment.NewLine}";
+        if (File.Exists(indexPath))
+            File.AppendAllText(indexPath, indexLine);
+        else
+        {
+            var header = new StringBuilder();
+            header.AppendLine("# Deep Scream — TTD operator index (Phase D)");
+            header.AppendLine();
+            header.AppendLine("Randfuzz does **not** capture TTD traces. Crashes below passed the Deep Scream gate:");
+            header.AppendLine();
+            header.Append(indexLine);
+            File.WriteAllText(indexPath, header.ToString());
+        }
 
         var spell = new MagicianSpellDto(
             Guid.NewGuid().ToString("N")[..12],
             project.Name,
             "rewindScream",
             "ttd",
-            "Crash saved — external TTD record/replay hint (stub)",
+            $"Deep Scream TTD operator hint — scream={deepScream.ScreamScore}",
             null,
             null,
             0,
-            hintPath,
+            ttdPath,
             DateTimeOffset.UtcNow);
         if (cfg.PersistSpells)
             new MagicianSpellStore(dir).Append(spell);
 
         FuzzAnalystLog.Info(progress,
-            $"Magician rewindScream stub → {hintPath} (TTD is external — see docs/RECORDING.md)", 0);
+            $"[deep-scream] TTD operator hint → {ttdPath} (external capture — see docs/RECORDING.md)", 0);
 
-        return new MagicianCastResult([spell], [], [], 0, false, false, "rewindScream→ttd");
+        return new MagicianCastResult([spell], [], [], 0, false, false, "deepScream→ttd");
     }
 
     /// <summary>
@@ -727,7 +729,7 @@ public static class MagicianEngine
             case "rewindScream":
                 if (!GetConfig(project).AllowRewindScream || !project.Fuzz.RewindScream)
                     return (false, null, "rewindScream disabled — set fuzz.rewindScream: true");
-                return (true, "ttd", "rewindScream stub armed — hint written on next crash");
+                return (true, "ttd", "rewindScream armed — Deep Scream candidates get TTD operator hints");
             case "evolutionBless":
             {
                 var lineage = need.RuleId ?? need.RuleClass ?? "lineage";
