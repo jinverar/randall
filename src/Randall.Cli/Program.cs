@@ -2534,23 +2534,25 @@ static int StalkCounterfactual(string[] args)
     Guid? crashId = null;
     var json = false;
     var rebuild = false;
+    var live = false;
     for (var i = 0; i < args.Length; i++)
     {
         if (args[i] is "-i" or "--id" or "--crash" && i + 1 < args.Length && Guid.TryParse(args[++i], out var g))
             crashId = g;
         else if (args[i] is "--json") json = true;
         else if (args[i] is "--rebuild" or "--refresh") rebuild = true;
+        else if (args[i] is "--live" or "--execute") live = true;
     }
 
     if (crashId is null)
     {
-        Console.Error.WriteLine("Usage: randall stalk counterfactual -i <crash-guid> [--json] [--rebuild]");
+        Console.Error.WriteLine("Usage: randall stalk counterfactual -i <crash-guid> [--json] [--rebuild] [--live]");
         return 1;
     }
 
     try
     {
-        var report = CrashCatalog.GetCounterfactual(crashId.Value, rebuild: rebuild);
+        var report = CrashCatalog.GetCounterfactual(crashId.Value, rebuild: rebuild, live: live);
         if (report is null)
         {
             Console.Error.WriteLine("counterfactual: crash not found");
@@ -2570,6 +2572,7 @@ static int StalkCounterfactual(string[] args)
 
         Console.WriteLine($"Counterfactual: {report.CrashId:N} ({report.Project})");
         Console.WriteLine($"  Offset: {report.SuspectedOffset?.ToString() ?? "?"}");
+        Console.WriteLine($"  Live: {(report.LiveExecuted ? $"yes ({report.ExperimentsExecuted} executed)" : "plan-only")}");
         Console.WriteLine($"  {report.Summary}");
         Console.WriteLine($"  Probes: {report.Probes.Count}  safe={report.SafeAdjacentCount} corrupt={report.StillCorruptCount}");
         if (report.SmallestSafeChange is { } safe)

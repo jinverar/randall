@@ -75,6 +75,9 @@ public static class CounterfactualEngine
     /// Apply HypothesisEngine sweeps/boundaries and classify with <paramref name="stillCrashes"/>.
     /// Finds the smallest byte-delta change that makes the bug disappear.
     /// </summary>
+    /// <param name="maxProbes">
+    /// Bounded execution budget (hot-path safe). Null = run all planned probes.
+    /// </param>
     public static CounterfactualReportDto Evaluate(
         Guid crashId,
         string project,
@@ -83,7 +86,8 @@ public static class CounterfactualEngine
         int? suspectedOffset = null,
         CrashInfluenceMapDto? influence = null,
         RootCauseAnalysisDto? rootCause = null,
-        CrashCorruptionChainDto? corruption = null)
+        CrashCorruptionChainDto? corruption = null,
+        int? maxProbes = null)
     {
         var plan = BuildPlan(crashId, project, payload, suspectedOffset, influence, rootCause, corruption);
         if (!plan.Ok || plan.SuspectedOffset is not int offset)
@@ -92,8 +96,10 @@ public static class CounterfactualEngine
         var rng = new Random(unchecked((int)(crashId.GetHashCode() ^ offset)));
         var classified = new List<CounterfactualProbeDto>();
         CounterfactualProbeDto? smallestSafe = null;
+        var budget = maxProbes is int m && m > 0 ? Math.Min(m, plan.Probes.Count) : plan.Probes.Count;
+        var pendingTail = plan.Probes.Skip(budget).Select(p => p with { Outcome = CounterfactualOutcome.Pending }).ToList();
 
-        foreach (var probe in plan.Probes)
+        foreach (var probe in plan.Probes.Take(budget))
         {
             var experiment = new HypothesisExperimentDto(
                 probe.Kind,
@@ -146,23 +152,29 @@ public static class CounterfactualEngine
             }
         }
 
+        classified.AddRange(pendingTail);
+
         var safeCount = classified.Count(p => p.Outcome == CounterfactualOutcome.SafeAdjacent);
         var corruptCount = classified.Count(p => p.Outcome == CounterfactualOutcome.StillCorrupt);
+        var executed = budget;
         var confidence = smallestSafe is not null
             ? (smallestSafe.ByteDelta <= 1 ? "HIGH" : "MEDIUM")
             : safeCount > 0 ? "MEDIUM" : corruptCount > 0 ? "LOW" : "UNKNOWN";
 
         var summary = smallestSafe is not null
             ? $"Smallest safe change: {smallestSafe.Description} (Δ{smallestSafe.ByteDelta} byte(s)) — " +
-              $"{safeCount} safe-adjacent / {corruptCount} still-corrupt."
+              $"{safeCount} safe-adjacent / {corruptCount} still-corrupt " +
+              $"(live {executed}/{classified.Count} probe(s))."
             : safeCount == 0 && corruptCount > 0
-                ? $"No disappearing boundary in ±sweep — {corruptCount} still-corrupt probe(s). " +
-                  "Bug may be deeper than a local byte flip."
-                : $"{classified.Count} probe(s) evaluated — {safeCount} safe / {corruptCount} corrupt.";
+                ? $"No disappearing boundary in ±sweep — {corruptCount} still-corrupt probe(s) " +
+                  $"(live {executed}/{classified.Count}). Bug may be deeper than a local byte flip."
+                : $"{executed} live probe(s) evaluated — {safeCount} safe / {corruptCount} corrupt.";
 
         return new CounterfactualReportDto(
             true, crashId, project, offset, summary, smallestSafe, classified,
-            safeCount, corruptCount, confidence, DateTimeOffset.UtcNow);
+            safeCount, corruptCount, confidence, DateTimeOffset.UtcNow,
+            LiveExecuted: true,
+            ExperimentsExecuted: executed);
     }
 
     /// <summary>
@@ -178,7 +190,8 @@ public static class CounterfactualEngine
         int? suspectedOffset = null,
         CrashInfluenceMapDto? influence = null,
         RootCauseAnalysisDto? rootCause = null,
-        CrashCorruptionChainDto? corruption = null)
+        CrashCorruptionChainDto? corruption = null,
+        int? maxProbes = null)
     {
         CounterfactualReportDto report;
         if (payload is null || payload.Length == 0)
@@ -192,7 +205,7 @@ public static class CounterfactualEngine
         {
             report = Evaluate(
                 crashId, project, payload, stillCrashes, suspectedOffset,
-                influence, rootCause, corruption);
+                influence, rootCause, corruption, maxProbes);
         }
         else
         {

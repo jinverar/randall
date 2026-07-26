@@ -44,4 +44,27 @@ public sealed record CounterfactualReportDto(
     /// <summary>HIGH / MEDIUM / LOW / UNKNOWN</summary>
     string Confidence,
     DateTimeOffset At,
+    string? Error = null,
+    /// <summary>True when probes were executed against a target/replay (not plan-only).</summary>
+    bool LiveExecuted = false,
+    /// <summary>Number of probes that were actually executed (bounded budget).</summary>
+    int ExperimentsExecuted = 0,
+    /// <summary>Hypothesis ids whose confidence/status were updated from live outcomes.</summary>
+    IReadOnlyList<string>? UpdatedHypothesisIds = null,
+    /// <summary>JSON schema version for persisted research artifacts (v1).</summary>
+    int SchemaVersion = 1);
+
+/// <summary>
+/// Result of the counterfactual live execution loop: execute → observe → update → persist.
+/// </summary>
+public sealed record CounterfactualLiveResultDto(
+    bool Ok,
+    CounterfactualReportDto Report,
+    HypothesisSetDto? Hypotheses,
+    CrashInfluenceMapDto? Influence,
+    SkepticReportDto? Skeptic,
+    int ExperimentsExecuted,
+    bool LiveExecuted,
+    string Summary,
+    DateTimeOffset At,
     string? Error = null);

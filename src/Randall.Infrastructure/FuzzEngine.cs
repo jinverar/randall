@@ -1851,7 +1851,8 @@ public sealed class FuzzEngine
                             corpus, mutators, mutatorCredit, iterations, progress);
 
                         TryPersistHypotheses(
-                            project, crashesDir, saved, sidecar: CrashSidecarWriter.TryRead(saved.SidecarPath),
+                            project, yamlPath, crashesDir, saved,
+                            sidecar: CrashSidecarWriter.TryRead(saved.SidecarPath),
                             iterations, progress);
 
                         await TryPersistDeepScream(
@@ -2535,6 +2536,7 @@ public sealed class FuzzEngine
 
     private void TryPersistHypotheses(
         ProjectConfig project,
+        string yamlPath,
         string crashesDir,
         SavedCrash saved,
         CrashSidecarDto? sidecar,
@@ -2590,7 +2592,8 @@ public sealed class FuzzEngine
                 oracleScore,
                 set);
 
-            TryPersistResearchStack(crashesDir, saved.Id, project.Name, sidecar, triage,
+            TryPersistResearchStack(
+                project, yamlPath, crashesDir, saved.Id, project.Name, sidecar, triage,
                 debugger, corruption, set, progress, iterations);
 
             if (set is not { Ok: true, Hypotheses.Count: > 0 })
@@ -2686,6 +2689,8 @@ public sealed class FuzzEngine
     }
 
     private void TryPersistResearchStack(
+        ProjectConfig projectConfig,
+        string yamlPath,
         string crashesDir,
         Guid crashId,
         string project,
@@ -2718,13 +2723,36 @@ public sealed class FuzzEngine
             var temporal = TemporalBugEngine.PersistForCrash(
                 crashesDir, crashId, project, backwardTrace, corruption, rootCause, deepScream);
 
-            var counterfactual = CounterfactualEngine.PersistForCrash(
+            // Bounded live counterfactual loop (execute→observe→persist). Plan-only fallback
+            // when replay oracle cannot be built. Caps probes so post-crash path stays cheap.
+            Func<byte[], bool>? stillCrashes = null;
+            try
+            {
+                stillCrashes = CounterfactualLiveLoop.CreateReplayOracle(projectConfig, yamlPath);
+            }
+            catch
+            {
+                stillCrashes = null;
+            }
+
+            var live = CounterfactualLiveLoop.PersistOrRunLive(
                 crashesDir, crashId, project, TryLoadCrashBytes(crashesDir, crashId),
-                stillCrashes: null,
+                stillCrashes,
+                maxProbes: CounterfactualLiveLoop.DefaultMaxProbes,
+                settleSkeptic: true,
+                force: false,
                 suspectedOffset: corruption?.PatternDepthBytes,
                 influence: influence,
                 rootCause: rootCause,
-                corruption: corruption);
+                corruption: corruption,
+                hypotheses: hypotheses);
+            var counterfactual = live.Report;
+            if (live.Hypotheses is not null)
+                hypotheses = live.Hypotheses;
+            if (live.Skeptic is not null)
+                skeptic = live.Skeptic;
+            if (live.Influence is not null)
+                influence = live.Influence;
 
             var twins = VulnerabilityTwinEngine.PersistForCrash(
                 crashesDir, crashId, project, rootCause, triage, debugger, queueHuntHints: true);
@@ -2782,8 +2810,11 @@ public sealed class FuzzEngine
             }
             if (counterfactual is { Ok: true })
             {
+                var liveTag = counterfactual.LiveExecuted
+                    ? $"live {counterfactual.ExperimentsExecuted}"
+                    : "plan";
                 FuzzAnalystLog.Info(progress,
-                    $"[counterfactual] {counterfactual.Probes.Count} probe(s) @ offset {counterfactual.SuspectedOffset?.ToString() ?? "?"} — {Truncate(counterfactual.Summary, 100)}",
+                    $"[counterfactual:{liveTag}] {counterfactual.Probes.Count} probe(s) @ offset {counterfactual.SuspectedOffset?.ToString() ?? "?"} — {Truncate(counterfactual.Summary, 100)}",
                     iterations);
             }
             if (twins is { Ok: true })

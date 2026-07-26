@@ -211,15 +211,23 @@ public static class CrashCatalog
         return BugGenealogyEngine.PersistForProject(project, repoRoot);
     }
 
-    /// <summary>Per-crash counterfactual report — builds a pending plan if missing.</summary>
-    public static CounterfactualReportDto? GetCounterfactual(Guid crashId, string? repoRoot = null, bool rebuild = false)
+    /// <summary>
+    /// Per-crash counterfactual report — returns persisted live/plan result when present.
+    /// When <paramref name="live"/> is true and a project YAML can be resolved, runs the
+    /// bounded execute→observe→persist loop via <see cref="CounterfactualLiveLoop"/>.
+    /// </summary>
+    public static CounterfactualReportDto? GetCounterfactual(
+        Guid crashId,
+        string? repoRoot = null,
+        bool rebuild = false,
+        bool live = false)
     {
         repoRoot ??= FindRepoRoot();
         if (repoRoot is null) return null;
         var summary = ListAll(repoRoot).FirstOrDefault(c => c.Id == crashId);
         if (summary is null) return null;
         var crashesDir = Path.Combine(repoRoot, "data", "crashes", summary.Project);
-        if (!rebuild)
+        if (!rebuild && !live)
         {
             var existing = CounterfactualEngine.TryReadForCrash(crashesDir, crashId);
             if (existing is not null) return existing;
@@ -235,12 +243,65 @@ public static class CrashCatalog
         var root = RootCauseEngine.TryRead(RootCauseEngine.PathFor(crashesDir, crashId));
         var influence = InfluenceEngine.TryRead(InfluenceEngine.PathFor(crashesDir, crashId));
         var corruption = CorruptionChainBuilder.TryRead(CorruptionChainBuilder.PathFor(crashesDir, crashId));
+        var hypotheses = HypothesisEngine.TryReadForCrash(crashesDir, crashId);
+
+        Func<byte[], bool>? stillCrashes = null;
+        if (live)
+        {
+            var yamlPath = TryResolveProjectYaml(summary.Project, repoRoot);
+            if (yamlPath is not null)
+            {
+                try
+                {
+                    var project = ProjectLoader.Load(yamlPath);
+                    stillCrashes = CounterfactualLiveLoop.CreateReplayOracle(project, yamlPath);
+                }
+                catch
+                {
+                    stillCrashes = null;
+                }
+            }
+        }
+
+        if (stillCrashes is not null && bytes is { Length: > 0 })
+        {
+            return CounterfactualLiveLoop.PersistOrRunLive(
+                crashesDir, crashId, summary.Project, bytes, stillCrashes,
+                maxProbes: CounterfactualLiveLoop.DefaultMaxProbes,
+                settleSkeptic: true,
+                force: rebuild || live,
+                influence: influence,
+                rootCause: root,
+                corruption: corruption,
+                hypotheses: hypotheses).Report;
+        }
+
         return CounterfactualEngine.PersistForCrash(
             crashesDir, crashId, summary.Project, bytes,
             stillCrashes: null,
             influence: influence,
             rootCause: root,
             corruption: corruption);
+    }
+
+    /// <summary>Best-effort resolve of <c>projects/&lt;name&gt;.yaml</c> under the repo root.</summary>
+    public static string? TryResolveProjectYaml(string project, string? repoRoot = null)
+    {
+        repoRoot ??= FindRepoRoot();
+        if (repoRoot is null || string.IsNullOrWhiteSpace(project))
+            return null;
+        foreach (var candidate in new[]
+                 {
+                     Path.Combine(repoRoot, "projects", project + ".yaml"),
+                     Path.Combine(repoRoot, "projects", project + ".yml"),
+                     Path.Combine(repoRoot, "projects", "local", project + ".yaml"),
+                 })
+        {
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 
     /// <summary>Per-crash vulnerability twins — rebuilds from root cause + optional Ghidra map.</summary>

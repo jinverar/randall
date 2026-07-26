@@ -786,11 +786,12 @@ app.MapGet("/api/stalking/{project}/twin-hints", (string project) =>
     }
 });
 
-app.MapGet("/api/crashes/{id:guid}/counterfactual", (Guid id, bool? rebuild) =>
+app.MapGet("/api/crashes/{id:guid}/counterfactual", (Guid id, bool? rebuild, bool? live) =>
 {
     try
     {
-        var report = CrashCatalog.GetCounterfactual(id, rebuild: rebuild == true);
+        var report = CrashCatalog.GetCounterfactual(
+            id, rebuild: rebuild == true, live: live == true);
         if (report is null) return Results.NotFound();
         if (!WebTargetFilter.IsVisibleProject(report.Project))
             return Results.NotFound();
