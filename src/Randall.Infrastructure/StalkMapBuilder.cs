@@ -115,14 +115,20 @@ public static class StalkMapBuilder
             .Take(40)
             .ToList();
 
+        var gravity = TargetGravityEngine.Score(
+            project, repoRoot, limit: Math.Max(limit, 40), liveStatus, persist: false, binaryPath: resolvedBinary);
+        hotspots = EnrichHotspotsWithGravity(hotspots, gravity);
+
         var surfaceIdeas = BuildSurfaceIdeas(project, surface, interestingImports, hotStrings, hotspots);
         var format = surface?.Format ?? (resolvedBinary is null ? "missing" : "unknown");
         var summary = surface is null
             ? $"Missed gaps only — no PE/ELF surface (binary {(resolvedBinary ?? "not found")}). " +
+              $"Gravity pressure {gravity.AggregatePressure}/100. " +
               "Pass -c projects/<proj>.yaml or place the target next to the project."
             : $"Stalk map for {System.IO.Path.GetFileName(surface.Path)} ({format}): " +
               $"{surface.Sections.Count} sections · {surface.Imports.Count} imports · {surface.Strings.Count} strings · " +
-              $"{hotspots.Count(h => h.NearbyStrings.Count > 0 || h.NearbyImports.Count > 0)} surface-adjacent hotspots.";
+              $"{hotspots.Count(h => h.NearbyStrings.Count > 0 || h.NearbyImports.Count > 0)} surface-adjacent hotspots · " +
+              $"gravity pressure {gravity.AggregatePressure}/100.";
 
         return new StalkMapDto(
             project,
@@ -348,5 +354,44 @@ public static class StalkMapBuilder
         foreach (var c in Path.GetInvalidFileNameChars())
             name = name.Replace(c, '_');
         return name;
+    }
+
+    private static List<StalkMapHotspotDto> EnrichHotspotsWithGravity(
+        IReadOnlyList<StalkMapHotspotDto> hotspots,
+        TargetGravityReportDto gravity)
+    {
+        if (gravity.Wells.Count == 0)
+            return hotspots.ToList();
+
+        return hotspots
+            .Select(h =>
+            {
+                var well = gravity.Wells.FirstOrDefault(w =>
+                    w.Address is not null &&
+                    AddressesOverlap(h.Block.Address, w.Address));
+                if (well is null)
+                    return h;
+
+                var boosted = Math.Min(100, h.BoostedScore + Math.Min(15, well.GravityScore / 6));
+                return h with
+                {
+                    GravityScore = well.GravityScore,
+                    GravityKind = well.Kind,
+                    BoostedScore = boosted,
+                };
+            })
+            .OrderByDescending(h => h.BoostedScore)
+            .ThenByDescending(h => h.GravityScore)
+            .ToList();
+    }
+
+    private static bool AddressesOverlap(string a, string b)
+    {
+        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b))
+            return false;
+        var na = a.Trim().ToLowerInvariant().TrimStart('0', 'x');
+        var nb = b.Trim().ToLowerInvariant().TrimStart('0', 'x');
+        return na.Contains(nb, StringComparison.OrdinalIgnoreCase)
+               || nb.Contains(na, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -252,8 +252,11 @@ public sealed class FuzzConfig
     /// <summary>
     /// Stop the fuzz run when max project scream score or hot/purple scream count reaches this threshold.
     /// 0 = disabled. Hot = novelty ≥70 and (oracle ≥40 or first-in-cluster). See docs/CRASH_LOGGING.md.
+    /// Prefer structured <see cref="StopGoals"/> for N unique screams / momentum thresholds.
     /// </summary>
     public int ScreamScoreGoal { get; set; }
+    /// <summary>Structured intelligence stop goals — see docs/CAMPAIGN_STOP_GOALS.md.</summary>
+    public IntelligenceStopGoalsConfig? StopGoals { get; set; }
     /// <summary>AFL-style energy: favor corpus entries that found new coverage.</summary>
     public bool PowerSchedule { get; set; } = true;
     /// <summary>Max stacked mutation rounds for havoc mutator.</summary>

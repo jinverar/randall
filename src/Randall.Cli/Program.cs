@@ -112,6 +112,7 @@ static void PrintHelp()
           randall stalk capture-binary -p <project> [-i seed] Dragon Dance binary drcov
           randall stalk map -p <project> [-c yaml] [--binary path]  In-app stalk map (strings/imports)
           randall stalk frontier -p <project> [--limit N] [--json]  Score gray-door CFG branches
+          randall stalk gravity -p <project> [--limit N] [--json]  Reachability pressure toward sinks
           randall stalk intel -p <project> [--json] [--refresh]  Target intelligence profile
           randall stalk export -p <project> --format idc|ghidra|edges [-o dir]
           randall ghidra mcp ping|imports|callers   Optional live GhidraMCP Q&A (soft-fail)
@@ -2433,6 +2434,8 @@ static int RunStalk(string[] args)
                                             In-Randall stalk map: missed + PE/ELF strings/imports
               randall stalk frontier -p <project> [--limit N] [--json] [--no-save]
                                             Score gray-door CFG branches → frontier.json
+              randall stalk gravity -p <project> [--limit N] [--json] [--no-save] [--binary path]
+                                            Reachability pressure → target_gravity.json
               randall stalk intel -p <project> [--json] [--refresh]
                                             Build/read target_intelligence.json rollup
               randall stalk from-crash -i <crash-guid> [--tag crash] [--label text]
@@ -2456,6 +2459,7 @@ static int RunStalk(string[] args)
         "capture-binary" or "binary-drcov" or "dragon-dance" => StalkCaptureBinary(rest).GetAwaiter().GetResult(),
         "map" or "stalk-map" or "surface" => StalkMap(rest),
         "frontier" or "frontiers" or "doors" => StalkFrontier(rest),
+        "gravity" or "target-gravity" or "pressure" => StalkGravity(rest),
         "intel" or "intelligence" or "profile" => StalkIntel(rest),
         "export" => StalkExport(rest),
         "from-crash" => StalkFromCrash(rest),
@@ -2530,8 +2534,24 @@ static int StalkMap(string[] args)
                 near += " imp=" + string.Join("|", h.NearbyImports.Take(2));
             Console.WriteLine(
                 $"  [{h.BoostedScore}] {h.Block.Category} {h.Block.Module}:{h.Block.Address}  " +
-                $"sec={h.Section ?? "-"}  kind={surf}{near}");
+                $"sec={h.Section ?? "-"}  kind={surf}{near}" +
+                (h.GravityScore > 0 ? $"  gravity={h.GravityScore}" : ""));
             Console.WriteLine($"         {h.Block.WhyMissed}");
+        }
+
+        var gravityReport = TargetGravityEngine.TryLoad(project);
+        if (gravityReport?.Wells.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"Target gravity (pressure {gravityReport.AggregatePressure}/100):");
+            foreach (var w in gravityReport.Wells.Take(5))
+            {
+                var sym = w.SinkSymbol ?? w.FunctionName ?? w.Address ?? w.Kind;
+                Console.WriteLine(
+                    $"  [{w.GravityScore}] {w.Kind} → {sym}  " +
+                    $"(risk={w.Risk:0} u={w.Unexploredness:P0} d={w.Distance})");
+            }
+            Console.WriteLine($"  Full list: randall stalk gravity -p {project}");
         }
 
         var frontier = FrontierEngine.TryLoad(project);
@@ -2614,6 +2634,70 @@ static int StalkFrontier(string[] args)
             Console.WriteLine(
                 $"         d={f.CfgDistance:0}  r={f.Rarity:P0}  succ={f.UnseenSuccessorCount}  " +
                 $"sink={f.SinkProximity:P0}  {f.Detail}");
+        }
+
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
+static int StalkGravity(string[] args)
+{
+    var project = RequireProject(args);
+    if (project is null)
+        return 1;
+
+    var limit = 40;
+    var json = false;
+    var persist = true;
+    string? binary = null;
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] is "--limit" or "-n" && i + 1 < args.Length && int.TryParse(args[++i], out var n))
+            limit = n;
+        else if (args[i] is "--json")
+            json = true;
+        else if (args[i] is "--no-save")
+            persist = false;
+        else if (args[i] is "--binary" or "-b" && i + 1 < args.Length)
+            binary = Path.GetFullPath(args[++i]);
+    }
+
+    try
+    {
+        var report = TargetGravityEngine.Score(
+            project, limit: limit, persist: persist, binaryPath: binary);
+        if (json)
+        {
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            return 0;
+        }
+
+        Console.WriteLine($"Target gravity: {report.Project}");
+        Console.WriteLine($"  mode: {report.Mode}  pressure: {report.AggregatePressure}/100");
+        Console.WriteLine($"  {report.Summary}");
+        Console.WriteLine($"  saved: {TargetGravityEngine.GravityPath(project)}");
+        Console.WriteLine($"  {report.WorkflowHint}");
+        Console.WriteLine();
+
+        if (report.Wells.Count == 0)
+        {
+            Console.WriteLine("No gravity wells yet.");
+            return 0;
+        }
+
+        Console.WriteLine("Ranked wells (risk × unexploredness / distance):");
+        foreach (var w in report.Wells)
+        {
+            var sym = w.SinkSymbol ?? w.FunctionName ?? w.Address ?? w.Kind;
+            Console.WriteLine($"  [{w.GravityScore}] {w.Kind} → {sym}");
+            Console.WriteLine(
+                $"         risk={w.Risk:0}  u={w.Unexploredness:P0}  d={w.Distance}  {w.Detail}");
         }
 
         return 0;

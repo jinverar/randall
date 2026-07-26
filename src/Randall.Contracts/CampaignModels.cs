@@ -5,6 +5,8 @@ public sealed class CampaignConfig
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
     public List<CampaignRunConfig> Runs { get; set; } = [];
+    /// <summary>Campaign-wide intelligence stop goals — evaluated across all runs. See docs/CAMPAIGN_STOP_GOALS.md.</summary>
+    public IntelligenceStopGoalsConfig? StopGoals { get; set; }
     /// <summary>Optional campaign-complete alerts — see docs/NOTIFICATIONS.md.</summary>
     public NotificationsConfig? Notifications { get; set; }
 }
@@ -15,6 +17,8 @@ public sealed class CampaignRunConfig
     public int MaxIterations { get; set; } = 500;
     public bool DryRun { get; set; }
     public bool CoverageGuided { get; set; }
+    /// <summary>Per-run stop goal override — merged over campaign + project fuzz goals.</summary>
+    public IntelligenceStopGoalsConfig? StopGoals { get; set; }
 }
 
 public sealed record CampaignRunResult(
@@ -29,7 +33,10 @@ public sealed record CampaignResultDto(
     string Name,
     bool Success,
     IReadOnlyList<CampaignRunResult> Runs,
-    int TotalCrashes);
+    int TotalCrashes,
+    bool StopGoalMet = false,
+    string? StopReason = null,
+    IntelligenceStopGoalProgressDto? GoalProgress = null);
 
 public sealed record CampaignStatusDto(
     bool Running,
@@ -42,7 +49,11 @@ public sealed record CampaignStatusDto(
     /// <summary>Profile currently fuzzing inside the campaign (if running).</summary>
     string? CurrentProject = null,
     /// <summary>All profile names scheduled in this campaign run.</summary>
-    IReadOnlyList<string>? Projects = null);
+    IReadOnlyList<string>? Projects = null,
+    /// <summary>When campaign stop goal was met.</summary>
+    bool StopGoalMet = false,
+    string? StopReason = null,
+    IntelligenceStopGoalProgressDto? GoalProgress = null);
 
 public sealed record CampaignStartRequest(string CampaignPath);
 

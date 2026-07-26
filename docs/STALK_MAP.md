@@ -47,6 +47,28 @@ Resolves the binary from (in order): `--binary`, `-c` YAML `target.executable`, 
 For colored BB deep dives: [GHIDRA_INTEGRATION.md](GHIDRA_INTEGRATION.md).
 For the PDF-style loop: [HOWTO_STALK_IDA_GHIDRA.md](HOWTO_STALK_IDA_GHIDRA.md).
 
+## Target gravity (reachability pressure)
+
+Complements frontier gray doors with **pull toward dangerous sinks** — strcpy-like calls,
+allocators, Ghidra-marked dangerous sites, and oracle near-misses:
+
+```text
+TargetGravity ≈ risk × unexploredness / distance
+```
+
+(from nearest covered basic block toward each interesting sink)
+
+```bash
+randall stalk gravity -p <project> [--limit 40] [--json] [--binary path]
+```
+
+Persisted to `data/stalk/<project>/target_gravity.json`. The stalk map lightly boosts hotspots
+when a well address overlaps a missed block. Brain adds optional `gravity` hunt candidates;
+Hunt Policy may read aggregate pressure when scoring frontier/static picks (no conflict with
+hypothesis or campaign goals).
+
+API: `GET /api/stalking/{project}/gravity?limit=40`
+
 ## Frontier engine (gray doors)
 
 When `randall-analysis.json` and coverage edges exist, Randall scores **unexplored CFG successors**

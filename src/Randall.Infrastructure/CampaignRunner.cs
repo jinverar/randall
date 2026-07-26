@@ -49,10 +49,18 @@ public sealed class CampaignRunner
 
         var results = new List<CampaignRunResult>();
         var totalCrashes = 0;
+        var completedProjects = new List<string>();
+        var campaignStopGoals = campaign.StopGoals;
+        var campaignGoalMet = false;
+        string? campaignStopReason = null;
+        IntelligenceStopGoalProgressDto? campaignGoalProgress = null;
 
         foreach (var run in campaign.Runs)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (campaignGoalMet)
+                break;
+
             var projectPath = Path.IsPathRooted(run.Project)
                 ? run.Project
                 : Path.GetFullPath(Path.Combine(repoRoot, run.Project));
@@ -63,6 +71,8 @@ public sealed class CampaignRunner
                 if (run.MaxIterations > 0)
                     project.Fuzz.MaxIterations = run.MaxIterations;
 
+                ApplyCampaignStopGoals(project, campaignStopGoals, run.StopGoals);
+
                 progress?.OnStarted(project.Name, $"campaign:{campaign.Name}");
                 var engine = new FuzzEngine();
                 var result = await engine.RunAsync(
@@ -72,6 +82,7 @@ public sealed class CampaignRunner
                     cancellationToken);
 
                 totalCrashes += result.CrashesFound;
+                completedProjects.Add(project.Name);
                 results.Add(new CampaignRunResult(
                     project.Name,
                     result.Iterations,
@@ -79,6 +90,24 @@ public sealed class CampaignRunner
                     result.CorpusAdded,
                     true,
                     null));
+
+                if (result.StopGoalMet)
+                {
+                    campaignGoalMet = true;
+                    campaignStopReason = result.StopReason;
+                    FuzzAnalystLog.Info(progress, $"Campaign run stop goal met on {project.Name}: {result.StopReason}");
+                }
+                else if (campaignStopGoals is { IsEnabled: true })
+                {
+                    campaignGoalProgress = IntelligenceStopGoalEvaluator.EvaluateCampaign(
+                        campaignStopGoals, repoRoot, completedProjects);
+                    if (campaignGoalProgress.Met)
+                    {
+                        campaignGoalMet = true;
+                        campaignStopReason = campaignGoalProgress.Reason;
+                        FuzzAnalystLog.Info(progress, campaignStopReason);
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -88,8 +117,17 @@ public sealed class CampaignRunner
             }
         }
 
+        if (campaignGoalMet && campaignStopReason is not null)
+            FuzzAnalystLog.Info(progress, $"Campaign complete — stop goal: {campaignStopReason}");
+
         var campaignResult = new CampaignResultDto(
-            campaign.Name, results.All(r => r.Success), results, totalCrashes);
+            campaign.Name,
+            results.All(r => r.Success),
+            results,
+            totalCrashes,
+            campaignGoalMet,
+            campaignStopReason,
+            campaignGoalProgress);
 
         if (campaign.Notifications is { Enabled: true, OnCampaignComplete: true })
         {
@@ -113,6 +151,21 @@ public sealed class CampaignRunner
         }
 
         return campaignResult;
+    }
+
+    private static void ApplyCampaignStopGoals(
+        ProjectConfig project,
+        IntelligenceStopGoalsConfig? campaignGoals,
+        IntelligenceStopGoalsConfig? runGoals)
+    {
+        var projectGoals = IntelligenceStopGoalEvaluator.Resolve(project.Fuzz);
+        var merged = IntelligenceStopGoalEvaluator.Merge(projectGoals, campaignGoals, runGoals);
+        if (!merged.IsEnabled)
+            return;
+
+        project.Fuzz.StopGoals = merged;
+        if (merged.LegacyScreamScoreGoal > 0)
+            project.Fuzz.ScreamScoreGoal = merged.LegacyScreamScoreGoal;
     }
 }
 
@@ -191,7 +244,12 @@ public sealed class CampaignSessionManager(FuzzLiveLogBuffer liveLog)
                             CurrentProject = null,
                             CompletedRuns = result.Runs.Count,
                             TotalCrashes = result.TotalCrashes,
-                            LastMessage = $"Done — {result.TotalCrashes} crashes across {result.Runs.Count} runs",
+                            LastMessage = result.StopGoalMet
+                                ? $"Stop goal met — {result.StopReason}"
+                                : $"Done — {result.TotalCrashes} crashes across {result.Runs.Count} runs",
+                            StopGoalMet = result.StopGoalMet,
+                            StopReason = result.StopReason,
+                            GoalProgress = result.GoalProgress,
                         };
                     }
                 }
