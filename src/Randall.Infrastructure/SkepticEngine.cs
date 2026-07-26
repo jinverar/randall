@@ -109,6 +109,48 @@ public static class SkepticEngine
     }
 
     /// <summary>
+    /// Mandatory evidence gate for promoting maturity past Candidate (R4) and for
+    /// Candidate→Confirmed primitive state. Requires at least one Survived challenge with
+    /// an observation (independent experiment ran) and no Falsified contradictions.
+    /// </summary>
+    public static bool PassesPromotionGate(SkepticReportDto? skeptic)
+    {
+        if (skeptic is not { Ok: true, Challenges.Count: > 0 })
+            return false;
+
+        var settled = skeptic.Challenges
+            .Where(c => c.Status is SkepticChallengeStatus.Survived
+                or SkepticChallengeStatus.Falsified
+                or SkepticChallengeStatus.Inconclusive)
+            .ToList();
+        if (settled.Count == 0)
+            return false;
+
+        // Unresolved contradiction: a falsified claim blocks promotion.
+        if (settled.Any(c => c.Status == SkepticChallengeStatus.Falsified))
+            return false;
+
+        // Need a survived claim with a recorded observation from an independent experiment.
+        return settled.Any(c =>
+            c.Status == SkepticChallengeStatus.Survived &&
+            !string.IsNullOrWhiteSpace(c.Observation));
+    }
+
+    /// <summary>Human-readable reason when <see cref="PassesPromotionGate"/> fails.</summary>
+    public static string PromotionGateFailureReason(SkepticReportDto? skeptic)
+    {
+        if (skeptic is not { Ok: true, Challenges.Count: > 0 })
+            return "Skeptic gate: no falsification challenges recorded";
+        if (skeptic.Challenges.Any(c => c.Status == SkepticChallengeStatus.Falsified))
+            return "Skeptic gate: unresolved falsified claim blocks Candidate→Confirmed / R5+";
+        if (skeptic.Challenges.All(c => c.Status == SkepticChallengeStatus.Proposed))
+            return "Skeptic gate: challenges proposed but not yet observed via independent experiment";
+        if (!skeptic.Challenges.Any(c => c.Status == SkepticChallengeStatus.Survived))
+            return "Skeptic gate: no Survived challenge (Inconclusive-only does not promote)";
+        return "Skeptic gate: Survived challenge missing observation text";
+    }
+
+    /// <summary>
     /// Record an observation against a proposed challenge (Proposed → Survived/Falsified/Inconclusive).
     /// </summary>
     public static SkepticReportDto ApplyObservation(

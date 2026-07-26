@@ -73,4 +73,96 @@ public class PrimitiveEngineTests
             try { Directory.Delete(dir, recursive: true); } catch { /* ignore */ }
         }
     }
+
+    [Fact]
+    public void Cannot_promote_past_R4_without_skeptic_survival()
+    {
+        var id = Guid.NewGuid();
+        var influence = ObservedWriteInfluence(id);
+        var without = PrimitiveEngine.Build(id, "lab", influence);
+
+        Assert.Equal(ResearchMaturity.R4, without.Maturity);
+        Assert.Contains("Skeptic gate", without.MaturityRationale, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(without.Primitives, p => p.State == PrimitiveState.Confirmed);
+    }
+
+    [Fact]
+    public void Skeptic_survival_allows_R5_plus_promotion()
+    {
+        var id = Guid.NewGuid();
+        var influence = ObservedWriteInfluence(id);
+        var skeptic = SurvivedSkeptic(id);
+
+        Assert.True(SkepticEngine.PassesPromotionGate(skeptic));
+        var withGate = PrimitiveEngine.Build(id, "lab", influence, skeptic: skeptic);
+
+        Assert.True(withGate.Maturity >= ResearchMaturity.R5);
+        Assert.DoesNotContain("held at R4", withGate.MaturityRationale, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Falsified_skeptic_blocks_Confirmed_and_R5()
+    {
+        var id = Guid.NewGuid();
+        var influence = new CrashInfluenceMapDto(
+            true, id, "lab", "HIGH", "confirmed write",
+            [new InfluenceLinkDto(
+                "link-c",
+                new InfluenceRegionDto(0, 4, 4, "ptr", null, null),
+                new InfluencedStateDto(InfluencedStateKind.FaultAddress, "fault"),
+                InfluenceConfirmationStatus.Confirmed,
+                "input→fault address",
+                [])],
+            [],
+            DateTimeOffset.UtcNow);
+
+        var falsified = new SkepticReportDto(
+            true, id, "lab",
+            [new SkepticChallengeDto(
+                "skep-1", "claim-1", ResearchClaimKind.RootCause,
+                "write at offset", 80,
+                "null",
+                new HypothesisExperimentDto(HypothesisExperimentKind.MinimizeHold, "neutralize"),
+                "survives", "falsified",
+                SkepticChallengeStatus.Falsified, 55,
+                Observation: "fault moved",
+                At: DateTimeOffset.UtcNow)],
+            "1 falsified",
+            DateTimeOffset.UtcNow);
+
+        Assert.False(SkepticEngine.PassesPromotionGate(falsified));
+        var report = PrimitiveEngine.Build(id, "lab", influence, skeptic: falsified);
+
+        Assert.Equal(ResearchMaturity.R4, report.Maturity);
+        Assert.DoesNotContain(report.Primitives, p => p.State == PrimitiveState.Confirmed);
+        Assert.Contains(report.Primitives, p => p.State == PrimitiveState.Observed);
+    }
+
+    private static CrashInfluenceMapDto ObservedWriteInfluence(Guid id) =>
+        new(
+            true, id, "lab", "HIGH", "observed write",
+            [new InfluenceLinkDto(
+                "link-o",
+                new InfluenceRegionDto(4, 8, 4, "ptr", null, null),
+                new InfluencedStateDto(InfluencedStateKind.FaultAddress, "fault"),
+                InfluenceConfirmationStatus.Observed,
+                "input→fault address",
+                [])],
+            [],
+            DateTimeOffset.UtcNow);
+
+    private static SkepticReportDto SurvivedSkeptic(Guid id) =>
+        new(
+            true, id, "lab",
+            [new SkepticChallengeDto(
+                "skep-ok", "claim-1", ResearchClaimKind.InputInfluence,
+                "offset influences fault", 75,
+                "null: coincidental",
+                new HypothesisExperimentDto(HypothesisExperimentKind.MinimizeHold, "neutralize", OffsetBytes: 4),
+                "still faults", "clears",
+                SkepticChallengeStatus.Survived, 83,
+                Observation: "fault class unchanged after neutralize",
+                At: DateTimeOffset.UtcNow)],
+            "1 survived",
+            DateTimeOffset.UtcNow);
 }

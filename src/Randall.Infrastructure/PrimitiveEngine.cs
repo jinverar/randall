@@ -55,7 +55,8 @@ public static class PrimitiveEngine
         CrashCorruptionChainDto? corruptionChain = null,
         CrashTriageDto? triage = null,
         IReadOnlyList<EvidenceFact>? facts = null,
-        HypothesisSetDto? hypotheses = null)
+        HypothesisSetDto? hypotheses = null,
+        SkepticReportDto? skeptic = null)
     {
         var primitives = new List<PrimitiveAssessmentDto>();
 
@@ -74,9 +75,14 @@ public static class PrimitiveEngine
         AddDebuggerFallback(primitives, debugger, rootCause, corruptionChain);
 
         var merged = MergeByKind(primitives);
+        var gateOk = SkepticEngine.PassesPromotionGate(skeptic);
+        if (!gateOk)
+            merged = DemoteConfirmedWithoutSkeptic(merged);
+
         var collectedFacts = CollectFacts(facts, influence, rootCause, merged);
         var confidence = RollupConfidence(merged);
-        var (maturity, rationale) = ComputeMaturity(merged, rootCause, influence, triage, debugger, collectedFacts);
+        var (maturity, rationale) = ComputeMaturity(
+            merged, rootCause, influence, triage, debugger, collectedFacts, skeptic);
         var summary = BuildSummary(maturity, merged, confidence);
 
         return new CrashPrimitiveReportDto(
@@ -106,9 +112,12 @@ public static class PrimitiveEngine
         CrashCorruptionChainDto? corruptionChain = null,
         CrashTriageDto? triage = null,
         IReadOnlyList<EvidenceFact>? facts = null,
-        HypothesisSetDto? hypotheses = null)
+        HypothesisSetDto? hypotheses = null,
+        SkepticReportDto? skeptic = null)
     {
-        var report = Build(crashId, project, influence, rootCause, debugger, corruptionChain, triage, facts, hypotheses);
+        var report = Build(
+            crashId, project, influence, rootCause, debugger, corruptionChain, triage, facts,
+            hypotheses, skeptic);
         Write(crashesDir, report);
         return report;
     }
@@ -238,29 +247,83 @@ public static class PrimitiveEngine
         CrashInfluenceMapDto? influence,
         CrashTriageDto? triage,
         DebuggerObservation? debugger,
-        IReadOnlyList<EvidenceFact> facts)
+        IReadOnlyList<EvidenceFact> facts,
+        SkepticReportDto? skeptic = null)
     {
         var confirmed = primitives.Count(p => p.State == PrimitiveState.Confirmed);
         var observed = primitives.Count(p => p.State == PrimitiveState.Observed);
         var candidate = primitives.Count(p => p.State == PrimitiveState.Candidate);
         var rootHigh = rootCause is { Ok: true } && string.Equals(rootCause.Candidate.Confidence, "HIGH", StringComparison.OrdinalIgnoreCase);
 
+        ResearchMaturity level;
+        string rationale;
         if (confirmed >= 2 && rootHigh)
-            return (ResearchMaturity.R7, $"{confirmed} confirmed capabilities with HIGH-confidence root cause");
-        if (confirmed >= 1)
-            return (ResearchMaturity.R6, "capability experimentally confirmed");
-        if (observed >= 1)
-            return (ResearchMaturity.R5, "capability directly observed in debugger/influence evidence");
-        if (candidate >= 1 || primitives.Count > 0)
-            return (ResearchMaturity.R4, "at least one capability inferred as a candidate");
-        if (influence is { Links.Count: > 0 })
-            return (ResearchMaturity.R3, "input region attributed to influenced program state");
-        if (rootCause is { Ok: true } && rootCause.Candidate.Category != RootCauseCategory.Unknown)
-            return (ResearchMaturity.R2, $"deterministic root cause: {rootCause.Candidate.Category}");
-        if (debugger is { Ok: true } || triage is not null || facts.Count > 0)
-            return (ResearchMaturity.R1, "fault triaged (signal/severity classified)");
-        return (ResearchMaturity.R0, "crash discovered; no analysis yet");
+        {
+            level = ResearchMaturity.R7;
+            rationale = $"{confirmed} confirmed capabilities with HIGH-confidence root cause";
+        }
+        else if (confirmed >= 1)
+        {
+            level = ResearchMaturity.R6;
+            rationale = "capability experimentally confirmed";
+        }
+        else if (observed >= 1)
+        {
+            level = ResearchMaturity.R5;
+            rationale = "capability directly observed in debugger/influence evidence";
+        }
+        else if (candidate >= 1 || primitives.Count > 0)
+        {
+            level = ResearchMaturity.R4;
+            rationale = "at least one capability inferred as a candidate";
+        }
+        else if (influence is { Links.Count: > 0 })
+        {
+            level = ResearchMaturity.R3;
+            rationale = "input region attributed to influenced program state";
+        }
+        else if (rootCause is { Ok: true } && rootCause.Candidate.Category != RootCauseCategory.Unknown)
+        {
+            level = ResearchMaturity.R2;
+            rationale = $"deterministic root cause: {rootCause.Candidate.Category}";
+        }
+        else if (debugger is { Ok: true } || triage is not null || facts.Count > 0)
+        {
+            level = ResearchMaturity.R1;
+            rationale = "fault triaged (signal/severity classified)";
+        }
+        else
+        {
+            level = ResearchMaturity.R0;
+            rationale = "crash discovered; no analysis yet";
+        }
+
+        // Mandatory Skeptic gate: R5+ (Observed/Confirmed/package) and Candidate→Confirmed
+        // require Survived + observation + no falsified contradiction. Cap at R4 otherwise.
+        if (level >= ResearchMaturity.R5 && !SkepticEngine.PassesPromotionGate(skeptic))
+        {
+            return (
+                ResearchMaturity.R4,
+                $"{SkepticEngine.PromotionGateFailureReason(skeptic)} — held at R4 (Candidate) pending Skeptic survival");
+        }
+
+        return (level, rationale);
     }
+
+    /// <summary>
+    /// Without Skeptic gate pass, Confirmed capabilities demote to Observed (cannot promote
+    /// Candidate→Confirmed). Observed stays Observed but maturity still caps at R4 above.
+    /// </summary>
+    internal static List<PrimitiveAssessmentDto> DemoteConfirmedWithoutSkeptic(
+        IReadOnlyList<PrimitiveAssessmentDto> primitives) =>
+        primitives.Select(p => p.State == PrimitiveState.Confirmed
+            ? p with
+            {
+                State = PrimitiveState.Observed,
+                Confidence = ConfidenceForState(PrimitiveState.Observed),
+                EvidenceRefs = p.EvidenceRefs.Append("skeptic:gate-blocked-confirmed").Distinct().Take(8).ToList(),
+            }
+            : p).ToList();
 
     private static IReadOnlyList<EvidenceFact> CollectFacts(
         IReadOnlyList<EvidenceFact>? external,

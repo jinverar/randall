@@ -2754,6 +2754,11 @@ public sealed class FuzzEngine
             if (live.Influence is not null)
                 influence = live.Influence;
 
+            // Recompute maturity with Skeptic gate after live settle (R5+ needs Survived).
+            primitives = PrimitiveEngine.PersistForCrash(
+                crashesDir, crashId, project, influence, rootCause, debugger, corruption, triage,
+                facts, hypotheses, skeptic);
+
             var twins = VulnerabilityTwinEngine.PersistForCrash(
                 crashesDir, crashId, project, rootCause, triage, debugger, queueHuntHints: true);
 
