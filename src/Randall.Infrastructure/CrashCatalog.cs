@@ -135,8 +135,7 @@ public static class CrashCatalog
                         row.Debugger,
                         corruptionChain,
                         projectContexts);
-                var hypotheses = HypothesisEngine.TryRead(
-                    HypothesisEngine.PathFor(dir, row.Summary.Id));
+                var hypotheses = HypothesisEngine.TryReadForCrash(dir, row.Summary.Id);
                 var intelligence = CrashIntelligenceBuilder.Build(
                     row.Summary,
                     row.Triage,
@@ -279,8 +278,7 @@ public static class CrashCatalog
                     debugger,
                     corruptionChain,
                     projectContexts);
-            var hypotheses = HypothesisEngine.TryRead(
-                HypothesisEngine.PathFor(crashesDir, summary.Id));
+            var hypotheses = HypothesisEngine.TryReadForCrash(crashesDir, summary.Id);
             var pageHeapEnabled = TryResolvePageHeap(sidecar, repoRoot);
             var projectSummaries = ListAll(repoRoot).Where(x => x.Project == summary.Project).ToList();
             var intelligence = CrashIntelligenceBuilder.Build(

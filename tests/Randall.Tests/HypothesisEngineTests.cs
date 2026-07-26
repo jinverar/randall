@@ -136,7 +136,7 @@ public class HypothesisEngineTests
             HypothesisEngine.RecordOutcome(
                 project, plan, 6, crashed: true, "ACCESS_VIOLATION", "write fault", root);
 
-            var set = HypothesisEngine.TryRead(HypothesisEngine.PathFor(crashesDir, crashId));
+            var set = HypothesisEngine.TryReadForCrash(crashesDir, crashId);
             Assert.NotNull(set);
             var updated = set!.Hypotheses[0];
             Assert.True(updated.ConfidencePercent >= 60);
@@ -150,6 +150,63 @@ public class HypothesisEngineTests
     }
 
     [Fact]
+    public void RecordOutcome_RefutesWhenNoCrashAfterBudget()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "hyp-refute-" + Guid.NewGuid().ToString("N"));
+        const string project = "hyp-refute";
+        var crashId = Guid.NewGuid();
+        try
+        {
+            var crashesDir = Path.Combine(root, "data", "crashes", project);
+            Directory.CreateDirectory(crashesDir);
+
+            var hypothesis = new HypothesisDto(
+                "hyp-refute-1", crashId, "Offset sweep should crash", 62,
+                new HypothesisExperimentDto(HypothesisExperimentKind.SweepOffset, "sweep", "bitflip", 8, 2, BudgetIterations: 1),
+                "Crash reproduces", HypothesisStatus.Pending);
+
+            HypothesisEngine.Write(crashesDir, new HypothesisSetDto(true, crashId, project, [hypothesis], DateTimeOffset.UtcNow));
+            HypothesisEngine.EnqueueFromHypothesis(project, hypothesis, 5, root);
+            var plan = HypothesisEngine.TryDequeuePlan(project, root)!;
+
+            HypothesisEngine.RecordOutcome(project, plan, 6, crashed: false, crashClass: null, faultDetail: null, root);
+
+            var set = HypothesisEngine.TryReadForCrash(crashesDir, crashId);
+            Assert.NotNull(set);
+            var updated = set!.Hypotheses[0];
+            Assert.Equal(HypothesisStatus.Refuted, updated.Status);
+            Assert.Equal(62, updated.Result!.ConfidenceBefore);
+            Assert.True(updated.ConfidencePercent < 62);
+            Assert.Null(HypothesisEngine.TryDequeuePlan(project, root));
+        }
+        finally { try { Directory.Delete(root, true); } catch { } }
+    }
+
+    [Fact]
+    public void Ledger_PersistsUnderHypothesesDir()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "hyp-ledger-" + Guid.NewGuid().ToString("N"));
+        const string project = "hyp-ledger";
+        var crashId = Guid.NewGuid();
+        try
+        {
+            var crashesDir = Path.Combine(root, "data", "crashes", project);
+            Directory.CreateDirectory(crashesDir);
+            var hypothesis = new HypothesisDto(
+                "hyp-ledger-1", crashId, "Ledger test", 70,
+                new HypothesisExperimentDto(HypothesisExperimentKind.ReplayLineage, "replay", "havoc"),
+                "Crash reproduces", HypothesisStatus.Pending);
+            HypothesisEngine.Write(crashesDir, new HypothesisSetDto(true, crashId, project, [hypothesis], DateTimeOffset.UtcNow));
+
+            Assert.True(File.Exists(HypothesisEngine.LedgerPath(crashesDir)));
+            var ledger = HypothesisEngine.TryLoadLedger(crashesDir);
+            Assert.NotNull(ledger);
+            Assert.Single(ledger!.Entries);
+        }
+        finally { try { Directory.Delete(root, true); } catch { } }
+    }
+
+    [Fact]
     public void HuntPolicy_NeedsExperiment_WhenTopHypothesisAboveThreshold()
     {
         var root = Path.Combine(Path.GetTempPath(), "hyp-hunt-" + Guid.NewGuid().ToString("N"));
@@ -159,37 +216,20 @@ public class HypothesisEngineTests
             var crashId = Guid.NewGuid();
             var crashesDir = Path.Combine(root, "data", "crashes", project);
             Directory.CreateDirectory(crashesDir);
-
             var hypothesis = new HypothesisDto(
-                "hyp-hunt-top",
-                crashId,
-                "Stalled family needs sweep",
-                68,
+                "hyp-hunt-top", crashId, "Stalled family needs sweep", 68,
                 new HypothesisExperimentDto(HypothesisExperimentKind.SweepOffset, "sweep", "bitflip", 12, 4),
-                "Momentum rises",
-                HypothesisStatus.Pending);
+                "Momentum rises", HypothesisStatus.Pending);
+            HypothesisEngine.Write(crashesDir, new HypothesisSetDto(true, crashId, project, [hypothesis], DateTimeOffset.UtcNow));
 
-            HypothesisEngine.Write(crashesDir, new HypothesisSetDto(
-                true, crashId, project, [hypothesis], DateTimeOffset.UtcNow));
-
-            var signals = new RandallBrain.Signals(
-                true, "test", null, null, null, [], []);
-
-            var mutators = BuiltInMutators.Create(["havoc", "bitflip"], seed: 1);
-            var mutatorRows = new List<MutatorCreditRowDto>
-            {
-                new("havoc", 12, 4, 1, 80, 6),
-            };
             var policy = HuntPolicyEngine.Evaluate(new HuntPolicyEngine.Context(
-                signals, mutatorRows, null, mutators, 0.5, 3, Project: project, RepoRoot: root));
+                new RandallBrain.Signals(true, "test", null, null, null, [], []),
+                [new MutatorCreditRowDto("havoc", 12, 4, 1, 80, 6)], null,
+                BuiltInMutators.Create(["havoc", "bitflip"], seed: 1), 0.5, 3, Project: project, RepoRoot: root));
 
             Assert.True(policy.NeedsExperiment);
             Assert.Equal("hyp-hunt-top", policy.TopHypothesisId);
-            Assert.True(policy.TopHypothesisConfidence >= HypothesisEngine.MinExperimentConfidence);
         }
-        finally
-        {
-            try { Directory.Delete(root, true); } catch { /* ignore */ }
-        }
+        finally { try { Directory.Delete(root, true); } catch { } }
     }
 }

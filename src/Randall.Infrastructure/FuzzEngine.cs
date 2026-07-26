@@ -790,7 +790,7 @@ public sealed class FuzzEngine
                 {
                     var basePayload = File.ReadAllBytes(hypInput);
                     payload = HypothesisEngine.ApplyExperiment(
-                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng)
+                               basePayload, hypothesisPlan.Experiment, hypothesisPlan.SweepIndex, rng, mutators)
                            ?? basePayload;
                     parentInputHash = InputHash.StackHash(basePayload);
                     seedSource = $"hypothesis/{hypothesisPlan.HypothesisId}";
@@ -2569,7 +2569,7 @@ public sealed class FuzzEngine
             var debugger = ScreamInvestigator.TryRead(ScreamInvestigator.ObservationPathFor(crashesDir, saved.Id));
             var corruption = CorruptionChainBuilder.TryRead(CorruptionChainBuilder.PathFor(crashesDir, saved.Id));
             var evolution = ScreamEvolutionBuilder.TryRead(ScreamEvolutionBuilder.PathFor(crashesDir, saved.Id));
-            var hypotheses = HypothesisEngine.TryRead(HypothesisEngine.PathFor(crashesDir, saved.Id));
+            var hypotheses = HypothesisEngine.TryReadForCrash(crashesDir, saved.Id);
             byte[]? payload = null;
             if (File.Exists(saved.InputPath)) { try { payload = File.ReadAllBytes(saved.InputPath); } catch { } }
             var summary = new CrashSummaryDto(saved.Id, project.Name, iterations, sidecar?.Mutator ?? "?",

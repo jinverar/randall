@@ -44,7 +44,8 @@ public sealed record HypothesisResultDto(
     int ConfidenceAfter,
     string? Observation,
     int? Iteration,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    int? ConfidenceBefore = null);
 
 /// <summary>One testable hypothesis derived from crash intelligence evidence.</summary>
 public sealed record HypothesisDto(
@@ -58,7 +59,7 @@ public sealed record HypothesisDto(
     HypothesisResultDto? Result = null,
     IReadOnlyList<string>? Evidence = null);
 
-/// <summary>Ranked hypotheses for one crash — persisted as <c>{guid}_hypotheses.json</c>.</summary>
+/// <summary>Ranked hypotheses for one crash — persisted under <c>_hypotheses/{guid}.json</c>.</summary>
 public sealed record HypothesisSetDto(
     bool Ok,
     Guid CrashId,
@@ -85,3 +86,23 @@ public sealed record HypothesisProjectSnapshotDto(
     DateTimeOffset At,
     IReadOnlyList<HypothesisQueueEntryDto> Queue,
     HypothesisDto? TopHypothesis);
+
+/// <summary>One row in the project hypothesis ledger (<c>_hypotheses/ledger.json</c>).</summary>
+public sealed record HypothesisLedgerEntryDto(
+    string HypothesisId,
+    Guid CrashId,
+    string Statement,
+    int ConfidencePercent,
+    HypothesisStatus Status,
+    HypothesisExperimentKind ExperimentKind,
+    HypothesisResultDto? Result,
+    DateTimeOffset At);
+
+/// <summary>Project-level hypothesis ledger — aggregated view for Investigation and Hunt Policy.</summary>
+public sealed record HypothesisProjectLedgerDto(
+    string Project,
+    int Iteration,
+    DateTimeOffset At,
+    IReadOnlyList<HypothesisLedgerEntryDto> Entries,
+    HypothesisDto? TopPending,
+    HypothesisProjectSnapshotDto? Queue = null);

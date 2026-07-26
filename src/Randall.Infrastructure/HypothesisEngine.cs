@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Randall.Contracts;
+using Randall.Core;
 
 namespace Randall.Infrastructure;
 
@@ -12,6 +13,7 @@ namespace Randall.Infrastructure;
 public static class HypothesisEngine
 {
     public const string QueueFileName = "hypothesis_queue.json";
+    public const string LedgerFileName = "ledger.json";
     public const int MinExperimentConfidence = 50;
     public const int MagicianBudgetConfidence = 65;
 
@@ -23,8 +25,10 @@ public static class HypothesisEngine
         Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
     };
 
-    public static string PathFor(string crashesDir, Guid crashId) =>
-        Path.Combine(crashesDir, $"{crashId:N}_hypotheses.json");
+    public static string LedgerDir(string crashesDir) => Path.Combine(crashesDir, "_hypotheses");
+    public static string PathFor(string crashesDir, Guid crashId) => Path.Combine(LedgerDir(crashesDir), $"{crashId:N}.json");
+    public static string LegacyPathFor(string crashesDir, Guid crashId) => Path.Combine(crashesDir, $"{crashId:N}_hypotheses.json");
+    public static string LedgerPath(string crashesDir) => Path.Combine(LedgerDir(crashesDir), LedgerFileName);
 
     public static string QueuePath(string project, string? repoRoot = null) =>
         Path.Combine(StalkCampaignStore.ProjectDir(project, repoRoot), QueueFileName);
@@ -40,6 +44,63 @@ public static class HypothesisEngine
         catch
         {
             return null;
+        }
+    }
+
+
+    public static HypothesisSetDto? TryReadForCrash(string crashesDir, Guid crashId) =>
+        TryRead(PathFor(crashesDir, crashId)) ?? TryRead(LegacyPathFor(crashesDir, crashId));
+
+    public static HypothesisProjectLedgerDto? TryLoadLedger(string crashesDir)
+    {
+        var path = LedgerPath(crashesDir);
+        if (!File.Exists(path)) return null;
+        try { return JsonSerializer.Deserialize<HypothesisProjectLedgerDto>(File.ReadAllText(path), JsonOptions); }
+        catch { return null; }
+    }
+
+    public static void SyncProjectLedger(string project, string crashesDir, int iteration, string? repoRoot = null)
+    {
+        var queue = TryLoadQueue(project, repoRoot);
+        var entries = new List<HypothesisLedgerEntryDto>();
+        HypothesisDto? topPending = null;
+        foreach (var set in EnumerateProjectSets(crashesDir))
+        {
+            if (set?.Hypotheses is not { Count: > 0 }) continue;
+            foreach (var h in set.Hypotheses)
+            {
+                if (entries.Any(e => e.HypothesisId.Equals(h.Id, StringComparison.OrdinalIgnoreCase) && e.CrashId == set.CrashId))
+                    continue;
+                entries.Add(new HypothesisLedgerEntryDto(h.Id, set.CrashId, h.Statement, h.ConfidencePercent, h.Status, h.Experiment.Kind, h.Result, set.At));
+            }
+            var top = TopPending(set);
+            if (top is not null && (topPending is null || top.ConfidencePercent > topPending.ConfidencePercent))
+                topPending = top;
+        }
+        entries = entries.OrderByDescending(e => e.ConfidencePercent).ThenBy(e => e.HypothesisId, StringComparer.Ordinal).ToList();
+        Directory.CreateDirectory(LedgerDir(crashesDir));
+        File.WriteAllText(LedgerPath(crashesDir), JsonSerializer.Serialize(
+            new HypothesisProjectLedgerDto(project, iteration, DateTimeOffset.UtcNow, entries, topPending, queue), JsonOptions));
+    }
+
+    private static IEnumerable<HypothesisSetDto> EnumerateProjectSets(string crashesDir)
+    {
+        var seen = new HashSet<Guid>();
+        var hypDir = LedgerDir(crashesDir);
+        if (Directory.Exists(hypDir))
+        {
+            foreach (var file in Directory.EnumerateFiles(hypDir, "*.json"))
+            {
+                if (Path.GetFileName(file).Equals(LedgerFileName, StringComparison.OrdinalIgnoreCase)) continue;
+                var set = TryRead(file);
+                if (set is not null && seen.Add(set.CrashId)) yield return set;
+            }
+        }
+        if (!Directory.Exists(crashesDir)) yield break;
+        foreach (var file in Directory.EnumerateFiles(crashesDir, "*_hypotheses.json"))
+        {
+            var set = TryRead(file);
+            if (set is not null && seen.Add(set.CrashId)) yield return set;
         }
     }
 
@@ -93,9 +154,10 @@ public static class HypothesisEngine
 
     public static string Write(string crashesDir, HypothesisSetDto set)
     {
-        Directory.CreateDirectory(crashesDir);
+        Directory.CreateDirectory(LedgerDir(crashesDir));
         var path = PathFor(crashesDir, set.CrashId);
         File.WriteAllText(path, JsonSerializer.Serialize(set, JsonOptions));
+        SyncProjectLedger(set.Project, crashesDir, TryLoadQueue(set.Project)?.Iteration ?? 0);
         return path;
     }
 
@@ -113,14 +175,11 @@ public static class HypothesisEngine
             return null;
 
         HypothesisDto? best = null;
-        foreach (var file in Directory.EnumerateFiles(crashesDir, "*_hypotheses.json"))
+        foreach (var set in EnumerateProjectSets(crashesDir))
         {
-            var set = TryRead(file);
             var top = TopPending(set);
-            if (top is null)
-                continue;
-            if (best is null || top.ConfidencePercent > best.ConfidencePercent)
-                best = top;
+            if (top is null) continue;
+            if (best is null || top.ConfidencePercent > best.ConfidencePercent) best = top;
         }
 
         var snap = TryLoadQueue(project, repoRoot);
@@ -129,6 +188,18 @@ public static class HypothesisEngine
             return queued;
 
         return best;
+    }
+
+
+    public static bool MarkRunning(string crashesDir, Guid crashId, string hypothesisId)
+    {
+        var set = TryReadForCrash(crashesDir, crashId);
+        if (set is null) return false;
+        var hyp = set.Hypotheses.FirstOrDefault(h => h.Id.Equals(hypothesisId, StringComparison.OrdinalIgnoreCase));
+        if (hyp is null || hyp.Status is not HypothesisStatus.Pending) return false;
+        var updated = hyp with { Status = HypothesisStatus.Running };
+        Write(crashesDir, set with { Hypotheses = set.Hypotheses.Select(h => h.Id.Equals(updated.Id, StringComparison.OrdinalIgnoreCase) ? updated : h).ToList() });
+        return true;
     }
 
     public static void EnqueueFromHypothesis(
@@ -191,6 +262,9 @@ public static class HypothesisEngine
             ? null
             : FindCrashInputPath(crashesDir, entry.CrashId);
 
+        if (crashesDir is not null)
+            MarkRunning(crashesDir, entry.CrashId, entry.HypothesisId);
+
         return new HypothesisExperimentPlan(
             entry.HypothesisId,
             entry.CrashId,
@@ -198,25 +272,20 @@ public static class HypothesisEngine
             entry.Experiment,
             entry.ConfidencePercent,
             entry.SweepIndex,
-            inputPath);
+            inputPath,
+            entry.RemainingBudget);
     }
 
-    public static byte[]? ApplyExperiment(
-        byte[] basePayload,
-        HypothesisExperimentDto experiment,
-        int sweepIndex,
-        Random rng)
+    public static byte[]? ApplyExperiment(byte[] basePayload, HypothesisExperimentDto experiment, int sweepIndex, Random rng, IReadOnlyList<IMutator>? mutators = null)
     {
-        if (basePayload.Length == 0)
-            return null;
-
+        if (basePayload.Length == 0) return null;
         return experiment.Kind switch
         {
             HypothesisExperimentKind.SweepOffset => ApplySweepOffset(basePayload, experiment, sweepIndex),
-            HypothesisExperimentKind.BoundaryProbe => ApplyBoundaryProbe(basePayload, experiment),
+            HypothesisExperimentKind.BoundaryProbe => ApplyBoundaryProbe(basePayload, experiment, sweepIndex),
             HypothesisExperimentKind.MinimizeHold => ApplyMinimizeHold(basePayload, experiment),
-            HypothesisExperimentKind.ReplayLineage => basePayload.ToArray(),
-            HypothesisExperimentKind.HoldMutator => basePayload.ToArray(),
+            HypothesisExperimentKind.ReplayLineage => ApplyReplayLineage(basePayload, experiment, sweepIndex, mutators),
+            HypothesisExperimentKind.HoldMutator => ApplyHoldMutator(basePayload, experiment, sweepIndex, rng, mutators),
             _ => basePayload.ToArray(),
         };
     }
@@ -235,8 +304,7 @@ public static class HypothesisEngine
             return;
 
         var crashesDir = Path.Combine(repo, "data", "crashes", project);
-        var setPath = PathFor(crashesDir, plan.CrashId);
-        var set = TryRead(setPath);
+        var set = TryReadForCrash(crashesDir, plan.CrashId);
         if (set is null)
             return;
 
@@ -245,14 +313,15 @@ public static class HypothesisEngine
         if (hyp is null)
             return;
 
-        var (status, confidence, observation) = EvaluateOutcome(
-            hyp, plan, crashed, crashClass, faultDetail);
+        var confidenceBefore = hyp.ConfidencePercent;
+        var remainingAfter = plan.RemainingBudget - 1;
+        var (status, confidence, observation) = EvaluateOutcome(hyp, crashed, crashClass, faultDetail, remainingAfter);
 
         var updated = hyp with
         {
             Status = status,
             ConfidencePercent = confidence,
-            Result = new HypothesisResultDto(status, confidence, observation, iteration, DateTimeOffset.UtcNow),
+            Result = new HypothesisResultDto(status, confidence, observation, iteration, DateTimeOffset.UtcNow, confidenceBefore),
         };
 
         var hypotheses = set.Hypotheses
@@ -269,7 +338,7 @@ public static class HypothesisEngine
         if (entry is null)
             return;
 
-        var remaining = entry.RemainingBudget - 1;
+        var remaining = remainingAfter;
         if (remaining <= 0 || status is HypothesisStatus.Confirmed or HypothesisStatus.Refuted)
         {
             RemoveQueueEntry(project, plan.HypothesisId, repoRoot);
@@ -319,6 +388,14 @@ public static class HypothesisEngine
         var snap = new HypothesisProjectSnapshotDto(
             project, iteration, DateTimeOffset.UtcNow, queue, topHypothesis);
         File.WriteAllText(path, JsonSerializer.Serialize(snap, JsonOptions));
+
+        var repo = repoRoot ?? CrashCatalog.FindRepoRoot();
+        if (repo is not null)
+        {
+            var crashesDir = Path.Combine(repo, "data", "crashes", project);
+            if (Directory.Exists(crashesDir))
+                SyncProjectLedger(project, crashesDir, iteration, repoRoot);
+        }
     }
 
     public static string FormatVerbose(HypothesisDto hypothesis) =>
@@ -615,13 +692,47 @@ public static class HypothesisEngine
         return copy;
     }
 
-    private static byte[] ApplyBoundaryProbe(byte[] payload, HypothesisExperimentDto experiment)
-    {
-        if (experiment.OffsetBytes is not int offset || offset + 4 > payload.Length)
-            return payload.ToArray();
 
+    private static byte[] ApplyReplayLineage(byte[] payload, HypothesisExperimentDto experiment, int sweepIndex, IReadOnlyList<IMutator>? mutators)
+    {
+        if (sweepIndex <= 0 || mutators is null || experiment.MutatorChain is not { Count: > 0 } chain) return payload.ToArray();
+        var result = payload.ToArray();
+        for (var i = 0; i < Math.Min(sweepIndex, chain.Count); i++)
+        {
+            var mut = mutators.FirstOrDefault(m => m.Name.Equals(chain[i], StringComparison.OrdinalIgnoreCase));
+            if (mut is not null) result = mut.Mutate(result).ToArray();
+        }
+        return result;
+    }
+
+    private static byte[] ApplyHoldMutator(byte[] payload, HypothesisExperimentDto experiment, int sweepIndex, Random rng, IReadOnlyList<IMutator>? mutators)
+    {
         var copy = payload.ToArray();
-        var probe = new byte[] { 0x00, 0x00, 0x00, 0x00 };
+        IMutator? holdMut = null;
+        IMutator? havocMut = null;
+        if (mutators is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(experiment.Mutator))
+                holdMut = mutators.FirstOrDefault(m => m.Name.Equals(experiment.Mutator, StringComparison.OrdinalIgnoreCase));
+            havocMut = mutators.FirstOrDefault(m => m.Name.Equals("havoc", StringComparison.OrdinalIgnoreCase))
+                ?? mutators.FirstOrDefault(m => holdMut is null || !m.Name.Equals(holdMut.Name, StringComparison.OrdinalIgnoreCase));
+        }
+        if (sweepIndex == 0 && holdMut is not null) copy = holdMut.Mutate(copy).ToArray();
+        else if (havocMut is not null) copy = havocMut.Mutate(copy).ToArray();
+        if (copy.Length > 0) copy[sweepIndex % copy.Length] ^= (byte)(1 << (sweepIndex % 8));
+        return copy;
+    }
+
+    private static byte[] ApplyBoundaryProbe(byte[] payload, HypothesisExperimentDto experiment, int sweepIndex)
+    {
+        if (experiment.OffsetBytes is not int offset || offset + 4 > payload.Length) return payload.ToArray();
+        var copy = payload.ToArray();
+        var probe = sweepIndex switch
+        {
+            0 => new byte[] { 0x00, 0x00, 0x00, 0x00 },
+            1 => new byte[] { 0xFF, 0xFF, 0xFF, 0xFE },
+            _ => new byte[] { 0xFF, 0xFF, 0xFF, 0xFF },
+        };
         Buffer.BlockCopy(probe, 0, copy, offset, 4);
         return copy;
     }
@@ -646,22 +757,15 @@ public static class HypothesisEngine
     }
 
     private static (HypothesisStatus Status, int Confidence, string Observation) EvaluateOutcome(
-        HypothesisDto hyp,
-        HypothesisExperimentPlan plan,
-        bool crashed,
-        string? crashClass,
-        string? faultDetail)
+        HypothesisDto hyp, bool crashed, string? crashClass, string? faultDetail, int remainingBudgetAfter)
     {
         var confidence = hyp.ConfidencePercent;
-
         if (!crashed)
         {
-            confidence = Math.Max(15, confidence - 12);
-            return (HypothesisStatus.Inconclusive,
-                confidence,
-                "No crash — hypothesis weakened (may need different sweep index)");
+            if (remainingBudgetAfter <= 0)
+                return (HypothesisStatus.Refuted, Math.Max(10, confidence - 20), "No crash — hypothesis refuted after budget exhausted");
+            return (HypothesisStatus.Inconclusive, Math.Max(15, confidence - 12), "No crash — hypothesis weakened (may need different sweep index)");
         }
-
         var confirmed = hyp.Experiment.Kind switch
         {
             HypothesisExperimentKind.SweepOffset => faultDetail is not null,
@@ -670,13 +774,13 @@ public static class HypothesisEngine
             HypothesisExperimentKind.ReplayLineage or HypothesisExperimentKind.HoldMutator => true,
             _ => true,
         };
-
         if (confirmed)
         {
             confidence = Math.Min(95, confidence + 8);
             return (HypothesisStatus.Confirmed, confidence, $"Crash reproduced: {faultDetail ?? crashClass ?? "runtime fault"}");
         }
-
+        if (remainingBudgetAfter <= 0)
+            return (HypothesisStatus.Refuted, Math.Max(15, confidence - 10), $"Crash with different signature — refuted: {faultDetail ?? crashClass}");
         confidence = Math.Max(20, confidence - 5);
         return (HypothesisStatus.Partial, confidence, $"Crash with different signature: {faultDetail ?? crashClass}");
     }
@@ -715,4 +819,5 @@ public sealed record HypothesisExperimentPlan(
     HypothesisExperimentDto Experiment,
     int ConfidencePercent,
     int SweepIndex,
-    string? CrashInputPath);
+    string? CrashInputPath,
+    int RemainingBudget = 3);

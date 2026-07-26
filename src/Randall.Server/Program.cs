@@ -730,12 +730,10 @@ app.MapGet("/api/stalking/{project}/hypotheses", (string project) =>
     {
         var queue = HypothesisEngine.TryLoadQueue(project);
         var top = HypothesisEngine.FindTopForProject(project);
-        return Results.Ok(new
-        {
-            project,
-            queue,
-            topHypothesis = top,
-        });
+        var repo = CrashCatalog.FindRepoRoot();
+        var crashesDir = repo is null ? null : Path.Combine(repo, "data", "crashes", project);
+        var ledger = crashesDir is not null && Directory.Exists(crashesDir) ? HypothesisEngine.TryLoadLedger(crashesDir) : null;
+        return Results.Ok(new { project, queue, topHypothesis = top, ledger });
     }
     catch (Exception ex)
     {
