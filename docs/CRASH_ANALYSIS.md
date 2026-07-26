@@ -49,7 +49,8 @@ Research-only — richer exploitability evidence for Scream Investigator; no she
 | `<guid>_exploitable.txt` | `!exploitable` output when **msec.dll** is available |
 | `<guid>_cdb_triage.json` | Parsed summary + paths |
 | `<guid>_debugger_observation.json` | **Scream Investigator** — structured `DebuggerObservation` (READ/WRITE/EXECUTE access from `.exr`, fault address class from `!address`/`lm`/heuristics including null/ASCII/heap/stack/freed/module/non-canonical, stack hash, diagnosis, exploitability hint, input-influence guess) |
-| `<guid>_corruption_chain.json` | **Corruption chain** — research-only input→mutation→fault attribution (lineage + pattern depth + debugger evidence) |
+| `<guid>_corruption_chain.json` | **Corruption chain** — research-only input→mutation→fault attribution (lineage + register↔payload joins + pattern depth + debugger evidence) |
+| `<guid>_backward_trace.json` | **Backward trace** — dump-only exploit narrative (mutation → register → bad-pointer source → fault instruction → crash); no live TTD |
 | `<guid>_scream_evolution.json` | **Scream evolution** — family phenotype, generation/ancestor, momentum (READ→WRITE→controlled WRITE), warming label |
 
 **Semantic fingerprint** — each crash also gets a derived `SemanticFingerprint` on triage/intelligence (not a separate on-disk file). It buckets by exception class, access kind, fault address class, faulting function, top normalized stack frames, heap signal, controlled input offset, oracle violation, coverage tail, and corruption-chain signature hash. `CrashCluster` groups by this key when present (falls back to legacy `ClusterKey`). Existing clusters remain readable — fingerprints are computed from existing artifacts at catalog load time.
@@ -57,6 +58,35 @@ Research-only — richer exploitability evidence for Scream Investigator; no she
 `DebuggerObservation` feeds FaultSignals, ScreamScore bonuses, and the Crashes Investigation UI (“Scream Investigator” line). When pattern depth or debugger evidence exists, `CrashCorruptionChainDto` is fused into scream intelligence and canister context. **Scream evolution** groups related crashes by phenotype (function + stack + seed lineage — not IP cluster alone), tracks `parentInputHash` generations, and scores momentum vs ancestors. High momentum (`warming` / `hot`) boosts corpus energy, mutator credit on the lineage chain, RandallBrain hunt bias, and Magician `evolutionBless` when enabled. Investigation panel shows family, generation, momentum, and progression step. WinDbg remains the human “open the dump” button — Randfuzz passes `-cf` with metadata when opening by crash GUID (see [WinDbg open script](#windbg-open-with-randfuzz-metadata)).
 
 Soft-fails when cdb is missing (install `scripts/install-debuggers.ps1`). Does not block the fuzz loop — ~90–120s timeout. Randfuzz passes `-y` (local cache + Microsoft symbol server) and runs `.sympath` before probes; see [WinDbg symbols](#windbg-symbols) below.
+
+### Input attribution (register ↔ payload ↔ mutation step)
+
+When the crashing input is available beside the canister, `InputAttributionEngine` joins debugger registers with payload bytes:
+
+| Signal | Meaning |
+|--------|---------|
+| `RegisterMatches[]` | RAX/RCX/RDX/… or fault/RIP dword/qword/ASCII found at `payload+N` |
+| `PrimaryRegister` | Best register for the fault (fault address beats RIP beats GPRs) |
+| `SuspectedMutatorStep` | 0-based lineage index — prefers expand/insert over last-mutator-only when ASCII/write AV evidence supports it |
+| `Narrative` | Research triage story: `field → register → sink → write/read AV → heap` (e.g. controlled write, length→memcpy-style when `!func` / disasm support it) |
+| `AttributionScreamBonus` | Extra 0–18 ScreamScore when confidence is HIGH/MEDIUM and write AV + controlled pointer + heap signals align |
+
+`DebuggerObservation.RegisterMatches` / `PrimaryRegisterMatch` may be pre-filled by the headless CDB script; otherwise Scream Investigator and `CorruptionChainBuilder` compute them from `RegistersText` + input file. Investigation UI shows the narrative, register table, attributed mutation step, and bonus. **Research only** — no exploit payloads.
+
+### Backward trace (dump-only, no TTD)
+
+`BackwardTraceBuilder` fuses CDB post-mortem probes with mutation lineage into a step-by-step research story:
+
+| Step kind | Source |
+|-----------|--------|
+| `mutation` | Lineage chain; attributed step when register↔payload match supports it |
+| `register` | `RegisterPayloadMatchDto` — which GPR holds input bytes |
+| `source` | Heuristic bad-pointer origin: input bytes, freed heap, stack slot, ASCII pattern |
+| `heap-timeline` | `freed → reuse → crash` when `!address`/`!heap`/`!analyze` signal UAF |
+| `instruction` | Faulting insn from `u @rip` disasm block |
+| `sink` / `crash` | Faulting function + ACCESS_VIOLATION |
+
+Artifacts feed **HypothesisEngine** (`hyp-btrace-*` hypotheses), **Deep Scream** TTD playbook (dump-only section first; live TTD remains external), and the Investigation **Backward trace** panel. Built automatically when `fuzz.cdbAnalyzeCrash: true` on Windows.
 
 **msec.dll** (Microsoft Exploitability Index extension) is optional:
 
@@ -107,6 +137,18 @@ mkdir C:\Symbols -Force
 | **WinDbg Preview** | Interactive walk (`Both` mode, Crashes → WinDbg buttons, `randall debug open`) |
 
 Re-opening the same dump from Randfuzz skips a second GUI launch if the prior WinDbg for that dump is still running.
+
+## CDB wait attach exception policy
+
+When the fuzz loop uses the optional **cdb** wait backend (`DebuggerSession.StartCdbWait`), Randfuzz runs a `CdbProbePlan.WaitAttach` script (see [CDB_PROBE_ENGINE.md](CDB_PROBE_ENGINE.md)) instead of the legacy `g; .dump; qd` one-liner.
+
+| Step | Behavior |
+|------|----------|
+| Attach break-in | Expected — script sets `sxn` filters then `g` to resume |
+| First-chance exceptions | Passed to the process (`sxn` = break on **second** chance only) |
+| Unhandled / second-chance | Break → `RANDFUZZ_CRASH_CAPTURE` → `.dump /ma` → `qd` |
+
+Filters include `sxn av`, `sxn bpe`, and common NTSTATUS codes (`c0000005`, `c000001d`, `c0000094`, `c00000fd`, `e06d7363`). Prefer **Scream watcher** (`fuzz.debuggerMode: wait`) for production campaigns; cdb wait is a fallback when ProcDump/Scream are unavailable.
 
 ## WinDbg open with Randfuzz metadata
 
