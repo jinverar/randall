@@ -4890,30 +4890,47 @@ function canisterMistHtml(slot, pct, mood, { compact = false } = {}) {
   </div>`;
 }
 
+function scareDoorSpriteHtml(extraClass = '', style = '', title = 'Scare door') {
+  return `<span class="amb scare-door ${extraClass}" style="${style}" title="${escapeAttr(title)}" role="img" aria-label="Scare door">
+    <span class="scare-door-shell">
+      <span class="scare-door-panel"></span>
+      <span class="scare-door-window"></span>
+      <span class="scare-door-knob"></span>
+      <span class="scare-door-tag">DOOR</span>
+    </span>
+  </span>`;
+}
+
+function laughOrbSpriteHtml(extraClass = '', style = '', text = 'ha', title = 'Laughter orb') {
+  return `<span class="amb laugh-orb ${extraClass}" style="${style}" title="${escapeAttr(title)}" role="img" aria-label="Laughter orb">
+    <span class="laugh-orb-bubble">${escapeAttr(text)}</span>
+  </span>`;
+}
+
 function canisterFloatiesHtml(mood) {
   if (document.documentElement.getAttribute('data-scream-anim') !== 'on') return '';
-  // Lightweight CSS scare / laughter sprites — browser-only, no fuzz RAM.
+  // Lightweight CSS scare-door / laughter-orb sprites — browser-only, no fuzz RAM.
   if (mood === 'laughter') {
     return `<div class="canister-floaties laughter" aria-hidden="true">
-      <span class="floatie smile" style="--t:0"></span>
-      <span class="floatie ha" style="--t:1">ha</span>
-      <span class="floatie smile" style="--t:2"></span>
+      ${laughOrbSpriteHtml('floatie', '--t:0', 'ha')}
+      ${laughOrbSpriteHtml('floatie', '--t:1', 'ha')}
+      <span class="floatie smile" style="--t:2" title="Smile"></span>
     </div>`;
   }
   if (mood === 'watching') {
     return `<div class="canister-floaties watching" aria-hidden="true">
-      <span class="floatie mote" style="--t:0"></span>
-      <span class="floatie mote" style="--t:1"></span>
+      <span class="floatie mote" style="--t:0" title="Watching mote"></span>
+      <span class="floatie mote" style="--t:1" title="Watching mote"></span>
     </div>`;
   }
   if (mood === 'toxic' || mood === 'virulent' || mood === 'eip') {
-    const n = mood === 'eip' ? 5 : mood === 'virulent' ? 4 : 3;
+    const n = mood === 'eip' ? 4 : mood === 'virulent' ? 3 : 2;
     const bits = [];
     for (let i = 0; i < n; i++) {
-      bits.push(`<span class="floatie scare scare-${i % 3}" style="--t:${i}"></span>`);
+      bits.push(scareDoorSpriteHtml(`floatie scare-door-${i % 2}`, `--t:${i}`, 'Scare door'));
     }
     if (mood === 'eip' || mood === 'virulent') {
-      bits.push('<span class="floatie skull-haze" style="--t:2"></span>');
+      bits.push(laughOrbSpriteHtml('floatie orb-pink', '--t:2', '!', 'Scare orb'));
     }
     return `<div class="canister-floaties ${mood}" aria-hidden="true">${bits.join('')}</div>`;
   }
@@ -4926,31 +4943,44 @@ function paintHarvestAmbience(root, floorMood, stats = {}) {
     layer = document.createElement('div');
     layer.className = 'scream-harvest-ambience';
     layer.setAttribute('aria-hidden', 'true');
-    root.insertBefore(layer, root.firstChild);
+    // Prefer sitting behind the rack so legend text stays readable.
+    const rack = root.querySelector('.scream-canister-rack');
+    if (rack) root.insertBefore(layer, rack);
+    else root.appendChild(layer);
   }
   const animOn = document.documentElement.getAttribute('data-scream-anim') === 'on';
   layer.dataset.mood = floorMood;
   layer.classList.toggle('anim', animOn);
+  if (!animOn) {
+    layer.innerHTML = '';
+    return;
+  }
 
   if (floorMood === 'laughter') {
-    layer.innerHTML = `
-      <span class="amb smile a0"></span><span class="amb ha a1">ha</span>
-      <span class="amb smile a2"></span><span class="amb ha a3">ha</span>
-      <span class="amb spark a4"></span>`;
+    layer.innerHTML = [
+      laughOrbSpriteHtml('a0', '--i:0', 'ha'),
+      laughOrbSpriteHtml('a1', '--i:1', 'ha'),
+      laughOrbSpriteHtml('a2', '--i:2', 'HA'),
+      `<span class="amb smile a3" style="--i:3" title="Smile"></span>`,
+      laughOrbSpriteHtml('a4', '--i:4', 'ha'),
+    ].join('');
     return;
   }
   if (floorMood === 'watching') {
-    layer.innerHTML = `<span class="amb mote a0"></span><span class="amb mote a1"></span>`;
+    layer.innerHTML = `<span class="amb mote a0" style="--i:0" title="Watching mote"></span><span class="amb mote a1" style="--i:1" title="Watching mote"></span>`;
     return;
   }
-  // Toxic / virulent / EIP — floating scares that spook humans
-  const density = floorMood === 'eip' ? 7 : floorMood === 'virulent' ? 6 : 4;
+  // Toxic / virulent / EIP — stylized scare doors + pink scare orbs (Monsters Inc. floor vibe)
+  const density = floorMood === 'eip' ? 6 : floorMood === 'virulent' ? 5 : 4;
   const parts = [];
   for (let i = 0; i < density; i++) {
-    const kind = i % 4 === 0 ? 'door' : i % 4 === 1 ? 'human' : i % 4 === 2 ? 'eye' : 'wail';
-    parts.push(`<span class="amb scare ${kind} a${i}" style="--i:${i}"></span>`);
+    if (i % 3 === 1) {
+      parts.push(laughOrbSpriteHtml(`a${i} orb-pink`, `--i:${i}`, '!', 'Scare orb'));
+    } else {
+      parts.push(scareDoorSpriteHtml(`a${i}`, `--i:${i}`, 'Scare door'));
+    }
   }
-  if (stats.ipHits) parts.push('<span class="amb seal-flare"></span>');
+  if (stats.ipHits) parts.push('<span class="amb seal-flare" title="EIP seal pressure"></span>');
   layer.innerHTML = parts.join('');
 }
 
