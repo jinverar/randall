@@ -258,29 +258,9 @@ public static partial class BackwardTraceBuilder
 
     private static string? ExtractFaultInstruction(DebuggerObservation? dbg)
     {
-        if (string.IsNullOrWhiteSpace(dbg?.DisasmNearRip))
-            return null;
-
-        string? firstGood = null;
-        foreach (var line in dbg.DisasmNearRip.Split('\n'))
-        {
-            var trimmed = line.Trim();
-            if (trimmed.Length == 0 || ScreamInvestigator.LooksLikeCdbNoise(trimmed))
-                continue;
-
-            if (FaultInstrLine().IsMatch(trimmed)
-                || Regex.IsMatch(trimmed, @"^[0-9A-Fa-f`]{4,}\s+([0-9A-Fa-f]{2}\s+)+[A-Za-z]", RegexOptions.IgnoreCase))
-            {
-                if (dbg.Rip is not null
-                    && trimmed.Contains(dbg.Rip.Replace("0x", "", StringComparison.OrdinalIgnoreCase),
-                        StringComparison.OrdinalIgnoreCase))
-                    return trimmed;
-
-                firstGood ??= trimmed;
-            }
-        }
-
-        return firstGood;
+        // Prefer marker / disasm text, but only accept real mnemonic lines — never
+        // "Deferred srv*…" symbol-path noise (hex-prefix regex alone is too loose).
+        return ScreamInvestigator.ExtractFaultInstructionLine(dbg?.DisasmNearRip, dbg?.Rip);
     }
 
     private static string BuildStory(
@@ -397,9 +377,6 @@ public static partial class BackwardTraceBuilder
             a = "0x" + a;
         return a;
     }
-
-    [GeneratedRegex(@"^\s*[0-9A-Fa-fx`]+", RegexOptions.IgnoreCase)]
-    private static partial Regex FaultInstrLine();
 
     // 00000000`0012ff00  41414141`41414141
     [GeneratedRegex(@"(?<addr>[0-9A-Fa-fx`]+)\s+(?<val>[0-9A-Fa-fx`]+)", RegexOptions.IgnoreCase)]

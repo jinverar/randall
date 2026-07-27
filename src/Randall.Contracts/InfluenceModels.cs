@@ -12,6 +12,21 @@ public enum InfluenceConfirmationStatus
     Unknown,
 }
 
+/// <summary>
+/// Honesty display for influence mechanisms — speculative links must not read as Observed facts.
+/// </summary>
+public enum InfluenceHonestyLabel
+{
+    /// <summary>Debugger / register / EA evidence directly supports the mechanism.</summary>
+    Observed,
+    /// <summary>Experimentally confirmed.</summary>
+    Confirmed,
+    /// <summary>Plausible mechanism awaiting experiment — not a fact.</summary>
+    Hypothesized,
+    /// <summary>Weak / correlational only — do not treat as established.</summary>
+    Unverified,
+}
+
 /// <summary>Program state category influenced by an input region.</summary>
 public enum InfluencedStateKind
 {
@@ -55,7 +70,12 @@ public sealed record InfluenceLinkDto(
     string Mechanism,
     IReadOnlyList<string> EvidenceRefs,
     HypothesisExperimentDto? SuggestedExperiment = null,
-    string? HypothesisId = null);
+    string? HypothesisId = null,
+    /// <summary>
+    /// Honesty display: Observed / Confirmed / Hypothesized / Unverified.
+    /// Candidate length→alloc/copy and sentinel correlations must not look like Observed.
+    /// </summary>
+    InfluenceHonestyLabel Honesty = InfluenceHonestyLabel.Unverified);
 
 /// <summary>
 /// Systematic map of input regions to program state — persisted as <c>{guid}_influence.json</c>.

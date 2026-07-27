@@ -3306,6 +3306,18 @@ function evidenceTypeBadge(observationType) {
   return `<span class="evidence-badge evidence-badge-${key || 'observed'}" title="${escapeAttr(t)}">${escapeAttr(label)}</span>`;
 }
 
+/** Influence map honesty: Observed / Confirmed / Hypothesized / Unverified — Candidate ≠ Observed. */
+function influenceHonestyLabel(link) {
+  if (link?.honesty) return String(link.honesty);
+  const mech = String(link?.mechanism || '');
+  if (/correlation|sentinel/i.test(mech)) return 'Unverified';
+  const st = String(link?.status || 'Unknown');
+  if (st === 'Confirmed') return 'Confirmed';
+  if (st === 'Observed') return 'Observed';
+  if (st === 'Candidate') return 'Hypothesized';
+  return 'Unverified';
+}
+
 function shortFault(c) {
   const pf = c.primaryFaultSummary || c.primaryFaultKind || '';
   if (pf) {
@@ -3487,18 +3499,19 @@ function renderCrashDetail(detail, title) {
         ${academyEduBlurb('influence')}
         <p class="hint">${escapeAttr(influenceMap.summary)}</p>
         ${influenceMap.narrative ? `<p class="crash-attribution-narrative"><span class="label">Story</span> ${escapeAttr(influenceMap.narrative)}</p>` : ''}
-        <table class="influence-link-table"><thead><tr><th>Region</th><th>→</th><th>State</th><th>Mechanism</th><th>Status</th></tr></thead><tbody>${influenceMap.links.map((l) => {
+        <table class="influence-link-table"><thead><tr><th>Region</th><th>→</th><th>State</th><th>Mechanism</th><th>Honesty</th></tr></thead><tbody>${influenceMap.links.map((l) => {
           const r = l.region || {};
           const s = l.state || {};
           const regionLabel = r.endOffset != null && r.endOffset > r.startOffset + 1
             ? `+${r.startOffset}..+${r.endOffset}`
             : r.widthBytes > 1 ? `+${r.startOffset} (${r.widthBytes}B)` : `+${r.startOffset}`;
+          const honesty = influenceHonestyLabel(l);
           return `<tr>
             <td><code>${escapeAttr(regionLabel)}</code>${r.fieldLabel ? `<br><span class="hint-inline">${escapeAttr(r.fieldLabel)}</span>` : ''}${r.mutator ? `<br><span class="hint-inline">via ${escapeAttr(r.mutator)}</span>` : ''}</td>
             <td>→</td>
             <td><code>${escapeAttr(s.kind || '')}</code> ${escapeAttr(s.label || '')}${s.value ? `<br><code class="hint-inline">${escapeAttr(s.value)}</code>` : ''}</td>
             <td>${escapeAttr(l.mechanism || '')}</td>
-            <td><span class="influence-status-${String(l.status || 'unknown').toLowerCase()}">${escapeAttr(l.status || '')}</span>${l.suggestedExperiment ? `<br><span class="hint-inline">${escapeAttr(l.suggestedExperiment.kind || '')}</span>` : ''}</td>
+            <td><span class="influence-honesty-${honesty.toLowerCase()}" title="${escapeAttr(l.status || '')}">${escapeAttr(honesty)}</span>${l.suggestedExperiment ? `<br><span class="hint-inline">${escapeAttr(l.suggestedExperiment.kind || '')}</span>` : ''}</td>
           </tr>`;
         }).join('')}</tbody></table>
         ${influenceMap.facts?.length ? `<p class="hint">${influenceMap.facts.length} evidence fact(s) · ${influenceMap.facts.slice(0, 3).map((f) => escapeAttr(`${f.name}${f.value ? ': ' + f.value : ''}`)).join(' · ')}</p>` : ''}

@@ -101,7 +101,7 @@ public class DebuggerHonestyTests
     }
 
     [Fact]
-    public void Null_write_caps_maturity_below_R5_without_counterfactual()
+    public void Null_write_caps_maturity_at_R2_without_control_evidence()
     {
         var id = Guid.NewGuid();
         var obs = ScreamInvestigator.ParseBlocks(
@@ -113,11 +113,12 @@ public class DebuggerHonestyTests
             true, id, "lab", "MEDIUM", "zero coincidence",
             [new InfluenceLinkDto(
                 "link-z",
-                new InfluenceRegionDto(3022, 3026, 4, null, null, null),
+                new InfluenceRegionDto(3022, 3026, 4, null, "boundary", null),
                 new InfluencedStateDto(InfluencedStateKind.FaultAddress, "fault", "0x0"),
                 InfluenceConfirmationStatus.Observed,
                 "pointer→fault address",
-                [])],
+                [],
+                Honesty: InfluenceHonestyLabel.Observed)],
             [],
             DateTimeOffset.UtcNow);
 
@@ -136,47 +137,100 @@ public class DebuggerHonestyTests
             DateTimeOffset.UtcNow);
 
         var report = PrimitiveEngine.Build(id, "lab", influence, null, obs, skeptic: skeptic);
-        Assert.True(report.Maturity <= ResearchMaturity.R4);
+        Assert.True(report.Maturity <= ResearchMaturity.R2);
         Assert.DoesNotContain(report.Primitives, p =>
             p.Kind == PrimitiveKind.InputInfluencedWrite && p.State == PrimitiveState.Observed);
+        Assert.DoesNotContain(report.Primitives, p =>
+            p.Kind == PrimitiveKind.WriteLengthControl);
     }
 
     [Fact]
-    public void MarkerParser_instruction_ignores_symbol_path_noise()
+    public void Boundary_null_write_does_not_claim_write_length_or_length_alloc()
+    {
+        var id = Guid.NewGuid();
+        var payload = new byte[64];
+        var sidecar = new CrashSidecarDto(
+            id, "run", 1, "vulnserver", "TRUN", "boundary",
+            ["boundary"], null, "seed", [], "hash", "x.bin", payload.Length,
+            -1073741819, "ACCESS_VIOLATION", "detail", null, 0, 0, "native",
+            null, null, null, null,
+            new TransportSnapshotDto("tcp", "127.0.0.1", 9999, false),
+            new FuzzSnapshotDto(false, false, "projects/vulnserver.yaml"),
+            DateTimeOffset.UtcNow);
+
+        var obs = ScreamInvestigator.ParseBlocks(
+            "EXCEPTION_CODE: (c0000005) Access violation\n",
+            exr: "Parameter[0]: 00000001\nAttempt to write to address 00000000\n",
+            regs: "rcx=0000000000000000 rip=00007ff812345678\n",
+            stack: "00000000`0012ff00 00007ff8`12345678 coreclr!SafeExitProcess+0x12",
+            symbol: """
+                (80000003) BREAKPOINT
+                BREAKPOINT_80000003_coreclr.dll!SafeExitProcess+0x12
+                (00007ff8`12345678)   coreclr!SafeExitProcess+0x12
+                """,
+            sidecar: sidecar);
+
+        Assert.Equal("coreclr", obs.FaultingModule);
+        Assert.DoesNotContain("BREAKPOINT", obs.FaultingModule ?? "", StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("teardown/exit path", obs.FunctionOffset ?? "", StringComparison.OrdinalIgnoreCase);
+
+        var chain = CorruptionChainBuilder.Build(id, "vulnserver", sidecar, obs, null, payload);
+        var map = InfluenceEngine.Build(id, "vulnserver", sidecar, null, obs, chain, payload: payload);
+        Assert.DoesNotContain(map.Links, l =>
+            l.Mechanism.Contains("length→alloc/copy", StringComparison.OrdinalIgnoreCase));
+
+        var report = PrimitiveEngine.Build(id, "vulnserver", map, null, obs, chain);
+        Assert.True(report.Maturity <= ResearchMaturity.R2);
+        Assert.DoesNotContain(report.Primitives, p => p.Kind == PrimitiveKind.WriteLengthControl);
+    }
+
+    [Fact]
+    public void MarkerParser_instruction_ignores_Deferred_srv_symbol_path_noise()
     {
         const string golden = """
-            Expanded Symbol search path is: srv*C:\symbols*https://msdl.microsoft.com/download/symbols
+            Expanded Symbol search path is: srv*C:\Users\007\AppData\Local\Randfuzz\Symbols*https://msdl.microsoft.com/download/symbols
             RANDFUZZ_INSTRUCTION_BEGIN
-            00007ff8`12345678 488901          mov     qword ptr [rcx],rax
+            Deferred srv*C:\Users\007\AppData\Local\Randfuzz\Symbols*https://msdl.microsoft.com/download/symbols
+            00007ff8`12345678 8948d4          mov     dword ptr [rax-2Ch],ecx
             RANDFUZZ_INSTRUCTION_END
             Expanded Symbol search path is: srv*again*
             ===RANDALL_SYMBOL===
+            (80000003) BREAKPOINT_80000003
+            BREAKPOINT_80000003_coreclr.dll!SafeExitProcess+0x10
             (00007ff8`12345678)   ntdll!RtlpSomething+0x12
             Exact matches:
                 ntdll!RtlpSomething (00007ff8`12345600)
             ===RANDALL_SYMBOL_END===
             RANDFUZZ_DISASM_BEGIN
+            Deferred srv*should-not-be-fault-insn*
             Expanded Symbol search path is: srv*should-not-be-fault-insn*
-            00007ff8`12345678 488901          mov     qword ptr [rcx],rax
+            00007ff8`12345678 8948d4          mov     dword ptr [rax-2Ch],ecx
             RANDFUZZ_DISASM_END
             """;
 
         var transcript = CdbMarkerParser.Parse(golden);
-        var insn = transcript.Get(CdbProbeSection.Instruction);
-        Assert.Contains("mov", insn, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Expanded Symbol", insn, StringComparison.OrdinalIgnoreCase);
+        var insnBlock = transcript.Get(CdbProbeSection.Instruction);
+        Assert.Contains("Deferred", insnBlock, StringComparison.OrdinalIgnoreCase);
+
+        var insn = ScreamInvestigator.ExtractFaultInstructionLine(insnBlock, "0x7ff812345678");
+        Assert.NotNull(insn);
+        Assert.Contains("mov", insn!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("rax-2Ch", insn!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Deferred", insn!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("srv*", insn!, StringComparison.OrdinalIgnoreCase);
 
         var (fn, mod, off) = ScreamInvestigator.ParseLnSymbol(transcript.Get(CdbProbeSection.Symbol));
         Assert.Equal("ntdll", mod);
         Assert.Equal("RtlpSomething", fn);
         Assert.Equal("+0x12", off);
+        Assert.DoesNotContain("BREAKPOINT", mod ?? "", StringComparison.OrdinalIgnoreCase);
 
         var obs = ScreamInvestigator.ParseBlocks(
             "EXCEPTION_CODE: (c0000005) Access violation\nFAULTING_IP: 00007ff812345678\n",
             exr: "Parameter[0]: 00000001\nAttempt to write to address 00000000\n",
             regs: "rip=00007ff812345678 rcx=0000000000000000\n",
             disasm: transcript.Get(CdbProbeSection.Disasm),
-            instruction: insn,
+            instruction: insnBlock,
             symbol: transcript.Get(CdbProbeSection.Symbol));
 
         Assert.Equal("RtlpSomething", obs.FaultingFunction);
@@ -185,7 +239,46 @@ public class DebuggerHonestyTests
         var trace = BackwardTraceBuilder.Build(Guid.NewGuid(), "lab", null, obs, null, null, null);
         Assert.NotNull(trace.FaultInstruction);
         Assert.Contains("mov", trace.FaultInstruction!, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Expanded Symbol", trace.FaultInstruction!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Deferred", trace.FaultInstruction!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("srv*", trace.FaultInstruction!, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SanitizeModuleName_strips_BREAKPOINT_exception_glue()
+    {
+        Assert.Equal("coreclr", ScreamInvestigator.SanitizeModuleName("BREAKPOINT_80000003_coreclr.dll"));
+        Assert.Equal("vulnserver", ScreamInvestigator.SanitizeModuleName("vulnserver.exe"));
+        Assert.Null(ScreamInvestigator.SanitizeModuleName("BREAKPOINT_80000003"));
+    }
+
+    [Fact]
+    public void All_ones_sentinel_is_unverified_correlation_not_R4()
+    {
+        var id = Guid.NewGuid();
+        var payload = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x01 };
+        var sidecar = new CrashSidecarDto(
+            id, "run", 1, "lab", "TRUN", "boundary",
+            ["boundary"], null, "seed", [], "hash", "x.bin", payload.Length,
+            -1073741819, "ACCESS_VIOLATION", "detail", null, 0, 0, "native",
+            null, null, null, null,
+            new TransportSnapshotDto("tcp", "127.0.0.1", 9999, false),
+            new FuzzSnapshotDto(false, false, "projects/lab.yaml"),
+            DateTimeOffset.UtcNow);
+
+        var obs = ScreamInvestigator.ParseBlocks(
+            "EXCEPTION_CODE: (c0000005)\n",
+            exr: "Attempt to write to address 00000000\nParameter[0]: 00000001\n",
+            regs: "rcx=ffffffffffffffff rax=0000000000000000 rip=0000000000401000\n",
+            sidecar: sidecar);
+
+        var map = InfluenceEngine.Build(id, "lab", sidecar, null, obs, null, payload: payload);
+        Assert.Contains(map.Links, l =>
+            l.Mechanism.Contains("sentinel correlation", StringComparison.OrdinalIgnoreCase)
+            && l.Honesty == InfluenceHonestyLabel.Unverified);
+
+        var report = PrimitiveEngine.Build(id, "lab", map, null, obs);
+        Assert.True(report.Maturity <= ResearchMaturity.R2);
+        Assert.DoesNotContain(report.Primitives, p => p.Kind == PrimitiveKind.WriteLengthControl);
     }
 
     [Fact]

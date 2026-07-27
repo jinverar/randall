@@ -185,6 +185,56 @@ public static partial class InputAttributionEngine
         return LooksLikeAsciiPattern(addr);
     }
 
+    /// <summary>All-ones dword/qword (−1 / 0xFF..FF) — correlation only, not proven control.</summary>
+    public sealed record SentinelCorrelation(
+        string Register,
+        string ValueHex,
+        int? PayloadOffset,
+        int? WidthBytes);
+
+    /// <summary>
+    /// Find RCX/RAX/… holding <c>0xFFFFFFFF</c> / <c>0xFFFFFFFFFFFFFFFF</c>.
+    /// Surfaces as Unverified correlation (boundary + −1 is an experiment hint, not R4).
+    /// </summary>
+    public static SentinelCorrelation? FindAllOnesSentinelCorrelation(string? registersText, byte[]? payload)
+    {
+        if (string.IsNullOrWhiteSpace(registersText))
+            return null;
+
+        foreach (var (name, val) in ParseRegisters(registersText))
+        {
+            if (!TryParseUlong(val, out var v))
+                continue;
+            var isDword = (v & 0xFFFFFFFFUL) == 0xFFFFFFFFUL && v <= 0xFFFFFFFFUL;
+            var isQword = v == ulong.MaxValue;
+            if (!isDword && !isQword)
+                continue;
+
+            int? offset = null;
+            int width = isQword ? 8 : 4;
+            if (payload is { Length: > 0 })
+            {
+                var needle = isQword
+                    ? new byte[] { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF }
+                    : new byte[] { 0xFF, 0xFF, 0xFF, 0xFF };
+                var idx = IndexOf(payload, needle);
+                if (idx >= 0)
+                    offset = idx;
+            }
+
+            return new SentinelCorrelation(name.ToUpperInvariant(), NormalizeHex(val) ?? val, offset, width);
+        }
+
+        return null;
+    }
+
+    private static string? NormalizeHex(string addr)
+    {
+        if (!TryParseUlong(addr, out var v))
+            return null;
+        return "0x" + v.ToString("X");
+    }
+
     public static RegisterPayloadMatchDto? MatchRegisterToPayload(string register, string addr, byte[] payload)
     {
         if (IsExcludedFromRawInputAttribution(addr))

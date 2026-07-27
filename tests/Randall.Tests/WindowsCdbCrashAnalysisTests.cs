@@ -17,7 +17,7 @@ public class WindowsCdbCrashAnalysisTests
         Assert.Equal("c0000005", parsed.ExceptionCode);
         Assert.Contains("ACCESS_VIOLATION", parsed.ExceptionHint!, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("0x41414141", parsed.FaultAddress);
-        Assert.Equal("vulnserver.exe", parsed.FaultModule);
+        Assert.Equal("vulnserver", parsed.FaultModule);
     }
 
     [Fact]

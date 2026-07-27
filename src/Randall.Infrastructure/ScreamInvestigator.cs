@@ -231,6 +231,7 @@ public static partial class ScreamInvestigator
         var rip = ExtractRip(regs, analyze) ?? faultAddr;
         var frames = ParseStackFrames(stack);
         var (fn, mod, fnOff) = InferFaultingSymbol(frames, parsed.FaultModule, analyze, symbol);
+        mod = SanitizeModuleName(mod) ?? SanitizeModuleName(parsed.FaultModule);
         var stackHash = HashStack(frames);
         var inputInfluence = InferInputInfluence(faultAddr, addrClass, regs, sidecar);
         var heapSignal = InferHeapSignal(analyze, exploitable, heap, address, exp.Classification);
@@ -606,7 +607,7 @@ public static partial class ScreamInvestigator
             var bang = sym.IndexOf('!', StringComparison.Ordinal);
             if (bang > 0)
             {
-                module = sym[..bang];
+                module = SanitizeModuleName(sym[..bang]);
                 var rest = sym[(bang + 1)..];
                 var plus = rest.IndexOf("+0x", StringComparison.OrdinalIgnoreCase);
                 if (plus > 0)
@@ -617,6 +618,9 @@ public static partial class ScreamInvestigator
                 else
                     function = rest;
             }
+
+            if (module is null && IsGarbageSymbol(function ?? sym, null))
+                continue;
 
             frames.Add(new DebuggerStackFrameDto(
                 idx++,
@@ -638,32 +642,88 @@ public static partial class ScreamInvestigator
         string analyze,
         string? symbolLn = null)
     {
+        var cleanedAnalyzeMod = SanitizeModuleName(analyzeModule);
         var fromLn = ParseLnSymbol(symbolLn);
         if (fromLn.Function is not null && !IsGarbageSymbol(fromLn.Function, fromLn.Module))
-            return fromLn;
+        {
+            // Prefer a non-teardown stack/image frame when ln/@rip sits on exit path after an AV.
+            if (IsTeardownExitPath(fromLn.Function, fromLn.Module)
+                && TryPreferNonTeardownFrame(frames, cleanedAnalyzeMod, out var preferred))
+                return preferred;
+
+            return AnnotateTeardownIfNeeded(fromLn);
+        }
+
+        if (TryPreferNonTeardownFrame(frames, cleanedAnalyzeMod, out var fromStack))
+            return fromStack;
 
         if (frames.Count > 0)
         {
             var f0 = frames[0];
-            if (!IsGarbageSymbol(f0.Symbol, f0.Module))
-                return (f0.Symbol, f0.Module ?? analyzeModule, f0.Offset);
+            var mod0 = SanitizeModuleName(f0.Module) ?? cleanedAnalyzeMod;
+            if (!IsGarbageSymbol(f0.Symbol, mod0))
+                return AnnotateTeardownIfNeeded((f0.Symbol, mod0, f0.Offset));
         }
 
-        var m = Regex.Match(analyze, @"FAULTING_SOURCE_CODE:[\s\S]*?(\w+)!(\w+)\+0x([0-9A-Fa-f]+)",
+        var m = Regex.Match(analyze, @"FAULTING_SOURCE_CODE:[\s\S]*?([\w.\-]+)!([\w$?@]+)\+0x([0-9A-Fa-f]+)",
             RegexOptions.IgnoreCase);
         if (m.Success)
-            return (m.Groups[2].Value, m.Groups[1].Value, "+0x" + m.Groups[3].Value);
-
-        var ipSym = Regex.Match(analyze,
-            @"FAULTING_IP:\s*\S*\s+(\w+)!(\w+)(?:\+0x([0-9A-Fa-f]+))?",
-            RegexOptions.IgnoreCase);
-        if (ipSym.Success && !IsGarbageSymbol(ipSym.Groups[2].Value, ipSym.Groups[1].Value))
         {
-            var off = ipSym.Groups[3].Success ? "+0x" + ipSym.Groups[3].Value : null;
-            return (ipSym.Groups[2].Value, ipSym.Groups[1].Value, off);
+            var mod = SanitizeModuleName(m.Groups[1].Value);
+            var fn = m.Groups[2].Value;
+            if (!IsGarbageSymbol(fn, mod))
+                return AnnotateTeardownIfNeeded((fn, mod, "+0x" + m.Groups[3].Value));
         }
 
-        return (null, analyzeModule, null);
+        var ipSym = Regex.Match(analyze,
+            @"FAULTING_IP:\s*\S*\s+([\w.\-]+)!([\w$?@]+)(?:\+0x([0-9A-Fa-f]+))?",
+            RegexOptions.IgnoreCase);
+        if (ipSym.Success)
+        {
+            var mod = SanitizeModuleName(ipSym.Groups[1].Value);
+            var fn = ipSym.Groups[2].Value;
+            if (!IsGarbageSymbol(fn, mod))
+            {
+                var off = ipSym.Groups[3].Success ? "+0x" + ipSym.Groups[3].Value : null;
+                return AnnotateTeardownIfNeeded((fn, mod, off));
+            }
+        }
+
+        return (null, cleanedAnalyzeMod, null);
+    }
+
+    private static bool TryPreferNonTeardownFrame(
+        IReadOnlyList<DebuggerStackFrameDto> frames,
+        string? analyzeModule,
+        out (string? Function, string? Module, string? Offset) result)
+    {
+        foreach (var f in frames)
+        {
+            var mod = SanitizeModuleName(f.Module) ?? analyzeModule;
+            if (IsGarbageSymbol(f.Symbol, mod))
+                continue;
+            if (IsTeardownExitPath(f.Symbol, mod))
+                continue;
+            result = (f.Symbol, mod, f.Offset);
+            return true;
+        }
+
+        result = default;
+        return false;
+    }
+
+    private static (string? Function, string? Module, string? Offset) AnnotateTeardownIfNeeded(
+        (string? Function, string? Module, string? Offset) sym)
+    {
+        var mod = SanitizeModuleName(sym.Module);
+        if (!IsTeardownExitPath(sym.Function, mod))
+            return (sym.Function, mod, sym.Offset);
+
+        // Keep real symbol but mark offset/detail so UI never invents BREAKPOINT_* modules.
+        var off = string.IsNullOrWhiteSpace(sym.Offset)
+            ? "(teardown/exit path)"
+            : $"{sym.Offset} (teardown/exit path)";
+        return (sym.Function, mod, off);
     }
 
     /// <summary>Parse <c>ln @rip</c> marker block into module!function+offset.</summary>
@@ -677,6 +737,10 @@ public static partial class ScreamInvestigator
             var line = raw.Trim();
             if (line.Length == 0 || LooksLikeCdbNoise(line))
                 continue;
+            // Exception banners / (80000003) BREAKPOINT … must not become module names.
+            if (line.Contains("BREAKPOINT", StringComparison.OrdinalIgnoreCase)
+                && !line.Contains('!', StringComparison.Ordinal))
+                continue;
 
             var m = Regex.Match(line,
                 @"(?<mod>[\w.\-]+)\!(?<fn>[\w$?@]+|`[^`]+`)(?:\+(?<off>0x[0-9A-Fa-f]+))?",
@@ -684,9 +748,16 @@ public static partial class ScreamInvestigator
             if (!m.Success)
                 continue;
 
-            var mod = m.Groups["mod"].Value;
+            var rawMod = m.Groups["mod"].Value;
+            // Exception text glued into IMAGE_NAME (BREAKPOINT_80000003_coreclr.dll) — skip; keep scanning.
+            if (Regex.IsMatch(rawMod,
+                    @"^(?:BREAKPOINT|ACCESS_VIOLATION|EXCEPTION|STATUS|ERROR|SINGLE_STEP)_",
+                    RegexOptions.IgnoreCase))
+                continue;
+
+            var mod = SanitizeModuleName(rawMod);
             var fn = m.Groups["fn"].Value.Trim('`');
-            if (IsGarbageSymbol(fn, mod))
+            if (mod is null || IsGarbageSymbol(fn, mod))
                 continue;
 
             var off = m.Groups["off"].Success ? "+" + m.Groups["off"].Value : null;
@@ -694,6 +765,71 @@ public static partial class ScreamInvestigator
         }
 
         return (null, null, null);
+    }
+
+    /// <summary>
+    /// Strip exception text glued into IMAGE_NAME / FAULTING_MODULE / ln output
+    /// (e.g. <c>BREAKPOINT_80000003_coreclr.dll</c> → <c>coreclr</c>).
+    /// </summary>
+    internal static string? SanitizeModuleName(string? module)
+    {
+        if (string.IsNullOrWhiteSpace(module))
+            return null;
+
+        var m = module.Trim().Trim('"', '\'', '`');
+        m = Regex.Replace(
+            m,
+            @"^(?:BREAKPOINT|ACCESS_VIOLATION|EXCEPTION|STATUS|ERROR|SINGLE_STEP)(?:_[0-9A-Fa-fx]+)?_?",
+            "",
+            RegexOptions.IgnoreCase);
+        if (m.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            || m.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            || m.EndsWith(".sys", StringComparison.OrdinalIgnoreCase))
+            m = Path.GetFileNameWithoutExtension(m);
+
+        // Pure leftover exception code (e.g. BREAKPOINT_80000003 → 80000003) is not a module.
+        if (string.IsNullOrWhiteSpace(m) || Regex.IsMatch(m, @"^[0-9A-Fa-fx]+$"))
+            return null;
+        if (IsGarbageModule(m))
+            return null;
+        return m;
+    }
+
+    internal static bool IsGarbageModule(string? module)
+    {
+        if (string.IsNullOrWhiteSpace(module))
+            return true;
+        var mod = module.Trim();
+        if (mod is "!" or "?" or "*" or ".")
+            return true;
+        if (mod.Contains("BREAKPOINT", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (mod.StartsWith("EXCEPTION", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (mod.Contains("srv*", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (LooksLikeCdbNoise(mod))
+            return true;
+        return false;
+    }
+
+    /// <summary>RIP in process exit / runtime teardown — not the primary AV site.</summary>
+    internal static bool IsTeardownExitPath(string? function, string? module = null)
+    {
+        var fn = (function ?? "").ToLowerInvariant();
+        var mod = (module ?? "").ToLowerInvariant();
+        if (fn.Contains("safeexitprocess", StringComparison.Ordinal)
+            || fn.Contains("exitprocess", StringComparison.Ordinal)
+            || fn.Contains("rtlexitusertprocess", StringComparison.Ordinal)
+            || fn.Contains("rtlexituserprocess", StringComparison.Ordinal)
+            || fn.Contains("corexitprocess", StringComparison.Ordinal)
+            || fn.Contains("terminateprocess", StringComparison.Ordinal)
+            || fn is "exit" or "_exit" or "abort")
+            return true;
+        if (mod.Contains("coreclr", StringComparison.Ordinal)
+            && (fn.Contains("exit", StringComparison.Ordinal) || fn.Contains("shutdown", StringComparison.Ordinal)))
+            return true;
+        return false;
     }
 
     internal static bool IsGarbageSymbol(string? function, string? module = null)
@@ -707,7 +843,11 @@ public static partial class ScreamInvestigator
             return true;
         if (fn.Contains("Symbol search path", StringComparison.OrdinalIgnoreCase))
             return true;
-        if (module is "!" or "?" or "")
+        if (fn.Contains("Deferred", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (fn.Contains("srv*", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (IsGarbageModule(module))
             return true;
         return false;
     }
@@ -715,9 +855,78 @@ public static partial class ScreamInvestigator
     internal static bool LooksLikeCdbNoise(string line) =>
         line.Contains("Expanded Symbol search path", StringComparison.OrdinalIgnoreCase)
         || line.Contains("Symbol search path is", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("Symbol search path", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("srv*", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("Deferred", StringComparison.OrdinalIgnoreCase)
         || line.Contains("*************", StringComparison.Ordinal)
         || line.StartsWith("Loading symbols", StringComparison.OrdinalIgnoreCase)
-        || line.StartsWith("Unable to load", StringComparison.OrdinalIgnoreCase);
+        || line.StartsWith("Unable to load", StringComparison.OrdinalIgnoreCase)
+        || line.StartsWith("*** ", StringComparison.Ordinal)
+        || Regex.IsMatch(line, @"^\(?[0-9A-Fa-fx]+\)?\s*BREAKPOINT", RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// True only for lines that look like a real disassembly instruction
+    /// (hex address + optional bytes + mnemonic). Rejects symbol-path / Deferred noise.
+    /// </summary>
+    internal static bool LooksLikeInstructionLine(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+            return false;
+        var trimmed = line.Trim();
+        if (LooksLikeCdbNoise(trimmed))
+            return false;
+        if (trimmed.Contains("srv*", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("Deferred", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("Symbol search path", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Contains("Expanded Symbol", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // Compact or spaced opcodes: 00007ff8`12345678 8948d4  mov dword ptr [rax-2Ch],ecx
+        // or: 00401020  mov dword ptr [rax],ecx
+        const string mnemonics =
+            @"mov|lea|call|jmp|je|jne|jz|jnz|xor|add|sub|cmp|test|push|pop|ret|nop|int|rep|stos|lods|scas|cmps|and|or|shl|shr|rol|ror|inc|dec|xchg|cmov";
+        if (Regex.IsMatch(
+                trimmed,
+                $@"^[0-9A-Fa-f`]{{4,}}\s+(?:[0-9A-Fa-f]{{2,}}\s+)+({mnemonics})\b",
+                RegexOptions.IgnoreCase))
+            return true;
+
+        if (Regex.IsMatch(
+                trimmed,
+                $@"^[0-9A-Fa-f`]{{4,}}\s+({mnemonics})\b",
+                RegexOptions.IgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    /// <summary>First good instruction line inside marker/disasm text; null if only noise.</summary>
+    internal static string? ExtractFaultInstructionLine(string? text, string? preferRip = null)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return null;
+
+        string? firstGood = null;
+        foreach (var raw in text.Split('\n'))
+        {
+            var trimmed = raw.Trim();
+            if (!LooksLikeInstructionLine(trimmed))
+                continue;
+
+            if (preferRip is not null)
+            {
+                var ripBare = preferRip.Replace("0x", "", StringComparison.OrdinalIgnoreCase)
+                    .Replace("`", "", StringComparison.Ordinal);
+                var lineBare = trimmed.Replace("`", "", StringComparison.Ordinal);
+                if (lineBare.Contains(ripBare, StringComparison.OrdinalIgnoreCase))
+                    return trimmed;
+            }
+
+            firstGood ??= trimmed;
+        }
+
+        return firstGood;
+    }
 
     private static string? HashStack(IReadOnlyList<DebuggerStackFrameDto> frames)
     {
@@ -875,6 +1084,9 @@ public static partial class ScreamInvestigator
         var hint = parsed.ExceptionHint ?? "ACCESS_VIOLATION";
         var sb = new StringBuilder();
         sb.Append($"{accessWord} {hint} in {where}.");
+        if (IsTeardownExitPath(fn, mod)
+            || (fnOff?.Contains("teardown/exit path", StringComparison.OrdinalIgnoreCase) == true))
+            sb.Append(" RIP is on teardown/exit path — not treated as the primary AV site.");
         if (faultAddr is not null)
             sb.Append($" Fault address {faultAddr} ({FormatAddressClass(addrClass)}).");
         if (heapSignal is not null)

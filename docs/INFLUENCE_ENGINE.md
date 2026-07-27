@@ -36,10 +36,13 @@ Each `InfluenceLinkDto` connects:
 |-------|---------|
 | **Region** | `input+20` (4B), field label, attributed mutator step |
 | **State** | `Register RAX`, `FaultAddress`, `CopyLength`, `HeapObject` |
-| **Mechanism** | `pointer→fault address`, `length→alloc/copy`, `input→register→sink` |
-| **Status** | `Observed` / `Confirmed` / `Candidate` / `Unknown` |
+| **Mechanism** | `pointer→fault address`, `length→alloc/copy`, `input→register→sink`, `sentinel correlation (−1 / 0xFF..FF)` |
+| **Status** | `Observed` / `Confirmed` / `Candidate` / `Unknown` (experiment confirmation) |
+| **Honesty** | `Observed` / `Confirmed` / `Hypothesized` / `Unverified` — Candidate length→alloc/copy and sentinel correlations must not read as Observed facts |
 | **Evidence refs** | `register:RAX@+20`, `corruption:HIGH`, `backwardTrace:MEDIUM` |
 | **Suggested experiment** | Same kinds as Hypothesis Engine (when status is `Candidate`) |
+
+Bare mutator name `boundary` does **not** create a `length→alloc/copy` / write-length candidate. That mechanism needs a real copy/alloc sink (or disasm) plus expand/insert/interesting (or repeated boundary causality). Null write on a teardown/exit path (`SafeExitProcess`) never invents `input → SafeExitProcess` length→alloc/copy.
 
 ## EvidenceFact consumption
 

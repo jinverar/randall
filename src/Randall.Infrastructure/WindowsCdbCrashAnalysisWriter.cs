@@ -375,7 +375,7 @@ public static partial class WindowsCdbCrashAnalysisWriter
             {
                 var mod = FaultModuleLine().Match(line);
                 if (mod.Success)
-                    module = mod.Groups[1].Value.Trim();
+                    module = ScreamInvestigator.SanitizeModuleName(mod.Groups[1].Value.Trim());
             }
         }
 

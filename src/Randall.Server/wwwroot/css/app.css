@@ -3477,6 +3477,10 @@ html[data-theme="cyber"] .stalker-meta .status-crash {
 .influence-status-confirmed { color: var(--stalk-green); font-weight: 700; }
 .influence-status-candidate { color: var(--warn); }
 .influence-status-unknown { color: var(--muted); }
+.influence-honesty-observed { color: var(--stalk-green); font-weight: 600; }
+.influence-honesty-confirmed { color: var(--stalk-green); font-weight: 700; }
+.influence-honesty-hypothesized { color: var(--warn); }
+.influence-honesty-unverified { color: var(--muted); font-style: italic; }
 
 .reg-grid {
   display: grid;

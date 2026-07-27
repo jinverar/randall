@@ -60,7 +60,36 @@ public class InfluenceEngineTests
         Assert.Contains(map.Links, l =>
             l.Mechanism == "length→alloc/copy"
             && l.Status == InfluenceConfirmationStatus.Candidate
+            && l.Honesty == InfluenceHonestyLabel.Hypothesized
             && l.State.Kind == InfluencedStateKind.CopyLength);
+    }
+
+    [Fact]
+    public void Build_does_not_add_length_copy_for_boundary_only_null_write()
+    {
+        var id = Guid.NewGuid();
+        var payload = new byte[32];
+        var sidecar = new CrashSidecarDto(
+            id, "run-1", 1, "lab", "TRUN", "boundary",
+            ["boundary"], null, "seed", [], "abc", "x.bin", payload.Length,
+            -1073741819, "AV", "server exited", null, 0, 0, "native",
+            null, null, null, null,
+            new TransportSnapshotDto("tcp", "127.0.0.1", 9999, false),
+            new FuzzSnapshotDto(false, false, "projects/lab.yaml"),
+            DateTimeOffset.UtcNow);
+
+        var obs = ScreamInvestigator.ParseBlocks(
+            "EXCEPTION_CODE: (c0000005)\n",
+            exr: "Attempt to write to address 00000000\nParameter[0]: 00000001\n",
+            regs: "rcx=0000000000000000\n",
+            stack: "00000000`0012ff00 00000000`00401000 lab!SafeExitProcess+0x12",
+            sidecar: sidecar);
+
+        var chain = CorruptionChainBuilder.Build(id, "lab", sidecar, obs, null, payload);
+        var map = InfluenceEngine.Build(id, "lab", sidecar, null, obs, chain, payload: payload);
+
+        Assert.DoesNotContain(map.Links, l =>
+            l.Mechanism.Contains("length→alloc/copy", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

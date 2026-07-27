@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Randall.Contracts;
 
 namespace Randall.Infrastructure;
@@ -79,13 +80,15 @@ public static class PrimitiveEngine
         if (!gateOk)
             merged = DemoteConfirmedWithoutSkeptic(merged);
 
-        var (nullWriteCapped, mergedAfterNullGate) = ApplyNullWriteHonestyGate(merged, debugger, skeptic);
+        var (nullWriteCapped, mergedAfterNullGate) = ApplyNullWriteHonestyGate(
+            merged, debugger, skeptic, influence, corruptionChain);
         merged = mergedAfterNullGate;
 
         var collectedFacts = CollectFacts(facts, influence, rootCause, merged);
         var confidence = RollupConfidence(merged);
         var (maturity, rationale) = ComputeMaturity(
-            merged, rootCause, influence, triage, debugger, collectedFacts, skeptic, nullWriteCapped);
+            merged, rootCause, influence, triage, debugger, collectedFacts, skeptic, nullWriteCapped,
+            corruptionChain);
         var summary = BuildSummary(maturity, merged, confidence);
 
         return new CrashPrimitiveReportDto(
@@ -257,7 +260,8 @@ public static class PrimitiveEngine
         DebuggerObservation? debugger,
         IReadOnlyList<EvidenceFact> facts,
         SkepticReportDto? skeptic = null,
-        bool nullWriteCapped = false)
+        bool nullWriteCapped = false,
+        CrashCorruptionChainDto? corruptionChain = null)
     {
         var confirmed = primitives.Count(p => p.State == PrimitiveState.Confirmed);
         var observed = primitives.Count(p => p.State == PrimitiveState.Observed);
@@ -316,50 +320,132 @@ public static class PrimitiveEngine
                 $"{SkepticEngine.PromotionGateFailureReason(skeptic)} — held at R4 (Candidate) pending Skeptic survival");
         }
 
-        if (nullWriteCapped && level >= ResearchMaturity.R5)
+        if (nullWriteCapped)
         {
-            return (
-                ResearchMaturity.R4,
-                "Null/near-null write without counterfactual delta or strong non-zero pattern — held at R4 (not R5 Primitive observed)");
+            var hasControl = HasWriteControlEvidence(primitives, debugger, influence, skeptic);
+            var repeatedBoundary = InfluenceEngine.HasRepeatedBoundaryCausality(corruptionChain, null);
+
+            if (hasControl)
+            {
+                // R4 only with destination / written-value / copy-length / index control evidence.
+                if (level > ResearchMaturity.R4)
+                {
+                    return (
+                        ResearchMaturity.R4,
+                        "Null/near-null write with control evidence — held at R4 pending Skeptic / counterfactual confirmation");
+                }
+            }
+            else if (repeatedBoundary && level > ResearchMaturity.R3)
+            {
+                return (
+                    ResearchMaturity.R3,
+                    "Null/near-null write with repeated boundary causality — held at R3 (not write-length / R4 without control evidence)");
+            }
+            else if (level > ResearchMaturity.R2)
+            {
+                // Cap at R1–R2 (triaged / root-cause) without EA/instruction/counterfactual control.
+                var cap = rootCause is { Ok: true } && rootCause.Candidate.Category != RootCauseCategory.Unknown
+                    ? ResearchMaturity.R2
+                    : ResearchMaturity.R1;
+                return (
+                    cap,
+                    "Null/near-null write without destination/value/length/index control evidence — held at "
+                    + $"{cap} (boundary mutator alone ≠ write-length control)");
+            }
         }
 
         return (level, rationale);
     }
 
+    /// <summary>
+    /// Destination / written-value / copy-length / index control from experiment, instruction, or EA —
+    /// not mutator label alone.
+    /// </summary>
+    internal static bool HasWriteControlEvidence(
+        IReadOnlyList<PrimitiveAssessmentDto> primitives,
+        DebuggerObservation? debugger,
+        CrashInfluenceMapDto? influence,
+        SkepticReportDto? skeptic)
+    {
+        if (HasCounterfactualDeltaEvidence(skeptic))
+            return true;
+        if (RootCauseEngine.HasStrongNonZeroControlEvidence(debugger, null))
+            return true;
+
+        if (primitives.Any(p =>
+                p.Kind is PrimitiveKind.WriteLengthControl
+                    or PrimitiveKind.LengthControl
+                    or PrimitiveKind.AllocationSizeControl
+                && p.State is PrimitiveState.Observed or PrimitiveState.Confirmed
+                && !p.Mechanism.Contains("boundary alone", StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (influence?.Links.Any(l =>
+                l.Honesty == InfluenceHonestyLabel.Observed
+                && l.State.Kind is InfluencedStateKind.CopyLength
+                    or InfluencedStateKind.Length
+                    or InfluencedStateKind.AllocationSize
+                && !l.Mechanism.Contains("correlation", StringComparison.OrdinalIgnoreCase)) == true)
+            return true;
+
+        var insn = debugger?.DisasmNearRip ?? "";
+        if (ScreamInvestigator.ExtractFaultInstructionLine(insn, debugger?.Rip) is { } good
+            && (good.Contains('[', StringComparison.Ordinal)
+                || Regex.IsMatch(good, @"\b(rep\s+movs|movs)\b", RegexOptions.IgnoreCase)))
+        {
+            // Real faulting store/copy at RIP counts as instruction evidence for control hypotheses.
+            if (debugger?.Access == DebuggerAccessKind.Write
+                && debugger.FaultAddressClass == DebuggerAddressClass.AsciiPattern)
+                return true;
+        }
+
+        return false;
+    }
+
     internal static (bool Capped, List<PrimitiveAssessmentDto> Primitives) ApplyNullWriteHonestyGate(
         IReadOnlyList<PrimitiveAssessmentDto> primitives,
         DebuggerObservation? debugger,
-        SkepticReportDto? skeptic)
+        SkepticReportDto? skeptic,
+        CrashInfluenceMapDto? influence = null,
+        CrashCorruptionChainDto? chain = null)
     {
         if (!RootCauseEngine.IsNullOrNearNullWrite(debugger))
             return (false, primitives.ToList());
 
-        if (RootCauseEngine.HasStrongNonZeroControlEvidence(debugger, null))
+        if (RootCauseEngine.HasStrongNonZeroControlEvidence(debugger, chain))
             return (false, primitives.ToList());
 
         if (HasCounterfactualDeltaEvidence(skeptic))
             return (false, primitives.ToList());
 
-        var capped = false;
-        var list = primitives.Select(p =>
+        var list = new List<PrimitiveAssessmentDto>();
+        foreach (var p in primitives)
         {
-            if (p.Kind != PrimitiveKind.InputInfluencedWrite
-                && p.Kind != PrimitiveKind.PointerControl)
-                return p;
-            if (p.State is not (PrimitiveState.Observed or PrimitiveState.Confirmed))
-                return p;
+            // Drop length/alloc primitives inferred only from weak null-write + mutator name.
+            if (p.Kind is PrimitiveKind.WriteLengthControl
+                    or PrimitiveKind.LengthControl
+                    or PrimitiveKind.AllocationSizeControl
+                && p.State is (PrimitiveState.Candidate or PrimitiveState.Unknown))
+                continue;
 
-            capped = true;
-            return p with
+            if (p.Kind is (PrimitiveKind.InputInfluencedWrite or PrimitiveKind.PointerControl)
+                && p.State is (PrimitiveState.Observed or PrimitiveState.Confirmed))
             {
-                State = PrimitiveState.Candidate,
-                Confidence = ConfidenceForState(PrimitiveState.Candidate),
-                Mechanism = p.Mechanism + " (demoted: null-write needs counterfactual/strong pattern)",
-                EvidenceRefs = p.EvidenceRefs.Append("honesty:null-write-gate").Distinct().Take(8).ToList(),
-            };
-        }).ToList();
+                list.Add(p with
+                {
+                    State = PrimitiveState.Candidate,
+                    Confidence = ConfidenceForState(PrimitiveState.Candidate),
+                    Mechanism = p.Mechanism + " (demoted: null-write needs counterfactual/strong pattern)",
+                    EvidenceRefs = p.EvidenceRefs.Append("honesty:null-write-gate").Distinct().Take(8).ToList(),
+                });
+                continue;
+            }
 
-        return (capped || RootCauseEngine.IsNullOrNearNullWrite(debugger), list);
+            list.Add(p);
+        }
+
+        _ = influence;
+        return (true, list);
     }
 
     internal static bool HasCounterfactualDeltaEvidence(SkepticReportDto? skeptic)

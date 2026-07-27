@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Randall.Contracts;
 
 namespace Randall.Infrastructure;
@@ -59,10 +60,12 @@ public static class InfluenceEngine
         AddRegisterLinks(links, attribution, debugger, corruptionChain, sidecar, hypotheses);
         AddPatternDepthLinks(links, attribution, debugger, corruptionChain, sidecar, hypotheses);
         AddLengthCopyLinks(links, attribution, debugger, corruptionChain, sidecar, hypotheses);
+        AddSentinelCorrelationLinks(links, attribution, debugger, corruptionChain, sidecar, hypotheses, payload);
         AddBackwardTraceLinks(links, backwardTrace, corruptionChain, sidecar, hypotheses);
         AddHeapLinks(links, debugger, corruptionChain, backwardTrace, sidecar);
 
         ApplyHypothesisOutcomes(links, hypotheses);
+        ApplyHonestyLabels(links);
 
         var confidence = RollupConfidence(links, attribution.Confidence, debugger?.SuspectedInputInfluence);
         var narrative = attribution.Narrative ?? corruptionChain?.Narrative;
@@ -183,10 +186,37 @@ public static class InfluenceEngine
                     {
                         Status = newStatus,
                         HypothesisId = hyp.Id,
+                        Honesty = HonestyFor(newStatus, i.link.Mechanism),
                     };
                 }
             }
         }
+    }
+
+    internal static void ApplyHonestyLabels(List<InfluenceLinkDto> links)
+    {
+        for (var i = 0; i < links.Count; i++)
+            links[i] = links[i] with { Honesty = HonestyFor(links[i].Status, links[i].Mechanism) };
+    }
+
+    /// <summary>
+    /// Map confirmation status → honesty display. Speculative mechanisms (Candidate length→alloc/copy,
+    /// sentinel correlation) never surface as Observed facts.
+    /// </summary>
+    internal static InfluenceHonestyLabel HonestyFor(InfluenceConfirmationStatus status, string? mechanism = null)
+    {
+        var mech = mechanism ?? "";
+        if (mech.Contains("correlation", StringComparison.OrdinalIgnoreCase)
+            || mech.Contains("sentinel", StringComparison.OrdinalIgnoreCase))
+            return InfluenceHonestyLabel.Unverified;
+
+        return status switch
+        {
+            InfluenceConfirmationStatus.Confirmed => InfluenceHonestyLabel.Confirmed,
+            InfluenceConfirmationStatus.Observed => InfluenceHonestyLabel.Observed,
+            InfluenceConfirmationStatus.Candidate => InfluenceHonestyLabel.Hypothesized,
+            _ => InfluenceHonestyLabel.Unverified,
+        };
     }
 
     private static void AddRegisterLinks(
@@ -202,6 +232,7 @@ public static class InfluenceEngine
             if (string.Equals(match.Register, "RIP", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(match.Register, "FAULT", StringComparison.OrdinalIgnoreCase))
             {
+                var ptrMech = match.MatchKind == "ascii" ? "pointer→fault address (ASCII)" : "pointer→fault address";
                 links.Add(new InfluenceLinkDto(
                     $"inf-ptr-{match.PayloadOffset:X}",
                     new InfluenceRegionDto(
@@ -217,10 +248,11 @@ public static class InfluenceEngine
                         match.ValueHex,
                         debugger?.FaultAddressClass.ToString()),
                     InfluenceConfirmationStatus.Observed,
-                    match.MatchKind == "ascii" ? "pointer→fault address (ASCII)" : "pointer→fault address",
+                    ptrMech,
                     [$"register:{match.Register}@+{match.PayloadOffset}", $"match:{match.MatchKind}"],
                     SuggestExperiment(hypotheses, match.PayloadOffset, chain, sidecar, HypothesisExperimentKind.MinimizeHold),
-                    FindHypothesisId(hypotheses, match.PayloadOffset, "ascii")));
+                    FindHypothesisId(hypotheses, match.PayloadOffset, "ascii"),
+                    HonestyFor(InfluenceConfirmationStatus.Observed, ptrMech)));
                 continue;
             }
 
@@ -242,7 +274,8 @@ public static class InfluenceEngine
                 "input→register value",
                 [$"register:{match.Register}@+{match.PayloadOffset}", $"debugger:{debugger?.Access}"],
                 SuggestExperiment(hypotheses, match.PayloadOffset, chain, sidecar, HypothesisExperimentKind.SweepOffset),
-                FindHypothesisId(hypotheses, match.PayloadOffset, "offset")));
+                FindHypothesisId(hypotheses, match.PayloadOffset, "offset"),
+                HonestyFor(InfluenceConfirmationStatus.Observed, "input→register value")));
         }
     }
 
@@ -265,6 +298,7 @@ public static class InfluenceEngine
             ? InfluenceConfirmationStatus.Observed
             : InfluenceConfirmationStatus.Candidate;
 
+        var mech = InferMechanism(debugger, chain);
         links.Add(new InfluenceLinkDto(
             $"inf-depth-{offset:X}",
             new InfluenceRegionDto(
@@ -282,10 +316,11 @@ public static class InfluenceEngine
                 debugger?.Rip,
                 attribution.PatternNote),
             status,
-            InferMechanism(debugger, chain),
+            mech,
             [$"patternDepth:{offset}", $"corruption:{chain?.Confidence ?? "UNKNOWN"}"],
             SuggestExperiment(hypotheses, offset, chain, sidecar, HypothesisExperimentKind.SweepOffset),
-            FindHypothesisId(hypotheses, offset, "offset")));
+            FindHypothesisId(hypotheses, offset, "offset"),
+            HonestyFor(status, mech)));
     }
 
     private static void AddLengthCopyLinks(
@@ -296,24 +331,43 @@ public static class InfluenceEngine
         CrashSidecarDto? sidecar,
         HypothesisSetDto? hypotheses)
     {
+        // Do NOT infer write-length / length→alloc/copy solely from mutator name "boundary".
+        // Require a real copy/alloc sink (or disasm) — null write on teardown is not enough.
         var fn = (debugger?.FaultingFunction ?? "").ToLowerInvariant();
+        var mod = (debugger?.FaultingModule ?? "").ToLowerInvariant();
         var disasm = (debugger?.DisasmNearRip ?? "").ToLowerInvariant();
         var isCopySink = fn.Contains("memcpy") || fn.Contains("memmove") || fn.Contains("strcpy")
                          || fn.Contains("strncpy") || fn.Contains("read") || fn.Contains("recv")
                          || disasm.Contains("memcpy") || disasm.Contains("rep movs");
 
-        if (!isCopySink && debugger?.Access != DebuggerAccessKind.Write)
+        if (!isCopySink)
+            return;
+
+        if (ScreamInvestigator.IsTeardownExitPath(debugger?.FaultingFunction, debugger?.FaultingModule)
+            || mod.Contains("coreclr", StringComparison.Ordinal))
+            return;
+
+        if (RootCauseEngine.IsNullOrNearNullWrite(debugger)
+            && !RootCauseEngine.HasStrongNonZeroControlEvidence(debugger, chain)
+            && !HasLengthControlInstructionEvidence(debugger))
             return;
 
         var offset = attribution.PatternDepthBytes ?? 0;
         var mutator = attribution.SuspectedMutator ?? chain?.SuspectedMutator;
-        if (mutator is null || !LooksLikeLengthMutator(mutator))
+        if (mutator is null)
+            return;
+
+        // Strong length mutators (expand/insert/…) OR repeated boundary causality — never bare "boundary".
+        var strongLength = LooksLikeStrongLengthMutator(mutator)
+                           || LooksLikeStrongLengthMutatorInLineage(chain, sidecar);
+        if (!strongLength && !HasRepeatedBoundaryCausality(chain, sidecar))
             return;
 
         if (links.Any(l => l.State.Kind is InfluencedStateKind.Length or InfluencedStateKind.CopyLength))
             return;
 
         var regionStart = Math.Max(0, offset - 4);
+        const string mech = "length→alloc/copy";
         links.Add(new InfluenceLinkDto(
             $"inf-len-{regionStart:X}",
             new InfluenceRegionDto(
@@ -327,12 +381,93 @@ public static class InfluenceEngine
                 fn.Contains("read") || fn.Contains("recv") ? InfluencedStateKind.Length : InfluencedStateKind.CopyLength,
                 debugger?.FaultingFunction ?? "copy sink",
                 debugger?.FaultAddress,
-                "length→alloc/copy"),
+                "length→alloc/copy (hypothesized)"),
             InfluenceConfirmationStatus.Candidate,
-            "length→alloc/copy",
+            mech,
             [$"mutator:{mutator}", $"sink:{debugger?.FaultingFunction ?? "?"}", $"access:{debugger?.Access}"],
             SuggestExperiment(hypotheses, offset, chain, sidecar, HypothesisExperimentKind.BoundaryProbe),
-            FindHypothesisId(hypotheses, offset, "boundary")));
+            FindHypothesisId(hypotheses, offset, "boundary"),
+            InfluenceHonestyLabel.Hypothesized));
+    }
+
+    private static void AddSentinelCorrelationLinks(
+        List<InfluenceLinkDto> links,
+        InputAttributionEngine.AttributionResult attribution,
+        DebuggerObservation? debugger,
+        CrashCorruptionChainDto? chain,
+        CrashSidecarDto? sidecar,
+        HypothesisSetDto? hypotheses,
+        byte[]? payload)
+    {
+        if (debugger?.RegistersText is null)
+            return;
+
+        var sentinel = InputAttributionEngine.FindAllOnesSentinelCorrelation(debugger.RegistersText, payload);
+        if (sentinel is null)
+            return;
+
+        if (links.Any(l => l.Mechanism.Contains("sentinel", StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        var mutator = attribution.SuspectedMutator ?? chain?.SuspectedMutator ?? sidecar?.Mutator;
+        var boundaryHint = mutator is not null
+                           && mutator.Contains("boundary", StringComparison.OrdinalIgnoreCase);
+        var offset = sentinel.PayloadOffset
+                     ?? attribution.PatternDepthBytes
+                     ?? 0;
+        const string mech = "sentinel correlation (−1 / 0xFF..FF) — not proven control";
+        links.Add(new InfluenceLinkDto(
+            $"inf-sentinel-{sentinel.Register.ToLowerInvariant()}",
+            new InfluenceRegionDto(
+                offset,
+                offset + (sentinel.WidthBytes ?? 4),
+                sentinel.WidthBytes ?? 4,
+                "all-ones sentinel",
+                mutator,
+                attribution.SuspectedMutatorStep),
+            new InfluencedStateDto(
+                InfluencedStateKind.Register,
+                sentinel.Register,
+                sentinel.ValueHex,
+                boundaryHint
+                    ? "Boundary mutator + −1 correlation — experiment hint only"
+                    : "All-ones / −1 register value correlates with crash (not proven control)"),
+            InfluenceConfirmationStatus.Unknown,
+            mech,
+            [$"register:{sentinel.Register}={sentinel.ValueHex}", "honesty:correlation-only"],
+            SuggestExperiment(hypotheses, offset, chain, sidecar, HypothesisExperimentKind.BoundaryProbe),
+            FindHypothesisId(hypotheses, offset, "boundary"),
+            InfluenceHonestyLabel.Unverified));
+    }
+
+    private static bool HasLengthControlInstructionEvidence(DebuggerObservation? debugger)
+    {
+        var disasm = debugger?.DisasmNearRip ?? "";
+        return Regex.IsMatch(disasm, @"\b(rep\s+movs|movs[bwdq]?|stos)\b", RegexOptions.IgnoreCase)
+               || disasm.Contains("memcpy", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool HasRepeatedBoundaryCausality(
+        CrashCorruptionChainDto? chain,
+        CrashSidecarDto? sidecar)
+    {
+        var lineage = chain?.MutatorLineage?.ToList()
+                      ?? sidecar?.MutatorChain?.ToList()
+                      ?? [];
+        if (sidecar?.Mutator is { } m
+            && m.Contains("boundary", StringComparison.OrdinalIgnoreCase)
+            && !lineage.Contains(m, StringComparer.OrdinalIgnoreCase))
+            lineage.Add(m);
+
+        return lineage.Count(x => x.Contains("boundary", StringComparison.OrdinalIgnoreCase)) >= 2;
+    }
+
+    private static bool LooksLikeStrongLengthMutatorInLineage(
+        CrashCorruptionChainDto? chain,
+        CrashSidecarDto? sidecar)
+    {
+        var lineage = chain?.MutatorLineage ?? sidecar?.MutatorChain;
+        return lineage?.Any(LooksLikeStrongLengthMutator) == true;
     }
 
     private static void AddBackwardTraceLinks(
@@ -348,6 +483,7 @@ public static class InfluenceEngine
         if (links.Any(l => l.Region.StartOffset == off && l.State.Kind == InfluencedStateKind.Register))
             return;
 
+        const string btraceMech = "input→register (backward trace)";
         links.Add(new InfluenceLinkDto(
             $"inf-btrace-{off:X}",
             new InfluenceRegionDto(
@@ -363,10 +499,11 @@ public static class InfluenceEngine
                 trace.BadPointerSource,
                 trace.Story),
             InfluenceConfirmationStatus.Observed,
-            "input→register (backward trace)",
+            btraceMech,
             [$"backwardTrace:{trace.Confidence}", $"register:{trace.FaultRegister}"],
             SuggestExperiment(hypotheses, off, chain, sidecar, HypothesisExperimentKind.ReplayLineage),
-            FindHypothesisId(hypotheses, off, "btrace")));
+            FindHypothesisId(hypotheses, off, "btrace"),
+            HonestyFor(InfluenceConfirmationStatus.Observed, btraceMech)));
     }
 
     private static void AddHeapLinks(
@@ -383,6 +520,10 @@ public static class InfluenceEngine
         if (links.Any(l => l.State.Kind == InfluencedStateKind.HeapObject))
             return;
 
+        var heapStatus = debugger?.RegisterMatches?.Count > 0
+            ? InfluenceConfirmationStatus.Observed
+            : InfluenceConfirmationStatus.Candidate;
+        const string heapMech = "input→heap object lifetime";
         links.Add(new InfluenceLinkDto(
             "inf-heap",
             new InfluenceRegionDto(
@@ -397,13 +538,12 @@ public static class InfluenceEngine
                 debugger?.HeapSignal ?? trace?.HeapTimeline ?? "heap",
                 debugger?.FaultAddress,
                 trace?.HeapTimeline),
-            debugger?.RegisterMatches?.Count > 0
-                ? InfluenceConfirmationStatus.Observed
-                : InfluenceConfirmationStatus.Candidate,
-            "input→heap object lifetime",
+            heapStatus,
+            heapMech,
             [$"heap:{debugger?.HeapSignal ?? trace?.HeapTimeline}", $"class:{debugger?.FaultAddressClass}"],
             null,
-            null));
+            null,
+            HonestyFor(heapStatus, heapMech)));
     }
 
     private static List<EvidenceFact> CollectFacts(
@@ -501,12 +641,15 @@ public static class InfluenceEngine
         return "input→fault state";
     }
 
-    private static bool LooksLikeLengthMutator(string mutator) =>
+    /// <summary>
+    /// Mutators that can support length→copy hypotheses without needing repeated-boundary causality.
+    /// Bare <c>boundary</c> is intentionally excluded.
+    /// </summary>
+    private static bool LooksLikeStrongLengthMutator(string mutator) =>
         mutator.Contains("expand", StringComparison.OrdinalIgnoreCase)
         || mutator.Contains("insert", StringComparison.OrdinalIgnoreCase)
         || mutator.Contains("splice", StringComparison.OrdinalIgnoreCase)
         || mutator.Contains("interesting", StringComparison.OrdinalIgnoreCase)
-        || mutator.Contains("boundary", StringComparison.OrdinalIgnoreCase)
         || mutator.Contains("cyclic", StringComparison.OrdinalIgnoreCase);
 
     private static HypothesisExperimentDto? SuggestExperiment(
