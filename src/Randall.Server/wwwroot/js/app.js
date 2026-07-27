@@ -1257,6 +1257,10 @@ const stalkCrashIdByIteration = new Map();
 /** Monotonic token so stale loadDashboard responses cannot clobber a newer pin/live fetch. */
 let stalkLoadSeq = 0;
 let stalkTimelineClickBound = false;
+/** Last good stalker payload — retained across end-of-run so a blank API reply cannot wipe the UI. */
+let stalkLastGoodDashboard = null;
+/** Opened completed fuzz session runId (null = live / latest). */
+let stalkOpenedRunId = null;
 
 async function loadTargets() {
   const targets = (await api.get('/api/targets')).filter(isVisibleTarget);
@@ -2195,7 +2199,23 @@ function followStalkLive() {
   loadDashboard({ applyWidgets: true, followLive: true }).catch(() => {});
 }
 
+function dashboardLooksEmpty(data) {
+  if (!data) return true;
+  const iters = Number(data.iterations) || 0;
+  const crashes = Number(data.crashes) || 0;
+  const edges = Number(data.coverageEdges) || 0;
+  const blocks = (data.blocks || []).length;
+  return iters === 0 && crashes === 0 && edges === 0 && blocks === 0 && !data.sessionId;
+}
+
 function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
+  if (dashboardLooksEmpty(data) && stalkLastGoodDashboard
+      && (!stalkProject || stalkLastGoodDashboard.project === stalkProject)) {
+    data = stalkLastGoodDashboard;
+  } else if (!dashboardLooksEmpty(data)) {
+    stalkLastGoodDashboard = data;
+  }
+
   document.getElementById('stalk-target').textContent = data.targetName || data.project;
   document.getElementById('stalk-pid').textContent = data.pid ?? '—';
   document.getElementById('stalk-arch').textContent = data.arch || '—';
@@ -2211,7 +2231,8 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
     <dt>Crash time</dt><dd>${data.crashTime || '—'}</dd>
     <dt>Exception</dt><dd>${data.exception || '—'}</dd>
     <dt>Address</dt><dd>${data.crashAddress || '—'}</dd>
-    <dt>Thread</dt><dd>${data.threadId || '—'}</dd>`;
+    <dt>Thread</dt><dd>${data.threadId || '—'}</dd>
+    <dt>Iters / crashes</dt><dd>${data.iterations ?? 0} / ${data.crashes ?? 0}</dd>`;
 
   const pct = data.coveragePercent ?? 0;
   document.getElementById('stalk-coverage-ring').style.setProperty('--pct', pct);
@@ -2254,7 +2275,9 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
     log.innerHTML = `<table><thead><tr>
       <th>ID</th><th>Sev</th><th>Class</th><th>Hits</th><th>Exception</th><th>Address</th><th>New cov</th><th>Input</th>
     </tr></thead><tbody>
-      ${data.crashLog.map((c) => `<tr class="clickable crash-row${focusId && c.id === focusId ? ' selected' : ''}" data-id="${c.id}">
+      ${data.crashLog.map((c) => {
+        const selected = focusId && String(c.id).toLowerCase() === String(focusId).toLowerCase();
+        return `<tr class="clickable crash-row${selected ? ' selected' : ''}" data-id="${c.id}">
         <td><code>${c.shortId}</code></td>
         <td class="severity-${c.severity || 'low'}">${c.severity || '—'}</td>
         <td><code>${c.crashClass || '—'}</code></td>
@@ -2263,7 +2286,8 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
         <td><code>${c.address}</code></td>
         <td>${c.newCoverage ? 'Yes' : 'No'}</td>
         <td><code>${c.inputName}</code></td>
-      </tr>`).join('')}
+      </tr>`;
+      }).join('')}
     </tbody></table>`;
     log.querySelectorAll('tr.clickable').forEach((row) => {
       row.addEventListener('click', () => {
@@ -2277,10 +2301,13 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
           crashId: id,
           index: stalkSelection?.index ?? -1,
         };
-        loadDashboard({ crashId: id, applyWidgets: true }).catch(() => {});
+        updateTimelineFollowUi();
+        loadDashboard({ crashId: id, applyWidgets: true, force: true }).catch(() => {});
       });
     });
   }
+
+  refreshFuzzSessionBar().catch(() => {});
 }
 
 async function loadDashboard(opts = {}) {
@@ -2320,7 +2347,11 @@ async function loadDashboard(opts = {}) {
     });
   });
 
-  const qs = crashId ? `?crashId=${encodeURIComponent(crashId)}` : '';
+  const params = new URLSearchParams();
+  if (crashId) params.set('crashId', crashId);
+  const runId = opts.runId || stalkOpenedRunId;
+  if (runId) params.set('runId', runId);
+  const qs = params.toString() ? `?${params}` : '';
   const data = await api.get(`/api/stalk/${encodeURIComponent(stalkProject)}${qs}`);
   if (seq !== stalkLoadSeq) return;
 
@@ -2352,6 +2383,122 @@ document.getElementById('stalk-refresh')?.addEventListener('click', () => {
 });
 document.getElementById('stalk-follow-live')?.addEventListener('click', () => followStalkLive());
 document.getElementById('stalk-insp-close')?.addEventListener('click', () => closeBlockInspector());
+
+async function refreshFuzzSessionBar() {
+  const sel = document.getElementById('fuzz-session-select');
+  const status = document.getElementById('fuzz-session-status');
+  if (!sel) return;
+  try {
+    const project = stalkProject || '';
+    const qs = project ? `?project=${encodeURIComponent(project)}&limit=48` : '?limit=48';
+    const data = await api.get(`/api/sessions${qs}`);
+    stalkOpenedRunId = data.openedRunId || null;
+    const sessions = data.sessions || [];
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">— latest / live —</option>'
+      + sessions.map((s) => {
+        const label = s.label ? `${s.label} · ` : '';
+        const when = s.completedAt || s.startedAt
+          ? new Date(s.completedAt || s.startedAt).toLocaleString()
+          : '';
+        const text = `${label}${s.runId} · ${s.iterations} iters · ${s.crashesFound} crashes${when ? ` · ${when}` : ''}`;
+        return `<option value="${escapeAttr(s.runId)}">${escapeAttr(text)}</option>`;
+      }).join('');
+    const prefer = stalkOpenedRunId || prev;
+    if (prefer && [...sel.options].some((o) => o.value === prefer))
+      sel.value = prefer;
+    if (status) {
+      status.textContent = stalkOpenedRunId
+        ? `Opened ${stalkOpenedRunId} — Close to return to live/latest. Import walks folders for run.json → data/runs/.`
+        : `Sessions are flat JSON/JSONL under data/runs/ — Open pins a completed run; Import walks folders for run.json.`;
+    }
+  } catch (err) {
+    if (status) status.textContent = err.message || 'Session list unavailable';
+  }
+}
+
+async function openFuzzSessionFromUi() {
+  const sel = document.getElementById('fuzz-session-select');
+  const status = document.getElementById('fuzz-session-status');
+  const runId = sel?.value;
+  if (!runId) {
+    await api.post('/api/sessions/close', {});
+    stalkOpenedRunId = null;
+    stalkFollowLive = true;
+    stalkSelection = null;
+    await loadDashboard({ applyWidgets: true, followLive: true, force: true });
+    if (status) status.textContent = 'Closed — showing live / latest run.';
+    return;
+  }
+  const opened = await api.post('/api/sessions/open', { runId });
+  stalkOpenedRunId = opened.runId || runId;
+  if (opened.project) stalkProject = opened.project;
+  stalkFollowLive = false;
+  updateTimelineFollowUi();
+  await loadDashboard({ applyWidgets: true, force: true, runId: stalkOpenedRunId });
+  if (status) status.textContent = `Opened ${stalkOpenedRunId}.`;
+  await refreshFuzzSessionBar();
+}
+
+document.getElementById('fuzz-session-open')?.addEventListener('click', () => {
+  openFuzzSessionFromUi().catch((err) => {
+    const status = document.getElementById('fuzz-session-status');
+    if (status) status.textContent = err.message || 'Open failed';
+  });
+});
+document.getElementById('fuzz-session-close')?.addEventListener('click', () => {
+  api.post('/api/sessions/close', {}).then(() => {
+    stalkOpenedRunId = null;
+    stalkFollowLive = true;
+    stalkSelection = null;
+    updateTimelineFollowUi();
+    return loadDashboard({ applyWidgets: true, followLive: true, force: true });
+  }).then(() => refreshFuzzSessionBar()).catch((err) => {
+    const status = document.getElementById('fuzz-session-status');
+    if (status) status.textContent = err.message || 'Close failed';
+  });
+});
+document.getElementById('fuzz-session-save')?.addEventListener('click', () => {
+  const sel = document.getElementById('fuzz-session-select');
+  const status = document.getElementById('fuzz-session-status');
+  const runId = sel?.value || stalkOpenedRunId || null;
+  const label = window.prompt('Optional label for saved session', '') || null;
+  api.post('/api/sessions/save', { runId, project: stalkProject, label }).then((r) => {
+    if (status) status.textContent = r.message || `Saved ${r.label}`;
+    return refreshFuzzSessionBar();
+  }).catch((err) => {
+    if (status) status.textContent = err.message || 'Save failed';
+  });
+});
+document.getElementById('fuzz-session-export')?.addEventListener('click', () => {
+  const sel = document.getElementById('fuzz-session-select');
+  const status = document.getElementById('fuzz-session-status');
+  const runId = sel?.value || stalkOpenedRunId;
+  if (!runId) {
+    if (status) status.textContent = 'Select a session (or Open one) before Export.';
+    return;
+  }
+  api.post('/api/sessions/export', { runId, includeLinkedCrashes: true }).then((r) => {
+    if (status) status.textContent = `Exported ${r.runId} → ${r.path} (${r.crashCount} linked crash(es)).`;
+  }).catch((err) => {
+    if (status) status.textContent = err.message || 'Export failed';
+  });
+});
+document.getElementById('fuzz-session-import')?.addEventListener('click', () => {
+  const status = document.getElementById('fuzz-session-status');
+  const path = document.getElementById('fuzz-session-import-path')?.value?.trim();
+  const recursive = !!document.getElementById('fuzz-session-import-recursive')?.checked;
+  if (!path) {
+    if (status) status.textContent = 'Enter a folder or .zip path to import.';
+    return;
+  }
+  api.post('/api/sessions/import', { path, recursive, overwriteFiles: true }).then((r) => {
+    if (status) status.textContent = r.message || `Imported ${r.importedRuns} run(s).`;
+    return refreshFuzzSessionBar();
+  }).then(() => loadDashboard({ applyWidgets: true, force: true })).catch((err) => {
+    if (status) status.textContent = err.message || 'Import failed';
+  });
+});
 document.addEventListener('click', (ev) => {
   if (!ev.target.closest('#stalk-ctx-menu')) hideBlockContextMenu();
 });
@@ -4180,6 +4327,19 @@ async function selectCrashById(id, { scrollIntoView = false } = {}) {
     const detail = await api.get(`/api/crashes/${id}`);
     const c = detail.summary;
     renderCrashDetail(detail, `${c.project} · iter #${c.iteration}`);
+    // Pin stalker diagram to this crash's hit blocks (Dashboard / Scare Floor CFG).
+    if (c?.project) stalkProject = c.project;
+    stalkFollowLive = false;
+    stalkSelection = {
+      key: `crash:${id}`,
+      iteration: c?.iteration ?? 0,
+      kind: 'crash',
+      label: 'crash-select',
+      crashId: id,
+      index: idx,
+    };
+    updateTimelineFollowUi();
+    loadDashboard({ crashId: id, applyWidgets: true, force: true }).catch(() => {});
   } catch (err) {
     const box = document.getElementById('crash-detail');
     if (box) box.innerHTML = `<p class="empty">${escapeAttr(err.message)}</p>`;
@@ -5689,15 +5849,18 @@ async function connectHub() {
     startBtn.disabled = false;
     stopBtn.disabled = true;
     fuzzTargetPidCache = null;
-    applyAttachDbgButtonState({ phase: 'completed', running: false });
+    applyAttachDbgButtonState({ phase: 'completed', running: false, project: e.project || stalkProject });
     harvestState.liveProject = null;
     harvestState.liveProjects = new Set();
     harvestState.fuzzSessionActive = false;
+    // Always refresh dashboard widgets from disk journal — do not blank on end-of-run.
     resolveCrashIdForIteration(-1).finally(() => {
       loadDashboard({
-        applyWidgets: stalkFollowLive,
-        force: stalkFollowLive,
+        applyWidgets: true,
+        force: true,
+        crashId: stalkFollowLive ? null : (stalkSelection?.crashId || null),
       }).catch(() => {});
+      refreshFuzzSessionBar().catch(() => {});
     });
     loadCrashes();
     scheduleHarvestRefresh({ project: stalkProject, immediate: true, syncCrashState: true });
@@ -5709,12 +5872,17 @@ async function connectHub() {
     startBtn.disabled = false;
     stopBtn.disabled = true;
     fuzzTargetPidCache = null;
-    applyAttachDbgButtonState({ phase: 'stopped', running: false });
+    applyAttachDbgButtonState({ phase: 'stopped', running: false, project: stalkProject });
     harvestState.liveProject = null;
     harvestState.liveProjects = new Set();
     harvestState.fuzzSessionActive = false;
     paintHarvestViews();
-    loadDashboard({ applyWidgets: stalkFollowLive, force: stalkFollowLive }).catch(() => {});
+    loadDashboard({
+      applyWidgets: true,
+      force: true,
+      crashId: stalkFollowLive ? null : (stalkSelection?.crashId || null),
+    }).catch(() => {});
+    refreshFuzzSessionBar().catch(() => {});
   });
 
   hub.on('fuzzError', (e) => {

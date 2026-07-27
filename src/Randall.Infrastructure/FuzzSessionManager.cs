@@ -73,11 +73,12 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
 
                     lock (_gate)
                     {
+                        // Keep Project / counters so the stalker dashboard retains session summary after end-of-run.
                         _status = _status with
                         {
                             Running = false,
                             Phase = "completed",
-                            Project = null,
+                            Project = project.Name,
                             Iterations = result.Iterations,
                             Crashes = result.CrashesFound,
                             CorpusAdded = result.CorpusAdded,
@@ -95,7 +96,12 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                     sink?.OnStopped("cancelled");
                     lock (_gate)
                     {
-                        _status = _status with { Running = false, Phase = "stopped", Project = null, LastMessage = "Stopped by user" };
+                        _status = _status with
+                        {
+                            Running = false,
+                            Phase = "stopped",
+                            LastMessage = "Stopped by user",
+                        };
                     }
                 }
                 catch (Exception ex) when (BenignRecorderPipeException.IsBenign(ex))
@@ -114,7 +120,6 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                         {
                             Running = false,
                             Phase = partial.Iterations > 0 ? "completed" : "error",
-                            Project = null,
                             LastMessage = partial.Iterations > 0
                                 ? early
                                     ? $"Done — {partial.Iterations} iterations (stopped early — hub/recorder noise: {ex.Message})"
@@ -145,7 +150,6 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                         {
                             Running = false,
                             Phase = "error",
-                            Project = null,
                             LastMessage = ex.Message,
                         };
                     }

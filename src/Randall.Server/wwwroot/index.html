@@ -97,6 +97,28 @@
             <section class="stalk-panel">
               <h3>Current session</h3>
               <dl id="stalk-session" class="stalk-dl"></dl>
+              <div class="fuzz-session-bar" id="fuzz-session-bar">
+                <label class="fuzz-session-label">
+                  <span>Open session</span>
+                  <select id="fuzz-session-select" title="Completed fuzz journals under data/runs/"></select>
+                </label>
+                <div class="fuzz-session-actions">
+                  <button type="button" class="btn" id="fuzz-session-open" title="Pin this run into the stalker dashboard">Open</button>
+                  <button type="button" class="btn" id="fuzz-session-close" title="Return to live / latest run">Close</button>
+                  <button type="button" class="btn" id="fuzz-session-save" title="Snapshot run to data/sessions/saved/">Save</button>
+                  <button type="button" class="btn" id="fuzz-session-export" title="Zip run (+ linked crashes) to data/exports/">Export</button>
+                </div>
+                <label class="fuzz-session-label">
+                  <span>Import folder / zip</span>
+                  <input type="text" id="fuzz-session-import-path" placeholder="C:\fuzz-archives\campaign or session.zip" />
+                </label>
+                <label class="fuzz-session-check">
+                  <input type="checkbox" id="fuzz-session-import-recursive" checked />
+                  Recursive (find run.json trees)
+                </label>
+                <button type="button" class="btn" id="fuzz-session-import" title="Import completed fuzz test folders into data/runs/">Import</button>
+                <p class="hint" id="fuzz-session-status">Sessions are flat JSON/JSONL under data/runs/ — Open pins a completed run; Import walks folders for run.json.</p>
+              </div>
             </section>
             <section class="stalk-panel">
               <h3>Coverage overview</h3>
@@ -1203,7 +1225,7 @@
             <h2 class="scream-harvest-title">Scare floor harvest</h2>
             <p class="hint" id="scream-harvest-status">No screams bottled yet — start a fuzz run.</p>
             <p class="hint scream-harvest-ram">UI-only art. Moods: laughter (0) → yelp (1–2) → toxic (3–7 / any crit) → virulent (≥8 / ≥3 crit) → <strong>EIP seal</strong>. Animations off by default.</p>
-            <p class="hint scream-harvest-float-legend" id="scream-harvest-float-legend" title="Ambience particles are decorative — they do not affect fuzzing or triage">Floating (Animate on): <strong>scare doors</strong> / <strong>laughter orbs</strong> — UI ambience only.</p>
+            <p class="hint scream-harvest-float-legend" id="scream-harvest-float-legend" title="Floating scare doors and laughter orbs are decorative UI ambience only — they do not affect fuzzing, triage, or scores">Floating (Animate on): labeled <strong>scare doors</strong> (wood + window + knob) and <strong>laughter orbs</strong> (ha / !) — UI ambience only, not harvest data.</p>
           </div>
           <div class="scream-harvest-controls">
             <label class="scream-harvest-mode-label">

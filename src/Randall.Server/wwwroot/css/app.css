@@ -3271,6 +3271,41 @@ html[data-theme="cyber"] .stalker-meta .status-crash {
 .stalk-dl dt { color: var(--muted); }
 .stalk-dl dd { margin: 0; font-family: var(--mono); color: var(--stalk-bright); word-break: break-all; }
 
+.fuzz-session-bar {
+  margin-top: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.fuzz-session-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.fuzz-session-label select,
+.fuzz-session-label input[type="text"] {
+  font-size: 0.78rem;
+  font-family: var(--mono);
+}
+.fuzz-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.fuzz-session-check {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+#fuzz-session-status {
+  margin: 0.15rem 0 0;
+  font-size: 0.72rem;
+}
+
 .coverage-ring-wrap {
   display: flex;
   gap: 0.75rem;
@@ -5441,57 +5476,67 @@ html[data-scream-anim="on"] .canister-floaties .floatie {
   opacity: 0.72;
 }
 
-/* Recognizable scare door — frame, panel, window, knob, DOOR tag */
+/* Recognizable Monsters Inc.–style scare door — teal frame, wood panel, window, knob, DOOR tag */
 .scare-door-shell {
   position: relative;
   display: block;
-  width: 22px;
-  height: 36px;
-  background: linear-gradient(180deg, #6b4a2e 0%, #3d2414 100%);
-  border: 2px solid #2a160c;
-  border-radius: 2px 2px 1px 1px;
+  width: 28px;
+  height: 44px;
+  background: linear-gradient(180deg, #2f8f7a 0%, #1a5c4e 100%);
+  border: 2px solid #0f3a32;
+  border-radius: 3px 3px 2px 2px;
   box-shadow:
-    0 0 0 1px rgba(200, 160, 100, 0.25),
-    0 4px 10px rgba(20, 8, 0, 0.35);
-  transform: perspective(40px) rotateY(-8deg);
+    0 0 0 1px rgba(120, 220, 190, 0.35),
+    0 5px 12px rgba(10, 30, 24, 0.4);
+  transform: perspective(48px) rotateY(-10deg);
 }
 .scare-door-panel {
   position: absolute;
-  inset: 3px 3px 4px 3px;
-  background: linear-gradient(180deg, #8a623e 0%, #5a3820 55%, #3a2414 100%);
-  border: 1px solid rgba(20, 10, 4, 0.55);
+  inset: 4px 4px 5px 4px;
+  background: linear-gradient(180deg, #c49a62 0%, #8a5a30 55%, #5a3818 100%);
+  border: 1px solid rgba(40, 20, 8, 0.55);
   border-radius: 1px;
+}
+.scare-door-panel::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 55%;
+  height: 1px;
+  background: rgba(40, 20, 8, 0.35);
 }
 .scare-door-window {
   position: absolute;
-  top: 7px;
-  left: 6px;
-  width: 8px;
-  height: 7px;
-  background: linear-gradient(145deg, rgba(180, 220, 255, 0.55), rgba(40, 60, 90, 0.65));
-  border: 1px solid rgba(20, 30, 50, 0.5);
+  top: 8px;
+  left: 7px;
+  width: 10px;
+  height: 9px;
+  background: linear-gradient(145deg, rgba(200, 240, 255, 0.75), rgba(60, 100, 140, 0.7));
+  border: 1px solid rgba(20, 40, 60, 0.55);
   border-radius: 1px;
+  box-shadow: inset 0 0 3px rgba(255, 255, 255, 0.35);
 }
 .scare-door-knob {
   position: absolute;
-  top: 18px;
-  right: 4px;
-  width: 4px;
-  height: 4px;
+  top: 22px;
+  right: 5px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: radial-gradient(circle at 30% 30%, #f0d080, #a07020 70%);
-  box-shadow: 0 0 3px rgba(255, 200, 80, 0.55);
+  background: radial-gradient(circle at 30% 30%, #ffe08a, #c09020 70%);
+  box-shadow: 0 0 4px rgba(255, 210, 80, 0.7);
 }
 .scare-door-tag {
   position: absolute;
   left: 50%;
-  bottom: -11px;
+  bottom: -12px;
   transform: translateX(-50%);
-  font-size: 0.42rem;
+  font-size: 0.48rem;
   font-weight: 800;
-  letter-spacing: 0.12em;
-  color: #e8d0a8;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+  letter-spacing: 0.14em;
+  color: #f0e0c0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.75);
   white-space: nowrap;
 }
 
@@ -5500,27 +5545,27 @@ html[data-scream-anim="on"] .canister-floaties .floatie {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 0.28rem;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 0.32rem;
   border-radius: 50%;
-  font-size: 0.55rem;
+  font-size: 0.62rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   color: #2a1810;
-  background: radial-gradient(circle at 32% 28%, #ffe8b0, #e8a060 55%, #c07040 100%);
-  border: 1.5px solid rgba(80, 40, 16, 0.45);
+  background: radial-gradient(circle at 32% 28%, #fff3c8, #ffb84a 55%, #e07820 100%);
+  border: 2px solid rgba(90, 45, 12, 0.5);
   box-shadow:
-    inset 0 -2px 4px rgba(80, 30, 10, 0.25),
-    0 0 8px rgba(255, 180, 100, 0.35);
+    inset 0 -2px 4px rgba(80, 30, 10, 0.22),
+    0 0 10px rgba(255, 190, 80, 0.55);
 }
 .laugh-orb.orb-pink .laugh-orb-bubble {
   color: #3a1020;
-  background: radial-gradient(circle at 32% 28%, #ffd0e8, #f090c0 55%, #c05080 100%);
-  border-color: rgba(90, 20, 50, 0.45);
+  background: radial-gradient(circle at 32% 28%, #ffe0f0, #ff7ab8 55%, #d04080 100%);
+  border-color: rgba(100, 20, 55, 0.5);
   box-shadow:
     inset 0 -2px 4px rgba(80, 10, 40, 0.25),
-    0 0 10px rgba(255, 120, 180, 0.45);
+    0 0 12px rgba(255, 100, 170, 0.55);
 }
 
 .scream-harvest-ambience .smile {

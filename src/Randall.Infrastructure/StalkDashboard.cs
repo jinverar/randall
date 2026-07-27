@@ -15,7 +15,8 @@ public static class StalkDashboard
     public static StalkDashboardDto? ForProject(
         string projectName,
         FuzzSessionStatusDto? fuzzStatus = null,
-        Guid? focusCrashId = null)
+        Guid? focusCrashId = null,
+        string? focusRunId = null)
     {
         var repoRoot = CrashCatalog.FindRepoRoot();
         if (repoRoot is null)
@@ -37,6 +38,15 @@ public static class StalkDashboard
         var arch = DetectArch(exePath);
         var pid = fuzzStatus?.TargetPid ?? FindPid(exePath, targetName);
 
+        var opened = FuzzSessionArchive.GetOpenState(repoRoot);
+        var effectiveRunId = !string.IsNullOrWhiteSpace(focusRunId)
+            ? focusRunId
+            : opened.RunId is not null
+              && opened.Project is not null
+              && opened.Project.Equals(project.Name, StringComparison.OrdinalIgnoreCase)
+                ? opened.RunId
+                : null;
+
         var crashes = CrashCatalog.ListAll(repoRoot, project.Name);
         var focusCrash = focusCrashId is Guid fid
             ? crashes.FirstOrDefault(c => c.Id == fid)
@@ -44,27 +54,75 @@ public static class StalkDashboard
         var latestCrash = focusCrash ?? crashes.FirstOrDefault();
         CrashDetailDto? latestDetail = latestCrash is null ? null : CrashCatalog.GetDetail(latestCrash.Id, repoRoot);
 
-        var run = FindLatestRun(project, configPath);
+        var run = !string.IsNullOrWhiteSpace(effectiveRunId)
+            ? FuzzSessionArchive.LoadManifest(effectiveRunId, repoRoot)
+              ?? FindLatestRun(project, configPath, fuzzStatus)
+            : FindLatestRun(project, configPath, fuzzStatus);
         var timeline = BuildTimeline(run, latestDetail, crashes);
-        var (blocks, edges) = BuildGraph(project, graph, latestDetail, run);
-        var hotBlocks = (run?.HotEdges ?? [])
-            .Take(8)
-            .Select(h => new StalkHotBlockDto(ShortEdge(h.Edge), h.HitCount))
-            .ToList();
+        var crashEdges = focusCrashId is not null && latestDetail is not null
+            ? LoadCrashCoverageEdges(latestDetail, repoRoot)
+            : Array.Empty<string>();
+        var usedCrashCoverage = false;
+        var missingCrashCoverage = focusCrashId is not null && crashEdges.Count == 0;
+        List<StalkBlockDto> blocks;
+        List<StalkEdgeDto> edges;
+        if (crashEdges.Count > 0 && focusCrashId is not null && latestDetail is not null)
+        {
+            var covGraph = BuildCrashCoverageGraph(latestDetail, crashEdges, repoRoot);
+            blocks = covGraph.Blocks;
+            edges = covGraph.Edges;
+            usedCrashCoverage = true;
+        }
+        else if (missingCrashCoverage && latestDetail is not null)
+        {
+            (blocks, edges) = BuildMissingCrashCoverageGraph(latestDetail);
+        }
+        else
+        {
+            (blocks, edges) = BuildGraph(project, graph, latestDetail, run);
+        }
+
+        var hotBlocks = usedCrashCoverage
+            ? crashEdges.Take(8).Select(e => new StalkHotBlockDto(ShortEdge(e), 1)).ToList()
+            : (run?.HotEdges ?? [])
+                .Take(8)
+                .Select(h => new StalkHotBlockDto(ShortEdge(h.Edge), h.HitCount))
+                .ToList();
 
         var crashLog = BuildCrashLog(crashes, repoRoot);
         var status = focusCrash is not null
             ? $"Inspecting {ShortCrashId(focusCrash.Id)}"
-            : ResolveStatus(fuzzStatus, configPath, latestCrash, pid);
-        var mode = project.Fuzz.CoverageGuided || fuzzStatus?.CoverageGuided == true
-            ? "Basic Block"
-            : graph.HasGraph ? "Session Graph" : "Mutation";
+            : !string.IsNullOrWhiteSpace(effectiveRunId)
+                ? $"Opened {ShortRunId(effectiveRunId)}"
+                : ResolveStatus(fuzzStatus, configPath, latestCrash, pid, run);
+        var mode = usedCrashCoverage
+            ? "Crash BB path"
+            : missingCrashCoverage
+                ? "No crash coverage"
+                : project.Fuzz.CoverageGuided || fuzzStatus?.CoverageGuided == true
+                    ? "Basic Block"
+                    : graph.HasGraph ? "Session Graph" : "Mutation";
 
         var notes = BuildNotes(status, latestDetail, corpus, graph, hotBlocks);
+        if (!string.IsNullOrWhiteSpace(effectiveRunId) && focusCrash is null)
+        {
+            notes.Insert(0,
+                $"Opened fuzz session {effectiveRunId} — Close session to return to live/latest.");
+        }
         if (focusCrash is not null)
         {
             notes.Insert(0,
-                $"Inspecting historical crash {ShortCrashId(focusCrash.Id)} (iteration {focusCrash.Iteration}) — Follow live to resume.");
+                $"Inspecting crash {ShortCrashId(focusCrash.Id)} (iteration {focusCrash.Iteration}) — Follow live to resume.");
+            if (!usedCrashCoverage)
+            {
+                notes.Insert(1,
+                    "No BB coverage trace for this crash — diagram shows a clear empty path. Re-fuzz with coverage-guided + DynamoRIO (or import a stalk layer from this crash) to populate hit blocks.");
+            }
+            else
+            {
+                notes.Insert(1,
+                    $"Diagram shows {crashEdges.Count} BB edges from this crash's drcov/trace (novel blocks highlighted vs baseline).");
+            }
         }
         var crashAddr = latestDetail?.Analysis?.FaultAddress
             ?? latestDetail?.Sidecar?.ExceptionHint
@@ -84,10 +142,14 @@ public static class StalkDashboard
             mode,
             corpus.DynamoRioAvailable);
 
-        var currentBlocks = corpus.CoverageEdges > 0
-            ? corpus.CoverageEdges
-            : hitPath;
+        var currentBlocks = usedCrashCoverage
+            ? crashEdges.Count
+            : corpus.CoverageEdges > 0
+                ? corpus.CoverageEdges
+                : hitPath;
         var baselineBlocks = Math.Max(0, currentBlocks - Math.Max(0, (int)(run?.HotEdges?.Sum(h => h.HitCount > 0 ? 1 : 0) ?? 0)));
+        if (usedCrashCoverage)
+            baselineBlocks = Math.Max(0, currentBlocks - blocks.Count(b => b.Kind is "novel" or "crash"));
         if (baselineBlocks >= currentBlocks && currentBlocks > 0)
             baselineBlocks = Math.Max(0, currentBlocks - Math.Min(12, currentBlocks / 4 + 1));
         var diff = currentBlocks - baselineBlocks;
@@ -96,6 +158,17 @@ public static class StalkDashboard
             ?? blocks.FirstOrDefault(b => b.Kind is "novel" or "crash")?.Label
             ?? graph.Mutate
             ?? "—";
+
+        // Prefer completed-run / disk stats so end-of-fuzz does not wipe the dashboard.
+        var iterations = Math.Max(fuzzStatus?.Iterations ?? 0, run?.Iterations ?? 0);
+        var coverageEdges = Math.Max(
+            Math.Max(fuzzStatus?.CoverageEdges ?? 0, corpus.CoverageEdges),
+            usedCrashCoverage ? crashEdges.Count : 0);
+        var (covPct, covLabel, covDetail) = usedCrashCoverage
+            ? (Math.Clamp(Math.Round(100.0 * crashEdges.Count / Math.Max(crashEdges.Count + 32, 64), 1), 0.1, 99.9),
+                "Crash BB edges",
+                $"{crashEdges.Count} edges on selected crash path · session corpus {corpus.CoverageEdges}")
+            : (coveragePct, coverageLabel, coverageDetail);
 
         return new StalkDashboardDto(
             project.Name,
@@ -108,13 +181,13 @@ public static class StalkDashboard
             mode,
             status,
             fuzzStatus?.Running == true && PathsMatch(fuzzStatus.ConfigPath, configPath),
-            fuzzStatus?.Iterations ?? run?.Iterations ?? 0,
+            iterations,
             Math.Max(fuzzStatus?.Crashes ?? 0, crashes.Count),
-            Math.Max(fuzzStatus?.CoverageEdges ?? 0, corpus.CoverageEdges),
+            coverageEdges,
             Math.Max(fuzzStatus?.CorpusAdded ?? 0, corpus.SeenInputs),
-            coveragePct,
-            coverageLabel,
-            coverageDetail,
+            covPct,
+            covLabel,
+            covDetail,
             run?.RunId,
             run?.StartedAt,
             latestCrash is null ? null : Path.GetFileName(latestCrash.InputPath),
@@ -122,8 +195,9 @@ public static class StalkDashboard
             exception,
             crashAddr,
             latestDetail?.Analysis?.Registers?.Rsp is null ? null : "main",
-            latestCrash is null ? null : ShortCrashId(latestCrash.Id),
-            crashLog.FirstOrDefault()?.Hits ?? (latestCrash is null ? 0 : 1),
+            latestCrash is null ? null : latestCrash.Id.ToString("D"),
+            crashLog.FirstOrDefault(c => latestCrash is not null && c.Id == latestCrash.Id)?.Hits
+                ?? (latestCrash is null ? 0 : 1),
             EstimateDistance(blocks, latestDetail),
             firstDiv,
             "Last completed corpus frontier",
@@ -144,7 +218,8 @@ public static class StalkDashboard
         FuzzSessionStatusDto? fuzzStatus,
         string configPath,
         CrashSummaryDto? latestCrash,
-        int? pid)
+        int? pid,
+        FuzzRunManifestDto? run = null)
     {
         if (fuzzStatus?.Running == true && PathsMatch(fuzzStatus.ConfigPath, configPath))
         {
@@ -152,6 +227,18 @@ public static class StalkDashboard
                 return "Crash Detected";
             return "Tracing";
         }
+
+        if (fuzzStatus is not null
+            && PathsMatch(fuzzStatus.ConfigPath, configPath)
+            && fuzzStatus.Phase is "completed" or "stopped")
+        {
+            return fuzzStatus.Phase.Equals("completed", StringComparison.OrdinalIgnoreCase)
+                ? "Completed"
+                : "Stopped";
+        }
+
+        if (run is { Iterations: > 0 })
+            return run.CompletedAt is not null ? "Completed" : "Journaled";
 
         if (latestCrash is not null && (DateTimeOffset.UtcNow - latestCrash.ObservedAt).TotalHours < 24)
             return "Crash Detected";
@@ -712,40 +799,352 @@ public static class StalkDashboard
 
     private static List<StalkCrashLogDto> BuildCrashLog(IReadOnlyList<CrashSummaryDto> crashes, string repoRoot)
     {
-        var groups = crashes
+        // One row per crash so selecting a row focuses that crash's diagram (not a cluster rep).
+        var hitByKey = crashes
             .GroupBy(c => c.TriageTag ?? c.InputHash[..Math.Min(12, c.InputHash.Length)])
-            .Take(8)
-            .Select(g =>
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        return crashes
+            .OrderByDescending(c => c.ObservedAt)
+            .Take(32)
+            .Select(c =>
             {
-                var first = g.OrderBy(x => x.ObservedAt).First();
-                var last = g.OrderByDescending(x => x.ObservedAt).First();
-                var detail = CrashCatalog.GetDetail(last.Id, repoRoot);
-                var exception = last.ExceptionHint
+                var detail = CrashCatalog.GetDetail(c.Id, repoRoot);
+                var key = c.TriageTag ?? c.InputHash[..Math.Min(12, c.InputHash.Length)];
+                var exception = c.ExceptionHint
                     ?? detail?.Analysis?.ExceptionHint
                     ?? detail?.Sidecar?.ExceptionHint
-                    ?? last.TargetExitCode
+                    ?? c.TargetExitCode
                     ?? "CRASH";
-                var address = last.FaultAddress
+                var address = c.FaultAddress
                     ?? detail?.Analysis?.FaultAddress
                     ?? "—";
-                var newCov = (detail?.Sidecar?.NewEdgesAtCrash ?? 0) > 0;
+                var newCov = (detail?.Sidecar?.NewEdgesAtCrash ?? 0) > 0
+                    || HasCrashTraceHint(detail, repoRoot);
                 return new StalkCrashLogDto(
-                    last.Id,
-                    ShortCrashId(last.Id),
-                    first.ObservedAt,
-                    last.ObservedAt,
-                    g.Count(),
+                    c.Id,
+                    ShortCrashId(c.Id),
+                    c.ObservedAt,
+                    c.ObservedAt,
+                    hitByKey.GetValueOrDefault(key, 1),
                     exception,
                     address,
                     EstimateDistance(null, detail),
                     newCov,
-                    last.Mutator,
-                    Path.GetFileName(last.InputPath),
-                    last.Severity ?? detail?.Triage?.Severity,
-                    last.CrashClass ?? detail?.Triage?.Class);
+                    c.Mutator,
+                    Path.GetFileName(c.InputPath),
+                    c.Severity ?? detail?.Triage?.Severity,
+                    c.CrashClass ?? detail?.Triage?.Class);
             })
             .ToList();
-        return groups;
+    }
+
+    private static bool HasCrashTraceHint(CrashDetailDto? detail, string repoRoot)
+    {
+        if (detail is null)
+            return false;
+        var sidecar = detail.Sidecar;
+        if (sidecar?.TraceCopyPath is not null && File.Exists(sidecar.TraceCopyPath))
+            return true;
+        if (sidecar?.TracePath is not null && File.Exists(sidecar.TracePath))
+            return true;
+        var id = detail.Summary.Id.ToString("D");
+        var idN = detail.Summary.Id.ToString("N");
+        return StalkCampaignStore.ListLayers(detail.Summary.Project, repoRoot)
+            .Any(l => string.Equals(l.CrashId, id, StringComparison.OrdinalIgnoreCase)
+                      || string.Equals(l.CrashId, idN, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IReadOnlyList<string> LoadCrashCoverageEdges(CrashDetailDto? detail, string repoRoot)
+    {
+        if (detail is null)
+            return [];
+
+        string? trace = null;
+        var sidecar = detail.Sidecar;
+        if (sidecar?.TraceCopyPath is not null && File.Exists(sidecar.TraceCopyPath))
+            trace = sidecar.TraceCopyPath;
+        else if (sidecar?.TracePath is not null && File.Exists(sidecar.TracePath))
+            trace = sidecar.TracePath;
+        else if (!string.IsNullOrWhiteSpace(detail.Summary.SidecarPath))
+        {
+            var fromDisk = CrashSidecarWriter.TryRead(detail.Summary.SidecarPath);
+            if (fromDisk?.TraceCopyPath is not null && File.Exists(fromDisk.TraceCopyPath))
+                trace = fromDisk.TraceCopyPath;
+            else if (fromDisk?.TracePath is not null && File.Exists(fromDisk.TracePath))
+                trace = fromDisk.TracePath;
+        }
+
+        if (trace is null)
+        {
+            // Prefer a stalk layer recorded from this crash id.
+            var id = detail.Summary.Id.ToString("D");
+            var idN = detail.Summary.Id.ToString("N");
+            foreach (var layer in StalkCampaignStore.ListLayers(detail.Summary.Project, repoRoot))
+            {
+                if (!string.Equals(layer.CrashId, id, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(layer.CrashId, idN, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                var layerEdges = StalkCampaignStore.LoadEdges(detail.Summary.Project, layer.Id, repoRoot);
+                if (layerEdges.Count > 0)
+                    return layerEdges.OrderBy(e => e, StringComparer.OrdinalIgnoreCase).ToList();
+            }
+
+            return [];
+        }
+
+        try
+        {
+            return DrcovParser.ParseEdges(trace);
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static (List<StalkBlockDto> Blocks, List<StalkEdgeDto> Edges) BuildMissingCrashCoverageGraph(
+        CrashDetailDto detail)
+    {
+        var exception = detail.Analysis?.ExceptionHint
+            ?? detail.Sidecar?.ExceptionHint
+            ?? detail.Summary.TargetExitCode
+            ?? "CRASH";
+        var crashAddr = detail.Analysis?.FaultAddress ?? "0x????????";
+        var blocks = new List<StalkBlockDto>
+        {
+            new(
+                "__entry",
+                "ENTRY",
+                "select()",
+                "hit",
+                true,
+                false,
+                $"Crash {ShortCrashId(detail.Summary.Id)} selected",
+                0,
+                true,
+                Role: "entry",
+                CrashId: detail.Summary.Id,
+                ReHints: ["No drcov/trace for this crash."]),
+            new(
+                "__no_cov",
+                "NO COVERAGE",
+                "—",
+                "unexplored",
+                false,
+                true,
+                "No BB coverage for this crash — re-fuzz with coverage-guided + DynamoRIO or import a stalk layer.",
+                1,
+                true,
+                Role: "block",
+                CrashId: detail.Summary.Id,
+                ReHints:
+                [
+                    "Coverage edges are empty for the selected crash.",
+                    "Enable fuzz.coverageGuided and install DynamoRIO, or POST /api/stalking/layers/from-crash.",
+                ]),
+            new(
+                "__crash_site",
+                "CRASH",
+                crashAddr,
+                "crash",
+                false,
+                false,
+                exception,
+                2,
+                true,
+                Role: "crash",
+                ExceptionHint: exception,
+                CrashId: detail.Summary.Id,
+                Mutator: detail.Summary.Mutator,
+                Severity: detail.Triage?.Severity ?? detail.Summary.Severity,
+                CrashClass: detail.Triage?.Class ?? detail.Summary.CrashClass),
+        };
+        var edges = new List<StalkEdgeDto>
+        {
+            new("__entry", "__no_cov", "missing", false, false),
+            new("__no_cov", "__crash_site", "fault", true, true),
+        };
+        return (blocks, edges);
+    }
+
+    private static (List<StalkBlockDto> Blocks, List<StalkEdgeDto> Edges) BuildCrashCoverageGraph(
+        CrashDetailDto detail,
+        IReadOnlyList<string> crashEdges,
+        string repoRoot)
+    {
+        var baseline = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var layer in StalkCampaignStore.ListLayers(detail.Summary.Project, repoRoot))
+        {
+            if (!layer.Tag.Contains("base", StringComparison.OrdinalIgnoreCase))
+                continue;
+            foreach (var e in StalkCampaignStore.LoadEdges(detail.Summary.Project, layer.Id, repoRoot))
+                baseline.Add(e);
+        }
+
+        if (baseline.Count == 0)
+        {
+            var corpusEdges = Path.Combine(repoRoot, "data", "corpus", detail.Summary.Project, "edges.txt");
+            if (File.Exists(corpusEdges))
+            {
+                foreach (var line in File.ReadLines(corpusEdges))
+                {
+                    if (!string.IsNullOrWhiteSpace(line))
+                        baseline.Add(line.Trim());
+                }
+            }
+        }
+
+        var (novelEdge, _, _) = CrashStalker.FindNovelFocus(crashEdges, baseline.ToList());
+        // Compact spine: entry → sample of path (prefer novel) → crash site
+        var sample = SampleCrashPathEdges(crashEdges, novelEdge, maxBlocks: 12);
+        var crashAddr = detail.Analysis?.FaultAddress
+            ?? detail.Sidecar?.ExceptionHint
+            ?? "0x????????";
+        var exception = detail.Analysis?.ExceptionHint
+            ?? detail.Sidecar?.ExceptionHint
+            ?? detail.Summary.TargetExitCode
+            ?? "CRASH";
+        var module = detail.Analysis?.FaultModule
+            ?? Path.GetFileName(detail.Summary.Project);
+
+        var blocks = new List<StalkBlockDto>
+        {
+            new(
+                "__entry",
+                "ENTRY",
+                "accept()",
+                "hit",
+                true,
+                false,
+                $"Crash {ShortCrashId(detail.Summary.Id)} coverage path",
+                0,
+                true,
+                Role: "entry",
+                Module: module,
+                CrashId: detail.Summary.Id,
+                ReHints: ["Selected crash BB path from drcov/trace."]),
+        };
+
+        for (var i = 0; i < sample.Count; i++)
+        {
+            var edge = sample[i];
+            var addr = ShortEdge(edge);
+            var novel = !baseline.Contains(edge)
+                        || string.Equals(edge, novelEdge, StringComparison.OrdinalIgnoreCase);
+            blocks.Add(new StalkBlockDto(
+                $"bb{i}_{Sanitize(addr)}",
+                addr,
+                addr,
+                novel ? "novel" : "hit",
+                false,
+                novel && i == sample.Count - 1,
+                novel ? "New vs baseline on this crash" : "Hit on crash path",
+                i + 1,
+                true,
+                Role: novel ? "handler" : "block",
+                Module: module,
+                HitCount: 1,
+                CrashId: detail.Summary.Id,
+                Mutator: detail.Summary.Mutator,
+                InputLength: detail.InputLength,
+                AsciiPreview: detail.AsciiPreview,
+                HexPreview: detail.HexPreview));
+        }
+
+        blocks.Add(new StalkBlockDto(
+            "__crash_site",
+            "CRASH",
+            string.IsNullOrWhiteSpace(crashAddr) ? "0x????????" : crashAddr,
+            "crash",
+            false,
+            false,
+            exception,
+            sample.Count + 1,
+            true,
+            Role: "crash",
+            Module: detail.Analysis?.FaultModule ?? module,
+            ExceptionHint: exception,
+            FaultModule: detail.Analysis?.FaultModule,
+            Rip: detail.Analysis?.Registers?.Rip,
+            Rsp: detail.Analysis?.Registers?.Rsp,
+            Rbp: detail.Analysis?.Registers?.Rbp,
+            Severity: detail.Triage?.Severity ?? detail.Summary.Severity,
+            CrashClass: detail.Triage?.Class ?? detail.Summary.CrashClass,
+            ClusterKey: detail.Triage?.ClusterKey,
+            CrashId: detail.Summary.Id,
+            Mutator: detail.Summary.Mutator,
+            InputLength: detail.InputLength,
+            AsciiPreview: detail.AsciiPreview,
+            HexPreview: detail.HexPreview,
+            ReHints: BuildCrashReHints(detail)));
+
+        var edges = new List<StalkEdgeDto>();
+        for (var i = 0; i < blocks.Count - 1; i++)
+            edges.Add(new StalkEdgeDto(blocks[i].Id, blocks[i + 1].Id, i == 0 ? "trace" : "", true, true));
+        return (blocks, edges);
+    }
+
+    private static List<string> SampleCrashPathEdges(
+        IReadOnlyList<string> crashEdges,
+        string? novelEdge,
+        int maxBlocks)
+    {
+        if (crashEdges.Count == 0)
+            return [];
+        if (crashEdges.Count <= maxBlocks)
+            return crashEdges.ToList();
+
+        var picked = new List<string>();
+        var head = Math.Max(2, maxBlocks / 4);
+        var tail = Math.Max(2, maxBlocks / 4);
+        for (var i = 0; i < head && i < crashEdges.Count; i++)
+            picked.Add(crashEdges[i]);
+
+        if (!string.IsNullOrWhiteSpace(novelEdge))
+        {
+            var idx = -1;
+            for (var i = 0; i < crashEdges.Count; i++)
+            {
+                if (crashEdges[i].Equals(novelEdge, StringComparison.OrdinalIgnoreCase))
+                {
+                    idx = i;
+                    break;
+                }
+            }
+
+            if (idx >= head && idx < crashEdges.Count - tail)
+            {
+                for (var i = Math.Max(head, idx - 1); i <= Math.Min(crashEdges.Count - tail - 1, idx + 1); i++)
+                {
+                    if (!picked.Contains(crashEdges[i], StringComparer.OrdinalIgnoreCase))
+                        picked.Add(crashEdges[i]);
+                }
+            }
+        }
+
+        // Mid stride fill
+        var midBudget = maxBlocks - head - tail;
+        if (midBudget > 0 && crashEdges.Count > head + tail)
+        {
+            var span = crashEdges.Count - head - tail;
+            for (var m = 0; m < midBudget; m++)
+            {
+                var i = head + (int)((m + 0.5) * span / midBudget);
+                if (i >= crashEdges.Count - tail)
+                    break;
+                if (!picked.Contains(crashEdges[i], StringComparer.OrdinalIgnoreCase))
+                    picked.Add(crashEdges[i]);
+            }
+        }
+
+        for (var i = Math.Max(0, crashEdges.Count - tail); i < crashEdges.Count; i++)
+        {
+            if (!picked.Contains(crashEdges[i], StringComparer.OrdinalIgnoreCase))
+                picked.Add(crashEdges[i]);
+        }
+
+        return picked.Take(maxBlocks).ToList();
     }
 
     private static List<string> BuildNotes(
@@ -771,7 +1170,10 @@ public static class StalkDashboard
         return notes;
     }
 
-    private static FuzzRunManifestDto? FindLatestRun(ProjectConfig project, string yamlPath)
+    private static FuzzRunManifestDto? FindLatestRun(
+        ProjectConfig project,
+        string yamlPath,
+        FuzzSessionStatusDto? fuzzStatus = null)
     {
         try
         {
@@ -782,7 +1184,7 @@ public static class StalkDashboard
             FuzzRunManifestDto? best = null;
             foreach (var dir in Directory.EnumerateDirectories(runsRoot)
                          .Where(d => Path.GetFileName(d).StartsWith(project.Name + "_", StringComparison.OrdinalIgnoreCase))
-                         .OrderByDescending(d => d))
+                         .OrderByDescending(d => Directory.GetLastWriteTimeUtc(d)))
             {
                 var path = Path.Combine(dir, "run.json");
                 if (!File.Exists(path))
@@ -794,6 +1196,9 @@ public static class StalkDashboard
                     best = manifest;
             }
 
+            // If live/completed session reports more iters than disk yet, keep disk run but
+            // surface the higher counters via Max() in ForProject.
+            _ = fuzzStatus;
             return best;
         }
         catch
@@ -940,6 +1345,13 @@ public static class StalkDashboard
     }
 
     private static string ShortCrashId(Guid id) => $"CRASH_{id.ToString("N")[..6].ToUpperInvariant()}";
+
+    private static string ShortRunId(string runId)
+    {
+        if (string.IsNullOrWhiteSpace(runId))
+            return "session";
+        return runId.Length <= 28 ? runId : runId[..28] + "…";
+    }
 
     private static string Sanitize(string name) =>
         name.Replace('-', '_').Replace(' ', '_');

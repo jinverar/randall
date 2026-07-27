@@ -544,7 +544,7 @@ app.MapGet("/api/coverage/status", () =>
 
 app.MapGet("/api/corpus/{project}", (string project) => CorpusStats.ForProject(project));
 
-app.MapGet("/api/stalk/{project}", (string project, string? crashId, FuzzSessionManager sessions) =>
+app.MapGet("/api/stalk/{project}", (string project, string? crashId, string? runId, FuzzSessionManager sessions) =>
 {
     if (WebTargetFilter.IsHiddenProject(project))
         return Results.NotFound(new { error = "project not found" });
@@ -555,8 +555,81 @@ app.MapGet("/api/stalk/{project}", (string project, string? crashId, FuzzSession
             return Results.BadRequest(new { error = "crashId must be a guid" });
         focusId = parsed;
     }
-    var dash = StalkDashboard.ForProject(project, sessions.Status, focusId);
+    var dash = StalkDashboard.ForProject(project, sessions.Status, focusId, runId);
     return dash is null ? Results.NotFound(new { error = "project not found" }) : Results.Ok(dash);
+});
+
+// Fuzz session browser — Open / Close / Save / Import / Export completed runs under data/runs/.
+app.MapGet("/api/sessions", (string? project, int? limit) =>
+{
+    try
+    {
+        if (!string.IsNullOrWhiteSpace(project) && WebTargetFilter.IsHiddenProject(project))
+            return Results.NotFound(new { error = "project not found" });
+        return Results.Ok(FuzzSessionArchive.List(project, limit: limit ?? 64));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapGet("/api/sessions/open", () => Results.Ok(FuzzSessionArchive.GetOpenState()));
+
+app.MapPost("/api/sessions/open", (FuzzSessionOpenRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.RunId))
+        return Results.BadRequest(new { error = "runId required" });
+    try
+    {
+        return Results.Ok(FuzzSessionArchive.Open(request.RunId));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/sessions/close", () => Results.Ok(FuzzSessionArchive.Close()));
+
+app.MapPost("/api/sessions/save", (FuzzSessionSaveRequest request) =>
+{
+    try
+    {
+        return Results.Ok(FuzzSessionArchive.Save(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/sessions/export", (FuzzSessionExportRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.RunId))
+        return Results.BadRequest(new { error = "runId required" });
+    try
+    {
+        return Results.Ok(FuzzSessionArchive.Export(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+app.MapPost("/api/sessions/import", (FuzzSessionImportRequest request) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Path))
+        return Results.BadRequest(new { error = "path required" });
+    try
+    {
+        return Results.Ok(FuzzSessionArchive.Import(request));
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 app.MapGet("/api/stalking/{project}", (string project) =>
