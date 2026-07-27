@@ -99,6 +99,14 @@ const attachDbgBtn = document.getElementById('fuzz-attach-dbg');
 let fuzzTargetPidCache = null;
 /** Last /api/fuzz/status payload — drives attach-button enablement. */
 let fuzzStatusCache = null;
+/** SignalR hub health: connected | connecting | reconnecting | disconnected */
+let liveLinkState = 'disconnected';
+let hubConnectAttempt = 0;
+let hubRetryTimer = null;
+/** Faster status/log poll while a fuzz session is active (backup if hub drops). */
+let statusPollMs = 2000;
+let statusPollTimer = null;
+let lastPolledCrashCount = -1;
 
 /** Soft cap for in-memory live log (survives leaving the Fuzz view). */
 const LOG_BUFFER_MAX = 2000;
@@ -184,11 +192,60 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
+function getLocalAgentToken() {
+  try {
+    return (localStorage.getItem('randallLocalToken') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function updateLiveLinkIndicator(state, detail = '') {
+  liveLinkState = state || 'disconnected';
+  const el = document.getElementById('live-link-status');
+  const warn = document.getElementById('live-link-warn');
+  if (el) {
+    const labels = {
+      connected: 'connected',
+      connecting: 'connecting…',
+      reconnecting: 'reconnecting…',
+      disconnected: 'disconnected',
+    };
+    el.textContent = labels[liveLinkState] || liveLinkState;
+    el.className = `live-link-status live-link-${liveLinkState}`;
+    el.title = detail || 'SignalR hub for live log / status push';
+  }
+  const fuzzActive = isFuzzSessionActive(fuzzStatusCache);
+  if (warn) {
+    const show = fuzzActive && liveLinkState !== 'connected';
+    warn.classList.toggle('hidden', !show);
+  }
+}
+
 function isFuzzSessionActive(s) {
   if (!s) return false;
   if (s.running) return true;
   const phase = (s.phase || '').toLowerCase();
   return phase === 'starting' || phase === 'running' || phase === 'stopping';
+}
+
+function updateNoBbBanners(data, fuzzStatus) {
+  const guided = fuzzStatus?.coverageGuided === true
+    || (isFuzzSessionActive(fuzzStatus) && document.getElementById('fuzz-coverage')?.checked === true);
+  const edges = Number(data?.coverageEdges ?? fuzzStatus?.coverageEdges) || 0;
+  const msg = 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.';
+  // Show on Fuzz + Dashboard when coverage-guided session has zero BB edges (typical: lab already on :port).
+  const show = !!guided && edges <= 0 && isFuzzSessionActive(fuzzStatus);
+  for (const id of ['stalk-nobb-banner', 'fuzz-nobb-banner']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (show) {
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    } else {
+      el.classList.add('hidden');
+    }
+  }
 }
 
 function isCampaignSessionActive(s) {
@@ -281,6 +338,7 @@ function applyFuzzSessionStatus(s) {
   if (forceBtn) forceBtn.disabled = false;
   if (!active) scrubStickySessionConflictErrors();
   applyAttachDbgButtonState(s);
+  updateLiveLinkIndicator(liveLinkState);
 
   if (s.configPath) {
     const sel = document.getElementById('fuzz-target');
@@ -288,10 +346,12 @@ function applyFuzzSessionStatus(s) {
       sel.value = s.configPath;
   }
 
+  // P0b: never paint Idle while the server reports a live session.
   if (active) {
     const iter = Number(s.iterations) > 0 ? `iter ${s.iterations} · ` : '';
+    const pid = s.targetPid != null ? ` · pid ${s.targetPid}` : '';
     const goal = s.stopGoalMet ? ' 🎯 goal met · ' : formatGoalProgress(s.goalProgress);
-    setStatus(`${iter}${goal}${s.phase}: ${s.lastMessage || '…'}`);
+    setStatus(`${iter}${goal}${s.phase}: ${s.lastMessage || '…'}${pid}`);
     return;
   }
 
@@ -1093,10 +1153,12 @@ async function refreshScareFloorBrain(opts = {}) {
   const targetIntelEl = document.getElementById('scare-brain-target-intel');
   const targetsEl = document.getElementById('scare-brain-targets');
   const footEl = document.getElementById('scare-brain-foot');
+  const brainRoot = document.getElementById('scare-floor-brain');
   if (!targetsEl) return;
 
   if (!project) {
     stopScareBrainPoll();
+    brainRoot?.classList.remove('is-thinking');
     if (summaryEl) summaryEl.textContent = 'Pick a project to see Scare Doors, static priorities, and oracle hints.';
     targetsEl.innerHTML = '<p class="hint scare-brain-empty">Select <strong>Working on project</strong> below — Randall reads <code>data/stalk/&lt;project&gt;/</code> on disk.</p>';
     c2El?.classList.add('hidden');
@@ -1107,6 +1169,7 @@ async function refreshScareFloorBrain(opts = {}) {
   }
 
   if (!opts.quiet) {
+    brainRoot?.classList.add('is-thinking');
     targetsEl.innerHTML = '<p class="hint scare-brain-empty">Thinking…</p>';
     c2El?.classList.add('hidden');
     targetIntelEl?.classList.add('hidden');
@@ -1246,6 +1309,8 @@ async function refreshScareFloorBrain(opts = {}) {
     targetsEl.innerHTML = `<p class="hint scare-brain-empty">${escapeAttr(err.message)}</p>`;
     footEl?.classList.add('hidden');
     stopScareBrainPoll();
+  } finally {
+    brainRoot?.classList.remove('is-thinking');
   }
 }
 
@@ -1663,21 +1728,35 @@ function updateStalkGraphBanner(data) {
   if (!banner) return;
   const edges = Number(data?.coverageEdges) || 0;
   const notes = data?.notes || [];
-  const covNote = notes.find((n) => /No basic-block coverage|DynamoRIO/i.test(n));
+  const covNote = notes.find((n) => /No BB graph|No basic-block coverage|DynamoRIO|existing listener/i.test(n));
+  const nobb = document.getElementById('stalk-nobb-banner');
   if (covNote && edges <= 0) {
-    banner.textContent = covNote;
-    banner.classList.remove('hidden', 'info');
+    const hard = /existing listener|without DynamoRIO|TCP port was already busy/i.test(covNote);
+    banner.textContent = hard
+      ? 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.'
+      : covNote;
+    banner.classList.remove('hidden');
+    banner.classList.toggle('info', !hard);
+    if (nobb) {
+      nobb.textContent = banner.textContent;
+      nobb.classList.toggle('hidden', !hard);
+    }
+    updateNoBbBanners(data, fuzzStatusCache);
     return;
   }
   if (edges <= 0 && (data?.mode || '').toLowerCase().includes('mutation')) {
-    banner.textContent = 'No basic-block coverage — showing session / corpus-novelty path. Check DynamoRIO + free TCP port (`randall doctor`).';
+    banner.textContent = 'No BB graph yet — showing session / corpus-novelty path. Check DynamoRIO + free TCP port (`randall doctor`).';
     banner.classList.remove('hidden');
     banner.classList.add('info');
+    if (nobb) nobb.classList.add('hidden');
+    updateNoBbBanners(data, fuzzStatusCache);
     return;
   }
   banner.textContent = '';
   banner.classList.add('hidden');
   banner.classList.remove('info');
+  if (nobb) nobb.classList.add('hidden');
+  updateNoBbBanners(data, fuzzStatusCache);
 }
 
 /** Vertical CFG: crash spine down the center, forks to the sides. */
@@ -5798,15 +5877,27 @@ document.addEventListener('visibilitychange', () => {
 
 
 let hub;
+let hubHandlersBound = false;
 
-async function connectHub() {
-  hub = new signalR.HubConnectionBuilder().withUrl('/hubs/fuzz').withAutomaticReconnect().build();
+function bindHubHandlers() {
+  if (!hub || hubHandlersBound) return;
+  hubHandlersBound = true;
+
+  hub.onreconnecting(() => {
+    updateLiveLinkIndicator('reconnecting');
+  });
 
   hub.onreconnected(async () => {
+    updateLiveLinkIndicator('connected');
     try {
       await syncFuzzSession();
       appendLogUnique('Reconnected — resynced live session', 'info');
     } catch { /* poll will retry */ }
+  });
+
+  hub.onclose(() => {
+    updateLiveLinkIndicator('disconnected', 'Hub closed');
+    scheduleHubRetry();
   });
 
   hub.on('fuzzTargetPid', (e) => {
@@ -5834,6 +5925,7 @@ async function connectHub() {
     stalkFollowLive = true;
     stalkSelection = null;
     paintHarvestViews();
+    updateLiveLinkIndicator(liveLinkState);
     if (document.getElementById('view-dashboard').classList.contains('visible'))
       loadDashboard({ applyWidgets: true, followLive: true }).catch(() => {});
   });
@@ -5892,6 +5984,7 @@ async function connectHub() {
     harvestState.liveProject = null;
     harvestState.liveProjects = new Set();
     harvestState.fuzzSessionActive = false;
+    updateLiveLinkIndicator(liveLinkState);
     // Always refresh dashboard widgets from disk journal — do not blank on end-of-run.
     resolveCrashIdForIteration(-1).finally(() => {
       loadDashboard({
@@ -5915,6 +6008,7 @@ async function connectHub() {
     harvestState.liveProject = null;
     harvestState.liveProjects = new Set();
     harvestState.fuzzSessionActive = false;
+    updateLiveLinkIndicator(liveLinkState);
     paintHarvestViews();
     loadDashboard({
       applyWidgets: true,
@@ -5943,9 +6037,81 @@ async function connectHub() {
     fuzzTargetPidCache = null;
     applyAttachDbgButtonState({ phase: 'error', running: false });
   });
-
-  await hub.start();
 }
+
+function scheduleHubRetry() {
+  if (hubRetryTimer) return;
+  const delay = Math.min(15000, 1500 * Math.max(1, hubConnectAttempt));
+  hubRetryTimer = setTimeout(() => {
+    hubRetryTimer = null;
+    connectHub().catch(() => {});
+  }, delay);
+}
+
+async function connectHub() {
+  if (typeof signalR === 'undefined') {
+    updateLiveLinkIndicator('disconnected', 'SignalR library missing — status poll still active');
+    appendLogUnique('Live link: SignalR unavailable — using /api/fuzz/status + /api/fuzz/logs poll', 'warn');
+    return;
+  }
+
+  if (hub) {
+    const st = hub.state;
+    if (st === signalR.HubConnectionState.Connected) {
+      updateLiveLinkIndicator('connected');
+      return;
+    }
+    if (st === signalR.HubConnectionState.Connecting || st === signalR.HubConnectionState.Reconnecting) {
+      updateLiveLinkIndicator(st === signalR.HubConnectionState.Reconnecting ? 'reconnecting' : 'connecting');
+      return;
+    }
+  }
+
+  hubConnectAttempt += 1;
+  updateLiveLinkIndicator('connecting');
+
+  const transports = signalR.HttpTransportType.WebSockets
+    | signalR.HttpTransportType.ServerSentEvents
+    | signalR.HttpTransportType.LongPolling;
+
+  if (!hub) {
+    hub = new signalR.HubConnectionBuilder()
+      .withUrl('/hubs/fuzz', {
+        accessTokenFactory: () => getLocalAgentToken() || null,
+        transport: transports,
+      })
+      .withAutomaticReconnect([0, 1000, 2000, 5000, 10000, 15000])
+      .build();
+    hubHandlersBound = false;
+    bindHubHandlers();
+  }
+
+  try {
+    await hub.start();
+    hubConnectAttempt = 0;
+    updateLiveLinkIndicator('connected');
+    try {
+      await syncFuzzSession();
+    } catch { /* poll continues */ }
+  } catch (err) {
+    updateLiveLinkIndicator('disconnected', err?.message || 'hub start failed');
+    appendLogUnique(
+      `Live link disconnected: ${err?.message || err}. STATUS/log still poll /api/fuzz/* — click Reconnect or refresh.`,
+      'warn',
+    );
+    scheduleHubRetry();
+  }
+}
+
+document.getElementById('live-link-reconnect')?.addEventListener('click', () => {
+  appendLogUnique('Reconnecting live link…', 'info');
+  hubConnectAttempt = 0;
+  if (hubRetryTimer) {
+    clearTimeout(hubRetryTimer);
+    hubRetryTimer = null;
+  }
+  connectHub().catch(() => {});
+});
 
 /* —— Campaign recording profiles (UI presets → same fuzz start flags) —— */
 const RECORDING_CHECKBOX_IDS = {
@@ -6243,6 +6409,7 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
   try {
     await api.post('/api/fuzz/start', buildFuzzStartBody({ force: false }));
     appendLog('Session accepted…');
+    setStatus('starting: Session accepted…');
     if (debuggerMode === 'none') {
       appendLog(
         'Tip: Debugger Mode is None — no minidumps on crash. Set Debugger to Wait or Both (above) for Scream dumps; Attach debugger only opens live WinDbg.',
@@ -6250,6 +6417,10 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
       );
     }
     applyAttachDbgButtonState({ phase: 'starting', running: true, debuggerMode });
+    // Immediately pull status + buffered logs — do not wait for SignalR.
+    await syncFuzzSession().catch(() => {});
+    ensureStatusPoll(true);
+    if (liveLinkState !== 'connected') connectHub().catch(() => {});
   } catch (err) {
     const msg = err.message || String(err);
     const conflict = /already running/i.test(msg);
@@ -6262,7 +6433,10 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
           await api.post('/api/fuzz/start', buildFuzzStartBody({ force: true }));
           scrubStickySessionConflictErrors();
           appendLog('Session accepted after force-clear…');
+          setStatus('starting: Session accepted after force-clear…');
           applyAttachDbgButtonState({ phase: 'starting', running: true, debuggerMode });
+          await syncFuzzSession().catch(() => {});
+          ensureStatusPoll(true);
           return;
         }
         applyFuzzSessionStatus(st);
@@ -6926,6 +7100,14 @@ document.getElementById('proxy-to-scare-session')?.addEventListener('click', asy
   }
 });
 
+function ensureStatusPoll(active) {
+  const want = active ? 1000 : 2500;
+  if (statusPollTimer && statusPollMs === want) return;
+  statusPollMs = want;
+  if (statusPollTimer) clearInterval(statusPollTimer);
+  statusPollTimer = setInterval(() => { pollStatus().catch(() => {}); }, statusPollMs);
+}
+
 async function pollStatus() {
   try {
     const [s, campaign] = await Promise.all([
@@ -6935,14 +7117,51 @@ async function pollStatus() {
     campaignStatusCache = campaign;
     syncHarvestLiveFromStatus(s, campaign);
     applyFuzzSessionStatus(s);
-    if (isFuzzSessionActive(s)) {
+    updateLiveLinkIndicator(liveLinkState);
+    updateNoBbBanners(null, s);
+
+    const active = isFuzzSessionActive(s);
+    ensureStatusPoll(active);
+
+    if (active) {
+      // Hub backup: REST log buffer always has the lines even if WebSockets are blocked.
+      try {
+        const data = await api.get('/api/fuzz/logs');
+        mergeServerLogs(data.logs);
+      } catch { /* older server */ }
+
       stalkPollTick += 1;
+      const crashes = Number(s.crashes) || 0;
+      if (crashes !== lastPolledCrashCount) {
+        lastPolledCrashCount = crashes;
+        scheduleHarvestRefresh({
+          project: s.project || stalkProject,
+          toast: crashes > 0,
+          syncCrashState: true,
+          immediate: crashes > 0,
+        });
+      } else if (stalkPollTick % 4 === 0) {
+        scheduleHarvestRefresh({
+          project: s.project || stalkProject,
+          toast: false,
+          syncCrashState: false,
+        });
+      }
+
+      // Dashboard STATUS must never stay Idle while /api/fuzz/status says running.
+      const stalkStatus = document.getElementById('stalk-status');
+      if (stalkStatus && stalkFollowLive) {
+        const label = (s.phase || '').toLowerCase() === 'stopping' ? 'Stopping' : 'Tracing';
+        stalkStatus.textContent = label;
+        stalkStatus.className = statusClass(label);
+      }
+
       if (stalkPollTick % 3 === 0 && document.getElementById('view-dashboard').classList.contains('visible')) {
-        // Pinned selection: refresh timeline/crash-id map only — keep stalker widgets frozen.
         loadDashboard({ applyWidgets: stalkFollowLive, force: stalkFollowLive }).catch(() => {});
       }
     } else {
       stalkPollTick = 0;
+      lastPolledCrashCount = -1;
     }
   } catch { /* ignore */ }
 }
@@ -9433,8 +9652,12 @@ async function init() {
   await loadModels();
   await loadBundlesView();
   await loadCrashes();
-  await connectHub();
+
+  // P0: never block status/log poll on SignalR (LAN token / WS filter / CDN).
+  ensureStatusPoll(false);
   await syncFuzzSession().catch(() => {});
+  connectHub().catch(() => {});
+
   try {
     const savedAgent = localStorage.getItem(LABS_AGENT_KEY) || '';
     const savedTok = localStorage.getItem('randallLabsAgentToken') || '';
@@ -9445,7 +9668,6 @@ async function init() {
   } catch { /* ignore */ }
   persistLabsAgentUrl();
   refreshLabs().catch(() => {});
-  setInterval(pollStatus, 3000);
   setInterval(() => refreshLabs().catch(() => {}), 4000);
   setInterval(() => {
     if (document.getElementById('view-proxy').classList.contains('visible'))
@@ -9454,5 +9676,7 @@ async function init() {
 }
 
 init().catch((err) => {
+  // Keep status poll alive even if a later init step fails.
+  try { ensureStatusPoll(false); } catch { /* ignore */ }
   document.body.insertAdjacentHTML('beforeend', `<p class="empty">Failed to load UI: ${err.message}</p>`);
 });

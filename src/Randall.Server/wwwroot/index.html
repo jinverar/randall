@@ -21,8 +21,14 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=ux-session-graph-1" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="/css/app.css?v=ux-live-link-1" />
+  <!-- Prefer vendored SignalR (LAN / offline VMs); CDN is fallback only. -->
+  <script src="/js/signalr.min.js?v=8.0.7"></script>
+  <script>
+    if (typeof signalR === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js" crossorigin="anonymous"><\/script>');
+    }
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </head>
 <body>
@@ -174,6 +180,7 @@
               </div>
               <p class="hint stalk-graph-hint">Click a block to inspect · right-click for RE actions · drag empty space to pan · Ctrl+wheel zoom</p>
               <p class="stalk-graph-banner hidden" id="stalk-graph-banner" role="status"></p>
+              <p class="stalk-graph-banner hidden" id="stalk-nobb-banner" role="status">No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.</p>
               <div id="stalker-graph" class="stalker-graph" tabindex="0" aria-label="Control flow graph — drag to pan, click blocks to inspect"></div>
               <aside id="stalk-block-inspector" class="stalk-block-inspector hidden" aria-live="polite">
                 <div class="stalk-insp-head">
@@ -622,6 +629,15 @@
           </div>
           <div id="fuzz-doctor-result" class="status-box hidden"></div>
           <div id="fuzz-status" class="status-box">Idle</div>
+          <div class="live-link-bar" id="live-link-bar" aria-live="polite">
+            <span class="live-link-label">Live link:</span>
+            <strong id="live-link-status" class="live-link-status live-link-disconnected" title="SignalR hub + status poll">connecting…</strong>
+            <button type="button" class="btn btn-sm" id="live-link-reconnect" title="Reconnect SignalR hub">Reconnect</button>
+          </div>
+          <p class="live-link-warn hidden" id="live-link-warn" role="alert">
+            Server is fuzzing but UI link lost — Force clear / refresh. STATUS and Live log use /api/fuzz/status + /api/fuzz/logs as backup.
+          </p>
+          <p class="stalk-graph-banner hidden" id="fuzz-nobb-banner" role="status">No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.</p>
         </form>
         <div class="panel fuzz-log-panel">
           <div class="fuzz-log-head">
@@ -767,7 +783,7 @@
             <p class="hint">Ranked hunt targets with coverage bars — click <strong>Why?</strong> for score terms or <strong>Hunt this door</strong> to pin brain focus.</p>
           </div>
           <div id="scare-brain-targets" class="scare-brain-targets" aria-live="polite">
-            <p class="hint scare-brain-empty">Loading…</p>
+            <p class="hint scare-brain-empty">Select a project below — Scare Doors load from disk (not a spinner).</p>
           </div>
           <div id="scare-brain-foot" class="scare-brain-foot hidden"></div>
         </div>

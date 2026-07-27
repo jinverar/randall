@@ -8,7 +8,13 @@ using Randall.Server;
 FuzzAnalystLog.EnsureConsoleReady();
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    // LAN browsers often fall back to long-polling when WebSockets are filtered.
+    options.EnableDetailedErrors = true;
+    options.KeepAliveInterval = TimeSpan.FromSeconds(15);
+    options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+});
 builder.Services.AddSingleton<FuzzLiveLogBuffer>();
 builder.Services.AddSingleton<FuzzSessionManager>();
 builder.Services.AddSingleton<SignalRFuzzProgressSink>();
@@ -16,6 +22,7 @@ builder.Services.AddSingleton<ProxyManager>();
 builder.Services.AddSingleton<CampaignSessionManager>();
 
 var app = builder.Build();
+app.UseWebSockets();
 
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions

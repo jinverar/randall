@@ -544,7 +544,10 @@ body.nav-collapsed .nav-reopen { display: flex; }
   color: var(--stalk-purple);
   font-size: 0.95rem;
   line-height: 1;
-  animation: scare-brain-pulse 3.2s ease-in-out infinite;
+}
+/* Pulse only while explicitly thinking — never look like an infinite spinner on idle. */
+.scare-floor-brain.is-thinking .scare-brain-icon {
+  animation: scare-brain-pulse 1.4s ease-in-out infinite;
 }
 @keyframes scare-brain-pulse {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--stalk-purple) 35%, transparent); }
@@ -3333,6 +3336,36 @@ html[data-theme="cyber"] .stalker-meta .status-crash {
   font-size: 0.72rem;
   line-height: 1.35;
 }
+.live-link-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  margin: 0.45rem 0 0.25rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 88%, var(--code-bg));
+  font-size: 0.82rem;
+}
+.live-link-label { color: var(--muted, #888); }
+.live-link-status { font-weight: 650; letter-spacing: 0.01em; }
+.live-link-status.live-link-connected { color: #2f9e44; }
+.live-link-status.live-link-connecting,
+.live-link-status.live-link-reconnecting { color: #d9480f; }
+.live-link-status.live-link-disconnected { color: #c92a2a; }
+.live-link-warn {
+  margin: 0.35rem 0 0.15rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, #c92a2a 45%, var(--border));
+  background: color-mix(in srgb, #c92a2a 12%, var(--panel));
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+.live-link-warn.hidden { display: none; }
+
 .stalk-graph-banner {
   margin: 0.35rem 0 0.5rem;
   padding: 0.45rem 0.65rem;

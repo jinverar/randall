@@ -64,11 +64,27 @@ If **Stalker graph** is blank / 0% with Coverage-guided checked:
 1. Run `randall doctor` — DynamoRIO must be Ready.
 2. For **TCP** targets: stop Labs / anything already listening on the project port. Coverage-TCP
    cannot spawn `drrun` copies while `:9999` (etc.) is busy; Randfuzz will fuzz the existing
-   listener instead and BB edges stay 0.
+   listener instead and BB edges stay 0. Banner (Dashboard + Fuzz):
+   **No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for
+   edges, or Open completed run.**
 3. After a completed run, use **Open completed run** on the dashboard to load that journal’s
    graph data (if any). Import archive walks folders for `run.json` → `data/runs/`.
 4. Without BB edges the UI shows an honest corpus-novelty / session path plus a banner — not a
    spinner.
+
+### Live UI (Status / Live log) over LAN
+
+The web console pushes progress over SignalR (`/hubs/fuzz`) and **also polls**
+`/api/fuzz/status` + `/api/fuzz/logs` while a session is active. If Live log sticks on
+`Session accepted…` while the server console keeps printing test cases:
+
+1. **Restart** `Randall.Server` / `randall serve` so it binds the host you open in the browser
+   (e.g. `http://192.168.x.x:5000` — same IP the process listens on, not a different machine).
+2. **Hard refresh** the browser (Ctrl+F5) so `app.js` + vendored `/js/signalr.min.js` reload.
+3. Check **Live link:** in the Fuzz tab — `connected` means the hub is up; `disconnected` still
+   streams via REST poll. Click **Reconnect** or refresh if the banner says the UI link was lost.
+4. When `RANDALL_AGENT_TOKEN` is set (normal for `0.0.0.0` / LAN binds), paste the token when
+   prompted so both REST and SignalR (`access_token`) authorize.
 
 ## Missed blocks (Dynapstalker / PDF loop)
 

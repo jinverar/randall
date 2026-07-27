@@ -8,7 +8,16 @@ public static class LabAccessHttp
     public static bool IsAuthorized(HttpRequest request)
     {
         request.Headers.TryGetValue(LabAccess.HeaderName, out var hdr);
-        var query = request.Query.TryGetValue("token", out var q) ? q.ToString() : null;
+        // SignalR JS accessTokenFactory sends ?access_token=… on WebSockets/SSE;
+        // REST / docs also accept ?token=.
+        string? query = null;
+        if (request.Query.TryGetValue("access_token", out var accessTok) &&
+            !string.IsNullOrWhiteSpace(accessTok))
+            query = accessTok.ToString();
+        else if (request.Query.TryGetValue("token", out var tok) &&
+                 !string.IsNullOrWhiteSpace(tok))
+            query = tok.ToString();
+
         return LabAccess.MatchesConfigured(
             LabAccess.ExtractPresentedTokens(request.Headers.Authorization.ToString(), hdr, query));
     }

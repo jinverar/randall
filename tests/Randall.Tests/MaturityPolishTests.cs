@@ -49,6 +49,28 @@ public class LabAccessTests
             Environment.SetEnvironmentVariable(LabAccess.EnvToken, prev);
         }
     }
+
+    [Fact]
+    public void ExtractPresentedTokens_AcceptsAccessTokenQuery_ForSignalR()
+    {
+        // SignalR JS accessTokenFactory puts the secret on ?access_token= for WebSockets/SSE.
+        var tokens = LabAccess.ExtractPresentedTokens(
+            authorizationHeader: null,
+            xRandallTokens: null,
+            queryToken: "lab-secret").ToList();
+        Assert.Contains("lab-secret", tokens);
+
+        var prev = Environment.GetEnvironmentVariable(LabAccess.EnvToken);
+        try
+        {
+            Environment.SetEnvironmentVariable(LabAccess.EnvToken, "lab-secret");
+            Assert.True(LabAccess.MatchesConfigured(tokens));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(LabAccess.EnvToken, prev);
+        }
+    }
 }
 
 public class ExecutableResolverTests

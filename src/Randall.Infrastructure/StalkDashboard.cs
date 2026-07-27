@@ -1212,8 +1212,8 @@ public static class StalkDashboard
         {
             var guided = fuzzStatus?.CoverageGuided == true;
             notes.Insert(0, guided
-                ? "No basic-block coverage — DynamoRIO spawn failed or TCP port was already busy (Labs). Stop the lab listener, or uncheck Coverage-guided and fuzz the existing server; Open a completed run after a successful drcov pass."
-                : "No basic-block coverage yet — enable Coverage-guided (DynamoRIO) with a free TCP port, or Open a completed run that recorded edges. Graph shows corpus-novelty / session path until then.");
+                ? "No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run."
+                : "No BB graph yet — enable Coverage-guided (DynamoRIO) with a free TCP port, or Open completed run. Graph shows corpus-novelty / session path until then.");
         }
 
         if (missingCrashCoverage)
