@@ -75,7 +75,8 @@ public static class EvidenceFactBuilder
             crashId,
             project,
             Dedupe(facts),
-            at);
+            at,
+            Engine: RandallBuildInfo.Current);
     }
 
     /// <summary>Collect facts without persisting — used by RootCauseEngine and InfluenceEngine.</summary>

@@ -5546,13 +5546,14 @@ html[data-scream-anim="on"] .canister-floaties .floatie {
 }
 .scream-harvest-ambience {
   position: absolute;
-  /* Keep sprites in the rack band so header legend stays readable */
-  left: 0;
-  right: 0;
-  top: 42%;
-  bottom: 0;
+  /* Clipped to the canister rack viewport only — never float over empty dashboard void */
+  inset: 0;
   pointer-events: none;
   z-index: 0;
+  overflow: hidden;
+}
+.scream-canister-rack {
+  position: relative;
   overflow: hidden;
 }
 .scream-harvest-head,
@@ -5875,4 +5876,58 @@ html:not([data-scream-anim="on"]) .scream-canister-liquid {
   margin-top: 0.35rem;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+/* Exploit Research panel + engine honesty */
+.engine-stale-banner {
+  margin: 0.5rem 0 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid color-mix(in srgb, #c9a227 55%, var(--border));
+  background: color-mix(in srgb, #c9a227 14%, var(--panel));
+  color: var(--text);
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+.exploit-research-box h5 {
+  margin: 0.85rem 0 0.35rem;
+  font-size: 0.92rem;
+}
+.exploit-ea-dl {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 0.25rem 0.75rem;
+  margin: 0.35rem 0;
+  font-size: 0.9rem;
+}
+.exploit-ea-dl dt { color: var(--muted); }
+.exploit-ea-dl dd { margin: 0; }
+.exploit-reg-matrix,
+.exploit-control-tests {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin: 0.35rem 0;
+}
+.exploit-reg-matrix th,
+.exploit-reg-matrix td,
+.exploit-control-tests th,
+.exploit-control-tests td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.3rem 0.4rem;
+  text-align: left;
+  vertical-align: top;
+}
+.ctrl-status { font-weight: 600; letter-spacing: 0.02em; }
+.ctrl-unknown { color: var(--muted); }
+.ctrl-correlated { color: #c9a227; }
+.ctrl-influenced { color: #3d8bfd; }
+.ctrl-controlled { color: #e07a3d; }
+.ctrl-confirmed { color: var(--ok, #2f9e44); }
+.honesty-observed { color: var(--ok, #2f9e44); }
+.honesty-hypothesized { color: #c9a227; }
+.honesty-unverified { color: var(--muted); }
+.exploit-write-split {
+  margin: 0.35rem 0 0.5rem;
+  padding-left: 1.1rem;
+  line-height: 1.45;
 }

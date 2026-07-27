@@ -222,10 +222,18 @@ public static class StalkDashboard
         int? pid,
         FuzzRunManifestDto? run = null)
     {
-        if (fuzzStatus?.Running == true && PathsMatch(fuzzStatus.ConfigPath, configPath))
+        if (fuzzStatus is not null
+            && (fuzzStatus.Running || fuzzStatus.Phase is "starting" or "running" or "stopping")
+            && PathsMatch(fuzzStatus.ConfigPath, configPath))
         {
             if (fuzzStatus.LastMessage?.Contains("CRASH", StringComparison.OrdinalIgnoreCase) == true)
                 return "Crash Detected";
+            var phase = (fuzzStatus.Phase ?? "").ToLowerInvariant();
+            if (phase == "stopping")
+                return "Stopping";
+            // Promote out of Starting once iterations flow or phase flips to running.
+            if (phase == "starting" && fuzzStatus.Iterations <= 0)
+                return "Starting";
             return "Tracing";
         }
 

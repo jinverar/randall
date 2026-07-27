@@ -93,4 +93,6 @@ public sealed record CrashInfluenceMapDto(
     string? Narrative = null,
     string? Error = null,
     /// <summary>JSON schema version for persisted research artifacts (v1). Absent on legacy files → default 1.</summary>
-    int SchemaVersion = 1);
+    int SchemaVersion = 1,
+    /// <summary>Randall analysis-engine identity at write time (optional on legacy files).</summary>
+    RandallBuildIdentityDto? Engine = null);

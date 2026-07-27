@@ -79,7 +79,16 @@ app.MapGet("/img/canisters/{file}", (string file) =>
         Path.Combine("src/Randall.Server/wwwroot/img/canisters", safe));
 });
 
-app.MapGet("/api/health", () => new HealthDto("Randfuzz by Randall", "0.16.0-alpha", "phase16-analyze", LabAccess.IsConfigured));
+app.MapGet("/api/health", () =>
+{
+    var build = RandallBuildInfo.Current;
+    return new HealthDto(
+        "Randfuzz by Randall",
+        build.Version,
+        "phase16-analyze",
+        LabAccess.IsConfigured,
+        build);
+});
 
 app.MapGet("/api/ui/prefs", () => Results.Ok(UiPrefsStore.Get()));
 app.MapPut("/api/ui/prefs", (UiPrefsUpdateRequest request) =>

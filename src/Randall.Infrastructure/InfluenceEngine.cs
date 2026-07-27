@@ -80,7 +80,8 @@ public static class InfluenceEngine
             links.OrderByDescending(l => StatusRank(l.Status)).ThenBy(l => l.Region.StartOffset).ToList(),
             facts,
             DateTimeOffset.UtcNow,
-            narrative);
+            narrative,
+            Engine: RandallBuildInfo.Current);
     }
 
     public static CrashInfluenceMapDto PersistForCrash(

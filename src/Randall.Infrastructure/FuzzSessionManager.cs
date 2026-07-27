@@ -119,8 +119,10 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                     project.Fuzz.MaxIterations = request.MaxIterations.Value;
                 ApplySemanticStackOverrides(project, request);
 
-                var progress = new MultiplexFuzzProgressSink(sink, UpdateFromEvent, UpdatePid, UpdateGoalProgress);
+                var progress = new MultiplexFuzzProgressSink(
+                    sink, UpdateFromEvent, UpdatePid, UpdateGoalProgress, UpdateFromLog);
                 progress.OnStarted(project.Name, project.Kind);
+                UpdateFromLog(new FuzzLogEvent("info", $"Starting {project.Name}…", DateTimeOffset.UtcNow));
 
                 var engine = new FuzzEngine();
                 var result = await engine.RunAsync(
@@ -320,13 +322,30 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
             _status = _status with { TargetPid = pid };
         }
     }
+
+    private void UpdateFromLog(FuzzLogEvent entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.Message))
+            return;
+        lock (_gate)
+        {
+            if (_status.Phase is not ("starting" or "running" or "stopping"))
+                return;
+            // Keep STATUS honest during long starts (port wait / drrun) — logs already flow to Live log.
+            _status = _status with { LastMessage = TruncateMsg(entry.Message, 160) };
+        }
+    }
+
+    private static string TruncateMsg(string msg, int max) =>
+        msg.Length <= max ? msg : msg[..(max - 1)] + "…";
 }
 
 internal sealed class MultiplexFuzzProgressSink(
     IFuzzProgressSink? outer,
     Action<FuzzIterationEvent>? local,
     Action<int?>? onPid = null,
-    Action<IntelligenceStopGoalProgressDto>? onGoalProgress = null) : IFuzzProgressSink
+    Action<IntelligenceStopGoalProgressDto>? onGoalProgress = null,
+    Action<FuzzLogEvent>? onLog = null) : IFuzzProgressSink
 {
     public void OnStarted(string project, string kind) => outer?.OnStarted(project, kind);
 
@@ -342,7 +361,11 @@ internal sealed class MultiplexFuzzProgressSink(
         outer?.OnIteration(iteration);
     }
 
-    public void OnLog(FuzzLogEvent entry) => outer?.OnLog(entry);
+    public void OnLog(FuzzLogEvent entry)
+    {
+        onLog?.Invoke(entry);
+        outer?.OnLog(entry);
+    }
 
     public void OnGoalProgress(IntelligenceStopGoalProgressDto progress)
     {

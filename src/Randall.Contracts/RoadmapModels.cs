@@ -91,7 +91,9 @@ public sealed record CrashDetailDto(
     CrashBackwardTraceDto? BackwardTrace = null,
     RootCauseAnalysisDto? RootCause = null,
     CrashInfluenceMapDto? InfluenceMap = null,
-    CrashEvidenceDto? Evidence = null);
+    CrashEvidenceDto? Evidence = null,
+    /// <summary>Exploit Research panel (EA / control matrix / control tests) — research-only.</summary>
+    ExploitResearchPanelDto? ExploitResearch = null);
 
 public sealed record SessionGraphReportDto(
     string Project,

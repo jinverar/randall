@@ -2773,6 +2773,17 @@ public sealed class FuzzEngine
                 crashesDir, crashId, project, influence, rootCause, debugger, corruption, triage,
                 facts, hypotheses, skeptic);
 
+            try
+            {
+                ExploitResearchPanelBuilder.PersistForCrash(
+                    crashesDir, crashId, project, debugger, influence, primitives, counterfactual,
+                    plan, skeptic, corruption, TryLoadCrashBytes(crashesDir, crashId));
+            }
+            catch (Exception ex)
+            {
+                FuzzAnalystLog.Warn(progress, $"exploit-research panel: {ex.Message}", iterations);
+            }
+
             var twins = VulnerabilityTwinEngine.PersistForCrash(
                 crashesDir, crashId, project, rootCause, triage, debugger, queueHuntHints: true);
 

@@ -534,6 +534,8 @@ public static class CrashCatalog
                     evidence.Facts,
                     hypotheses);
             var skeptic = SkepticEngine.TryReadForCrash(crashesDir, summary.Id);
+            var counterfactual = CounterfactualEngine.TryReadForCrash(crashesDir, summary.Id);
+            var researchPlan = ResearchPlannerEngine.TryReadForCrash(crashesDir, summary.Id);
             var advisor = ExploitabilityAdvisor.TryReadForCrash(crashesDir, summary.Id)
                 ?? ExploitabilityAdvisor.Build(
                     summary.Id,
@@ -579,6 +581,19 @@ public static class CrashCatalog
                 DeepScreamSummary = DeepScreamBuilder.FormatSummary(deepScream),
                 DeepScreamMinimizedBonus = deepScream.Minimized && deepScream.IsCandidate,
             };
+            var exploitResearch = ExploitResearchPanelBuilder.TryRead(
+                    ExploitResearchPanelBuilder.PathFor(crashesDir, summary.Id))
+                ?? ExploitResearchPanelBuilder.Build(
+                    summary.Id,
+                    summary.Project,
+                    debugger,
+                    influenceMap,
+                    primitives,
+                    counterfactual,
+                    researchPlan,
+                    skeptic,
+                    corruptionChain,
+                    bytes);
             return new CrashDetailDto(
                 CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
                 bytes.Length,
@@ -597,7 +612,8 @@ public static class CrashCatalog
                 backwardTrace,
                 rootCause,
                 influenceMap,
-                evidence);
+                evidence,
+                exploitResearch);
         }
         return null;
     }

@@ -85,4 +85,6 @@ public sealed record DebuggerObservation(
     /// <summary>Primary register whose value appears in the crashing input.</summary>
     string? PrimaryRegisterMatch = null,
     /// <summary>Provenance for key facts (CDB source command + confidence).</summary>
-    DebuggerObservationProvenance? Provenance = null);
+    DebuggerObservationProvenance? Provenance = null,
+    /// <summary>Randall analysis-engine identity at write time (optional on legacy files).</summary>
+    RandallBuildIdentityDto? Engine = null);

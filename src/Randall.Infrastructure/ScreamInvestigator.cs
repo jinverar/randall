@@ -305,7 +305,8 @@ public static partial class ScreamInvestigator
             At: DateTimeOffset.UtcNow,
             RegisterMatches: registerMatches.Count > 0 ? registerMatches : null,
             PrimaryRegisterMatch: primaryRegister,
-            Provenance: provenance);
+            Provenance: provenance,
+            Engine: RandallBuildInfo.Current);
     }
 
     private static DebuggerObservation Empty(string? dumpPath, string? obsPath, string error) =>
@@ -313,7 +314,8 @@ public static partial class ScreamInvestigator
             false, dumpPath, obsPath, null, null, DebuggerAccessKind.Unknown, null,
             DebuggerAddressClass.Unknown, null, null, null, null, [], null, null, null, null, null, null, null,
             null, null, null, null, "UNKNOWN", "UNKNOWN", 0, error, 0, false, error, DateTimeOffset.UtcNow,
-            RegisterMatches: null, PrimaryRegisterMatch: null, Provenance: null);
+            RegisterMatches: null, PrimaryRegisterMatch: null, Provenance: null,
+            Engine: RandallBuildInfo.Current);
 
     private static DebuggerObservationProvenance BuildProvenance(
         WindowsCdbCrashAnalysisWriter.ParsedAnalyze parsed,

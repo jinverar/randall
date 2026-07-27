@@ -105,7 +105,8 @@ public static class PrimitiveEngine
                 .ThenByDescending(p => p.Confidence)
                 .ToList(),
             collectedFacts,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            Engine: RandallBuildInfo.Current);
     }
 
     public static CrashPrimitiveReportDto PersistForCrash(

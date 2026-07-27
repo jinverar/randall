@@ -31,7 +31,9 @@ public sealed record HealthDto(
     string Version,
     string Status,
     /// <summary>True when <c>RANDALL_AGENT_TOKEN</c> is set on this host — APIs require the token.</summary>
-    bool AuthRequired = false);
+    bool AuthRequired = false,
+    /// <summary>Running analysis-engine identity (git tip / build time when available).</summary>
+    RandallBuildIdentityDto? Build = null);
 
 /// <summary>
 /// OS platform vocabulary shared by the doctor, UI preferences, and tool discovery.

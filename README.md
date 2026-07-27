@@ -115,6 +115,8 @@ If you see *“running scripts is disabled on this system”*, that Bypass form 
 
 **After `git pull`:** if you use `dotnet run --project src/Randall.Server` (or Cli), pull + restart is enough — it rebuilds on start. If you run a prebuilt `bin\Release\...exe`, rebuild after pull (`dotnet build Randall.sln -c Release`), then restart that exe. After a server restart, hard-refresh the browser (Ctrl+F5) so `wwwroot` JS/CSS updates.
 
+**Honesty / analysis-engine fixes require rebuild+restart** — investigation JSON now stamps Randall build identity (version / git commit). Older crash intel shows ⚠ *Investigation generated with older analysis engine. Re-analyze.* Cheat-sheet: [docs/WIKI.md](docs/WIKI.md).
+
 `update-lab.ps1` runs **`git pull`, `dotnet build`, and lab-target builds in one step**. You do **not** need a separate `dotnet build` or lab-target build afterward unless you used `-SkipLabTargets` and later need those native binaries.
 
 If **Git is not installed**, the update script detects it and tries `winget install Git.Git` before pulling (refreshing PATH for the same run). Use `-SkipGitInstall` to skip auto-install, or `-SkipPull` for an offline rebuild without fetching source.
@@ -174,6 +176,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\uninstall-lab.ps1 -Force -Rem
 Full details: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md#uninstall).
 
 Open **[http://127.0.0.1:5000](http://127.0.0.1:5000)** — Dashboard (stalker CFG), Fuzz, Crashes, Case builder, Help.
+
+**Help:** in-app **Help** tab (docs index) · operator cheat codes [docs/WIKI.md](docs/WIKI.md) · [EXPLOIT_GUIDE.md](docs/EXPLOIT_GUIDE.md) · [STALKING.md](docs/STALKING.md).
 
 Smoke:
 

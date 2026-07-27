@@ -83,20 +83,24 @@ public static class FuzzSessionArchive
         repoRoot ??= CrashCatalog.FindRepoRoot()
                      ?? throw new InvalidOperationException("Could not locate repo root (Randall.sln).");
         var opened = GetOpenState(repoRoot);
+        // Build saved-dir index once — per-row EnumerateDirectories was freezing the UI when
+        // /api/sessions was polled from every dashboard paint.
+        var savedIndex = BuildSavedIndex(repoRoot);
         var sessions = EnumerateManifests(repoRoot)
             .Where(m => string.IsNullOrWhiteSpace(project)
                         || m.Project.Equals(project, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(m => m.CompletedAt ?? m.StartedAt)
-            .Take(Math.Clamp(limit, 1, 500))
+            .Take(Math.Clamp(limit, 1, 200))
             .Select(m =>
             {
-                var dir = FindRunDirectory(m.RunId, repoRoot) ?? "";
+                // Prefer O(1) path under data/runs/<runId> — avoid AllDirectories scan on list.
+                var runsDirect = Path.Combine(RunsRoot(repoRoot), m.RunId);
+                var dir = Directory.Exists(runsDirect) && File.Exists(Path.Combine(runsDirect, "run.json"))
+                    ? runsDirect
+                    : FindRunDirectory(m.RunId, repoRoot) ?? "";
                 var label = TryReadLabel(dir);
-                var saved = Directory.Exists(Path.Combine(SessionsRoot(repoRoot), "saved"))
-                            && Directory.EnumerateDirectories(Path.Combine(SessionsRoot(repoRoot), "saved"), "*", SearchOption.TopDirectoryOnly)
-                                .Any(d => Path.GetFileName(d).Contains(m.RunId, StringComparison.OrdinalIgnoreCase)
-                                          || string.Equals(TryReadLabel(d), label, StringComparison.OrdinalIgnoreCase)
-                                             && !string.IsNullOrWhiteSpace(label));
+                var saved = savedIndex.Contains(m.RunId)
+                            || (!string.IsNullOrWhiteSpace(label) && savedIndex.Contains("label:" + label));
                 return new FuzzSessionSummaryDto(
                     m.RunId,
                     m.Project,
@@ -113,6 +117,28 @@ public static class FuzzSessionArchive
             .ToList();
 
         return new FuzzSessionListResultDto(sessions, opened.RunId, opened.Project);
+    }
+
+    private static HashSet<string> BuildSavedIndex(string repoRoot)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var savedRoot = Path.Combine(SessionsRoot(repoRoot), "saved");
+        if (!Directory.Exists(savedRoot))
+            return set;
+        foreach (var dir in Directory.EnumerateDirectories(savedRoot))
+        {
+            var name = Path.GetFileName(dir);
+            set.Add(name);
+            var label = TryReadLabel(dir);
+            if (!string.IsNullOrWhiteSpace(label))
+                set.Add("label:" + label);
+            // Also index by embedded runId suffix when present in folder name.
+            var underscore = name.LastIndexOf('_');
+            if (underscore > 0 && underscore < name.Length - 1)
+                set.Add(name[(underscore + 1)..]);
+        }
+
+        return set;
     }
 
     public static FuzzRunManifestDto? LoadManifest(string runId, string? repoRoot = null)

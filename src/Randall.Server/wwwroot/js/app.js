@@ -189,7 +189,52 @@ function appendLog(line, cls = '', at = null) {
 }
 
 function setStatus(text) {
-  statusEl.textContent = text;
+  if (statusEl) statusEl.textContent = text;
+}
+
+/** Map server phase → operator-facing STATUS text. Never sticky "starting:" after Idle/Running/Tracing. */
+function formatFuzzStatusText(s) {
+  if (!s) return 'Idle';
+  const phase = (s.phase || 'idle').toLowerCase();
+  const active = isFuzzSessionActive(s);
+  const iter = Number(s.iterations) > 0 ? `iter ${s.iterations} · ` : '';
+  const pid = s.targetPid != null ? ` · pid ${s.targetPid}` : '';
+  const goal = s.stopGoalMet ? ' 🎯 goal met · ' : formatGoalProgress(s.goalProgress);
+  const msg = s.lastMessage || '…';
+
+  if (!active) {
+    if (phase === 'idle') return 'Idle';
+    const goalDone = s.stopGoalMet ? '🎯 stop goal met · ' : formatGoalProgress(s.goalProgress);
+    if (phase === 'completed') return `${goalDone}Completed: ${s.lastMessage || 'done'}`;
+    if (phase === 'stopped') return `${goalDone}Stopped: ${s.lastMessage || ''}`;
+    if (phase === 'error') return `Error: ${s.lastMessage || ''}`;
+    // Never leave UI on "starting: …" when server already Idle/Completed/etc.
+    if (phase === 'starting') return 'Idle';
+    return `${goalDone}${s.phase}: ${s.lastMessage || ''}`;
+  }
+
+  if (phase === 'stopping')
+    return `${iter}${goal}stopping: ${msg}${pid}`;
+  if (phase === 'running' || Number(s.iterations) > 0)
+    return `${iter}${goal}Running: ${msg}${pid}`;
+  if (phase === 'starting')
+    return `${iter}${goal}Starting: ${msg}${pid}`;
+  return `${iter}${goal}${s.phase}: ${msg}${pid}`;
+}
+
+function resolveLiveStalkStatusLabel(dataStatus) {
+  if (stalkFollowLive && isFuzzSessionActive(fuzzStatusCache)) {
+    const phase = (fuzzStatusCache.phase || '').toLowerCase();
+    const msg = fuzzStatusCache.lastMessage || '';
+    if (/CRASH/i.test(msg)) return 'Crash Detected';
+    if (phase === 'stopping') return 'Stopping';
+    if (phase === 'starting' && !(Number(fuzzStatusCache.iterations) > 0)) return 'Starting';
+    return 'Tracing';
+  }
+  const raw = (dataStatus || 'Idle').toString();
+  // Normalize accidental "starting: …" paint into dashboard vocabulary.
+  if (/^starting\b/i.test(raw) && !isFuzzSessionActive(fuzzStatusCache)) return 'Idle';
+  return raw;
 }
 
 function getLocalAgentToken() {
@@ -346,27 +391,12 @@ function applyFuzzSessionStatus(s) {
       sel.value = s.configPath;
   }
 
-  // P0b: never paint Idle while the server reports a live session.
-  if (active) {
-    const iter = Number(s.iterations) > 0 ? `iter ${s.iterations} · ` : '';
-    const pid = s.targetPid != null ? ` · pid ${s.targetPid}` : '';
-    const goal = s.stopGoalMet ? ' 🎯 goal met · ' : formatGoalProgress(s.goalProgress);
-    setStatus(`${iter}${goal}${s.phase}: ${s.lastMessage || '…'}${pid}`);
-    return;
-  }
-
-  const phase = (s.phase || 'idle').toLowerCase();
-  if (phase === 'idle') {
-    setStatus('Idle');
+  // P0: STATUS always mirrors /api/fuzz/status — never sticky "starting: Session accepted…".
+  setStatus(formatFuzzStatusText(s));
+  if (!active) {
     startBtn.disabled = false;
     stopBtn.disabled = true;
-    return;
   }
-
-  const goalDone = s.stopGoalMet ? '🎯 stop goal met · ' : formatGoalProgress(s.goalProgress);
-  setStatus(`${goalDone}${s.phase}: ${s.lastMessage || ''}`);
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
 }
 
 async function syncFuzzSession({ fetchLogs = true } = {}) {
@@ -770,8 +800,17 @@ async function initPlatformPicker() {
 
 async function loadHealth() {
   const h = await api.get('/api/health');
+  randallBuildCache = h.build || {
+    version: h.version,
+    informationalVersion: h.version,
+    gitCommit: null,
+    analyzerLabel: 'scream-investigator',
+    schemaLabel: 'research-artifacts-v1',
+  };
+  const git = randallBuildCache.gitCommit ? ` @ ${randallBuildCache.gitCommit}` : '';
   const auth = h.authRequired ? ' · token required' : '';
-  document.getElementById('health-label').textContent = `${h.name} ${h.version} · ${h.status}${auth}`;
+  document.getElementById('health-label').textContent =
+    `${h.name} ${h.version}${git} · ${h.status}${auth}`;
   if (h.authRequired) {
     try {
       let local = (localStorage.getItem('randallLocalToken') || '').trim();
@@ -1340,6 +1379,17 @@ let stalkTimelineClickBound = false;
 let stalkLastGoodDashboard = null;
 /** Opened completed fuzz session runId (null = live / latest). */
 let stalkOpenedRunId = null;
+/** Debounce + in-flight guard for Current Session list (must not refresh on every log/paint). */
+let sessionBarTimer = null;
+let sessionBarInFlight = false;
+let sessionBarLastAt = 0;
+/** Fingerprint of last applied stalk payload — skip expensive SVG rebuilds when unchanged. */
+let stalkLastPaintKey = '';
+/** Cached /api/targets for dashboard tabs (avoid re-fetch every poll). */
+let stalkTargetsCache = null;
+let stalkTargetsCacheAt = 0;
+/** Running Randall build identity from /api/health (for stale-investigation banner). */
+let randallBuildCache = null;
 
 async function loadTargets() {
   const targets = (await api.get('/api/targets')).filter(isVisibleTarget);
@@ -2323,21 +2373,54 @@ function dashboardLooksEmpty(data) {
   return iters === 0 && crashes === 0 && edges === 0 && blocks === 0 && !data.sessionId;
 }
 
+function stalkDashboardPaintKey(data, selectedCrashId) {
+  if (!data) return '';
+  return [
+    data.project || '',
+    data.status || '',
+    data.iterations ?? 0,
+    data.crashes ?? 0,
+    data.coverageEdges ?? 0,
+    data.currentBlocks ?? 0,
+    (data.blocks || []).length,
+    (data.edges || []).length,
+    selectedCrashId || '',
+    stalkOpenedRunId || '',
+    data.sessionId || '',
+    data.pid ?? '',
+  ].join('|');
+}
+
 function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
   if (dashboardLooksEmpty(data) && stalkLastGoodDashboard
       && (!stalkProject || stalkLastGoodDashboard.project === stalkProject)) {
-    data = stalkLastGoodDashboard;
+    // Keep graph/corpus from last good paint, but never reuse a stale STATUS while live.
+    data = { ...stalkLastGoodDashboard, status: data?.status || stalkLastGoodDashboard.status };
   } else if (!dashboardLooksEmpty(data)) {
     stalkLastGoodDashboard = data;
   }
 
+  const paintKey = stalkDashboardPaintKey(data, selectedCrashId);
+  const statusOnly = paintKey === stalkLastPaintKey;
+  // Always refresh STATUS from live fuzz machine (cheap); skip heavy DOM when unchanged.
+  const st = document.getElementById('stalk-status');
+  if (st) {
+    const label = resolveLiveStalkStatusLabel(data.status);
+    st.textContent = label;
+    st.className = statusClass(label);
+  }
+  if (statusOnly) {
+    updateNoBbBanners(data, fuzzStatusCache);
+    return;
+  }
+  stalkLastPaintKey = paintKey;
+
   document.getElementById('stalk-target').textContent = data.targetName || data.project;
-  document.getElementById('stalk-pid').textContent = data.pid ?? '—';
+  // Prefer live fuzz PID when the session is active for this project.
+  const livePid = isFuzzSessionActive(fuzzStatusCache) ? (fuzzStatusCache.targetPid ?? data.pid) : data.pid;
+  document.getElementById('stalk-pid').textContent = livePid ?? '—';
   document.getElementById('stalk-arch').textContent = data.arch || '—';
   document.getElementById('stalk-mode').textContent = data.mode || '—';
-  const st = document.getElementById('stalk-status');
-  st.textContent = data.status || 'Idle';
-  st.className = statusClass(data.status);
 
   document.getElementById('stalk-session').innerHTML = `
     <dt>Session</dt><dd>${data.sessionId || '—'}</dd>
@@ -2423,7 +2506,8 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
     });
   }
 
-  refreshFuzzSessionBar().catch(() => {});
+  // Session bar is independent — never refresh it on every stalker paint / log line.
+  scheduleFuzzSessionBarRefresh();
 }
 
 async function loadDashboard(opts = {}) {
@@ -2437,61 +2521,102 @@ async function loadDashboard(opts = {}) {
     || null;
   const wantFollowLive = !!opts.followLive || stalkFollowLive;
 
-  const targets = (await api.get('/api/targets')).filter(isVisibleTarget);
-  if (seq !== stalkLoadSeq) return;
-  const tabs = document.getElementById('stalker-tabs');
-  if (!targets.length) {
-    tabs.innerHTML = '<span class="stalk-empty">No projects in projects/</span>';
-    return;
-  }
+  try {
+    // Cache targets — re-fetching + rebuilding tabs every poll fought the status machine.
+    const now = Date.now();
+    let targets = stalkTargetsCache;
+    if (!targets || opts.force || (now - stalkTargetsCacheAt) > 15000) {
+      targets = (await api.get('/api/targets')).filter(isVisibleTarget);
+      stalkTargetsCache = targets;
+      stalkTargetsCacheAt = now;
+    }
+    if (seq !== stalkLoadSeq) return;
+    const tabs = document.getElementById('stalker-tabs');
+    if (!targets.length) {
+      if (tabs) tabs.innerHTML = '<span class="stalk-empty">No projects in projects/</span>';
+      return;
+    }
 
-  if (!stalkProject || !targets.some((t) => t.name === stalkProject)) {
-    stalkProject = targets.find((t) => t.name === 'vulnserver')?.name || targets[0].name;
-  }
+    if (!stalkProject || !targets.some((t) => t.name === stalkProject)) {
+      stalkProject = targets.find((t) => t.name === 'vulnserver')?.name || targets[0].name;
+    }
 
-  tabs.innerHTML = targets.map((t) =>
-    `<button type="button" data-project="${t.name}" class="${t.name === stalkProject ? 'active' : ''}">${t.name}</button>`).join('');
-  tabs.querySelectorAll('button').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      stalkProject = btn.dataset.project;
-      stalkServerTimeline = [];
-      stalkLiveTimeline = [];
-      stalkCrashIdByIteration.clear();
-      stalkFollowLive = true;
-      stalkSelection = null;
-      loadDashboard({ applyWidgets: true, followLive: true }).catch(() => {});
-    });
-  });
+    if (tabs && (opts.force || !tabs.dataset.projectKey || tabs.dataset.projectKey !== targets.map((t) => t.name).join(','))) {
+      tabs.dataset.projectKey = targets.map((t) => t.name).join(',');
+      tabs.innerHTML = targets.map((t) =>
+        `<button type="button" data-project="${t.name}" class="${t.name === stalkProject ? 'active' : ''}">${t.name}</button>`).join('');
+      tabs.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          stalkProject = btn.dataset.project;
+          stalkServerTimeline = [];
+          stalkLiveTimeline = [];
+          stalkCrashIdByIteration.clear();
+          stalkFollowLive = true;
+          stalkSelection = null;
+          stalkLastPaintKey = '';
+          loadDashboard({ applyWidgets: true, followLive: true, force: true }).catch(() => {});
+        });
+      });
+    } else if (tabs) {
+      tabs.querySelectorAll('button').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.project === stalkProject);
+      });
+    }
 
-  const params = new URLSearchParams();
-  if (crashId) params.set('crashId', crashId);
-  const runId = opts.runId || stalkOpenedRunId;
-  if (runId) params.set('runId', runId);
-  const qs = params.toString() ? `?${params}` : '';
-  const data = await api.get(`/api/stalk/${encodeURIComponent(stalkProject)}${qs}`);
-  if (seq !== stalkLoadSeq) return;
+    const params = new URLSearchParams();
+    if (crashId) params.set('crashId', crashId);
+    const runId = opts.runId || stalkOpenedRunId;
+    if (runId) params.set('runId', runId);
+    const qs = params.toString() ? `?${params}` : '';
+    const data = await api.get(`/api/stalk/${encodeURIComponent(stalkProject)}${qs}`);
+    if (seq !== stalkLoadSeq) return;
 
-  // Always refresh the bar strip; widgets are gated so in-flight live fetches cannot
-  // clobber a pin that happened while this request was on the wire.
-  renderTimeline(mergeTimeline(data.timeline || []));
+    // Always refresh the bar strip; widgets are gated so in-flight live fetches cannot
+    // clobber a pin that happened while this request was on the wire.
+    renderTimeline(mergeTimeline(data.timeline || []));
 
-  let canApply = applyWidgets;
-  if (canApply && !stalkFollowLive) {
-    const pinnedId = stalkSelection?.crashId || null;
-    if (!crashId) {
-      // Live/unfocused payload after user pinned — keep widgets frozen.
+    let canApply = applyWidgets;
+    if (canApply && !stalkFollowLive) {
+      const pinnedId = stalkSelection?.crashId || null;
+      if (!crashId) {
+        // Live/unfocused payload after user pinned — keep widgets frozen.
+        canApply = false;
+      } else if (pinnedId && String(pinnedId) !== String(crashId)) {
+        canApply = false;
+      }
+    }
+    if (canApply && wantFollowLive && !stalkFollowLive)
       canApply = false;
-    } else if (pinnedId && String(pinnedId) !== String(crashId)) {
-      canApply = false;
+
+    if (canApply)
+      applyDashboardWidgets(data, { selectedCrashId: crashId });
+    else {
+      // Still sync STATUS chip from live fuzz even when widgets are pinned.
+      const st = document.getElementById('stalk-status');
+      if (st && stalkFollowLive) {
+        const label = resolveLiveStalkStatusLabel(data.status);
+        st.textContent = label;
+        st.className = statusClass(label);
+      }
+      updateTimelineFollowUi();
+      updateNoBbBanners(data, fuzzStatusCache);
+    }
+
+    // Isolate session widget — a thrown Open/Import path must not break Dashboard.
+    try { scheduleFuzzSessionBarRefresh(); } catch { /* ignore */ }
+  } catch (err) {
+    console.error('Dashboard load failed', err);
+    const notes = document.getElementById('stalk-notes');
+    if (notes)
+      notes.innerHTML = `<li class="warn">Dashboard refresh failed: ${escapeXml(err.message || String(err))}</li>`;
+    // Keep STATUS honest from last fuzz poll even if stalk payload failed.
+    const st = document.getElementById('stalk-status');
+    if (st && isFuzzSessionActive(fuzzStatusCache)) {
+      const label = resolveLiveStalkStatusLabel(null);
+      st.textContent = label;
+      st.className = statusClass(label);
     }
   }
-  if (canApply && wantFollowLive && !stalkFollowLive)
-    canApply = false;
-
-  if (canApply)
-    applyDashboardWidgets(data, { selectedCrashId: crashId });
-  else
-    updateTimelineFollowUi();
 }
 
 document.getElementById('stalk-refresh')?.addEventListener('click', () => {
@@ -2500,38 +2625,64 @@ document.getElementById('stalk-refresh')?.addEventListener('click', () => {
 document.getElementById('stalk-follow-live')?.addEventListener('click', () => followStalkLive());
 document.getElementById('stalk-insp-close')?.addEventListener('click', () => closeBlockInspector());
 
-async function refreshFuzzSessionBar() {
+function scheduleFuzzSessionBarRefresh(force = false) {
+  if (sessionBarTimer) clearTimeout(sessionBarTimer);
+  const delay = force ? 0 : 600;
+  sessionBarTimer = setTimeout(() => {
+    sessionBarTimer = null;
+    refreshFuzzSessionBar({ force }).catch(() => {});
+  }, delay);
+}
+
+async function refreshFuzzSessionBar(opts = {}) {
   const sel = document.getElementById('fuzz-session-select');
   const status = document.getElementById('fuzz-session-status');
   if (!sel) return;
+  const now = Date.now();
+  // Lightweight: don't re-list runs more than once every 4s unless forced (Open/Import/Save).
+  if (!opts.force && sessionBarInFlight) return;
+  if (!opts.force && (now - sessionBarLastAt) < 4000) return;
+  if (sessionBarInFlight) return;
+  sessionBarInFlight = true;
   try {
     const project = stalkProject || '';
     const qs = project ? `?project=${encodeURIComponent(project)}&limit=48` : '?limit=48';
     const data = await api.get(`/api/sessions${qs}`);
     stalkOpenedRunId = data.openedRunId || null;
-    const sessions = data.sessions || [];
+    const sessions = (data.sessions || []).slice(0, 48);
     const prev = sel.value;
-    sel.innerHTML = '<option value="">— latest / live —</option>'
-      + sessions.map((s) => {
-        const label = s.label ? `${s.label} · ` : '';
-        const when = s.completedAt || s.startedAt
-          ? new Date(s.completedAt || s.startedAt).toLocaleString()
-          : '';
-        const text = `${label}${s.runId} · ${s.iterations} iters · ${s.crashesFound} crashes${when ? ` · ${when}` : ''}`;
-        return `<option value="${escapeAttr(s.runId)}">${escapeAttr(text)}</option>`;
-      }).join('');
+    // Build options off-DOM to avoid long main-thread stalls with many runs.
+    const frag = document.createDocumentFragment();
+    const live = document.createElement('option');
+    live.value = '';
+    live.textContent = '— latest / live —';
+    frag.appendChild(live);
+    for (const s of sessions) {
+      const opt = document.createElement('option');
+      opt.value = s.runId;
+      const label = s.label ? `${s.label} · ` : '';
+      const when = s.completedAt || s.startedAt
+        ? new Date(s.completedAt || s.startedAt).toLocaleString()
+        : '';
+      opt.textContent = `${label}${s.runId} · ${s.iterations} iters · ${s.crashesFound} crashes${when ? ` · ${when}` : ''}`;
+      frag.appendChild(opt);
+    }
+    sel.replaceChildren(frag);
     const prefer = stalkOpenedRunId || prev;
     if (prefer && [...sel.options].some((o) => o.value === prefer))
       sel.value = prefer;
-    if (status) {
+    if (status && !status.dataset.busy) {
       status.textContent = stalkOpenedRunId
         ? `Opened run ${stalkOpenedRunId} — Close returns to live/latest.`
         : sessions.length
           ? `${sessions.length} saved run${sessions.length === 1 ? '' : 's'} — pick one and Open run to load its graph.`
           : 'No saved sessions — finish a fuzz (writes data/runs/) or Import an archive folder/zip.';
     }
+    sessionBarLastAt = Date.now();
   } catch (err) {
     if (status) status.textContent = err.message || 'Session list unavailable';
+  } finally {
+    sessionBarInFlight = false;
   }
 }
 
@@ -2571,7 +2722,7 @@ document.getElementById('fuzz-session-close')?.addEventListener('click', () => {
     stalkSelection = null;
     updateTimelineFollowUi();
     return loadDashboard({ applyWidgets: true, followLive: true, force: true });
-  }).then(() => refreshFuzzSessionBar()).catch((err) => {
+  }).then(() => refreshFuzzSessionBar({ force: true })).catch((err) => {
     const status = document.getElementById('fuzz-session-status');
     if (status) status.textContent = err.message || 'Close failed';
   });
@@ -2583,7 +2734,7 @@ document.getElementById('fuzz-session-save')?.addEventListener('click', () => {
   const label = window.prompt('Optional label for saved session', '') || null;
   api.post('/api/sessions/save', { runId, project: stalkProject, label }).then((r) => {
     if (status) status.textContent = r.message || `Saved ${r.label}`;
-    return refreshFuzzSessionBar();
+    return refreshFuzzSessionBar({ force: true });
   }).catch((err) => {
     if (status) status.textContent = err.message || 'Save failed';
   });
@@ -2604,17 +2755,34 @@ document.getElementById('fuzz-session-export')?.addEventListener('click', () => 
 });
 document.getElementById('fuzz-session-import')?.addEventListener('click', () => {
   const status = document.getElementById('fuzz-session-status');
+  const btn = document.getElementById('fuzz-session-import');
   const path = document.getElementById('fuzz-session-import-path')?.value?.trim();
   const recursive = !!document.getElementById('fuzz-session-import-recursive')?.checked;
   if (!path) {
     if (status) status.textContent = 'Enter a folder or .zip path to import.';
     return;
   }
+  if (btn) btn.disabled = true;
+  if (status) {
+    status.dataset.busy = '1';
+    status.textContent = recursive
+      ? 'Importing (recursive scan for run.json)… UI stays responsive; wait for result.'
+      : 'Importing archive…';
+  }
+  // Async fetch — never block the UI thread with sync XHR; server does the walk.
   api.post('/api/sessions/import', { path, recursive, overwriteFiles: true }).then((r) => {
-    if (status) status.textContent = r.message || `Imported ${r.importedRuns} run(s).`;
-    return refreshFuzzSessionBar();
+    if (status) {
+      delete status.dataset.busy;
+      status.textContent = r.message || `Imported ${r.importedRuns} run(s).`;
+    }
+    return refreshFuzzSessionBar({ force: true });
   }).then(() => loadDashboard({ applyWidgets: true, force: true })).catch((err) => {
-    if (status) status.textContent = err.message || 'Import failed';
+    if (status) {
+      delete status.dataset.busy;
+      status.textContent = err.message || 'Import failed';
+    }
+  }).finally(() => {
+    if (btn) btn.disabled = false;
   });
 });
 document.addEventListener('click', (ev) => {
@@ -3124,13 +3292,111 @@ const ACADEMY_BLURBS = {
   maturity: 'Research maturity (R0–R7) is study depth — how well this crash is understood as a research artifact — not exploit completion or weaponization.',
 };
 
+function renderEngineStaleBanner(detail) {
+  const engine = detail?.exploitResearch?.engine
+    || detail?.debuggerObservation?.engine
+    || detail?.evidence?.engine
+    || detail?.influenceMap?.engine
+    || detail?.primitives?.engine;
+  const live = randallBuildCache;
+  if (!live) return '';
+  const stale = !engine
+    || (live.gitCommit && engine.gitCommit && live.gitCommit !== engine.gitCommit)
+    || (live.version && engine.version && live.version !== engine.version);
+  if (!stale) return '';
+  const gen = engine
+    ? `${engine.version || '?'}${engine.gitCommit ? ` @ ${engine.gitCommit}` : ''}`
+    : 'unknown / pre-identity build';
+  return `<div class="engine-stale-banner" role="status">⚠ Investigation generated with older analysis engine (${escapeAttr(gen)}). Re-analyze.</div>`;
+}
+
+function renderExploitResearchPanel(panel) {
+  if (!panel) {
+    return `<div class="triage-box exploit-research-box">
+      <h4>Exploit Research <span class="hint-inline">static reconstruction</span></h4>
+      <p class="hint">No panel yet — open a crash with debugger observation, or re-analyze after rebuild.</p>
+    </div>`;
+  }
+  const ea = panel.effectiveAddress;
+  const matrix = panel.registerMatrix || [];
+  const tests = panel.controlTests || [];
+  const write = panel.writeControl;
+  const honestyCls = (h) => `honesty-${String(h || 'Unverified').toLowerCase()}`;
+  const eaBlock = ea
+    ? `<dl class="exploit-ea-dl">
+        <dt>Instruction</dt><dd><code>${escapeAttr(ea.instruction || panel.faultInstruction || '—')}</code>
+          <span class="hint-inline">${escapeAttr(ea.reconstructionKind || 'Static')} · ${escapeAttr(ea.honesty || '')}</span></dd>
+        <dt>Effective address</dt><dd><code>${escapeAttr(ea.effectiveAddressHex || panel.causingAddress || '—')}</code>
+          ${ea.baseRegister ? `<span class="hint-inline">${escapeAttr(ea.note || '')}</span>` : ''}</dd>
+        <dt>Value / width</dt><dd><code>${escapeAttr(ea.valueHex || panel.causingValue || '—')}</code>
+          · ${escapeAttr(ea.widthLabel || '?')} (${ea.widthBytes ?? '?'}B)
+          · access ${escapeAttr(ea.accessKind || '—')}</dd>
+      </dl>`
+    : `<p class="hint">Fault insn: <code>${escapeAttr(panel.faultInstruction || '—')}</code> · addr <code>${escapeAttr(panel.causingAddress || '—')}</code></p>`;
+
+  const matrixRows = matrix.length
+    ? `<table class="exploit-reg-matrix"><thead><tr>
+        <th>Register</th><th>Value</th><th>Input relationship</th><th>Status</th><th>Honesty</th>
+      </tr></thead><tbody>${matrix.slice(0, 16).map((r) => `<tr>
+        <td><code>${escapeAttr(r.register)}</code></td>
+        <td><code>${escapeAttr(r.valueHex || '—')}</code></td>
+        <td>${escapeAttr(r.inputRelationship || '')}${r.payloadOffset != null ? ` <span class="hint-inline">+${r.payloadOffset}</span>` : ''}</td>
+        <td><span class="ctrl-status ctrl-${escapeAttr(String(r.status || 'Unknown').toLowerCase())}">${escapeAttr(r.status || 'Unknown')}</span></td>
+        <td class="${honestyCls(r.honesty)}">${escapeAttr(r.honesty || '')}</td>
+      </tr>`).join('')}</tbody></table>
+      <p class="hint">Statuses never promote zero-coincidence to CONTROLLED/CONFIRMED.</p>`
+    : '<p class="hint">No register/input links yet.</p>';
+
+  const writeBlock = write
+    ? `<ul class="exploit-write-split">
+        <li><span class="label">Destination</span> ${escapeAttr(write.destinationControl)} <span class="${honestyCls(write.honesty)}">${escapeAttr(write.honesty)}</span></li>
+        <li><span class="label">Value</span> ${escapeAttr(write.valueControl)}</li>
+        <li><span class="label">Width / repeat</span> ${escapeAttr(write.widthLabel || '—')} · ${escapeAttr(write.repeatability || '—')}</li>
+      </ul>`
+    : '';
+
+  const testRows = tests.length
+    ? `<table class="exploit-control-tests"><thead><tr><th>Test</th><th>ΔB</th><th>Off</th><th>Outcome</th><th>Honesty</th></tr></thead><tbody>
+      ${tests.map((t) => `<tr>
+        <td>${escapeAttr(t.description)}</td>
+        <td>${t.byteDelta}</td>
+        <td>+${t.offsetBytes}</td>
+        <td><code>${escapeAttr(t.outcome)}</code></td>
+        <td class="${honestyCls(t.honesty)}">${escapeAttr(t.honesty)}</td>
+      </tr>`).join('')}</tbody></table>`
+    : '<p class="hint">No counterfactual control tests yet — run live probes or wait for plan.</p>';
+
+  return `<div class="triage-box exploit-research-box" id="exploit-research-panel">
+    <h4>Exploit Research <span class="hint-inline">5 questions · research-only</span></h4>
+    <p class="hint">${escapeAttr(panel.summary || '')}</p>
+    <div class="exploit-q">
+      <h5>1–2. Fault instruction &amp; causing address/value</h5>
+      ${eaBlock}
+    </div>
+    <div class="exploit-q">
+      <h5>3. Register / input control matrix</h5>
+      ${matrixRows}
+      ${writeBlock}
+    </div>
+    <div class="exploit-q">
+      <h5>4. Control tests <span class="hint-inline">counterfactual</span></h5>
+      ${testRows}
+    </div>
+    <div class="exploit-q">
+      <h5>5. Next experiment <span class="hint-inline">prove / disprove</span></h5>
+      <p>${escapeAttr(panel.nextExperiment || '—')}</p>
+      ${panel.primitiveHint ? `<p class="hint"><span class="label">Primitive</span> ${escapeAttr(panel.primitiveHint)}</p>` : ''}
+    </div>
+  </div>`;
+}
+
 /** R0 Crash … R7 Research package — study-depth ladder (matches PrimitiveEngine chip labels). */
 const RESEARCH_MATURITY_LEVELS = [
   { id: 'R0', chip: 'Crash', label: 'Discovered', blurb: 'Crash discovered — reproduced or observed, but no analysis yet.' },
   { id: 'R1', chip: 'Triaged', label: 'Triaged', blurb: 'Triaged — fault classified (signal, severity, or faulting site).' },
   { id: 'R2', chip: 'Root cause', label: 'Root-caused', blurb: 'Root-caused — a deterministic root-cause category is assigned.' },
   { id: 'R3', chip: 'Attributed', label: 'Input-attributed', blurb: 'Input-attributed — an input region is linked to influenced program state.' },
-  { id: 'R4', chip: 'Primitive', label: 'Primitive candidate', blurb: 'Primitive candidate — at least one capability primitive is inferred.' },
+  { id: 'R4', chip: 'Candidate', label: 'Primitive candidate', blurb: 'Primitive candidate — at least one capability primitive is inferred.' },
   { id: 'R5', chip: 'Observed', label: 'Primitive observed', blurb: 'Primitive observed — a capability is directly seen in evidence.' },
   { id: 'R6', chip: 'Confirmed', label: 'Primitive confirmed', blurb: 'Primitive confirmed — a capability is experimentally confirmed.' },
   { id: 'R7', chip: 'Research package', label: 'Research-mature', blurb: 'Research package — multiple confirmed capabilities with high-confidence root cause.' },
@@ -3478,6 +3744,8 @@ function renderCrashDetail(detail, title) {
         ${dbg.primaryRegisterMatch ? `<span class="hint-inline">${escapeAttr(dbg.primaryRegisterMatch)} in input</span> · ` : ''}
         ${dbg.stackHash ? `<span class="hint-inline">stack ${escapeAttr(dbg.stackHash)}</span>` : ''}
       </p>` : ''}
+      ${renderEngineStaleBanner(detail)}
+      ${renderExploitResearchPanel(detail.exploitResearch)}
       ${evidenceFacts.length ? `<div class="triage-box evidence-facts-box">
         <h4>Evidence facts <span class="hint-inline">${evidenceFacts.length} atom(s)</span>${academyResearchMode() ? ' <span class="hint-inline">dense</span>' : ''}</h4>
         ${academyEduBlurb('evidence')}
@@ -5228,24 +5496,28 @@ function canisterFloatiesHtml(mood) {
   return '';
 }
 
-function paintHarvestAmbience(root, floorMood, stats = {}) {
+function paintHarvestAmbience(root, floorMood, stats = {}, opts = {}) {
   let layer = root.querySelector('.scream-harvest-ambience');
+  const rack = root.querySelector('.scream-canister-rack');
+  const animOn = document.documentElement.getAttribute('data-scream-anim') === 'on';
+  const cansOn = document.documentElement.getAttribute('data-scream-canisters') !== 'off';
+  const slotCount = Number(opts.slotCount) || (rack ? rack.querySelectorAll('.scream-canister').length : 0);
+  // Particles ONLY over visible canister cards / harvest rack — never empty dashboard void.
+  if (!animOn || !cansOn || !rack || slotCount <= 0) {
+    if (layer) layer.innerHTML = '';
+    return;
+  }
   if (!layer) {
     layer = document.createElement('div');
     layer.className = 'scream-harvest-ambience';
     layer.setAttribute('aria-hidden', 'true');
-    // Prefer sitting behind the rack so legend text stays readable.
-    const rack = root.querySelector('.scream-canister-rack');
-    if (rack) root.insertBefore(layer, rack);
-    else root.appendChild(layer);
+    // Clip to rack band: insert as first child of the rack itself.
+    rack.insertBefore(layer, rack.firstChild);
+  } else if (layer.parentElement !== rack) {
+    rack.insertBefore(layer, rack.firstChild);
   }
-  const animOn = document.documentElement.getAttribute('data-scream-anim') === 'on';
   layer.dataset.mood = floorMood;
   layer.classList.toggle('anim', animOn);
-  if (!animOn) {
-    layer.innerHTML = '';
-    return;
-  }
 
   if (floorMood === 'laughter') {
     layer.innerHTML = [
@@ -5362,8 +5634,15 @@ function renderScreamCanisters(opts = {}) {
     const harvestRoot = rack.closest('.scream-harvest');
     if (harvestRoot) {
       harvestRoot.dataset.floorMood = floorMood;
-      paintHarvestAmbience(harvestRoot, floorMood, { unique, ipHits, critical: criticalHits });
+      paintHarvestAmbience(harvestRoot, floorMood, { unique, ipHits, critical: criticalHits }, {
+        slotCount: slots.length,
+      });
     }
+  } else {
+    // Compact scare-floor strip: destroy any leftover floaters when no cards.
+    const harvestRoot = rack.closest('.scream-harvest');
+    if (harvestRoot && slots.length === 0)
+      paintHarvestAmbience(harvestRoot, 'laughter', {}, { slotCount: 0 });
   }
 
   if (status) {
@@ -7169,8 +7448,13 @@ async function pollStatus() {
         stalkStatus.className = statusClass(label);
       }
 
-      if (stalkPollTick % 3 === 0 && document.getElementById('view-dashboard').classList.contains('visible')) {
-        loadDashboard({ applyWidgets: stalkFollowLive, force: stalkFollowLive }).catch(() => {});
+      // Stalker refresh: every ~5s when following live; slower (every ~10s) when no BB edges
+      // so we don't re-fetch huge empty payloads every second / freeze the browser.
+      const edges = Number(s.coverageEdges) || 0;
+      const dashVisible = document.getElementById('view-dashboard')?.classList.contains('visible');
+      const every = edges > 0 ? 5 : 10;
+      if (dashVisible && stalkPollTick % every === 0) {
+        loadDashboard({ applyWidgets: stalkFollowLive, force: false }).catch(() => {});
       }
     } else {
       stalkPollTick = 0;
