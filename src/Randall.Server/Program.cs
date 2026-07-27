@@ -571,8 +571,75 @@ app.MapGet("/api/stalk/{project}", (string project, string? crashId, string? run
             return Results.BadRequest(new { error = "crashId must be a guid" });
         focusId = parsed;
     }
-    var dash = StalkDashboard.ForProject(project, sessions.Status, focusId, runId);
-    return dash is null ? Results.NotFound(new { error = "project not found" }) : Results.Ok(dash);
+
+    try
+    {
+        var dash = StalkDashboard.ForProject(project, sessions.Status, focusId, runId);
+        return dash is null ? Results.NotFound(new { error = "project not found" }) : Results.Ok(dash);
+    }
+    catch (Exception ex)
+    {
+        // Never 500 the live stalker UI mid-fuzz — return a degraded payload the UI can paint.
+        Console.Error.WriteLine($"[api/stalk] warn: {project}: {ex}");
+        var status = sessions.Status;
+        var live = status is not null
+            && (status.Running || status.Phase is "starting" or "running" or "stopping")
+            && (status.Project is null
+                || status.Project.Equals(project, StringComparison.OrdinalIgnoreCase));
+        return Results.Ok(new StalkDashboardDto(
+            project,
+            "unknown",
+            "",
+            status?.ConfigPath ?? "",
+            project,
+            status?.TargetPid,
+            "—",
+            live ? "Mutation" : "Mutation",
+            live ? "Tracing" : "Idle",
+            live,
+            status?.Iterations ?? 0,
+            status?.Crashes ?? 0,
+            status?.CoverageEdges ?? 0,
+            status?.CorpusAdded ?? 0,
+            0,
+            "Degraded",
+            "Stalk dashboard recovered after a partial failure — see notes.",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            0,
+            null,
+            "—",
+            "Partial failure — live counters only",
+            0,
+            0,
+            0,
+            [
+                new StalkBlockDto("entry", "START", "session", "hit", true, false,
+                    live ? "LIVE session (degraded dashboard)" : "Dashboard degraded",
+                    0, true),
+                new StalkBlockDto("novelty", "CORPUS+", "novelty", "novel", false, true,
+                    "Partial failure — crash catalog or graph build failed; live counters still refresh",
+                    1, true),
+            ],
+            [new StalkEdgeDto("entry", "novelty", "live", true, true)],
+            Array.Empty<StalkHotBlockDto>(),
+            Array.Empty<StalkTimelinePointDto>(),
+            Array.Empty<StalkCrashLogDto>(),
+            [
+                $"Warning: stalk dashboard degraded — {ex.Message}",
+                live
+                    ? "LIVE (no BB edges — dashboard recovered). Follow live keeps refreshing iters/crashes."
+                    : "Open a completed run once the crash catalog is healthy, or restart the server after pull.",
+            ],
+            null,
+            false));
+    }
 });
 
 // Fuzz session browser — Open / Close / Save / Import / Export completed runs under data/runs/.

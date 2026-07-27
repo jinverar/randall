@@ -62,6 +62,46 @@ public class CrashStoreDedupTests
             try { Directory.Delete(dir, true); } catch { /* */ }
         }
     }
+
+    [Fact]
+    public void List_SkipsNullByteAndGarbageLines_DoesNotThrow()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "randall-crash-corrupt-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var store = new CrashStore(dir);
+            var good = store.SaveEx("vulnserver", 1, "havoc", "GOOD"u8.ToArray(), -1073741819);
+            Assert.True(good.IsNew);
+
+            var indexPath = Path.Combine(dir, "index.jsonl");
+            var existing = File.ReadAllText(indexPath);
+            // Simulate concurrent/partial write: NUL lead-in + garbage JSON between good lines.
+            var corrupt = string.Concat(
+                "\0\0\0",
+                Environment.NewLine,
+                "{not-json-at-all",
+                Environment.NewLine,
+                existing,
+                "\0garbage",
+                Environment.NewLine);
+            File.WriteAllText(indexPath, corrupt);
+
+            var listed = store.List();
+            Assert.Single(listed);
+            Assert.Equal(good.Crash.Id, listed[0].Id);
+            Assert.Equal("vulnserver", listed[0].Project);
+            Assert.True(File.Exists(Path.Combine(dir, "index.jsonl.corrupt")),
+                "corrupt lines should be quarantined");
+
+            // Second List is still clean / non-throwing after quarantine rewrite.
+            Assert.Single(store.List("vulnserver"));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* */ }
+        }
+    }
 }
 
 public class CorpusTrackerEnergyTests

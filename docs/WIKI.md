@@ -23,7 +23,16 @@ Honesty / NULL-write / Exploit Research fixes live in the **running** binary + `
 
 - Lab already listening on `:9999` (or profile port) → DynamoRIO **cannot** spawn for BB edges.
 - **Stop Labs** first, **or** uncheck **Coverage-guided**, then Start fuzz.
-- Banner *No BB graph: fuzzing existing listener…* is expected with Labs + Coverage on.
+- While Tracing with Labs + Coverage on: banner is **LIVE (no BB edges…)** — session/corpus-novelty graph keeps refreshing. Do **not** need Open completed run for a live session.
+- Banner *No BB graph… Open completed run* is for idle / completed only.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| Stalk API / live log: `'0x00' is an invalid start of a value` in `CrashStore.List` | Corrupt `data/crashes/<project>/index.jsonl` line (partial write). Restart after pull — List skips + quarantines bad lines to `index.jsonl.corrupt`. Optional: rename suspicious `*_crash.json` that start with NUL to `.corrupt`. |
+| Stalker graph empty mid-fuzz + "Open completed run" | Should no longer happen while STATUS is Tracing; Follow live + restart server after this fix. Without DynamoRIO expect LIVE novelty path, not a dead graph. |
+| `/api/stalk` used to 500 mid-fuzz | Now returns 200 with partial/degraded graph + warning note. |
 
 ## Dashboard Current Session
 

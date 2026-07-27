@@ -278,9 +278,12 @@ function updateNoBbBanners(data, fuzzStatus) {
   const guided = fuzzStatus?.coverageGuided === true
     || (isFuzzSessionActive(fuzzStatus) && document.getElementById('fuzz-coverage')?.checked === true);
   const edges = Number(data?.coverageEdges ?? fuzzStatus?.coverageEdges) || 0;
-  const msg = 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.';
+  const live = isFuzzSessionActive(fuzzStatus);
+  const msg = live
+    ? 'LIVE (no BB edges — stop Labs for DynamoRIO). Session / corpus-novelty graph stays live while Tracing.'
+    : 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.';
   // Show on Fuzz + Dashboard when coverage-guided session has zero BB edges (typical: lab already on :port).
-  const show = !!guided && edges <= 0 && isFuzzSessionActive(fuzzStatus);
+  const show = !!guided && edges <= 0 && live;
   for (const id of ['stalk-nobb-banner', 'fuzz-nobb-banner']) {
     const el = document.getElementById(id);
     if (!el) continue;
@@ -1778,24 +1781,32 @@ function updateStalkGraphBanner(data) {
   if (!banner) return;
   const edges = Number(data?.coverageEdges) || 0;
   const notes = data?.notes || [];
-  const covNote = notes.find((n) => /No BB graph|No basic-block coverage|DynamoRIO|existing listener/i.test(n));
+  const live = isFuzzSessionActive(fuzzStatusCache)
+    && (!fuzzStatusCache.project || fuzzStatusCache.project === (data?.project || stalkProject));
+  const covNote = notes.find((n) => /No BB graph|No basic-block coverage|DynamoRIO|existing listener|LIVE \(no BB/i.test(n));
   const nobb = document.getElementById('stalk-nobb-banner');
   if (covNote && edges <= 0) {
-    const hard = /existing listener|without DynamoRIO|TCP port was already busy/i.test(covNote);
-    banner.textContent = hard
-      ? 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.'
-      : covNote;
+    const hard = /existing listener|without DynamoRIO|TCP port was already busy|LIVE \(no BB/i.test(covNote);
+    banner.textContent = live
+      ? (hard
+        ? 'LIVE (no BB edges — stop Labs for DynamoRIO). Session / corpus-novelty graph stays live while Tracing.'
+        : covNote)
+      : (hard
+        ? 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.'
+        : covNote);
     banner.classList.remove('hidden');
-    banner.classList.toggle('info', !hard);
+    banner.classList.toggle('info', live || !hard);
     if (nobb) {
       nobb.textContent = banner.textContent;
-      nobb.classList.toggle('hidden', !hard);
+      nobb.classList.toggle('hidden', !(hard && isFuzzSessionActive(fuzzStatusCache)));
     }
     updateNoBbBanners(data, fuzzStatusCache);
     return;
   }
   if (edges <= 0 && (data?.mode || '').toLowerCase().includes('mutation')) {
-    banner.textContent = 'No BB graph yet — showing session / corpus-novelty path. Check DynamoRIO + free TCP port (`randall doctor`).';
+    banner.textContent = live
+      ? 'LIVE — showing session / corpus-novelty path (no BB edges yet). Check DynamoRIO + free TCP port (`randall doctor`).'
+      : 'No BB graph yet — showing session / corpus-novelty path. Check DynamoRIO + free TCP port (`randall doctor`).';
     banner.classList.remove('hidden');
     banner.classList.add('info');
     if (nobb) nobb.classList.add('hidden');
@@ -1814,7 +1825,10 @@ function renderStalkGraph(blocks, edges) {
   const el = document.getElementById('stalker-graph');
   const mini = document.getElementById('stalk-minimap');
   if (!blocks?.length) {
-    el.innerHTML = '<p class="stalk-empty">No graph yet — pick a project tab above, <strong>Open run</strong> a completed session, or finish a fuzz. If Coverage-guided is on for TCP, stop Labs first so DynamoRIO can spawn.</p>';
+    const live = isFuzzSessionActive(fuzzStatusCache);
+    el.innerHTML = live
+      ? '<p class="stalk-empty">LIVE session — waiting for graph nodes (corpus-novelty / session path). BB edges need DynamoRIO + a free TCP port (stop Labs if Coverage-guided). Dashboard keeps refreshing iters/crashes.</p>'
+      : '<p class="stalk-empty">No graph yet — pick a project tab above, <strong>Open run</strong> a completed session, or start a fuzz. If Coverage-guided is on for TCP, stop Labs first so DynamoRIO can spawn.</p>';
     if (mini) mini.innerHTML = '';
     return;
   }

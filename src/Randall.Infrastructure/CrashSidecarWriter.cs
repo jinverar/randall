@@ -8,7 +8,8 @@ public static class CrashSidecarWriter
     public static string Write(string crashesDir, CrashSidecarDto sidecar)
     {
         var path = Path.Combine(crashesDir, $"{sidecar.Project}_{sidecar.Iteration}_{sidecar.InputHash}_crash.json");
-        File.WriteAllText(path, JsonSerializer.Serialize(sidecar, new JsonSerializerOptions { WriteIndented = true }));
+        // Atomic temp+replace so concurrent CrashStore.List / stalk polls never read a 0x00/partial JSON.
+        AtomicFile.WriteAllText(path, JsonSerializer.Serialize(sidecar, new JsonSerializerOptions { WriteIndented = true }));
         return path;
     }
 

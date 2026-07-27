@@ -47,17 +47,40 @@ public static class StalkDashboard
                 ? opened.RunId
                 : null;
 
-        var crashes = CrashCatalog.ListAll(repoRoot, project.Name);
+        string? crashListWarning = null;
+        IReadOnlyList<CrashSummaryDto> crashes;
+        try
+        {
+            crashes = CrashCatalog.ListAll(repoRoot, project.Name);
+        }
+        catch (Exception ex)
+        {
+            crashes = [];
+            crashListWarning = $"Crash catalog partially unavailable: {ex.Message}";
+            Console.Error.WriteLine($"[StalkDashboard] warn: ListAll({project.Name}): {ex.Message}");
+        }
+
         var focusCrash = focusCrashId is Guid fid
             ? crashes.FirstOrDefault(c => c.Id == fid)
             : null;
         var latestCrash = focusCrash ?? crashes.FirstOrDefault();
-        CrashDetailDto? latestDetail = latestCrash is null ? null : CrashCatalog.GetDetail(latestCrash.Id, repoRoot);
+        CrashDetailDto? latestDetail = null;
+        if (latestCrash is not null)
+        {
+            try { latestDetail = CrashCatalog.GetDetail(latestCrash.Id, repoRoot); }
+            catch (Exception ex)
+            {
+                crashListWarning ??= $"Crash detail unavailable: {ex.Message}";
+                Console.Error.WriteLine($"[StalkDashboard] warn: GetDetail: {ex.Message}");
+            }
+        }
 
         var run = !string.IsNullOrWhiteSpace(effectiveRunId)
             ? FuzzSessionArchive.LoadManifest(effectiveRunId, repoRoot)
               ?? FindLatestRun(project, configPath, fuzzStatus)
             : FindLatestRun(project, configPath, fuzzStatus);
+        // Merge live counters into the graph spine when journal is still catching up.
+        run = OverlayLiveRunCounters(run, fuzzStatus, configPath);
         var timeline = BuildTimeline(run, latestDetail, crashes);
         var crashEdges = focusCrashId is not null && latestDetail is not null
             ? LoadCrashCoverageEdges(latestDetail, repoRoot)
@@ -90,6 +113,9 @@ public static class StalkDashboard
                 .ToList();
 
         var crashLog = BuildCrashLog(crashes, repoRoot);
+        var liveForProject = fuzzStatus is not null
+            && (fuzzStatus.Running || fuzzStatus.Phase is "starting" or "running" or "stopping")
+            && PathsMatch(fuzzStatus.ConfigPath, configPath);
         var status = focusCrash is not null
             ? $"Inspecting {ShortCrashId(focusCrash.Id)}"
             : !string.IsNullOrWhiteSpace(effectiveRunId)
@@ -104,7 +130,9 @@ public static class StalkDashboard
                     : graph.HasGraph ? "Session Graph" : "Mutation";
 
         var notes = BuildNotes(status, latestDetail, corpus, graph, hotBlocks, usedCrashCoverage, missingCrashCoverage);
-        AppendCoverageHonestyNotes(notes, corpus, fuzzStatus, run, usedCrashCoverage, missingCrashCoverage);
+        AppendCoverageHonestyNotes(notes, corpus, fuzzStatus, run, usedCrashCoverage, missingCrashCoverage, liveForProject);
+        if (!string.IsNullOrWhiteSpace(crashListWarning))
+            notes.Insert(0, crashListWarning);
         if (!string.IsNullOrWhiteSpace(effectiveRunId) && focusCrash is null)
         {
             notes.Insert(0,
@@ -496,13 +524,13 @@ public static class StalkDashboard
             var crashes = run?.CrashesFound ?? 0;
             blocks.Add(new StalkBlockDto(
                 "entry", "START", "session", "hit", true, false,
-                iters > 0 ? $"Run started ({iters} iterations)" : "No coverage run loaded",
+                iters > 0 ? $"Run started ({iters} iterations)" : "Waiting for live / journaled iterations",
                 0, true));
             blocks.Add(new StalkBlockDto(
                 "novelty", "CORPUS+", "novelty", iters > 0 ? "novel" : "unexplored", false, true,
                 iters > 0
                     ? $"Corpus-novelty / session path ({iters} iters, {crashes} crashes) — not DynamoRIO BB edges"
-                    : "No basic-block coverage — enable DynamoRIO or fuzz without a busy TCP lab port",
+                    : "LIVE or idle without BB edges — enable DynamoRIO or fuzz without a busy TCP lab port",
                 1, true));
             if (latestDetail is null)
             {
@@ -1204,24 +1232,35 @@ public static class StalkDashboard
         FuzzSessionStatusDto? fuzzStatus,
         FuzzRunManifestDto? run,
         bool usedCrashCoverage,
-        bool missingCrashCoverage)
+        bool missingCrashCoverage,
+        bool liveForProject = false)
     {
         if (usedCrashCoverage)
             return;
 
         if (!corpus.DynamoRioAvailable)
         {
-            notes.Insert(0,
-                "No basic-block coverage — DynamoRIO missing. Run `randall doctor` / install tools, or rely on corpus-novelty (corpus+) nodes.");
+            notes.Insert(0, liveForProject
+                ? "LIVE (no BB edges — DynamoRIO missing). Graph shows corpus-novelty / session path; install DynamoRIO for BB edges."
+                : "No basic-block coverage — DynamoRIO missing. Run `randall doctor` / install tools, or rely on corpus-novelty (corpus+) nodes.");
             return;
         }
 
         if (corpus.CoverageEdges == 0 && (run?.HotEdges is null || run.HotEdges.Count == 0))
         {
             var guided = fuzzStatus?.CoverageGuided == true;
-            notes.Insert(0, guided
-                ? "No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run."
-                : "No BB graph yet — enable Coverage-guided (DynamoRIO) with a free TCP port, or Open completed run. Graph shows corpus-novelty / session path until then.");
+            if (liveForProject)
+            {
+                notes.Insert(0, guided
+                    ? "LIVE (no BB edges — stop Labs for DynamoRIO). Session / corpus-novelty graph stays live while Tracing."
+                    : "LIVE — corpus-novelty / session path (no BB edges yet). Enable Coverage-guided with a free TCP port for DynamoRIO edges.");
+            }
+            else
+            {
+                notes.Insert(0, guided
+                    ? "No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run."
+                    : "No BB graph yet — enable Coverage-guided (DynamoRIO) with a free TCP port, or Open completed run. Graph shows corpus-novelty / session path until then.");
+            }
         }
 
         if (missingCrashCoverage)
@@ -1229,6 +1268,44 @@ public static class StalkDashboard
             notes.Insert(0,
                 "Selected crash has no drcov edges — diagram shows the honest empty path (not a spinner).");
         }
+    }
+
+    /// <summary>Prefer live fuzz counters on the novelty spine when run.json lags.</summary>
+    private static FuzzRunManifestDto? OverlayLiveRunCounters(
+        FuzzRunManifestDto? run,
+        FuzzSessionStatusDto? fuzzStatus,
+        string configPath)
+    {
+        if (fuzzStatus is null)
+            return run;
+        if (!(fuzzStatus.Running || fuzzStatus.Phase is "starting" or "running" or "stopping"))
+            return run;
+        if (!PathsMatch(fuzzStatus.ConfigPath, configPath))
+            return run;
+
+        if (run is null)
+        {
+            var project = Path.GetFileNameWithoutExtension(configPath) ?? "project";
+            return new FuzzRunManifestDto(
+                "live",
+                project,
+                "live",
+                configPath,
+                DateTimeOffset.UtcNow,
+                null,
+                false,
+                fuzzStatus.CoverageGuided == true,
+                "novelty",
+                "live overlay (journal not flushed yet)",
+                fuzzStatus.Iterations,
+                fuzzStatus.Crashes);
+        }
+
+        return run with
+        {
+            Iterations = Math.Max(run.Iterations, fuzzStatus.Iterations),
+            CrashesFound = Math.Max(run.CrashesFound, fuzzStatus.Crashes),
+        };
     }
 
     private static FuzzRunManifestDto? FindLatestRun(

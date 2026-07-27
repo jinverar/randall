@@ -48,6 +48,26 @@ public static class CrashCatalog
                 !projectName.Equals(projectFilter, StringComparison.OrdinalIgnoreCase))
                 continue;
 
+            try
+            {
+                ListProjectCrashes(dir, projectName, repoRoot, results);
+            }
+            catch (Exception ex)
+            {
+                // Never let one corrupt crash tree 500 the stalk / crashes APIs.
+                Console.Error.WriteLine($"[CrashCatalog] warn: skip project '{projectName}': {ex.Message}");
+            }
+        }
+
+        return results.OrderByDescending(c => c.ObservedAt).ToList();
+    }
+
+    private static void ListProjectCrashes(
+        string dir,
+        string projectName,
+        string repoRoot,
+        List<CrashSummaryDto> results)
+    {
             var store = new CrashStore(dir);
             var pageHeapEnabled = TryResolvePageHeapForProject(projectName, repoRoot);
             var projectRows = new List<(CrashSummaryDto Summary, CrashTriageDto Triage, CrashSidecarDto? Sidecar, CrashAnalysisDto? Analysis, CdbTriageDto? Cdb, int InputLength, DebuggerObservation? Debugger)>();
@@ -171,9 +191,6 @@ public static class CrashCatalog
                     DeepScreamMinimizedBonus = deepScream.Minimized && deepScream.IsCandidate,
                 }));
             }
-        }
-
-        return results.OrderByDescending(c => c.ObservedAt).ToList();
     }
 
     public static IReadOnlyList<CrashClusterDto> ListClusters(string? repoRoot = null, string? projectFilter = null)
