@@ -3275,7 +3275,18 @@ html[data-theme="cyber"] .stalker-meta .status-crash {
   margin-top: 0.65rem;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--stalk-border);
+}
+.fuzz-session-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.fuzz-session-import {
+  padding-top: 0.35rem;
+  border-top: 1px dashed var(--stalk-border);
 }
 .fuzz-session-label {
   display: flex;
@@ -3284,15 +3295,31 @@ html[data-theme="cyber"] .stalker-meta .status-crash {
   font-size: 0.72rem;
   color: var(--muted);
 }
+.fuzz-session-label > span {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--stalk-bright);
+}
 .fuzz-session-label select,
 .fuzz-session-label input[type="text"] {
   font-size: 0.78rem;
   font-family: var(--mono);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.fuzz-session-label input[type="text"] {
+  overflow-x: auto;
+  text-overflow: clip;
 }
 .fuzz-session-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+.fuzz-session-secondary {
+  opacity: 0.92;
 }
 .fuzz-session-check {
   display: flex;
@@ -3304,6 +3331,31 @@ html[data-theme="cyber"] .stalker-meta .status-crash {
 #fuzz-session-status {
   margin: 0.15rem 0 0;
   font-size: 0.72rem;
+  line-height: 1.35;
+}
+.stalk-graph-banner {
+  margin: 0.35rem 0 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--stalk-red) 35%, var(--stalk-border));
+  background: color-mix(in srgb, var(--stalk-red) 8%, var(--stalk-panel, var(--bg)));
+  color: var(--stalk-bright);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+.stalk-graph-banner.hidden { display: none; }
+.stalk-graph-banner.info {
+  border-color: color-mix(in srgb, var(--stalk-blue) 40%, var(--stalk-border));
+  background: color-mix(in srgb, var(--stalk-blue) 8%, var(--stalk-panel, var(--bg)));
+}
+.stalker-graph .stalk-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 220px;
+  padding: 1.25rem;
+  text-align: center;
+  line-height: 1.45;
 }
 
 .coverage-ring-wrap {
@@ -5540,24 +5592,26 @@ html[data-scream-anim="on"] .canister-floaties .floatie {
   white-space: nowrap;
 }
 
-/* Recognizable laughter / scare orb bubble */
+/* Recognizable laughter / scare orb bubble — label is "laughter", not cryptic "ha" */
 .laugh-orb-bubble {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 26px;
-  height: 26px;
-  padding: 0 0.32rem;
-  border-radius: 50%;
-  font-size: 0.62rem;
+  min-width: 52px;
+  height: 22px;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  font-size: 0.58rem;
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
   color: #2a1810;
   background: radial-gradient(circle at 32% 28%, #fff3c8, #ffb84a 55%, #e07820 100%);
   border: 2px solid rgba(90, 45, 12, 0.5);
   box-shadow:
     inset 0 -2px 4px rgba(80, 30, 10, 0.22),
     0 0 10px rgba(255, 190, 80, 0.55);
+  white-space: nowrap;
 }
 .laugh-orb.orb-pink .laugh-orb-bubble {
   color: #3a1020;

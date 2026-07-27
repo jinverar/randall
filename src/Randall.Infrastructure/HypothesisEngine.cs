@@ -566,12 +566,20 @@ public static class HypothesisEngine
         }
 
         if (debugger.Access == DebuggerAccessKind.Write
-            && evolutionProgressionWarming(debugger, chain))
+            && evolutionProgressionWarming(debugger, chain)
+            && debugger.FaultAddressClass is not (DebuggerAddressClass.NullPage
+                or DebuggerAddressClass.NearNull
+                or DebuggerAddressClass.SmallOffset)
+            && !InputAttributionEngine.IsExcludedFromRawInputAttribution(debugger.FaultAddress))
         {
+            var site = !string.IsNullOrWhiteSpace(debugger.FaultingFunction)
+                       && !ScreamInvestigator.IsGarbageSymbol(debugger.FaultingFunction, debugger.FaultingModule)
+                ? debugger.FaultingFunction
+                : debugger.Rip ?? "fault site";
             list.Add(new HypothesisDto(
                 "hyp-write-progression",
                 crashId,
-                $"Write violation at {debugger.FaultingFunction ?? "fault site"} — breeding may reach controlled write",
+                $"Write violation at {site} — breeding may reach controlled write",
                 Math.Clamp(55 + debugger.DebuggerScreamBonus / 5, 45, 85),
                 new HypothesisExperimentDto(
                     HypothesisExperimentKind.HoldMutator,
@@ -694,10 +702,20 @@ public static class HypothesisEngine
 
         if (!string.IsNullOrWhiteSpace(trace.BadPointerSource))
         {
+            var story = trace.Story ?? "";
+            // Honesty: never echo pre-fix narratives that over-claim controlled write / junk symbols.
+            if (story.Contains("controlled write in !:", StringComparison.OrdinalIgnoreCase)
+                || story.Contains("controlled write in !", StringComparison.OrdinalIgnoreCase))
+            {
+                story = story
+                    .Replace("controlled write in !:", "null/invalid destination write", StringComparison.OrdinalIgnoreCase)
+                    .Replace("controlled write in !", "null/invalid destination write", StringComparison.OrdinalIgnoreCase);
+            }
+
             list.Add(new HypothesisDto(
                 "hyp-btrace-source",
                 crashId,
-                $"Bad pointer source: {trace.BadPointerSource} — {trace.Story}",
+                $"Bad pointer source: {trace.BadPointerSource} — {story}",
                 Math.Clamp(ScoreBase(trace.Confidence), 38, 85),
                 new HypothesisExperimentDto(
                     HypothesisExperimentKind.MinimizeHold,

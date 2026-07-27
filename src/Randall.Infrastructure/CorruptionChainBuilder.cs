@@ -178,8 +178,17 @@ public static class CorruptionChainBuilder
         var disasm = (debugger.DisasmNearRip ?? "").ToLowerInvariant();
         if (fn.Contains("memcpy") || fn.Contains("memmove") || disasm.Contains("memcpy"))
             return "length→memcpy-style sink";
-        if (debugger.Access == DebuggerAccessKind.Write)
+        if (debugger.Access == DebuggerAccessKind.Write
+            && (debugger.FaultAddressClass is (DebuggerAddressClass.NullPage
+                    or DebuggerAddressClass.NearNull
+                    or DebuggerAddressClass.SmallOffset)
+                || InputAttributionEngine.IsExcludedFromRawInputAttribution(debugger.FaultAddress)))
+            return "null/invalid destination write";
+        if (debugger.Access == DebuggerAccessKind.Write
+            && InputAttributionEngine.IsStrongNonZeroPattern(debugger.FaultAddress))
             return "controlled write sink";
+        if (debugger.Access == DebuggerAccessKind.Write)
+            return "write sink";
         return null;
     }
 

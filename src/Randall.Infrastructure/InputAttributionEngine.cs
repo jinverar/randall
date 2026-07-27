@@ -89,7 +89,12 @@ public static partial class InputAttributionEngine
             return [];
 
         if (debugger?.RegisterMatches is { Count: > 0 })
-            return debugger.RegisterMatches;
+        {
+            // Re-filter cached matches — older dumps / pre-honesty observations may still claim NULLs.
+            return debugger.RegisterMatches
+                .Where(m => m.MatchKind == "ascii" || !IsExcludedFromRawInputAttribution(m.ValueHex))
+                .ToList();
+        }
 
         return FindRegisterMatchesFromText(
             payload,
@@ -408,8 +413,9 @@ public static partial class InputAttributionEngine
         else if (depth is int off)
             parts.Add($"pattern @ +{off}");
 
-        if (dbg?.FaultingFunction is not null)
-            parts.Add($"{dbg.FaultingModule}!{dbg.FaultingFunction}");
+        var sinkLabel = FormatHonestSink(dbg);
+        if (sinkLabel is not null)
+            parts.Add(sinkLabel);
         else if (dbg?.FaultAddress is not null)
             parts.Add($"fault {dbg.FaultAddress}");
 
@@ -443,18 +449,18 @@ public static partial class InputAttributionEngine
         var field = sidecar?.Command ?? (depth is int d ? $"payload+{d}" : "input field");
         sb.Append(field);
 
-        if (primary is not null)
+        if (primary is not null && !IsExcludedFromRawInputAttribution(primary.ValueHex))
             sb.Append($" → {primary.Register}={primary.ValueHex} (input+{primary.PayloadOffset}, {primary.MatchKind})");
+        else if (primary is not null && IsExcludedFromRawInputAttribution(primary.ValueHex))
+            sb.Append($" → {primary.Register}={primary.ValueHex} (null/low — not attributed as controlled pointer)");
         else if (depth is int off)
             sb.Append($" → controlled bytes at +{off}");
 
-        var sink = dbg?.FaultingFunction is not null
-            ? $"{dbg.FaultingModule}!{dbg.FaultingFunction}{dbg.FunctionOffset ?? ""}"
-            : dbg?.Rip;
+        var sink = FormatHonestSink(dbg);
         if (sink is not null)
         {
             var style = InferSinkStyle(dbg);
-            sb.Append(style is not null ? $" → {style} in {sink}" : $" → sink {sink}");
+            sb.Append(style is not null ? $" → {style} at {sink}" : $" → sink {sink}");
         }
 
         if (dbg?.Access is DebuggerAccessKind.Write or DebuggerAccessKind.Read or DebuggerAccessKind.Execute)
@@ -489,6 +495,25 @@ public static partial class InputAttributionEngine
         return sb.ToString();
     }
 
+    private static string? FormatHonestSink(DebuggerObservation? dbg)
+    {
+        if (dbg is null)
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(dbg.FaultingFunction)
+            && !ScreamInvestigator.IsGarbageSymbol(dbg.FaultingFunction, dbg.FaultingModule))
+        {
+            var mod = string.IsNullOrWhiteSpace(dbg.FaultingModule) || dbg.FaultingModule is "!" or "?"
+                ? null
+                : dbg.FaultingModule;
+            return mod is null
+                ? $"{dbg.FaultingFunction}{dbg.FunctionOffset ?? ""}"
+                : $"{mod}!{dbg.FaultingFunction}{dbg.FunctionOffset ?? ""}";
+        }
+
+        return dbg.Rip ?? dbg.FaultAddress;
+    }
+
     private static string? InferSinkStyle(DebuggerObservation? dbg)
     {
         if (dbg is null)
@@ -506,15 +531,25 @@ public static partial class InputAttributionEngine
         if (fn.Contains("write") || fn.Contains("send"))
             return "write/send path";
         if (dbg.Access == DebuggerAccessKind.Write
-            && dbg.FaultAddressClass is (DebuggerAddressClass.NullPage
-                or DebuggerAddressClass.NearNull
-                or DebuggerAddressClass.SmallOffset)
+            && (dbg.FaultAddressClass is (DebuggerAddressClass.NullPage
+                    or DebuggerAddressClass.NearNull
+                    or DebuggerAddressClass.SmallOffset)
+                || IsExcludedFromRawInputAttribution(dbg.FaultAddress))
             && !IsStrongNonZeroPattern(dbg.FaultAddress))
             return "null/invalid destination write";
-        if (dbg.Access == DebuggerAccessKind.Write)
+        if (dbg.Access == DebuggerAccessKind.Write && IsStrongNonZeroPattern(dbg.FaultAddress))
             return "controlled write";
-        if (dbg.Access == DebuggerAccessKind.Read)
+        if (dbg.Access == DebuggerAccessKind.Write)
+            return "write violation";
+        if (dbg.Access == DebuggerAccessKind.Read
+            && dbg.FaultAddressClass is (DebuggerAddressClass.NullPage
+                or DebuggerAddressClass.NearNull
+                or DebuggerAddressClass.SmallOffset))
+            return "null/invalid destination read";
+        if (dbg.Access == DebuggerAccessKind.Read && IsStrongNonZeroPattern(dbg.FaultAddress))
             return "controlled read";
+        if (dbg.Access == DebuggerAccessKind.Read)
+            return "read violation";
         return null;
     }
 

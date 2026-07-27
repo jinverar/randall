@@ -318,8 +318,16 @@ public static partial class BackwardTraceBuilder
         if (badSource is not null)
             sb.Append($" → bad pointer from {badSource}");
 
-        if (dbg?.FaultingFunction is not null)
-            sb.Append($" → fault in {dbg.FaultingModule}!{dbg.FaultingFunction}");
+        if (dbg?.FaultingFunction is not null
+            && !ScreamInvestigator.IsGarbageSymbol(dbg.FaultingFunction, dbg.FaultingModule))
+        {
+            var mod = string.IsNullOrWhiteSpace(dbg.FaultingModule) || dbg.FaultingModule is "!" or "?"
+                ? null
+                : dbg.FaultingModule;
+            sb.Append(mod is null
+                ? $" → fault in {dbg.FaultingFunction}"
+                : $" → fault in {mod}!{dbg.FaultingFunction}");
+        }
         else if (dbg?.Rip is not null)
             sb.Append($" → fault at {dbg.Rip}");
 

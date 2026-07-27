@@ -204,4 +204,58 @@ public class DebuggerHonestyTests
         Assert.False(ScreamInvestigator.HasExplicitUafIndicator("Page Heap fingerprints detected\n!heap -p\nhpa enabled"));
         Assert.True(ScreamInvestigator.HasExplicitUafIndicator("use after free detected in block"));
     }
+
+    [Fact]
+    public void Narrative_null_write_does_not_claim_controlled_write_in_junk_symbol()
+    {
+        var sidecar = new CrashSidecarDto(
+            Guid.NewGuid(), "run", 1, "vulnserver", "KSTET", "havoc",
+            ["havoc"], null, "seed", [], "hash", "x.bin", 128,
+            -1073741819, "ACCESS_VIOLATION", "detail", null, 0, 0, "native",
+            null, null, null, null,
+            new TransportSnapshotDto("tcp", "127.0.0.1", 9999, false),
+            new FuzzSnapshotDto(false, false, "projects/vulnserver.yaml"),
+            DateTimeOffset.UtcNow);
+
+        var obs = new DebuggerObservation(
+            Ok: true,
+            DumpPath: null,
+            ObservationPath: null,
+            ExceptionCode: "0xC0000005",
+            ExceptionHint: "ACCESS_VIOLATION",
+            Access: DebuggerAccessKind.Write,
+            FaultAddress: "0x0",
+            FaultAddressClass: DebuggerAddressClass.NullPage,
+            Rip: "0x401000",
+            FaultingModule: "!",
+            FaultingFunction: ":",
+            FunctionOffset: null,
+            Stack: [],
+            StackHash: null,
+            RegistersText: "rdi=0000000000000000 rip=0000000000401000",
+            DisasmNearRip: null,
+            MemoryNearRsp: null,
+            ModulesText: null,
+            HeapProbeText: null,
+            AddressQueryText: null,
+            ExrText: null,
+            ExploitableClassification: null,
+            ExploitableDescription: null,
+            HeapSignal: null,
+            SuspectedInputInfluence: "MEDIUM",
+            ExploitabilityHint: "UNKNOWN",
+            Confidence: 0.5,
+            Diagnosis: "Write AV",
+            DebuggerScreamBonus: 0,
+            AnalyzeTimedOut: false,
+            Error: null,
+            At: DateTimeOffset.UtcNow);
+
+        var narrative = InputAttributionEngine.BuildNarrative(
+            sidecar, obs, primary: null, depth: 77, mutator: "havoc", mutStep: 0, mutNote: null, matches: []);
+        Assert.NotNull(narrative);
+        Assert.DoesNotContain("controlled write", narrative!, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("!:", narrative!, StringComparison.Ordinal);
+        Assert.Contains("null/invalid destination write", narrative!, StringComparison.OrdinalIgnoreCase);
+    }
 }

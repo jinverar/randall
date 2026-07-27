@@ -485,8 +485,17 @@ public static class InfluenceEngine
             return "pointer→fault address";
         if (fn.Contains("memcpy") || fn.Contains("memmove"))
             return "length→memcpy-style copy";
-        if (debugger?.Access == DebuggerAccessKind.Write)
+        if (debugger?.Access == DebuggerAccessKind.Write
+            && (debugger.FaultAddressClass is (DebuggerAddressClass.NullPage
+                    or DebuggerAddressClass.NearNull
+                    or DebuggerAddressClass.SmallOffset)
+                || InputAttributionEngine.IsExcludedFromRawInputAttribution(debugger.FaultAddress)))
+            return "input→null/invalid write";
+        if (debugger?.Access == DebuggerAccessKind.Write
+            && InputAttributionEngine.IsStrongNonZeroPattern(debugger.FaultAddress))
             return "input→controlled write";
+        if (debugger?.Access == DebuggerAccessKind.Write)
+            return "input→write violation";
         if (chain?.Steps.Any(s => s.Kind == "register") == true)
             return "input→register→sink";
         return "input→fault state";
