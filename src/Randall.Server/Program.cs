@@ -1492,15 +1492,30 @@ app.MapGet("/api/fuzz/logs", (FuzzLiveLogBuffer liveLog, FuzzSessionManager sess
     });
 });
 
-app.MapPost("/api/fuzz/start", (
+app.MapPost("/api/fuzz/start", async (
     FuzzStartRequest request,
     FuzzSessionManager sessions,
     SignalRFuzzProgressSink sink) =>
 {
     if (string.IsNullOrWhiteSpace(request.ConfigPath))
         return Results.BadRequest(new { error = "configPath required" });
+
+    if (request.Force && sessions.HasActiveTask)
+        await sessions.ForceClearAsync();
+
     if (!sessions.Start(request, sink))
-        return Results.Conflict(new { error = "A fuzz session is already running" });
+    {
+        var st = sessions.Status;
+        return Results.Conflict(new
+        {
+            error = "A fuzz session is already running",
+            recover = true,
+            hint = "POST /api/fuzz/force-clear then retry, or start with force:true",
+            status = st,
+            busy = sessions.HasActiveTask,
+        });
+    }
+
     return Results.Accepted("/api/fuzz/status", sessions.Status);
 });
 
@@ -1509,6 +1524,17 @@ app.MapPost("/api/fuzz/stop", (FuzzSessionManager sessions) =>
     if (!sessions.Stop())
         return Results.NotFound(new { error = "No active session" });
     return Results.Ok(sessions.Status);
+});
+
+app.MapPost("/api/fuzz/force-clear", async (FuzzSessionManager sessions) =>
+{
+    var status = await sessions.ForceClearAsync();
+    return Results.Ok(new
+    {
+        ok = true,
+        message = status.LastMessage ?? "Fuzz session cleared",
+        status,
+    });
 });
 
 app.MapPost("/api/recorders/stop", () =>

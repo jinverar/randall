@@ -260,12 +260,26 @@ function formatGoalProgress(goalProgress) {
   return ` 🎯 ${parts.join(' · ')} · `;
 }
 
+function scrubStickySessionConflictErrors() {
+  const needle = 'a fuzz session is already running';
+  const before = logBuffer.length;
+  for (let i = logBuffer.length - 1; i >= 0; i--) {
+    const line = (logBuffer[i]?.line || '').toLowerCase();
+    if (line.includes(needle)) logBuffer.splice(i, 1);
+  }
+  if (logBuffer.length !== before && document.getElementById('view-fuzz')?.classList.contains('visible'))
+    rehydrateFuzzLog();
+}
+
 function applyFuzzSessionStatus(s) {
   if (!s) return;
   fuzzStatusCache = s;
   const active = isFuzzSessionActive(s);
   startBtn.disabled = active;
   stopBtn.disabled = !active;
+  const forceBtn = document.getElementById('fuzz-force-clear');
+  if (forceBtn) forceBtn.disabled = false;
+  if (!active) scrubStickySessionConflictErrors();
   applyAttachDbgButtonState(s);
 
   if (s.configPath) {
@@ -1644,12 +1658,34 @@ const stalkGraphNav = {
   },
 };
 
+function updateStalkGraphBanner(data) {
+  const banner = document.getElementById('stalk-graph-banner');
+  if (!banner) return;
+  const edges = Number(data?.coverageEdges) || 0;
+  const notes = data?.notes || [];
+  const covNote = notes.find((n) => /No basic-block coverage|DynamoRIO/i.test(n));
+  if (covNote && edges <= 0) {
+    banner.textContent = covNote;
+    banner.classList.remove('hidden', 'info');
+    return;
+  }
+  if (edges <= 0 && (data?.mode || '').toLowerCase().includes('mutation')) {
+    banner.textContent = 'No basic-block coverage — showing session / corpus-novelty path. Check DynamoRIO + free TCP port (`randall doctor`).';
+    banner.classList.remove('hidden');
+    banner.classList.add('info');
+    return;
+  }
+  banner.textContent = '';
+  banner.classList.add('hidden');
+  banner.classList.remove('info');
+}
+
 /** Vertical CFG: crash spine down the center, forks to the sides. */
 function renderStalkGraph(blocks, edges) {
   const el = document.getElementById('stalker-graph');
   const mini = document.getElementById('stalk-minimap');
   if (!blocks?.length) {
-    el.innerHTML = '<p class="stalk-empty">No graph yet — pick a project or run a fuzz campaign.</p>';
+    el.innerHTML = '<p class="stalk-empty">No graph yet — pick a project tab above, <strong>Open run</strong> a completed session, or finish a fuzz. If Coverage-guided is on for TCP, stop Labs first so DynamoRIO can spawn.</p>';
     if (mini) mini.innerHTML = '';
     return;
   }
@@ -2258,6 +2294,7 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
     : '<li style="color:var(--muted);list-style:none">No hot blocks yet</li>';
 
   renderStalkGraph(data.blocks, data.edges);
+  updateStalkGraphBanner(data);
 
   document.querySelector('#stalk-compare tbody').innerHTML = `
     <tr><td>Blocks hit</td><td>${data.baselineBlocks}</td><td>${data.currentBlocks}</td><td class="diff">+${data.diffBlocks}</td></tr>
@@ -2409,8 +2446,10 @@ async function refreshFuzzSessionBar() {
       sel.value = prefer;
     if (status) {
       status.textContent = stalkOpenedRunId
-        ? `Opened ${stalkOpenedRunId} — Close to return to live/latest. Import walks folders for run.json → data/runs/.`
-        : `Sessions are flat JSON/JSONL under data/runs/ — Open pins a completed run; Import walks folders for run.json.`;
+        ? `Opened run ${stalkOpenedRunId} — Close returns to live/latest.`
+        : sessions.length
+          ? `${sessions.length} saved run${sessions.length === 1 ? '' : 's'} — pick one and Open run to load its graph.`
+          : 'No saved sessions — finish a fuzz (writes data/runs/) or Import an archive folder/zip.';
     }
   } catch (err) {
     if (status) status.textContent = err.message || 'Session list unavailable';
@@ -5061,8 +5100,8 @@ function scareDoorSpriteHtml(extraClass = '', style = '', title = 'Scare door') 
   </span>`;
 }
 
-function laughOrbSpriteHtml(extraClass = '', style = '', text = 'ha', title = 'Laughter orb') {
-  return `<span class="amb laugh-orb ${extraClass}" style="${style}" title="${escapeAttr(title)}" role="img" aria-label="Laughter orb">
+function laughOrbSpriteHtml(extraClass = '', style = '', text = 'laughter', title = 'Laughter orb (UI décor — 0 screams)') {
+  return `<span class="amb laugh-orb ${extraClass}" style="${style}" title="${escapeAttr(title)}" role="img" aria-label="Laughter">
     <span class="laugh-orb-bubble">${escapeAttr(text)}</span>
   </span>`;
 }
@@ -5072,8 +5111,8 @@ function canisterFloatiesHtml(mood) {
   // Lightweight CSS scare-door / laughter-orb sprites — browser-only, no fuzz RAM.
   if (mood === 'laughter') {
     return `<div class="canister-floaties laughter" aria-hidden="true">
-      ${laughOrbSpriteHtml('floatie', '--t:0', 'ha')}
-      ${laughOrbSpriteHtml('floatie', '--t:1', 'ha')}
+      ${laughOrbSpriteHtml('floatie', '--t:0', 'laughter')}
+      ${laughOrbSpriteHtml('floatie', '--t:1', 'laughter')}
       <span class="floatie smile" style="--t:2" title="Smile"></span>
     </div>`;
   }
@@ -5118,11 +5157,11 @@ function paintHarvestAmbience(root, floorMood, stats = {}) {
 
   if (floorMood === 'laughter') {
     layer.innerHTML = [
-      laughOrbSpriteHtml('a0', '--i:0', 'ha'),
-      laughOrbSpriteHtml('a1', '--i:1', 'ha'),
-      laughOrbSpriteHtml('a2', '--i:2', 'HA'),
+      laughOrbSpriteHtml('a0', '--i:0', 'laughter'),
+      laughOrbSpriteHtml('a1', '--i:1', 'laughter'),
+      laughOrbSpriteHtml('a2', '--i:2', 'laughter'),
       `<span class="amb smile a3" style="--i:3" title="Smile"></span>`,
-      laughOrbSpriteHtml('a4', '--i:4', 'ha'),
+      laughOrbSpriteHtml('a4', '--i:4', 'laughter'),
     ].join('');
     return;
   }
@@ -5314,7 +5353,7 @@ function renderScreamCanisters(opts = {}) {
     ].join(';');
     const metaCount = s.ipControlled
       ? (compact ? `EIP×${s.ipCount || 1}` : `EIP ${s.ipCount || 1}`)
-      : (mood === 'laughter' ? 'ha' : String(s.count));
+      : (mood === 'laughter' ? '0' : String(s.count));
     const critChip = (!compact && s.critical > 0 && !s.ipControlled)
       ? `<span class="scream-canister-crit" title="${s.critical} critical">${s.critical} crit</span>`
       : '';
@@ -5344,7 +5383,7 @@ function renderScreamCanisters(opts = {}) {
         <div class="scream-canister-capture-fx" aria-hidden="true"><div class="mist-tube"></div></div>
         ${floaties}
         ${s.ipControlled ? '<span class="scream-canister-eip-badge" title="Instruction pointer looks controlled">EIP</span>' : ''}
-        ${mood === 'laughter' ? '<span class="scream-canister-laugh-badge" title="No screams — scare floor laughter">HA</span>' : ''}
+        ${mood === 'laughter' ? '<span class="scream-canister-laugh-badge" title="No screams — scare floor laughter">laughter</span>' : ''}
         ${s.live ? '<span class="scream-canister-live-badge">LIVE</span>' : ''}
       </div>
       <div class="scream-canister-meta">
@@ -6165,34 +6204,44 @@ function initDebuggerProcdumpConflictDialog() {
 initRecordingProfiles();
 initDebuggerProcdumpConflictDialog();
 
+function buildFuzzStartBody({ force = false } = {}) {
+  const debuggerMode = document.getElementById('fuzz-debugger').value;
+  return {
+    configPath: document.getElementById('fuzz-target').value,
+    maxIterations: Number(document.getElementById('fuzz-iterations').value),
+    dryRun: document.getElementById('fuzz-dry-run').checked,
+    coverageGuided: document.getElementById('fuzz-coverage').checked,
+    debuggerMode,
+    debuggerKind: document.getElementById('fuzz-debugger-kind').value,
+    debuggerOpenOnCrash: document.getElementById('fuzz-open-on-crash').checked,
+    cdbAnalyzeCrash: document.getElementById('fuzz-cdb-analyze')?.checked !== false,
+    procmonCapture: document.getElementById('fuzz-procmon')?.checked === true,
+    tcpvconCapture: document.getElementById('fuzz-tcpvcon')?.checked === true,
+    procdumpOnCrash: document.getElementById('fuzz-procdump')?.checked === true,
+    pktmonCapture: document.getElementById('fuzz-pktmon')?.checked === true,
+    tsharkCapture: document.getElementById('fuzz-tshark')?.checked === true,
+    etwCapture: document.getElementById('fuzz-etw')?.checked === true,
+    debugViewCapture: document.getElementById('fuzz-debugview')?.checked === true,
+    sysinternalsSnapshots: document.getElementById('fuzz-sysinternals-snap')?.checked === true,
+    stringsOnCrash: document.getElementById('fuzz-strings-crash')?.checked === true,
+    oraclesEnabled: document.getElementById('fuzz-oracle')?.checked === true,
+    magicianEnabled: document.getElementById('fuzz-magician')?.checked === true,
+    jokerEnabled: document.getElementById('fuzz-joker')?.checked === true,
+    force: !!force,
+  };
+}
+
 document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (startBtn.disabled) return;
+  // Prevent double-submit race (Conflict while STATUS flickers Idle).
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
   // New session only — never clear merely because the user left/returned to Fuzz.
   clearFuzzLog();
+  const debuggerMode = document.getElementById('fuzz-debugger').value;
   try {
-    const debuggerMode = document.getElementById('fuzz-debugger').value;
-    await api.post('/api/fuzz/start', {
-      configPath: document.getElementById('fuzz-target').value,
-      maxIterations: Number(document.getElementById('fuzz-iterations').value),
-      dryRun: document.getElementById('fuzz-dry-run').checked,
-      coverageGuided: document.getElementById('fuzz-coverage').checked,
-      debuggerMode,
-      debuggerKind: document.getElementById('fuzz-debugger-kind').value,
-      debuggerOpenOnCrash: document.getElementById('fuzz-open-on-crash').checked,
-      cdbAnalyzeCrash: document.getElementById('fuzz-cdb-analyze')?.checked !== false,
-      procmonCapture: document.getElementById('fuzz-procmon')?.checked === true,
-      tcpvconCapture: document.getElementById('fuzz-tcpvcon')?.checked === true,
-      procdumpOnCrash: document.getElementById('fuzz-procdump')?.checked === true,
-      pktmonCapture: document.getElementById('fuzz-pktmon')?.checked === true,
-      tsharkCapture: document.getElementById('fuzz-tshark')?.checked === true,
-      etwCapture: document.getElementById('fuzz-etw')?.checked === true,
-      debugViewCapture: document.getElementById('fuzz-debugview')?.checked === true,
-      sysinternalsSnapshots: document.getElementById('fuzz-sysinternals-snap')?.checked === true,
-      stringsOnCrash: document.getElementById('fuzz-strings-crash')?.checked === true,
-      oraclesEnabled: document.getElementById('fuzz-oracle')?.checked === true,
-      magicianEnabled: document.getElementById('fuzz-magician')?.checked === true,
-      jokerEnabled: document.getElementById('fuzz-joker')?.checked === true,
-    });
+    await api.post('/api/fuzz/start', buildFuzzStartBody({ force: false }));
     appendLog('Session accepted…');
     if (debuggerMode === 'none') {
       appendLog(
@@ -6202,7 +6251,36 @@ document.getElementById('fuzz-form').addEventListener('submit', async (e) => {
     }
     applyAttachDbgButtonState({ phase: 'starting', running: true, debuggerMode });
   } catch (err) {
-    appendLog(err.message, 'crash');
+    const msg = err.message || String(err);
+    const conflict = /already running/i.test(msg);
+    if (conflict) {
+      try {
+        const st = await api.get('/api/fuzz/status');
+        if (!isFuzzSessionActive(st)) {
+          appendLogUnique('Stale session lock — force-clearing and retrying…', 'warn');
+          await api.post('/api/fuzz/force-clear', {});
+          await api.post('/api/fuzz/start', buildFuzzStartBody({ force: true }));
+          scrubStickySessionConflictErrors();
+          appendLog('Session accepted after force-clear…');
+          applyAttachDbgButtonState({ phase: 'starting', running: true, debuggerMode });
+          return;
+        }
+        applyFuzzSessionStatus(st);
+        appendLogUnique(
+          'A fuzz session is already running — press Stop, or Force clear if STATUS stays Idle.',
+          'warn',
+        );
+        return;
+      } catch (recoverErr) {
+        appendLog(recoverErr.message || msg, 'crash');
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        return;
+      }
+    }
+    appendLog(msg, 'crash');
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
   }
 });
 
@@ -6218,6 +6296,19 @@ stopBtn.addEventListener('click', async () => {
     try {
       await syncFuzzSession({ fetchLogs: false });
     } catch { /* ignore */ }
+  }
+});
+
+document.getElementById('fuzz-force-clear')?.addEventListener('click', async () => {
+  try {
+    const r = await api.post('/api/fuzz/force-clear', {});
+    scrubStickySessionConflictErrors();
+    applyFuzzSessionStatus(r.status || { running: false, phase: 'idle', lastMessage: r.message });
+    appendLogUnique(r.message || 'Fuzz session force-cleared', 'warn');
+    startBtn.disabled = false;
+    stopBtn.disabled = true;
+  } catch (err) {
+    appendLogUnique(err.message, 'crash');
   }
 });
 

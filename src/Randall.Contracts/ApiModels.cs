@@ -111,7 +111,9 @@ public sealed record FuzzStartRequest(
     /// <summary>Override <c>magician.enabled</c> for this run only (does not rewrite YAML).</summary>
     bool? MagicianEnabled = null,
     /// <summary>Override <c>joker.enabled</c> for this run only (does not rewrite YAML).</summary>
-    bool? JokerEnabled = null);
+    bool? JokerEnabled = null,
+    /// <summary>When true, force-clear any stuck/orphan session before starting.</summary>
+    bool Force = false);
 
 public sealed record FuzzSessionStatusDto(
     bool Running,
