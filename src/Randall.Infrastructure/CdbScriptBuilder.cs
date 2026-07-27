@@ -53,6 +53,8 @@ public static class CdbScriptBuilder
         AppendSection(lines, CdbProbeSection.Regs, "r");
         AppendSection(lines, CdbProbeSection.Stack, "kv");
         AppendSection(lines, CdbProbeSection.Modules, "lm");
+        AppendSection(lines, CdbProbeSection.Instruction, "u @rip L1");
+        AppendSection(lines, CdbProbeSection.Symbol, "ln @rip");
         AppendSection(lines, CdbProbeSection.Disasm, "u @rip-20 @rip+40");
         AppendSection(lines, CdbProbeSection.Memory, "dq @rsp L40");
         AppendSection(lines, CdbProbeSection.Heap, "!heap -s");
@@ -171,6 +173,8 @@ public static class CdbMarkers
             [CdbProbeSection.Regs] = "RANDFUZZ_REGS",
             [CdbProbeSection.Stack] = "RANDFUZZ_STACK",
             [CdbProbeSection.Disasm] = "RANDFUZZ_DISASM",
+            [CdbProbeSection.Instruction] = "RANDFUZZ_INSTRUCTION",
+            [CdbProbeSection.Symbol] = "RANDFUZZ_SYMBOL",
             [CdbProbeSection.Memory] = "RANDFUZZ_MEM",
             [CdbProbeSection.Heap] = "RANDFUZZ_HEAP",
             [CdbProbeSection.PageHeap] = "RANDFUZZ_PAGEHEAP",
@@ -179,5 +183,22 @@ public static class CdbMarkers
             [CdbProbeSection.Exploitable] = "RANDFUZZ_EXPLOITABLE",
             [CdbProbeSection.WaitAttach] = "RANDFUZZ_WAIT_ATTACH",
             [CdbProbeSection.CrashCapture] = "RANDFUZZ_CRASH_CAPTURE",
+        };
+
+    /// <summary>Alternate human-readable markers (===RANDALL_*===) accepted by the parser.</summary>
+    public static IEnumerable<(string Begin, string End)> AlternateMarkers(CdbProbeSection section) =>
+        section switch
+        {
+            CdbProbeSection.Instruction =>
+            [
+                ("===RANDALL_INSTRUCTION===", "===RANDALL_INSTRUCTION_END==="),
+                ("===RANDFUZZ_INSTRUCTION===", "===RANDFUZZ_INSTRUCTION_END==="),
+            ],
+            CdbProbeSection.Symbol =>
+            [
+                ("===RANDALL_SYMBOL===", "===RANDALL_SYMBOL_END==="),
+                ("===RANDFUZZ_SYMBOL===", "===RANDFUZZ_SYMBOL_END==="),
+            ],
+            _ => [],
         };
 }

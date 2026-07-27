@@ -117,6 +117,8 @@ public static partial class WindowsCdbCrashAnalysisWriter
         var exrBlock = transcript.Get(CdbProbeSection.Exception);
         var regsBlock = transcript.Get(CdbProbeSection.Regs);
         var stackBlock = transcript.Get(CdbProbeSection.Stack);
+        var instructionBlock = transcript.Get(CdbProbeSection.Instruction);
+        var symbolBlock = transcript.Get(CdbProbeSection.Symbol);
         var disasmBlock = transcript.Get(CdbProbeSection.Disasm);
         var memBlock = transcript.Get(CdbProbeSection.Memory);
         var lmBlock = transcript.Get(CdbProbeSection.Modules);
@@ -182,7 +184,9 @@ public static partial class WindowsCdbCrashAnalysisWriter
                 addressBlock,
                 exploitableBlock,
                 timedOut,
-                crashSidecar);
+                crashSidecar,
+                instructionBlock,
+                symbolBlock);
         }
         catch
         {

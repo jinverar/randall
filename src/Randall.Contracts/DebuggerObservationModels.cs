@@ -19,6 +19,7 @@ public enum DebuggerAddressClass
     Unknown,
     NullPage,
     SmallOffset,
+    NearNull,
     AsciiPattern,
     NonCanonical,
     ModuleRange,
@@ -26,6 +27,7 @@ public enum DebuggerAddressClass
     Heapish,
     /// <summary>Fault address falls in freed / unallocated heap memory (!address / heap probes).</summary>
     Freed,
+    Invalid,
     Other,
 }
 

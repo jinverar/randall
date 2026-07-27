@@ -24,6 +24,8 @@ public enum CdbProbeSection
     Regs,
     Stack,
     Disasm,
+    Instruction,
+    Symbol,
     Memory,
     Heap,
     PageHeap,

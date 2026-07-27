@@ -35,7 +35,9 @@ When `fuzz.cdbAnalyzeCrash: true` (default, requires `autoAnalyzeCrash`), Randfu
 | Registers | `r` | General-purpose + RIP/RSP snapshot |
 | Stack | `kv` | Call stack for symbolization / stack hash |
 | Modules | `lm` | Image ranges for fault-address class |
-| Disasm | `u @rip-20 @rip+40` | Instruction window at fault PC |
+| Fault insn | `u @rip L1` (between `RANDFUZZ_INSTRUCTION` / `===RANDALL_INSTRUCTION===` markers) | Single faulting instruction — ignore symbol-path noise outside markers |
+| Symbol | `ln @rip` (marker-bounded) | Resolve RIP → `module!function+offset` |
+| Disasm | `u @rip-20 @rip+40` | Wider instruction window at fault PC |
 | Stack memory | `dq @rsp L40` | QWORDs near stack pointer |
 | Heap (best-effort) | `!heap -s` | Heap corruption / UAF hints |
 | Address (best-effort) | `!address $exceptioninformation[1]` | Region type (stack/heap/free/image) |
@@ -72,6 +74,13 @@ When the crashing input is available beside the canister, `InputAttributionEngin
 | `SuspectedMutatorStep` | 0-based lineage index — prefers expand/insert over last-mutator-only when ASCII/write AV evidence supports it |
 | `Narrative` | Research triage story: `field → register → sink → write/read AV → heap` (e.g. controlled write, length→memcpy-style when `!func` / disasm support it) |
 | `AttributionScreamBonus` | Extra 0–18 ScreamScore when confidence is HIGH/MEDIUM and write AV + controlled pointer + heap signals align |
+
+**Honesty rules (debugger over-claiming):**
+
+- **Address class:** `0x0` → `NULL` (`NullPage`); `0x1`–`0xFFFF` → `NEAR_NULL` (`NearNull`). Numeric null/near-null always wins over noisy `!address` HEAP text.
+- **Zero-value attribution suppressed:** register values `0`, `1`, `2`, `4`, `8`, `16`, `0xFFFFFFFF` are excluded from raw `input.find` attribution (reason: *NULL/low value excluded from raw input-value attribution*).
+- **Controlled write / R5:** do not claim controlled write or promote `InputInfluencedWrite` to Confirmed / R5 from zero-coincidence alone — require counterfactual/delta evidence or a strong non-zero pattern (e.g. `0x41414141`). Null-write-only caps maturity at R4.
+- **Root cause:** null write alone → LOW–MEDIUM leading hypothesis (“NULL/invalid destination reached a write”), not “Parser state error HIGH”. Page Heap detected ≠ UAF.
 
 `DebuggerObservation.RegisterMatches` / `PrimaryRegisterMatch` may be pre-filled by the headless CDB script; otherwise Scream Investigator and `CorruptionChainBuilder` compute them from `RegistersText` + input file. Investigation UI shows the narrative, register table, attributed mutation step, and bonus. **Research only** — no exploit payloads.
 

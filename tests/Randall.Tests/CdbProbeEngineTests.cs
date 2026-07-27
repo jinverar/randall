@@ -17,7 +17,10 @@ public class CdbProbeEngineTests
         Assert.Contains(".ecxr", script, StringComparison.Ordinal);
         Assert.Contains(" kv", script, StringComparison.Ordinal);
         Assert.Contains(" lm", script, StringComparison.Ordinal);
+        Assert.Contains("u @rip L1", script, StringComparison.Ordinal);
+        Assert.Contains("ln @rip", script, StringComparison.Ordinal);
         Assert.Contains("u @rip-20 @rip+40", script, StringComparison.Ordinal);
+        Assert.Contains(CdbMarkers.Begin(CdbProbeSection.Instruction), script, StringComparison.Ordinal);
         Assert.Contains("dq @rsp L40", script, StringComparison.Ordinal);
         Assert.Contains("!heap", script, StringComparison.Ordinal);
         Assert.Contains("!address", script, StringComparison.Ordinal);

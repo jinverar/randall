@@ -106,6 +106,8 @@ public static partial class ScreamInvestigator
         var exr = transcript.Get(CdbProbeSection.Exception);
         var regs = transcript.Get(CdbProbeSection.Regs);
         var stack = transcript.Get(CdbProbeSection.Stack);
+        var instruction = transcript.Get(CdbProbeSection.Instruction);
+        var symbol = transcript.Get(CdbProbeSection.Symbol);
         var disasm = transcript.Get(CdbProbeSection.Disasm);
         var mem = transcript.Get(CdbProbeSection.Memory);
         var lm = transcript.Get(CdbProbeSection.Modules);
@@ -129,7 +131,8 @@ public static partial class ScreamInvestigator
             dumpPath, obsPath, analyze, exr, regs, stack, disasm, mem, lm, heap, address, exploitable, timedOut, sidecar,
             timedOut
                 ? $"cdb investigator timed out after {timeoutMs}ms — partial probes saved"
-                : null);
+                : null,
+            instruction, symbol);
         Write(obsPath, obs);
         return obs;
     }
@@ -153,12 +156,15 @@ public static partial class ScreamInvestigator
         string address,
         string exploitable,
         bool timedOut,
-        CrashSidecarDto? sidecar)
+        CrashSidecarDto? sidecar,
+        string? instruction = null,
+        string? symbol = null)
     {
         var obsPath = ObservationPathFor(crashesDir, crashId);
         var obs = BuildFromBlocks(
             dumpPath, obsPath, analyze, exr, regs, stack, disasm, mem, lm, heap, address, exploitable, timedOut, sidecar,
-            timedOut ? "cdb investigator timed out — partial probes saved" : null);
+            timedOut ? "cdb investigator timed out — partial probes saved" : null,
+            instruction, symbol);
         Write(obsPath, obs);
         return obs;
     }
@@ -175,7 +181,9 @@ public static partial class ScreamInvestigator
         string? heap = null,
         string? address = null,
         string? exploitable = null,
-        CrashSidecarDto? sidecar = null) =>
+        CrashSidecarDto? sidecar = null,
+        string? instruction = null,
+        string? symbol = null) =>
         BuildFromBlocks(
             dumpPath: null,
             obsPath: null,
@@ -191,7 +199,9 @@ public static partial class ScreamInvestigator
             exploitable: exploitable ?? "",
             timedOut: false,
             sidecar: sidecar,
-            error: null);
+            error: null,
+            instruction: instruction,
+            symbol: symbol);
 
     private static DebuggerObservation BuildFromBlocks(
         string? dumpPath,
@@ -208,7 +218,9 @@ public static partial class ScreamInvestigator
         string exploitable,
         bool timedOut,
         CrashSidecarDto? sidecar,
-        string? error)
+        string? error,
+        string? instruction = null,
+        string? symbol = null)
     {
         var parsed = WindowsCdbCrashAnalysisWriter.ParseAnalyzeOutput(analyze);
         var exp = WindowsCdbCrashAnalysisWriter.ParseExploitableOutput(exploitable);
@@ -218,7 +230,7 @@ public static partial class ScreamInvestigator
         var addrClass = ClassifyAddress(faultAddr, address, heap, lm);
         var rip = ExtractRip(regs, analyze) ?? faultAddr;
         var frames = ParseStackFrames(stack);
-        var (fn, mod, fnOff) = InferFaultingSymbol(frames, parsed.FaultModule, analyze);
+        var (fn, mod, fnOff) = InferFaultingSymbol(frames, parsed.FaultModule, analyze, symbol);
         var stackHash = HashStack(frames);
         var inputInfluence = InferInputInfluence(faultAddr, addrClass, regs, sidecar);
         var heapSignal = InferHeapSignal(analyze, exploitable, heap, address, exp.Classification);
@@ -233,7 +245,10 @@ public static partial class ScreamInvestigator
         }
 
         var registerMatches = FindRegisterMatches(payload, faultAddr, rip, regs);
-        if (registerMatches.Count > 0 && inputInfluence is "UNKNOWN" or "MEDIUM")
+        if (registerMatches.Count > 0
+            && registerMatches.Any(m => m.MatchKind == "ascii"
+                                        || !InputAttributionEngine.IsExcludedFromRawInputAttribution(m.ValueHex))
+            && inputInfluence is "UNKNOWN" or "MEDIUM")
             inputInfluence = "HIGH";
 
         var primaryRegister = InputAttributionEngine.PickPrimaryMatch(registerMatches, null)?.Register;
@@ -247,7 +262,12 @@ public static partial class ScreamInvestigator
 
         var ok = !timedOut && (!string.IsNullOrWhiteSpace(parsed.ExceptionCode)
                                || !string.IsNullOrWhiteSpace(faultAddr)
-                               || frames.Count > 0);
+                               || frames.Count > 0
+                               || !string.IsNullOrWhiteSpace(fn));
+
+        var disasmCombined = string.IsNullOrWhiteSpace(instruction)
+            ? disasm
+            : string.IsNullOrWhiteSpace(disasm) ? instruction : instruction + "\n" + disasm;
 
         return new DebuggerObservation(
             Ok: ok,
@@ -265,7 +285,7 @@ public static partial class ScreamInvestigator
             Stack: frames,
             StackHash: stackHash,
             RegistersText: Truncate(regs, 1200),
-            DisasmNearRip: Truncate(disasm, 1600),
+            DisasmNearRip: Truncate(disasmCombined, 1600),
             MemoryNearRsp: Truncate(mem, 1200),
             ModulesText: Truncate(lm, 1200),
             HeapProbeText: Truncate(heap, 1200),
@@ -428,6 +448,7 @@ public static partial class ScreamInvestigator
 
     /// <summary>
     /// Classify fault address using numeric heuristics plus optional CDB <c>!address</c>, <c>!heap</c>, and <c>lm</c> probes.
+    /// Numeric NULL / NEAR_NULL always win over noisy <c>!address</c> HEAP text.
     /// </summary>
     public static DebuggerAddressClass ClassifyAddress(
         string? addr,
@@ -435,25 +456,36 @@ public static partial class ScreamInvestigator
         string? heapProbe,
         string? modules)
     {
-        if (!string.IsNullOrWhiteSpace(addressQuery))
+        if (string.IsNullOrWhiteSpace(addr) || addr.Contains('?', StringComparison.Ordinal))
         {
-            var fromQuery = ClassifyFromAddressQuery(addressQuery);
-            if (fromQuery != DebuggerAddressClass.Unknown)
-                return fromQuery;
+            if (!string.IsNullOrWhiteSpace(addressQuery))
+            {
+                var fromQueryOnly = ClassifyFromAddressQuery(addressQuery, numericHint: null);
+                if (fromQueryOnly != DebuggerAddressClass.Unknown)
+                    return fromQueryOnly;
+            }
+
+            return DebuggerAddressClass.Unknown;
         }
 
-        if (string.IsNullOrWhiteSpace(addr) || addr.Contains('?', StringComparison.Ordinal))
-            return DebuggerAddressClass.Unknown;
         if (!TryParseUlong(addr, out var v))
             return DebuggerAddressClass.Other;
 
-        if (v < 0x1000)
+        // Honesty gate: 0x0 is NULL; 0x1–0xFFFF is NEAR_NULL — never Heapish from !address noise.
+        if (v == 0)
             return DebuggerAddressClass.NullPage;
-        if (v < 0x10000)
-            return DebuggerAddressClass.SmallOffset;
+        if (v <= 0xFFFFUL)
+            return DebuggerAddressClass.NearNull;
 
         if (IsAsciiPattern(v))
             return DebuggerAddressClass.AsciiPattern;
+
+        if (!string.IsNullOrWhiteSpace(addressQuery))
+        {
+            var fromQuery = ClassifyFromAddressQuery(addressQuery, v);
+            if (fromQuery != DebuggerAddressClass.Unknown)
+                return fromQuery;
+        }
 
         if (v > 0x00007FFFFFFFFFFFUL && v < 0xFFFF800000000000UL)
             return DebuggerAddressClass.NonCanonical;
@@ -475,7 +507,7 @@ public static partial class ScreamInvestigator
         return DebuggerAddressClass.Other;
     }
 
-    private static DebuggerAddressClass ClassifyFromAddressQuery(string addressQuery)
+    private static DebuggerAddressClass ClassifyFromAddressQuery(string addressQuery, ulong? numericHint)
     {
         if (Regex.IsMatch(addressQuery, @"Region\s+Type:\s*Stack|Type:\s*Stack\b", RegexOptions.IgnoreCase))
             return DebuggerAddressClass.Stackish;
@@ -488,9 +520,32 @@ public static partial class ScreamInvestigator
         if (Regex.IsMatch(addressQuery, @"MEM_IMAGE|\bImage\b|Mapped\s+file|Module\s+name", RegexOptions.IgnoreCase))
             return DebuggerAddressClass.ModuleRange;
         if (Regex.IsMatch(addressQuery, @"Invalid\s+address|No\s+memory|not\s+mapped", RegexOptions.IgnoreCase))
-            return DebuggerAddressClass.NullPage;
+        {
+            if (numericHint is 0)
+                return DebuggerAddressClass.NullPage;
+            if (numericHint is > 0 and <= 0xFFFFUL)
+                return DebuggerAddressClass.NearNull;
+            return DebuggerAddressClass.Invalid;
+        }
+
         return DebuggerAddressClass.Unknown;
     }
+
+    /// <summary>Human label for address class (NULL / NEAR_NULL / HEAP / …).</summary>
+    public static string FormatAddressClass(DebuggerAddressClass addrClass) => addrClass switch
+    {
+        DebuggerAddressClass.NullPage => "NULL",
+        DebuggerAddressClass.NearNull or DebuggerAddressClass.SmallOffset => "NEAR_NULL",
+        DebuggerAddressClass.AsciiPattern => "PATTERN",
+        DebuggerAddressClass.Heapish => "HEAP",
+        DebuggerAddressClass.Stackish => "STACK",
+        DebuggerAddressClass.ModuleRange => "IMAGE",
+        DebuggerAddressClass.Freed => "FREED",
+        DebuggerAddressClass.Invalid => "INVALID",
+        DebuggerAddressClass.NonCanonical => "NON_CANONICAL",
+        DebuggerAddressClass.Other => "OTHER",
+        _ => "UNKNOWN",
+    };
 
     private static bool IsAsciiPattern(ulong v)
     {
@@ -580,12 +635,18 @@ public static partial class ScreamInvestigator
     private static (string? Function, string? Module, string? Offset) InferFaultingSymbol(
         IReadOnlyList<DebuggerStackFrameDto> frames,
         string? analyzeModule,
-        string analyze)
+        string analyze,
+        string? symbolLn = null)
     {
+        var fromLn = ParseLnSymbol(symbolLn);
+        if (fromLn.Function is not null && !IsGarbageSymbol(fromLn.Function, fromLn.Module))
+            return fromLn;
+
         if (frames.Count > 0)
         {
             var f0 = frames[0];
-            return (f0.Symbol, f0.Module ?? analyzeModule, f0.Offset);
+            if (!IsGarbageSymbol(f0.Symbol, f0.Module))
+                return (f0.Symbol, f0.Module ?? analyzeModule, f0.Offset);
         }
 
         var m = Regex.Match(analyze, @"FAULTING_SOURCE_CODE:[\s\S]*?(\w+)!(\w+)\+0x([0-9A-Fa-f]+)",
@@ -593,8 +654,70 @@ public static partial class ScreamInvestigator
         if (m.Success)
             return (m.Groups[2].Value, m.Groups[1].Value, "+0x" + m.Groups[3].Value);
 
+        var ipSym = Regex.Match(analyze,
+            @"FAULTING_IP:\s*\S*\s+(\w+)!(\w+)(?:\+0x([0-9A-Fa-f]+))?",
+            RegexOptions.IgnoreCase);
+        if (ipSym.Success && !IsGarbageSymbol(ipSym.Groups[2].Value, ipSym.Groups[1].Value))
+        {
+            var off = ipSym.Groups[3].Success ? "+0x" + ipSym.Groups[3].Value : null;
+            return (ipSym.Groups[2].Value, ipSym.Groups[1].Value, off);
+        }
+
         return (null, analyzeModule, null);
     }
+
+    /// <summary>Parse <c>ln @rip</c> marker block into module!function+offset.</summary>
+    internal static (string? Function, string? Module, string? Offset) ParseLnSymbol(string? lnText)
+    {
+        if (string.IsNullOrWhiteSpace(lnText))
+            return (null, null, null);
+
+        foreach (var raw in lnText.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0 || LooksLikeCdbNoise(line))
+                continue;
+
+            var m = Regex.Match(line,
+                @"(?<mod>[\w.\-]+)\!(?<fn>[\w$?@]+|`[^`]+`)(?:\+(?<off>0x[0-9A-Fa-f]+))?",
+                RegexOptions.IgnoreCase);
+            if (!m.Success)
+                continue;
+
+            var mod = m.Groups["mod"].Value;
+            var fn = m.Groups["fn"].Value.Trim('`');
+            if (IsGarbageSymbol(fn, mod))
+                continue;
+
+            var off = m.Groups["off"].Success ? "+" + m.Groups["off"].Value : null;
+            return (fn, mod, off);
+        }
+
+        return (null, null, null);
+    }
+
+    internal static bool IsGarbageSymbol(string? function, string? module = null)
+    {
+        if (string.IsNullOrWhiteSpace(function))
+            return true;
+        var fn = function.Trim();
+        if (fn is ":" or "?" or "!:" or "?!" or "!" or "*")
+            return true;
+        if (fn.Contains("Expanded Symbol", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (fn.Contains("Symbol search path", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (module is "!" or "?" or "")
+            return true;
+        return false;
+    }
+
+    internal static bool LooksLikeCdbNoise(string line) =>
+        line.Contains("Expanded Symbol search path", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("Symbol search path is", StringComparison.OrdinalIgnoreCase)
+        || line.Contains("*************", StringComparison.Ordinal)
+        || line.StartsWith("Loading symbols", StringComparison.OrdinalIgnoreCase)
+        || line.StartsWith("Unable to load", StringComparison.OrdinalIgnoreCase);
 
     private static string? HashStack(IReadOnlyList<DebuggerStackFrameDto> frames)
     {
@@ -623,7 +746,9 @@ public static partial class ScreamInvestigator
             || mut.Contains("insert", StringComparison.OrdinalIgnoreCase)
             || mut.Contains("havoc", StringComparison.OrdinalIgnoreCase))
         {
-            if (addrClass is DebuggerAddressClass.NullPage or DebuggerAddressClass.SmallOffset)
+            if (addrClass is DebuggerAddressClass.NullPage
+                or DebuggerAddressClass.NearNull
+                or DebuggerAddressClass.SmallOffset)
                 return "MEDIUM";
             return "MEDIUM";
         }
@@ -642,14 +767,24 @@ public static partial class ScreamInvestigator
         string? classification)
     {
         var blob = analyze + "\n" + exploitable + "\n" + heapProbe + "\n" + addressQuery;
-        if (Regex.IsMatch(blob, @"use.?after.?free|UAF|freed\s+heap|Free\s+memory", RegexOptions.IgnoreCase))
+        // Page Heap detected ≠ UAF. Require poison / freed-block / explicit UAF language.
+        if (HasExplicitUafIndicator(blob))
             return "USE_AFTER_FREE";
-        if (Regex.IsMatch(blob, @"heap.?corrupt|HEAP_CORRUPTION|invalid heap|!heap", RegexOptions.IgnoreCase))
+        if (Regex.IsMatch(blob, @"heap.?corrupt|HEAP_CORRUPTION|invalid heap", RegexOptions.IgnoreCase))
             return "HEAP_CORRUPTION";
         if (classification?.Contains("HEAP", StringComparison.OrdinalIgnoreCase) == true)
             return "HEAP_SIGNAL";
         return null;
     }
+
+    /// <summary>
+    /// True only for explicit UAF / freed-block / poison indicators.
+    /// Bare "page heap" / "!heap -p" clutter alone is not enough.
+    /// </summary>
+    internal static bool HasExplicitUafIndicator(string blob) =>
+        Regex.IsMatch(blob,
+            @"use.?after.?free|\bUAF\b|freed\s+heap|Free\s+memory|FEEEFEEE|0xFEEEFEEE|dangling\s+pointer|previously\s+freed|block\s+is\s+free",
+            RegexOptions.IgnoreCase);
 
     private static string InferExploitHint(
         string? classification,
@@ -725,7 +860,7 @@ public static partial class ScreamInvestigator
         IReadOnlyList<RegisterPayloadMatchDto> registerMatches,
         string? primaryRegister)
     {
-        var where = fn is not null
+        var where = fn is not null && !IsGarbageSymbol(fn, mod)
             ? $"{mod ?? "?"}!{fn}{fnOff ?? ""}"
             : faultAddr ?? parsed.FaultAddress ?? "unknown RIP";
 
@@ -741,7 +876,7 @@ public static partial class ScreamInvestigator
         var sb = new StringBuilder();
         sb.Append($"{accessWord} {hint} in {where}.");
         if (faultAddr is not null)
-            sb.Append($" Fault address {faultAddr} ({addrClass}).");
+            sb.Append($" Fault address {faultAddr} ({FormatAddressClass(addrClass)}).");
         if (heapSignal is not null)
             sb.Append($" Heap signal: {heapSignal}.");
         if (sidecar?.Command is not null || sidecar?.Mutator is not null)
@@ -755,8 +890,21 @@ public static partial class ScreamInvestigator
             sb.Append($" Input attribution: {primary.Register}={primary.ValueHex} at payload+{primary.PayloadOffset} ({primary.MatchKind}).");
             if (access == DebuggerAccessKind.Write && primary.MatchKind == "ascii")
                 sb.Append(" Controlled write — ASCII pointer from input.");
-            else if (access == DebuggerAccessKind.Write)
+            else if (access == DebuggerAccessKind.Write
+                     && InputAttributionEngine.IsStrongNonZeroPattern(primary.ValueHex))
                 sb.Append(" Controlled write — register value from input.");
+            else if (access == DebuggerAccessKind.Write
+                     && addrClass is DebuggerAddressClass.NullPage
+                         or DebuggerAddressClass.NearNull
+                         or DebuggerAddressClass.SmallOffset)
+                sb.Append(" Null/invalid destination write observed — not claiming controlled write from zero-coincidence.");
+        }
+        else if (access == DebuggerAccessKind.Write
+                 && addrClass is DebuggerAddressClass.NullPage
+                     or DebuggerAddressClass.NearNull
+                     or DebuggerAddressClass.SmallOffset)
+        {
+            sb.Append(" Null/invalid destination reached a write — leading hypothesis only.");
         }
 
         if (inputInfluence is "HIGH" or "MEDIUM")

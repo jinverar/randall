@@ -417,6 +417,7 @@ Research-only layers for EXP-301 / SEC760-style benches — **no weaponized expl
 | **Influence** | `{guid}_influence.json` | ✅ input region → state links |
 | **Primitive** | `{guid}_primitives.json` | ✅ Wave 2 — capability assessment + R0–R7 engine + UI scale |
 | **Research Planner + Skeptic** | `{guid}_research_plan.json` · `_skeptic.json` | ✅ Wave 3 foundations |
+| **Debugger honesty** | NULL/NEAR_NULL; zero-value attribution suppressed; R5 needs counterfactual/strong pattern | ✅ see [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md) |
 | **ExploitabilityAdvisor** | `{guid}_exploitability_advisor.json` | ✅ teaching packages only |
 | **Instructor levels 0–6** | `InstructorAssistance` · prefs/UI | ✅ extends Wave 5 boolean |
 | **Patch / Temporal / Barriers / SIL / Package** | see [ROADMAP_RESEARCH_WORKBENCH.md](ROADMAP_RESEARCH_WORKBENCH.md) | ✅ overnight stubs |

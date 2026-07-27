@@ -114,6 +114,8 @@ public static class CrashTriage
         {
             if (string.IsNullOrWhiteSpace(addr))
                 continue;
+            if (InputAttributionEngine.IsExcludedFromRawInputAttribution(addr))
+                continue;
             var needle = InputAttributionEngine.AddrToLittleEndianBytes(addr, 4);
             if (needle is null)
                 continue;

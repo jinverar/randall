@@ -19,8 +19,8 @@
     },
     "addressClass": {
       "enum": [
-        "Unknown", "NullPage", "SmallOffset", "AsciiPattern", "NonCanonical",
-        "ModuleRange", "Stackish", "Heapish", "Freed", "Other"
+        "Unknown", "NullPage", "SmallOffset", "NearNull", "AsciiPattern", "NonCanonical",
+        "ModuleRange", "Stackish", "Heapish", "Freed", "Invalid", "Other"
       ]
     },
     "inputInfluence": {

@@ -74,7 +74,7 @@ public static class HeapCdbLens
             var lines = report.SummaryLines.ToList();
             if (pageHeap)
                 lines.Insert(Math.Min(2, lines.Count),
-                    "Hint: Page Heap active or page-heap clutter in dump — strong UAF signal path.");
+                    "Hint: Page Heap active — helpful for heap bugs, but Page Heap ≠ UAF (need freed-block/poison/guard indicators).");
             foreach (var s in summary.Take(3))
             {
                 if (!lines.Contains(s))

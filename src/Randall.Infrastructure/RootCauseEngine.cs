@@ -196,19 +196,25 @@ public static class RootCauseEngine
             && chain?.RegisterMatches is not { Count: > 0 })
             Bump(RootCauseCategory.Uninitialized, 28);
 
-        if (debugger?.FaultAddressClass is DebuggerAddressClass.AsciiPattern
-            or DebuggerAddressClass.SmallOffset
-            || chain?.PatternDepthBytes is not null
-            || debugger?.SuspectedInputInfluence == "HIGH")
+        var nullWriteOnly = IsNullOrNearNullWrite(debugger)
+                            && !HasStrongNonZeroControlEvidence(debugger, chain);
+
+        if (!nullWriteOnly
+            && (debugger?.FaultAddressClass is DebuggerAddressClass.AsciiPattern
+                    or DebuggerAddressClass.NearNull
+                    or DebuggerAddressClass.SmallOffset
+                || chain?.PatternDepthBytes is not null
+                || debugger?.SuspectedInputInfluence == "HIGH"))
         {
-            // Ascii-pattern write / register-controlled smash outranks parser-name
-            // heuristics (e.g. faulting fn "Parse") — classic bounds story.
             var pts = 25;
             if (debugger?.FaultAddressClass == DebuggerAddressClass.AsciiPattern
                 && (debugger.Access == DebuggerAccessKind.Write
                     || chain?.RegisterMatches is { Count: > 0 }
                     || debugger.SuspectedInputInfluence == "HIGH"))
                 pts += 10;
+            if (debugger?.FaultAddressClass is DebuggerAddressClass.NearNull
+                    or DebuggerAddressClass.SmallOffset)
+                pts = Math.Min(pts, 12);
             Bump(RootCauseCategory.BoundsViolation, pts);
         }
 
@@ -218,10 +224,13 @@ public static class RootCauseEngine
         if (LooksLikeIntegerConversion(chain, sidecar, facts))
             Bump(RootCauseCategory.IntegerConversion, 22);
 
-        if (LooksLikeParserState(debugger, triage, sidecar))
+        if (!nullWriteOnly && LooksLikeParserState(debugger, triage, sidecar))
             Bump(RootCauseCategory.ParserState, 26);
 
-        if (LooksLikeFormatInterpretation(debugger, chain, sidecar))
+        if (nullWriteOnly)
+            Bump(RootCauseCategory.Uninitialized, 18);
+
+        if (!nullWriteOnly && LooksLikeFormatInterpretation(debugger, chain, sidecar))
             Bump(RootCauseCategory.FormatInterpretation, 24);
 
         if (debugger?.FaultAddressClass == DebuggerAddressClass.Heapish
@@ -283,7 +292,36 @@ public static class RootCauseEngine
             || fn.Contains("lex", StringComparison.Ordinal)
             || fn.Contains("token", StringComparison.Ordinal))
             return true;
-        return !string.IsNullOrWhiteSpace(sidecar?.Command);
+        return !string.IsNullOrWhiteSpace(sidecar?.Command)
+               && debugger?.FaultAddressClass is DebuggerAddressClass.AsciiPattern
+                   or DebuggerAddressClass.Heapish
+                   or DebuggerAddressClass.Stackish;
+    }
+
+    internal static bool IsNullOrNearNullWrite(DebuggerObservation? debugger) =>
+        debugger is { Access: DebuggerAccessKind.Write }
+        && debugger.FaultAddressClass is DebuggerAddressClass.NullPage
+            or DebuggerAddressClass.NearNull
+            or DebuggerAddressClass.SmallOffset;
+
+    internal static bool HasStrongNonZeroControlEvidence(
+        DebuggerObservation? debugger,
+        CrashCorruptionChainDto? chain)
+    {
+        if (debugger?.FaultAddressClass == DebuggerAddressClass.AsciiPattern)
+            return true;
+        if (debugger?.RegisterMatches?.Any(m =>
+                m.MatchKind == "ascii"
+                || InputAttributionEngine.IsStrongNonZeroPattern(m.ValueHex)) == true)
+            return true;
+        if (chain?.RegisterMatches?.Any(m =>
+                m.MatchKind == "ascii"
+                || InputAttributionEngine.IsStrongNonZeroPattern(m.ValueHex)) == true)
+            return true;
+        if (debugger?.FaultAddress is { } fa
+            && InputAttributionEngine.IsStrongNonZeroPattern(fa))
+            return true;
+        return false;
     }
 
     private static bool LooksLikeFormatInterpretation(
@@ -378,7 +416,9 @@ public static class RootCauseEngine
                 list.Add("Structured field bytes were interpreted as pointer/length without validation");
                 break;
             case RootCauseCategory.Uninitialized:
-                list.Add("Read through null or small offset suggests missing initialization or unchecked null deref");
+                list.Add(debugger?.Access == DebuggerAccessKind.Write
+                    ? "NULL/invalid destination reached a write — leading hypothesis only until counterfactual/delta evidence"
+                    : "Read through null or small offset suggests missing initialization or unchecked null deref");
                 break;
             case RootCauseCategory.UnexpectedObjectState:
                 list.Add("Heap/object metadata inconsistent — corruption may precede the visible fault");
@@ -389,9 +429,11 @@ public static class RootCauseEngine
             list.Add($"Mutation `{mut}` most likely introduced the controlling bytes");
         if (trace?.SuspectedMutator is { } tm && tm != chain?.SuspectedMutator)
             list.Add($"Backward trace attributes `{tm}` as the introducing step");
-        if (debugger?.Access is DebuggerAccessKind.Write)
+        if (debugger?.Access is DebuggerAccessKind.Write && !IsNullOrNearNullWrite(debugger))
             list.Add("Write AV implies attacker-controlled store — prioritize length/index hypotheses");
-        if (!string.IsNullOrWhiteSpace(sidecar?.Command))
+        else if (IsNullOrNearNullWrite(debugger))
+            list.Add("Null/invalid destination write — do not assume controlled store from zero-coincidence");
+        if (!string.IsNullOrWhiteSpace(sidecar?.Command) && !IsNullOrNearNullWrite(debugger))
             list.Add($"Session node `{sidecar.Command}` may scope which field was mutated");
 
         return list;
@@ -409,7 +451,7 @@ public static class RootCauseEngine
         sb.Append($"**{catLabel}** ({candidate.Confidence} confidence). ");
 
         if (!string.IsNullOrWhiteSpace(debugger?.FaultAddress))
-            sb.Append($"Fault address `{debugger.FaultAddress}` ({debugger.FaultAddressClass}). ");
+            sb.Append($"Fault address `{debugger.FaultAddress}` ({ScreamInvestigator.FormatAddressClass(debugger.FaultAddressClass)}). ");
 
         if (!string.IsNullOrWhiteSpace(candidate.InputRegion))
             sb.Append($"Fuzz input region **{candidate.InputRegion}** appears to influence the fault. ");
@@ -538,13 +580,25 @@ public static class RootCauseEngine
         if (category == RootCauseCategory.Unknown)
             return "UNKNOWN";
 
+        if (IsNullOrNearNullWrite(debugger) && !HasStrongNonZeroControlEvidence(debugger, chain))
+        {
+            return category is RootCauseCategory.Uninitialized or RootCauseCategory.Unknown
+                ? "LOW"
+                : "MEDIUM";
+        }
+
         var score = 0;
         if (debugger is { Ok: true }) score += 25;
         if (chain is { Ok: true }) score += ScoreBase(chain.Confidence) / 2;
         if (trace is { Ok: true }) score += ScoreBase(trace.Confidence) / 3;
         if (facts.Count >= 6) score += 10;
-        if (chain?.RegisterMatches is { Count: > 0 }) score += 12;
-        if (debugger?.SuspectedInputInfluence == "HIGH") score += 8;
+        if (chain?.RegisterMatches is { Count: > 0 }
+            && chain.RegisterMatches.Any(m =>
+                !InputAttributionEngine.IsExcludedFromRawInputAttribution(m.ValueHex)))
+            score += 12;
+        if (debugger?.SuspectedInputInfluence == "HIGH"
+            && HasStrongNonZeroControlEvidence(debugger, chain))
+            score += 8;
 
         return score switch
         {

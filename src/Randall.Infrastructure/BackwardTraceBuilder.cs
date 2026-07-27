@@ -261,20 +261,26 @@ public static partial class BackwardTraceBuilder
         if (string.IsNullOrWhiteSpace(dbg?.DisasmNearRip))
             return null;
 
+        string? firstGood = null;
         foreach (var line in dbg.DisasmNearRip.Split('\n'))
         {
             var trimmed = line.Trim();
-            if (trimmed.Length == 0)
+            if (trimmed.Length == 0 || ScreamInvestigator.LooksLikeCdbNoise(trimmed))
                 continue;
 
-            if (dbg.Rip is not null && trimmed.Contains(dbg.Rip, StringComparison.OrdinalIgnoreCase))
-                return trimmed;
+            if (FaultInstrLine().IsMatch(trimmed)
+                || Regex.IsMatch(trimmed, @"^[0-9A-Fa-f`]{4,}\s+([0-9A-Fa-f]{2}\s+)+[A-Za-z]", RegexOptions.IgnoreCase))
+            {
+                if (dbg.Rip is not null
+                    && trimmed.Contains(dbg.Rip.Replace("0x", "", StringComparison.OrdinalIgnoreCase),
+                        StringComparison.OrdinalIgnoreCase))
+                    return trimmed;
 
-            if (FaultInstrLine().IsMatch(trimmed))
-                return trimmed;
+                firstGood ??= trimmed;
+            }
         }
 
-        return dbg.DisasmNearRip.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+        return firstGood;
     }
 
     private static string BuildStory(

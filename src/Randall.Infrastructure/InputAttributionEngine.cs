@@ -158,8 +158,33 @@ public static partial class InputAttributionEngine
         return map;
     }
 
+    public const string LowValueExclusionReason =
+        "NULL/low value excluded from raw input-value attribution";
+
+    public static bool IsExcludedFromRawInputAttribution(string? addr)
+    {
+        if (string.IsNullOrWhiteSpace(addr) || !TryParseUlong(addr, out var v))
+            return false;
+        var lo = v & 0xFFFFFFFFUL;
+        if (lo is 0 or 1 or 2 or 4 or 8 or 16 or 0xFFFFFFFFUL)
+            return true;
+        if (v is 0 or 1 or 2 or 4 or 8 or 16)
+            return true;
+        return false;
+    }
+
+    public static bool IsStrongNonZeroPattern(string? addr)
+    {
+        if (string.IsNullOrWhiteSpace(addr) || IsExcludedFromRawInputAttribution(addr))
+            return false;
+        return LooksLikeAsciiPattern(addr);
+    }
+
     public static RegisterPayloadMatchDto? MatchRegisterToPayload(string register, string addr, byte[] payload)
     {
+        if (IsExcludedFromRawInputAttribution(addr))
+            return null;
+
         if (LooksLikeAsciiPattern(addr))
         {
             var needle = AddrToLittleEndianBytes(addr, 4);
@@ -480,6 +505,12 @@ public static partial class InputAttributionEngine
             return "read/recv boundary";
         if (fn.Contains("write") || fn.Contains("send"))
             return "write/send path";
+        if (dbg.Access == DebuggerAccessKind.Write
+            && dbg.FaultAddressClass is (DebuggerAddressClass.NullPage
+                or DebuggerAddressClass.NearNull
+                or DebuggerAddressClass.SmallOffset)
+            && !IsStrongNonZeroPattern(dbg.FaultAddress))
+            return "null/invalid destination write";
         if (dbg.Access == DebuggerAccessKind.Write)
             return "controlled write";
         if (dbg.Access == DebuggerAccessKind.Read)

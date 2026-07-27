@@ -7,6 +7,15 @@ namespace Randall.Tests;
 public class InputAttributionEngineTests
 {
     [Fact]
+    public void MatchRegisterToPayload_documents_low_value_exclusion_reason()
+    {
+        Assert.Equal(
+            "NULL/low value excluded from raw input-value attribution",
+            InputAttributionEngine.LowValueExclusionReason);
+        Assert.Null(InputAttributionEngine.MatchRegisterToPayload("rcx", "0x0", new byte[64]));
+    }
+
+    [Fact]
     public void FindRegisterMatches_finds_ascii_dword_in_payload()
     {
         var payload = new byte[64];

@@ -15,7 +15,8 @@ public sealed record CdbTranscript(
 }
 
 /// <summary>
-/// Extract <c>RANDFUZZ_*</c> blocks from CDB stdout; regex fallback for legacy transcripts without markers.
+/// Extract <c>RANDFUZZ_*</c> / <c>===RANDALL_*</c> blocks from CDB stdout;
+/// regex fallback for legacy transcripts without markers.
 /// </summary>
 public static class CdbMarkerParser
 {
@@ -24,7 +25,7 @@ public static class CdbMarkerParser
         var sections = new Dictionary<CdbProbeSection, string>();
         foreach (CdbProbeSection section in Enum.GetValues<CdbProbeSection>())
         {
-            var block = ExtractBlock(text, CdbMarkers.Begin(section), CdbMarkers.End(section));
+            var block = ExtractSection(text, section);
             if (!string.IsNullOrWhiteSpace(block))
                 sections[section] = block;
         }
@@ -55,8 +56,21 @@ public static class CdbMarkerParser
         return string.Join('\n', lines).Trim();
     }
 
-    public static string ExtractSection(string text, CdbProbeSection section) =>
-        ExtractBlock(text, CdbMarkers.Begin(section), CdbMarkers.End(section));
+    public static string ExtractSection(string text, CdbProbeSection section)
+    {
+        var primary = ExtractBlock(text, CdbMarkers.Begin(section), CdbMarkers.End(section));
+        if (!string.IsNullOrWhiteSpace(primary))
+            return primary;
+
+        foreach (var (begin, end) in CdbMarkers.AlternateMarkers(section))
+        {
+            var alt = ExtractBlock(text, begin, end);
+            if (!string.IsNullOrWhiteSpace(alt))
+                return alt;
+        }
+
+        return "";
+    }
 
     private static void ApplyLegacyFallbacks(string text, Dictionary<CdbProbeSection, string> sections)
     {

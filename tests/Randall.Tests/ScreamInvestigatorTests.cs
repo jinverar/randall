@@ -11,7 +11,8 @@ public class ScreamInvestigatorTests
     {
         Assert.Equal(DebuggerAddressClass.AsciiPattern, ScreamInvestigator.ClassifyAddress("0x41414141"));
         Assert.Equal(DebuggerAddressClass.NullPage, ScreamInvestigator.ClassifyAddress("0x0"));
-        Assert.Equal(DebuggerAddressClass.SmallOffset, ScreamInvestigator.ClassifyAddress("0x2000"));
+        Assert.Equal(DebuggerAddressClass.NearNull, ScreamInvestigator.ClassifyAddress("0x2000"));
+        Assert.Equal(DebuggerAddressClass.NearNull, ScreamInvestigator.ClassifyAddress("0x1"));
         Assert.Equal(DebuggerAddressClass.Unknown, ScreamInvestigator.ClassifyAddress("0x????????"));
     }
 
