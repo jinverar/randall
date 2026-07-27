@@ -57,6 +57,19 @@ DynamoRIO the backend resolves to **corpus‑novelty** feedback (frontier growth
 signal and `edges` is 0. Roadmap: a native Linux coverage backend (SanitizerCoverage / perf) to
 populate `edges` without DynamoRIO.
 
+### Empty stalker graph?
+
+If **Stalker graph** is blank / 0% with Coverage-guided checked:
+
+1. Run `randall doctor` — DynamoRIO must be Ready.
+2. For **TCP** targets: stop Labs / anything already listening on the project port. Coverage-TCP
+   cannot spawn `drrun` copies while `:9999` (etc.) is busy; Randfuzz will fuzz the existing
+   listener instead and BB edges stay 0.
+3. After a completed run, use **Open completed run** on the dashboard to load that journal’s
+   graph data (if any). Import archive walks folders for `run.json` → `data/runs/`.
+4. Without BB edges the UI shows an honest corpus-novelty / session path plus a banner — not a
+   spinner.
+
 ## Missed blocks (Dynapstalker / PDF loop)
 
 **Step-by-step tutorial (IDA + Ghidra):** [HOWTO_STALK_IDA_GHIDRA.md](HOWTO_STALK_IDA_GHIDRA.md)  

@@ -958,9 +958,51 @@ public sealed class FuzzEngine
                         ? "127.0.0.1"
                         : project.Transport.Host;
                     var covPort = project.Transport.Port;
-                    // DynamoRIO teardown can leave the listen port busy briefly — wait before respawn.
-                    if (covPort > 0)
+
+                    // Lab / prior listener already accepting — do NOT WaitUntilFree (looks stuck for 5–10s).
+                    if (covPort > 0 && PortReadiness.Probe(covHost, covPort, project.Kind))
                     {
+                        useCoverageTcp = false;
+                        FuzzAnalystLog.Warn(progress,
+                            $"Coverage-TCP: {covHost}:{covPort} already accepting — fuzzing existing listener " +
+                            "(no per-case DynamoRIO spawn). Stop Labs or uncheck Coverage-guided for BB edges.",
+                            iterations);
+                        if (runtime is null && project.Target.LongLived)
+                        {
+                            try
+                            {
+                                runtime = new TargetRuntimeBridge(project, yamlPath);
+                                var adopted = TryAdoptPortListener(project, targetExeResolved);
+                                if (adopted is not null)
+                                {
+                                    longLived = adopted;
+                                    FuzzAnalystLog.Info(progress,
+                                        $"Adopted lab listener PID {adopted.Id}", iterations);
+                                }
+                                else
+                                {
+                                    var (proc, st) = await runtime.StartAsync(cancellationToken);
+                                    if (st.Ok || st.Running)
+                                    {
+                                        longLived = proc;
+                                        FuzzAnalystLog.Info(progress,
+                                            $"Adopted Target Runtime: {st.Message}", iterations);
+                                    }
+                                }
+
+                                if (longLived is not null && !runtime.IsRemote)
+                                    await ArmDebuggerAsync(longLived);
+                            }
+                            catch (Exception ex)
+                            {
+                                FuzzAnalystLog.Warn(progress,
+                                    $"Could not adopt Target Runtime: {ex.Message}", iterations);
+                            }
+                        }
+                    }
+                    else if (covPort > 0)
+                    {
+                        // DynamoRIO teardown can leave the listen port busy briefly — wait before respawn.
                         if (iterations <= 1 || iterations % 10 == 0)
                         {
                             FuzzAnalystLog.Info(progress,
@@ -972,44 +1014,11 @@ public sealed class FuzzEngine
                             covHost, covPort, project.Kind, TimeSpan.FromSeconds(5), cancellationToken);
                         if (!freed && PortReadiness.Probe(covHost, covPort, project.Kind))
                         {
-                            // Listener reappeared / never left (lab). Stop fighting it mid-campaign.
                             useCoverageTcp = false;
                             FuzzAnalystLog.Warn(progress,
                                 $"Coverage-TCP: {covHost}:{covPort} still accepting — switching to existing listener " +
-                                "(no more per-case drrun respawn)",
+                                "(no more per-case drrun respawn; BB graph will stay empty until DynamoRIO spawn works)",
                                 iterations);
-                            if (runtime is null && project.Target.LongLived)
-                            {
-                                try
-                                {
-                                    runtime = new TargetRuntimeBridge(project, yamlPath);
-                                    var adopted = TryAdoptPortListener(project, targetExeResolved);
-                                    if (adopted is not null)
-                                    {
-                                        longLived = adopted;
-                                        FuzzAnalystLog.Info(progress,
-                                            $"Adopted lab listener PID {adopted.Id}", iterations);
-                                    }
-                                    else
-                                    {
-                                        var (proc, st) = await runtime.StartAsync(cancellationToken);
-                                        if (st.Ok || st.Running)
-                                        {
-                                            longLived = proc;
-                                            FuzzAnalystLog.Info(progress,
-                                                $"Adopted Target Runtime: {st.Message}", iterations);
-                                        }
-                                    }
-
-                                    if (longLived is not null && !runtime.IsRemote)
-                                        await ArmDebuggerAsync(longLived);
-                                }
-                                catch (Exception ex)
-                                {
-                                    FuzzAnalystLog.Warn(progress,
-                                        $"Could not adopt Target Runtime: {ex.Message}", iterations);
-                                }
-                            }
                         }
                     }
 
@@ -1019,21 +1028,26 @@ public sealed class FuzzEngine
                         if (longLived is null)
                         {
                             FuzzAnalystLog.Warn(progress,
-                                "Coverage TCP spawn failed — drrun did not start the target",
+                                "Coverage TCP spawn failed — drrun did not start the target. " +
+                                "Check `randall doctor` DynamoRIO; graph falls back to corpus-novelty / session path.",
                                 iterations);
+                            useCoverageTcp = false;
                             continue;
                         }
 
                         // Cold drrun+drcov often needs >500ms before accept(); poll instead of sleeping.
+                        // If something else is already accepting, WaitAsync returns immediately.
                         var ready = covPort <= 0 || await PortReadiness.WaitAsync(
                             covHost, covPort, project.Kind, TimeSpan.FromSeconds(10), cancellationToken);
                         if (!ready)
                         {
                             FuzzAnalystLog.Warn(progress,
-                                $"Coverage TCP spawn: {covHost}:{covPort} not accepting within 10s",
+                                $"Coverage TCP spawn: {covHost}:{covPort} not accepting within 10s — " +
+                                "DynamoRIO spawn failed (port busy or target crashed). Disabling per-case coverage spawn.",
                                 iterations);
                             await stalk.StopLongLivedAsync(longLived, cancellationToken);
                             longLived = null;
+                            useCoverageTcp = false;
                             continue;
                         }
 

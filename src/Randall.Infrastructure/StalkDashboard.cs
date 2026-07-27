@@ -103,7 +103,8 @@ public static class StalkDashboard
                     ? "Basic Block"
                     : graph.HasGraph ? "Session Graph" : "Mutation";
 
-        var notes = BuildNotes(status, latestDetail, corpus, graph, hotBlocks);
+        var notes = BuildNotes(status, latestDetail, corpus, graph, hotBlocks, usedCrashCoverage, missingCrashCoverage);
+        AppendCoverageHonestyNotes(notes, corpus, fuzzStatus, run, usedCrashCoverage, missingCrashCoverage);
         if (!string.IsNullOrWhiteSpace(effectiveRunId) && focusCrash is null)
         {
             notes.Insert(0,
@@ -482,9 +483,26 @@ public static class StalkDashboard
 
         if (blocks.Count == 0)
         {
-            blocks.Add(new StalkBlockDto("entry", "entry", "0x00401000", "hit", true, false, "Process entry / accept", 0, true));
-            blocks.Add(new StalkBlockDto("parse", "parse", "0x00401120", "hit", false, false, "Parse client input", 1, true));
-            blocks.Add(new StalkBlockDto("mutate", "handler", "0x00401240", "novel", false, true, "Vulnerable handler", 2, true));
+            // Honest empty-ish path: iteration / corpus novelty spine — not fake BB addresses.
+            var iters = run?.Iterations ?? 0;
+            var crashes = run?.CrashesFound ?? 0;
+            blocks.Add(new StalkBlockDto(
+                "entry", "START", "session", "hit", true, false,
+                iters > 0 ? $"Run started ({iters} iterations)" : "No coverage run loaded",
+                0, true));
+            blocks.Add(new StalkBlockDto(
+                "novelty", "CORPUS+", "novelty", iters > 0 ? "novel" : "unexplored", false, true,
+                iters > 0
+                    ? $"Corpus-novelty / session path ({iters} iters, {crashes} crashes) — not DynamoRIO BB edges"
+                    : "No basic-block coverage — enable DynamoRIO or fuzz without a busy TCP lab port",
+                1, true));
+            if (latestDetail is null)
+            {
+                blocks.Add(new StalkBlockDto(
+                    "hint", "DOCTOR", "hint", "unexplored", false, false,
+                    "randall doctor → DynamoRIO; for TCP stop Labs / leave Coverage-guided unchecked while :port listens",
+                    2, false));
+            }
         }
 
         if (latestDetail is not null)
@@ -1152,7 +1170,9 @@ public static class StalkDashboard
         CrashDetailDto? latestDetail,
         CorpusStatsDto corpus,
         SessionGraphReportDto graph,
-        IReadOnlyList<StalkHotBlockDto> hot)
+        IReadOnlyList<StalkHotBlockDto> hot,
+        bool usedCrashCoverage = false,
+        bool missingCrashCoverage = false)
     {
         var notes = new List<string>();
         if (status == "Crash Detected")
@@ -1165,9 +1185,42 @@ public static class StalkDashboard
             notes.Add($"Hottest block {hot[0].Address} ({hot[0].Hits} hits).");
         if (latestDetail?.Analysis?.FaultModule is { } mod)
             notes.Add($"Fault in module {mod}.");
-        if (notes.Count == 0)
+        if (notes.Count == 0 && !usedCrashCoverage && !missingCrashCoverage)
             notes.Add("Start a coverage-guided fuzz run to populate the stalker graph.");
         return notes;
+    }
+
+    private static void AppendCoverageHonestyNotes(
+        List<string> notes,
+        CorpusStatsDto corpus,
+        FuzzSessionStatusDto? fuzzStatus,
+        FuzzRunManifestDto? run,
+        bool usedCrashCoverage,
+        bool missingCrashCoverage)
+    {
+        if (usedCrashCoverage)
+            return;
+
+        if (!corpus.DynamoRioAvailable)
+        {
+            notes.Insert(0,
+                "No basic-block coverage — DynamoRIO missing. Run `randall doctor` / install tools, or rely on corpus-novelty (corpus+) nodes.");
+            return;
+        }
+
+        if (corpus.CoverageEdges == 0 && (run?.HotEdges is null || run.HotEdges.Count == 0))
+        {
+            var guided = fuzzStatus?.CoverageGuided == true;
+            notes.Insert(0, guided
+                ? "No basic-block coverage — DynamoRIO spawn failed or TCP port was already busy (Labs). Stop the lab listener, or uncheck Coverage-guided and fuzz the existing server; Open a completed run after a successful drcov pass."
+                : "No basic-block coverage yet — enable Coverage-guided (DynamoRIO) with a free TCP port, or Open a completed run that recorded edges. Graph shows corpus-novelty / session path until then.");
+        }
+
+        if (missingCrashCoverage)
+        {
+            notes.Insert(0,
+                "Selected crash has no drcov edges — diagram shows the honest empty path (not a spinner).");
+        }
     }
 
     private static FuzzRunManifestDto? FindLatestRun(
