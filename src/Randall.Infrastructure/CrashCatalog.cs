@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Randall.Contracts;
 
 namespace Randall.Infrastructure;
@@ -213,7 +213,7 @@ public static class CrashCatalog
             .ToList();
     }
 
-    /// <summary>Project bug genealogy (N probable vulns / M failures) — builds if missing.</summary>
+    /// <summary>Project bug genealogy (N probable vulns / M failures) â€” builds if missing.</summary>
     public static BugGenealogyReportDto? GetBugGenealogy(string project, string? repoRoot = null, bool rebuild = false)
     {
         if (string.IsNullOrWhiteSpace(project)) return null;
@@ -228,7 +228,7 @@ public static class CrashCatalog
         return BugGenealogyEngine.PersistForProject(project, repoRoot);
     }
 
-    /// <summary>Per-crash RF-#### research package — rebuilds from sidecars when missing.</summary>
+    /// <summary>Per-crash RF-#### research package â€” rebuilds from sidecars when missing.</summary>
     public static ResearchPackageReportDto? GetResearchPackage(
         Guid crashId,
         string? repoRoot = null,
@@ -276,9 +276,9 @@ public static class CrashCatalog
     }
 
     /// <summary>
-    /// Per-crash counterfactual report — returns persisted live/plan result when present.
+    /// Per-crash counterfactual report â€” returns persisted live/plan result when present.
     /// When <paramref name="live"/> is true and a project YAML can be resolved, runs the
-    /// bounded execute→observe→persist loop via <see cref="CounterfactualLiveLoop"/>.
+    /// bounded executeâ†’observeâ†’persist loop via <see cref="CounterfactualLiveLoop"/>.
     /// </summary>
     public static CounterfactualReportDto? GetCounterfactual(
         Guid crashId,
@@ -368,7 +368,7 @@ public static class CrashCatalog
         return null;
     }
 
-    /// <summary>Per-crash vulnerability twins — rebuilds from root cause + optional Ghidra map.</summary>
+    /// <summary>Per-crash vulnerability twins â€” rebuilds from root cause + optional Ghidra map.</summary>
     public static VulnerabilityTwinReportDto? GetVulnerabilityTwins(Guid crashId, string? repoRoot = null, bool rebuild = false)
     {
         repoRoot ??= FindRepoRoot();
@@ -419,75 +419,215 @@ public static class CrashCatalog
 
     public static CrashDetailDto? GetDetail(Guid id, string? repoRoot = null)
     {
-        foreach (var summary in ListAll(repoRoot))
-        {
-            if (summary.Id != id)
-                continue;
-            if (!File.Exists(summary.InputPath))
-            {
-                var missingTriage = CrashTriage.Classify(null, null, summary);
-                return new CrashDetailDto(summary, 0, "(file missing)", "(file missing)", null, null, missingTriage);
-            }
+        repoRoot ??= FindRepoRoot();
+        if (repoRoot is null)
+            return null;
 
-            var bytes = File.ReadAllBytes(summary.InputPath);
-            var previewLen = Math.Min(bytes.Length, 256);
-            var hex = string.Join(' ', bytes.AsSpan(0, previewLen).ToArray().Select(b => b.ToString("X2")));
-            if (bytes.Length > previewLen)
-                hex += " …";
-            var ascii = BuildAsciiPreview(bytes, previewLen);
-            var sidecar = CrashSidecarWriter.TryRead(summary.SidecarPath);
-            var crashesDir = Path.GetDirectoryName(summary.InputPath)!;
-            var analysisPath = CrashAnalysisWriter.AnalysisPathFor(crashesDir, summary.Id);
-            var analysis = CrashAnalysisWriter.TryRead(analysisPath)
-                ?? (summary.MiniDumpPath is not null
-                    ? CrashAnalysisWriter.AnalyzeDump(summary.MiniDumpPath)
-                    : null);
-            var cdbSidecar = WindowsCdbCrashAnalysisWriter.TryRead(
-                WindowsCdbCrashAnalysisWriter.TriagePathFor(crashesDir, summary.Id));
-            var debugger = ScreamInvestigator.TryRead(
-                ScreamInvestigator.ObservationPathFor(crashesDir, summary.Id));
-            var triage = CrashTriage.Classify(
-                analysis, sidecar, summary, bytes, cdbSidecar?.ExploitableClassification, debugger);
-            var staticFn = CrashStaticFunctionMapper.TryMapFromCrash(
-                summary.Project, analysis, triage, repoRoot);
-            if (staticFn is not null)
-                triage = triage with { StaticFunction = staticFn };
-            var cdbTriage = MapCdbTriage(cdbSidecar);
-            var corruptionChain = CorruptionChainBuilder.TryRead(
-                CorruptionChainBuilder.PathFor(crashesDir, summary.Id));
-            triage = triage with
+        // Resolve owning project via fast index scan, then enrich that project once
+        // (never ListAll() the whole tree twice â€” that froze Investigation + /api/stalk).
+        var saved = FindSavedCrash(id, repoRoot);
+        if (saved is null)
+            return null;
+
+        var projectSummaries = ListAll(repoRoot, saved.Project);
+        var summary = projectSummaries.FirstOrDefault(c => c.Id == id);
+        if (summary is null)
+            return null;
+
+        return BuildDetailFromSummary(summary, projectSummaries, repoRoot);
+    }
+
+    /// <summary>
+    /// Sidecar + on-disk analysis only â€” no project-wide enrichment.
+    /// Safe for StalkDashboard / live graph (must stay sub-second even with huge crash trees).
+    /// </summary>
+    public static CrashDetailDto? GetDetailLite(Guid id, string? repoRoot = null)
+    {
+        repoRoot ??= FindRepoRoot();
+        if (repoRoot is null)
+            return null;
+
+        var saved = FindSavedCrash(id, repoRoot);
+        if (saved is null)
+            return null;
+
+        var crashesDir = Path.GetDirectoryName(saved.InputPath)
+            ?? Path.Combine(repoRoot, "data", "crashes", saved.Project);
+        var sidecar = CrashSidecarWriter.TryRead(saved.SidecarPath);
+        var analysis = CrashAnalysisWriter.TryRead(CrashAnalysisWriter.AnalysisPathFor(crashesDir, saved.Id));
+        // Never AnalyzeDump here â€” that blocks the live stalker UI.
+
+        var hex = "(lite)";
+        var ascii = "(lite)";
+        var len = 0;
+        if (File.Exists(saved.InputPath))
+        {
+            try
             {
-                SemanticFingerprint = SemanticCrashFingerprint.Build(
-                    triage.Class,
-                    debugger,
-                    sidecar,
-                    corruptionChain,
-                    triage.PatternDepthBytes,
-                    triage),
-            };
-            var projectContexts = ScreamEvolutionBuilder.LoadProjectContexts(crashesDir, summary.Project);
-            var evolution = ScreamEvolutionBuilder.TryRead(
-                    ScreamEvolutionBuilder.PathFor(crashesDir, summary.Id))
-                ?? ScreamEvolutionBuilder.Build(
-                    summary.Id,
-                    summary.Project,
-                    sidecar,
-                    triage,
-                    debugger,
-                    corruptionChain,
-                    projectContexts);
-            var hypotheses = HypothesisEngine.TryReadForCrash(crashesDir, summary.Id);
-            var backwardTrace = BackwardTraceBuilder.TryRead(
-                    BackwardTraceBuilder.PathFor(crashesDir, summary.Id))
-                ?? BackwardTraceBuilder.Build(
-                    summary.Id,
-                    summary.Project,
-                    sidecar,
-                    debugger,
-                    triage,
-                    corruptionChain,
-                    bytes);
-            var rootCauseFacts = EvidenceFactBuilder.CollectFacts(
+                var bytes = File.ReadAllBytes(saved.InputPath);
+                len = bytes.Length;
+                var previewLen = Math.Min(bytes.Length, 128);
+                hex = string.Join(' ', bytes.AsSpan(0, previewLen).ToArray().Select(b => b.ToString("X2")));
+                if (bytes.Length > previewLen) hex += " â€¦";
+                ascii = BuildAsciiPreview(bytes, previewLen);
+            }
+            catch { /* ignore */ }
+        }
+
+        var summary = new CrashSummaryDto(
+            saved.Id,
+            saved.Project,
+            saved.Iteration,
+            saved.Mutator,
+            saved.InputHash,
+            saved.InputPath,
+            saved.MiniDumpPath,
+            saved.TargetExitCode,
+            saved.TriageTag,
+            saved.SidecarPath,
+            saved.RunId,
+            saved.At,
+            FaultAddress: analysis?.FaultAddress,
+            ExceptionHint: analysis?.ExceptionHint
+                ?? sidecar?.ExceptionHint
+                ?? WindowsExceptionHints.Describe(
+                    int.TryParse(saved.TargetExitCode, out var ec) ? ec : null));
+        var triage = CrashTriage.Classify(analysis, sidecar, summary, null);
+        return new CrashDetailDto(summary, len, hex, ascii, sidecar, analysis, triage);
+    }
+
+    /// <summary>Fast index lookup across project crash dirs (no triage enrichment).</summary>
+    public static SavedCrash? FindSavedCrash(Guid id, string? repoRoot = null)
+    {
+        repoRoot ??= FindRepoRoot();
+        if (repoRoot is null)
+            return null;
+
+        var crashesRoot = Path.Combine(repoRoot, "data", "crashes");
+        if (!Directory.Exists(crashesRoot))
+            return null;
+
+        foreach (var dir in Directory.EnumerateDirectories(crashesRoot))
+        {
+            try
+            {
+                var hit = new CrashStore(dir).List().FirstOrDefault(c => c.Id == id);
+                if (hit is not null)
+                    return hit;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[CrashCatalog] warn: FindSavedCrash skip '{Path.GetFileName(dir)}': {ex.Message}");
+            }
+        }
+
+        return null;
+    }
+
+    private static CrashDetailDto? BuildDetailFromSummary(
+        CrashSummaryDto summary,
+        IReadOnlyList<CrashSummaryDto> projectSummaries,
+        string? repoRoot)
+    {
+        if (!File.Exists(summary.InputPath))
+        {
+            var missingTriage = CrashTriage.Classify(null, null, summary);
+            return new CrashDetailDto(summary, 0, "(file missing)", "(file missing)", null, null, missingTriage);
+        }
+
+        var bytes = File.ReadAllBytes(summary.InputPath);
+        var previewLen = Math.Min(bytes.Length, 256);
+        var hex = string.Join(' ', bytes.AsSpan(0, previewLen).ToArray().Select(b => b.ToString("X2")));
+        if (bytes.Length > previewLen)
+            hex += " â€¦";
+        var ascii = BuildAsciiPreview(bytes, previewLen);
+        var sidecar = CrashSidecarWriter.TryRead(summary.SidecarPath);
+        var crashesDir = Path.GetDirectoryName(summary.InputPath)!;
+        // Prefer on-disk analysis â€” never block the UI on MiniDumpAnalyzer / CDB.
+        var analysisPath = CrashAnalysisWriter.AnalysisPathFor(crashesDir, summary.Id);
+        var analysis = CrashAnalysisWriter.TryRead(analysisPath);
+        var cdbSidecar = WindowsCdbCrashAnalysisWriter.TryRead(
+            WindowsCdbCrashAnalysisWriter.TriagePathFor(crashesDir, summary.Id));
+        var debugger = ScreamInvestigator.TryRead(
+            ScreamInvestigator.ObservationPathFor(crashesDir, summary.Id));
+        var triage = CrashTriage.Classify(
+            analysis, sidecar, summary, bytes, cdbSidecar?.ExploitableClassification, debugger);
+        var staticFn = CrashStaticFunctionMapper.TryMapFromCrash(
+            summary.Project, analysis, triage, repoRoot);
+        if (staticFn is not null)
+            triage = triage with { StaticFunction = staticFn };
+        var cdbTriage = MapCdbTriage(cdbSidecar);
+        var corruptionChain = CorruptionChainBuilder.TryRead(
+            CorruptionChainBuilder.PathFor(crashesDir, summary.Id));
+        triage = triage with
+        {
+            SemanticFingerprint = SemanticCrashFingerprint.Build(
+                triage.Class,
+                debugger,
+                sidecar,
+                corruptionChain,
+                triage.PatternDepthBytes,
+                triage),
+        };
+        var projectContexts = ScreamEvolutionBuilder.LoadProjectContexts(crashesDir, summary.Project);
+        var evolution = ScreamEvolutionBuilder.TryRead(
+                ScreamEvolutionBuilder.PathFor(crashesDir, summary.Id))
+            ?? ScreamEvolutionBuilder.Build(
+                summary.Id,
+                summary.Project,
+                sidecar,
+                triage,
+                debugger,
+                corruptionChain,
+                projectContexts);
+        var hypotheses = HypothesisEngine.TryReadForCrash(crashesDir, summary.Id);
+        var backwardTrace = BackwardTraceBuilder.TryRead(
+                BackwardTraceBuilder.PathFor(crashesDir, summary.Id))
+            ?? BackwardTraceBuilder.Build(
+                summary.Id,
+                summary.Project,
+                sidecar,
+                debugger,
+                triage,
+                corruptionChain,
+                bytes);
+        var rootCauseFacts = EvidenceFactBuilder.CollectFacts(
+            summary.Id,
+            summary.Project,
+            sidecar,
+            triage,
+            debugger,
+            corruptionChain,
+            backwardTrace,
+            evolution,
+            sidecar?.RandallScore,
+            hypotheses);
+        var influenceMap = InfluenceEngine.TryRead(InfluenceEngine.PathFor(crashesDir, summary.Id))
+            ?? InfluenceEngine.Build(
+                summary.Id,
+                summary.Project,
+                sidecar,
+                triage,
+                debugger,
+                corruptionChain,
+                backwardTrace,
+                hypotheses,
+                rootCauseFacts,
+                bytes);
+        var rootCause = RootCauseEngine.TryRead(
+                RootCauseEngine.PathFor(crashesDir, summary.Id))
+            ?? RootCauseEngine.Build(
+                summary.Id,
+                summary.Project,
+                sidecar,
+                triage,
+                debugger,
+                corruptionChain,
+                backwardTrace,
+                sidecar?.RandallScore);
+        var pageHeapEnabled = TryResolvePageHeap(sidecar, repoRoot);
+        var evidence = EvidenceFactBuilder.TryReadForCrash(crashesDir, summary.Id)
+            ?? EvidenceFactBuilder.Build(
                 summary.Id,
                 summary.Project,
                 sidecar,
@@ -497,143 +637,105 @@ public static class CrashCatalog
                 backwardTrace,
                 evolution,
                 sidecar?.RandallScore,
-                hypotheses);
-            var influenceMap = InfluenceEngine.TryRead(InfluenceEngine.PathFor(crashesDir, summary.Id))
-                ?? InfluenceEngine.Build(
-                    summary.Id,
-                    summary.Project,
-                    sidecar,
-                    triage,
-                    debugger,
-                    corruptionChain,
-                    backwardTrace,
-                    hypotheses,
-                    rootCauseFacts,
-                    bytes);
-            var rootCause = RootCauseEngine.TryRead(
-                    RootCauseEngine.PathFor(crashesDir, summary.Id))
-                ?? RootCauseEngine.Build(
-                    summary.Id,
-                    summary.Project,
-                    sidecar,
-                    triage,
-                    debugger,
-                    corruptionChain,
-                    backwardTrace,
-                    sidecar?.RandallScore);
-            var pageHeapEnabled = TryResolvePageHeap(sidecar, repoRoot);
-            var projectSummaries = ListAll(repoRoot).Where(x => x.Project == summary.Project).ToList();
-            var evidence = EvidenceFactBuilder.TryReadForCrash(crashesDir, summary.Id)
-                ?? EvidenceFactBuilder.Build(
-                    summary.Id,
-                    summary.Project,
-                    sidecar,
-                    triage,
-                    debugger,
-                    corruptionChain,
-                    backwardTrace,
-                    evolution,
-                    sidecar?.RandallScore,
-                    hypotheses,
-                    analysis,
-                    cdbTriage,
-                    pageHeapEnabled,
-                    summary.TriageTag);
-            var primitives = PrimitiveEngine.TryReadForCrash(crashesDir, summary.Id)
-                ?? PrimitiveEngine.Build(
-                    summary.Id,
-                    summary.Project,
-                    influenceMap,
-                    rootCause,
-                    debugger,
-                    corruptionChain,
-                    triage,
-                    evidence.Facts,
-                    hypotheses);
-            var skeptic = SkepticEngine.TryReadForCrash(crashesDir, summary.Id);
-            var counterfactual = CounterfactualEngine.TryReadForCrash(crashesDir, summary.Id);
-            var researchPlan = ResearchPlannerEngine.TryReadForCrash(crashesDir, summary.Id);
-            var advisor = ExploitabilityAdvisor.TryReadForCrash(crashesDir, summary.Id)
-                ?? ExploitabilityAdvisor.Build(
-                    summary.Id,
-                    summary.Project,
-                    rootCause,
-                    influenceMap,
-                    primitives,
-                    debugger,
-                    triage,
-                    skeptic);
-            var intelligence = CrashIntelligenceBuilder.Build(
-                summary,
-                triage,
-                sidecar,
-                bytes.Length,
-                projectSummaries,
+                hypotheses,
                 analysis,
                 cdbTriage,
                 pageHeapEnabled,
-                summary.TriageTag,
-                debugger,
-                corruptionChain,
-                evolution,
-                hypotheses,
+                summary.TriageTag);
+        var primitives = PrimitiveEngine.TryReadForCrash(crashesDir, summary.Id)
+            ?? PrimitiveEngine.Build(
+                summary.Id,
+                summary.Project,
+                influenceMap,
                 rootCause,
-                evidence.Facts,
-                primitives,
-                advisor);
-            var deepScream = DeepScreamBuilder.TryRead(
-                    DeepScreamBuilder.PathFor(crashesDir, summary.Id))
-                ?? DeepScreamBuilder.Evaluate(
-                    summary.Id,
-                    summary.Project,
-                    intelligence.ScreamScore,
-                    intelligence.SeenCount,
-                    intelligence.Reproducible,
-                    intelligence.Minimized,
-                    summary.MiniDumpPath,
-                    crashesDir);
-            intelligence = intelligence with
-            {
-                DeepScreamCandidate = deepScream.IsCandidate,
-                DeepScreamSummary = DeepScreamBuilder.FormatSummary(deepScream),
-                DeepScreamMinimizedBonus = deepScream.Minimized && deepScream.IsCandidate,
-            };
-            var exploitResearch = ExploitResearchPanelBuilder.TryRead(
-                    ExploitResearchPanelBuilder.PathFor(crashesDir, summary.Id))
-                ?? ExploitResearchPanelBuilder.Build(
-                    summary.Id,
-                    summary.Project,
-                    debugger,
-                    influenceMap,
-                    primitives,
-                    counterfactual,
-                    researchPlan,
-                    skeptic,
-                    corruptionChain,
-                    bytes);
-            return new CrashDetailDto(
-                CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
-                bytes.Length,
-                hex,
-                ascii,
-                sidecar,
-                analysis,
-                triage,
-                cdbTriage,
-                intelligence,
                 debugger,
                 corruptionChain,
-                evolution,
-                hypotheses,
-                deepScream,
-                backwardTrace,
+                triage,
+                evidence.Facts,
+                hypotheses);
+        var skeptic = SkepticEngine.TryReadForCrash(crashesDir, summary.Id);
+        var counterfactual = CounterfactualEngine.TryReadForCrash(crashesDir, summary.Id);
+        var researchPlan = ResearchPlannerEngine.TryReadForCrash(crashesDir, summary.Id);
+        var advisor = ExploitabilityAdvisor.TryReadForCrash(crashesDir, summary.Id)
+            ?? ExploitabilityAdvisor.Build(
+                summary.Id,
+                summary.Project,
                 rootCause,
                 influenceMap,
-                evidence,
-                exploitResearch);
-        }
-        return null;
+                primitives,
+                debugger,
+                triage,
+                skeptic);
+        var intelligence = CrashIntelligenceBuilder.Build(
+            summary,
+            triage,
+            sidecar,
+            bytes.Length,
+            projectSummaries,
+            analysis,
+            cdbTriage,
+            pageHeapEnabled,
+            summary.TriageTag,
+            debugger,
+            corruptionChain,
+            evolution,
+            hypotheses,
+            rootCause,
+            evidence.Facts,
+            primitives,
+            advisor);
+        var deepScream = DeepScreamBuilder.TryRead(
+                DeepScreamBuilder.PathFor(crashesDir, summary.Id))
+            ?? DeepScreamBuilder.Evaluate(
+                summary.Id,
+                summary.Project,
+                intelligence.ScreamScore,
+                intelligence.SeenCount,
+                intelligence.Reproducible,
+                intelligence.Minimized,
+                summary.MiniDumpPath,
+                crashesDir);
+        intelligence = intelligence with
+        {
+            DeepScreamCandidate = deepScream.IsCandidate,
+            DeepScreamSummary = DeepScreamBuilder.FormatSummary(deepScream),
+            DeepScreamMinimizedBonus = deepScream.Minimized && deepScream.IsCandidate,
+        };
+        var exploitResearch = ExploitResearchPanelBuilder.TryRead(
+                ExploitResearchPanelBuilder.PathFor(crashesDir, summary.Id))
+            ?? ExploitResearchPanelBuilder.Build(
+                summary.Id,
+                summary.Project,
+                debugger,
+                influenceMap,
+                primitives,
+                counterfactual,
+                researchPlan,
+                skeptic,
+                corruptionChain,
+                bytes);
+        return new CrashDetailDto(
+            CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
+            bytes.Length,
+            hex,
+            ascii,
+            sidecar,
+            analysis,
+            triage,
+            cdbTriage,
+            intelligence,
+            debugger,
+            corruptionChain,
+            evolution,
+            hypotheses,
+            deepScream,
+            backwardTrace,
+            rootCause,
+            influenceMap,
+            evidence,
+            exploitResearch);
     }
+
 
     internal static CdbTriageDto? MapCdbTriage(WindowsCdbCrashAnalysisWriter.CdbTriageSidecar? s) =>
         s is null
@@ -711,7 +813,7 @@ public static class CrashCatalog
         }
         var text = new string(chars);
         if (bytes.Length > previewLen)
-            text += " …";
+            text += " â€¦";
         return text;
     }
 

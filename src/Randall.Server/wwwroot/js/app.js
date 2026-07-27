@@ -3206,6 +3206,8 @@ let crashState = {
   uniqueOnly: true,
   pendingSelectId: null,
   detail: null,
+  /** Monotonic token so stale /api/crashes/{id} responses cannot clobber a newer selection. */
+  selectSeq: 0,
 };
 
 const SEV_RANK = { critical: 4, high: 3, medium: 2, low: 1 };
@@ -4680,7 +4682,7 @@ function renderCrashEventList(opts = {}) {
   el.innerHTML = `<table class="crash-event-table"><thead><tr>
     <th>#</th><th>When</th><th>Sev</th><th>R</th><th>Class</th><th>×</th><th>Mutator</th><th>Fault</th><th>★</th>
   </tr></thead><tbody>${shown.map((c, i) => {
-    const sel = c.id === crashState.selectedId ? 'selected' : '';
+    const sel = crashIdsEqual(c.id, crashState.selectedId) ? 'selected' : '';
     const score = scoreCrash(c);
     const n = clusterCountFor(c);
     const when = new Date(c.observedAt);
@@ -4713,20 +4715,20 @@ function renderCrashEventList(opts = {}) {
 
 async function selectCrashById(id, { scrollIntoView = false } = {}) {
   if (!id) return;
-  let idx = crashState.filtered.findIndex((c) => c.id === id);
-  if (idx < 0 && crashState.all.some((c) => c.id === id)) {
+  let idx = crashState.filtered.findIndex((c) => crashIdsEqual(c.id, id));
+  if (idx < 0 && crashState.all.some((c) => crashIdsEqual(c.id, id))) {
     // Reveal the crash without wiping Unique only unless needed
     crashState.bucketKey = null;
     crashState.classKey = null;
-    crashState.clusterKey = crashClusterKey(crashState.all.find((c) => c.id === id)) || crashState.clusterKey;
+    crashState.clusterKey = crashClusterKey(crashState.all.find((c) => crashIdsEqual(c.id, id))) || crashState.clusterKey;
     applyCrashFilters();
-    idx = crashState.filtered.findIndex((c) => c.id === id);
+    idx = crashState.filtered.findIndex((c) => crashIdsEqual(c.id, id));
     if (idx < 0) {
       crashState.uniqueOnly = false;
       const uniq = document.getElementById('crash-unique-only');
       if (uniq) uniq.checked = false;
       applyCrashFilters();
-      idx = crashState.filtered.findIndex((c) => c.id === id);
+      idx = crashState.filtered.findIndex((c) => crashIdsEqual(c.id, id));
     }
     renderCrashTimeline();
     renderCrashClassBars();
@@ -4736,8 +4738,15 @@ async function selectCrashById(id, { scrollIntoView = false } = {}) {
   crashState.selectedId = id;
   crashState.selectedIndex = idx;
   renderCrashEventList({ scrollSelected: scrollIntoView });
+  const box = document.getElementById('crash-detail');
+  if (box && !crashIdsEqual(crashState.detail?.summary?.id, id))
+    box.innerHTML = '<p class="empty">Loading investigation…</p>';
+  const seq = ++crashState.selectSeq;
   try {
     const detail = await api.get(`/api/crashes/${id}`);
+    // Ignore stale responses when the user clicked another row mid-fetch.
+    if (seq !== crashState.selectSeq || !crashIdsEqual(crashState.selectedId, id))
+      return;
     const c = detail.summary;
     renderCrashDetail(detail, `${c.project} · iter #${c.iteration}`);
     // Pin stalker diagram to this crash's hit blocks (Dashboard / Scare Floor CFG).
@@ -4754,7 +4763,8 @@ async function selectCrashById(id, { scrollIntoView = false } = {}) {
     updateTimelineFollowUi();
     loadDashboard({ crashId: id, applyWidgets: true, force: true }).catch(() => {});
   } catch (err) {
-    const box = document.getElementById('crash-detail');
+    if (seq !== crashState.selectSeq || !crashIdsEqual(crashState.selectedId, id))
+      return;
     if (box) box.innerHTML = `<p class="empty">${escapeAttr(err.message)}</p>`;
   }
 }
@@ -5931,6 +5941,11 @@ function scheduleHarvestRefresh(opts = {}) {
   }, opts.immediate ? 0 : 450);
 }
 
+function crashIdsEqual(a, b) {
+  if (a == null || b == null) return false;
+  return String(a).toLowerCase() === String(b).toLowerCase();
+}
+
 function paintCrashInvestigate() {
   applyCrashFilters();
   renderActiveCrashFilters();
@@ -5946,14 +5961,19 @@ function paintCrashInvestigate() {
     selectCrashById(pending);
     return;
   }
-  if (crashState.selectedId && crashState.filtered.some((c) => c.id === crashState.selectedId)) {
-    crashState.selectedIndex = crashState.filtered.findIndex((c) => c.id === crashState.selectedId);
+  if (crashState.selectedId && crashState.filtered.some((c) => crashIdsEqual(c.id, crashState.selectedId))) {
+    crashState.selectedIndex = crashState.filtered.findIndex((c) => crashIdsEqual(c.id, crashState.selectedId));
     renderCrashEventList();
+    // Selection highlight alone does not load Investigation — always (re)fetch when detail is missing/stale.
+    const detailId = crashState.detail?.summary?.id;
+    if (!crashIdsEqual(detailId, crashState.selectedId))
+      selectCrashById(crashState.selectedId);
   } else if (crashState.filtered.length) {
     selectCrashById(crashState.filtered[0].id);
   } else {
     crashState.selectedId = null;
     crashState.selectedIndex = -1;
+    crashState.detail = null;
     const box = document.getElementById('crash-detail');
     const metaEl = document.getElementById('crash-invest-meta');
     if (metaEl) metaEl.textContent = '';
@@ -7468,7 +7488,12 @@ async function pollStatus() {
       const dashVisible = document.getElementById('view-dashboard')?.classList.contains('visible');
       const every = edges > 0 ? 5 : 10;
       if (dashVisible && stalkPollTick % every === 0) {
-        loadDashboard({ applyWidgets: stalkFollowLive, force: false }).catch(() => {});
+        // Live diagram mode: while Tracing + Follow live, always refresh widgets (novelty graph).
+        loadDashboard({
+          applyWidgets: stalkFollowLive,
+          followLive: stalkFollowLive,
+          force: false,
+        }).catch(() => {});
       }
     } else {
       stalkPollTick = 0;

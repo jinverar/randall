@@ -64,14 +64,15 @@ public static class StalkDashboard
             ? crashes.FirstOrDefault(c => c.Id == fid)
             : null;
         var latestCrash = focusCrash ?? crashes.FirstOrDefault();
+        // Lite only — full GetDetail re-lists/enriches the whole project and hangs the live UI.
         CrashDetailDto? latestDetail = null;
         if (latestCrash is not null)
         {
-            try { latestDetail = CrashCatalog.GetDetail(latestCrash.Id, repoRoot); }
+            try { latestDetail = CrashCatalog.GetDetailLite(latestCrash.Id, repoRoot); }
             catch (Exception ex)
             {
                 crashListWarning ??= $"Crash detail unavailable: {ex.Message}";
-                Console.Error.WriteLine($"[StalkDashboard] warn: GetDetail: {ex.Message}");
+                Console.Error.WriteLine($"[StalkDashboard] warn: GetDetailLite: {ex.Message}");
             }
         }
 
@@ -87,6 +88,9 @@ public static class StalkDashboard
             : Array.Empty<string>();
         var usedCrashCoverage = false;
         var missingCrashCoverage = focusCrashId is not null && crashEdges.Count == 0;
+        var liveForProject = fuzzStatus is not null
+            && (fuzzStatus.Running || fuzzStatus.Phase is "starting" or "running" or "stopping")
+            && PathsMatch(fuzzStatus.ConfigPath, configPath);
         List<StalkBlockDto> blocks;
         List<StalkEdgeDto> edges;
         if (crashEdges.Count > 0 && focusCrashId is not null && latestDetail is not null)
@@ -102,7 +106,7 @@ public static class StalkDashboard
         }
         else
         {
-            (blocks, edges) = BuildGraph(project, graph, latestDetail, run);
+            (blocks, edges) = BuildGraph(project, graph, latestDetail, run, crashes, liveForProject);
         }
 
         var hotBlocks = usedCrashCoverage
@@ -113,9 +117,6 @@ public static class StalkDashboard
                 .ToList();
 
         var crashLog = BuildCrashLog(crashes, repoRoot);
-        var liveForProject = fuzzStatus is not null
-            && (fuzzStatus.Running || fuzzStatus.Phase is "starting" or "running" or "stopping")
-            && PathsMatch(fuzzStatus.ConfigPath, configPath);
         var status = focusCrash is not null
             ? $"Inspecting {ShortCrashId(focusCrash.Id)}"
             : !string.IsNullOrWhiteSpace(effectiveRunId)
@@ -125,9 +126,13 @@ public static class StalkDashboard
             ? "Crash BB path"
             : missingCrashCoverage
                 ? "No crash coverage"
-                : project.Fuzz.CoverageGuided || fuzzStatus?.CoverageGuided == true
+                : corpus.CoverageEdges > 0 || (run?.HotEdges?.Count > 0) == true
                     ? "Basic Block"
-                    : graph.HasGraph ? "Session Graph" : "Mutation";
+                    : liveForProject
+                        ? (graph.HasGraph ? "Live session" : "Live novelty")
+                        : project.Fuzz.CoverageGuided || fuzzStatus?.CoverageGuided == true
+                            ? "Basic Block"
+                            : graph.HasGraph ? "Session Graph" : "Mutation";
 
         var notes = BuildNotes(status, latestDetail, corpus, graph, hotBlocks, usedCrashCoverage, missingCrashCoverage);
         AppendCoverageHonestyNotes(notes, corpus, fuzzStatus, run, usedCrashCoverage, missingCrashCoverage, liveForProject);
@@ -292,7 +297,9 @@ public static class StalkDashboard
         ProjectConfig project,
         SessionGraphReportDto graph,
         CrashDetailDto? latestDetail,
-        FuzzRunManifestDto? run)
+        FuzzRunManifestDto? run,
+        IReadOnlyList<CrashSummaryDto>? crashes = null,
+        bool liveForProject = false)
     {
         var crashAddr = latestDetail?.Analysis?.FaultAddress;
         var exception = latestDetail?.Analysis?.ExceptionHint
@@ -304,7 +311,7 @@ public static class StalkDashboard
         var hasCrash = latestDetail is not null;
 
         if (path.Count == 0 && graph.Commands.Count == 0 && project.SessionCommands.Count == 0)
-            return BuildFallbackGraph(run, latestDetail, crashAddr, exception);
+            return BuildFallbackGraph(run, latestDetail, crashAddr, exception, crashes, liveForProject);
 
         // Prefer a clear crash spine even when sessionGraph is sparse.
         if (path.Count == 0 && crashCmd is not null)
@@ -497,7 +504,9 @@ public static class StalkDashboard
         FuzzRunManifestDto? run,
         CrashDetailDto? latestDetail,
         string? crashAddr,
-        string exception)
+        string exception,
+        IReadOnlyList<CrashSummaryDto>? crashes = null,
+        bool liveForProject = false)
     {
         var blocks = new List<StalkBlockDto>();
         var i = 0;
@@ -519,29 +528,96 @@ public static class StalkDashboard
 
         if (blocks.Count == 0)
         {
-            // Honest empty-ish path: iteration / corpus novelty spine — not fake BB addresses.
+            // Live novelty / session spine — not fake BB addresses.
             var iters = run?.Iterations ?? 0;
-            var crashes = run?.CrashesFound ?? 0;
+            var crashCount = Math.Max(run?.CrashesFound ?? 0, crashes?.Count ?? 0);
+            var corpusAdded = 0;
             blocks.Add(new StalkBlockDto(
                 "entry", "START", "session", "hit", true, false,
-                iters > 0 ? $"Run started ({iters} iterations)" : "Waiting for live / journaled iterations",
-                0, true));
+                liveForProject
+                    ? (iters > 0 ? $"LIVE tracing ({iters} iters)" : "LIVE — waiting for first iteration")
+                    : (iters > 0 ? $"Run started ({iters} iterations)" : "Waiting for live / journaled iterations"),
+                0, true,
+                Role: "entry",
+                ReHints:
+                [
+                    "Live diagram mode — corpus-novelty spine while DynamoRIO BB edges are unavailable.",
+                    "Crash sites hang off CORPUS+ as red nodes; install DynamoRIO for basic-block edges.",
+                ]));
             blocks.Add(new StalkBlockDto(
-                "novelty", "CORPUS+", "novelty", iters > 0 ? "novel" : "unexplored", false, true,
-                iters > 0
-                    ? $"Corpus-novelty / session path ({iters} iters, {crashes} crashes) — not DynamoRIO BB edges"
-                    : "LIVE or idle without BB edges — enable DynamoRIO or fuzz without a busy TCP lab port",
-                1, true));
-            if (latestDetail is null)
+                "novelty", "CORPUS+", "novelty", iters > 0 || crashCount > 0 ? "novel" : "unexplored", false, true,
+                iters > 0 || crashCount > 0
+                    ? $"Corpus-novelty / session path ({iters} iters, {crashCount} crashes) — not DynamoRIO BB edges"
+                    : liveForProject
+                        ? "Building live novelty graph… enable DynamoRIO or wait for corpus+/crashes"
+                        : "LIVE or idle without BB edges — enable DynamoRIO or fuzz without a busy TCP lab port",
+                1, true,
+                Role: "handler",
+                HitCount: iters > 0 ? iters : null,
+                ReHints:
+                [
+                    "Parent→child novelty is approximate without a coverage backend.",
+                    "Frontier growth (corpus+) is the stalk signal on stock labs.",
+                ]));
+
+            // Recent crash sites as red nodes off the novelty hub (live diagram).
+            var recent = (crashes ?? [])
+                .OrderByDescending(c => c.ObservedAt)
+                .Take(6)
+                .ToList();
+            var spineTail = "novelty";
+            for (var ci = 0; ci < recent.Count; ci++)
+            {
+                var c = recent[ci];
+                var id = $"crash_{c.Id:N}"[..14];
+                var fault = string.IsNullOrWhiteSpace(c.FaultAddress) ? "0x????????" : c.FaultAddress!;
+                blocks.Add(new StalkBlockDto(
+                    id,
+                    ShortCrashId(c.Id),
+                    fault,
+                    "crash",
+                    false,
+                    false,
+                    $"{c.ExceptionHint ?? c.TargetExitCode ?? "CRASH"} · iter #{c.Iteration}",
+                    2 + ci,
+                    true,
+                    Role: "crash",
+                    ExceptionHint: c.ExceptionHint ?? c.TargetExitCode,
+                    Severity: c.Severity,
+                    CrashClass: c.CrashClass,
+                    CrashId: c.Id,
+                    Mutator: c.Mutator));
+                spineTail = id;
+            }
+
+            if (recent.Count == 0 && latestDetail is null)
             {
                 blocks.Add(new StalkBlockDto(
                     "hint", "DOCTOR", "hint", "unexplored", false, false,
                     "randall doctor → DynamoRIO; for TCP stop Labs / leave Coverage-guided unchecked while :port listens",
                     2, false));
             }
-        }
+            else if (latestDetail is not null && recent.All(c => c.Id != latestDetail.Summary.Id))
+            {
+                var fault = string.IsNullOrWhiteSpace(crashAddr) ? "0x????????" : crashAddr;
+                blocks.Add(new StalkBlockDto(
+                    "__crash_site",
+                    "CRASH",
+                    fault,
+                    "crash",
+                    false,
+                    false,
+                    $"{exception} at {fault}",
+                    blocks.Count,
+                    true,
+                    Role: "crash",
+                    CrashId: latestDetail.Summary.Id));
+            }
 
-        if (latestDetail is not null)
+            _ = spineTail;
+            _ = corpusAdded;
+        }
+        else if (latestDetail is not null)
         {
             var fault = string.IsNullOrWhiteSpace(crashAddr) ? "0x????????" : crashAddr;
             blocks.Add(new StalkBlockDto(
@@ -557,8 +633,27 @@ public static class StalkDashboard
         }
 
         var edges = new List<StalkEdgeDto>();
-        for (var e = 0; e < blocks.Count - 1; e++)
-            edges.Add(new StalkEdgeDto(blocks[e].Id, blocks[e + 1].Id, "", true, true));
+        // Prefer hub layout: entry → novelty, then novelty → each crash (parent→child novelty).
+        var novelty = blocks.FirstOrDefault(b => b.Id == "novelty");
+        var crashNodes = blocks.Where(b => b.Kind == "crash").ToList();
+        if (novelty is not null && blocks.Any(b => b.Id == "entry"))
+        {
+            edges.Add(new StalkEdgeDto("entry", "novelty", liveForProject ? "live" : "session", true, true));
+            foreach (var c in crashNodes)
+                edges.Add(new StalkEdgeDto("novelty", c.Id, "crash", true, true));
+            var hint = blocks.FirstOrDefault(b => b.Id == "hint");
+            if (hint is not null)
+                edges.Add(new StalkEdgeDto("novelty", "hint", "hint", false, false));
+        }
+        else
+        {
+            for (var e = 0; e < blocks.Count - 1; e++)
+                edges.Add(new StalkEdgeDto(blocks[e].Id, blocks[e + 1].Id, "", true, true));
+            // Single-node graphs still need a self-visible spine for the renderer.
+            if (edges.Count == 0 && blocks.Count == 1)
+                edges.Add(new StalkEdgeDto(blocks[0].Id, blocks[0].Id, "loop", true, true));
+        }
+
         return (blocks, edges);
     }
 
@@ -854,6 +949,7 @@ public static class StalkDashboard
     private static List<StalkCrashLogDto> BuildCrashLog(IReadOnlyList<CrashSummaryDto> crashes, string repoRoot)
     {
         // One row per crash so selecting a row focuses that crash's diagram (not a cluster rep).
+        // Never call GetDetail here — that re-lists/enriches the whole project per row and freezes /api/stalk.
         var hitByKey = crashes
             .GroupBy(c => c.TriageTag ?? c.InputHash[..Math.Min(12, c.InputHash.Length)])
             .ToDictionary(g => g.Key, g => g.Count());
@@ -863,18 +959,15 @@ public static class StalkDashboard
             .Take(32)
             .Select(c =>
             {
-                var detail = CrashCatalog.GetDetail(c.Id, repoRoot);
+                var sidecar = CrashSidecarWriter.TryRead(c.SidecarPath);
                 var key = c.TriageTag ?? c.InputHash[..Math.Min(12, c.InputHash.Length)];
                 var exception = c.ExceptionHint
-                    ?? detail?.Analysis?.ExceptionHint
-                    ?? detail?.Sidecar?.ExceptionHint
+                    ?? sidecar?.ExceptionHint
                     ?? c.TargetExitCode
                     ?? "CRASH";
-                var address = c.FaultAddress
-                    ?? detail?.Analysis?.FaultAddress
-                    ?? "—";
-                var newCov = (detail?.Sidecar?.NewEdgesAtCrash ?? 0) > 0
-                    || HasCrashTraceHint(detail, repoRoot);
+                var address = c.FaultAddress ?? "—";
+                var newCov = (sidecar?.NewEdgesAtCrash ?? 0) > 0
+                    || HasCrashTraceHint(c, sidecar, repoRoot);
                 return new StalkCrashLogDto(
                     c.Id,
                     ShortCrashId(c.Id),
@@ -883,28 +976,28 @@ public static class StalkDashboard
                     hitByKey.GetValueOrDefault(key, 1),
                     exception,
                     address,
-                    EstimateDistance(null, detail),
+                    null,
                     newCov,
                     c.Mutator,
                     Path.GetFileName(c.InputPath),
-                    c.Severity ?? detail?.Triage?.Severity,
-                    c.CrashClass ?? detail?.Triage?.Class);
+                    c.Severity,
+                    c.CrashClass);
             })
             .ToList();
     }
 
-    private static bool HasCrashTraceHint(CrashDetailDto? detail, string repoRoot)
+    private static bool HasCrashTraceHint(
+        CrashSummaryDto summary,
+        CrashSidecarDto? sidecar,
+        string repoRoot)
     {
-        if (detail is null)
-            return false;
-        var sidecar = detail.Sidecar;
         if (sidecar?.TraceCopyPath is not null && File.Exists(sidecar.TraceCopyPath))
             return true;
         if (sidecar?.TracePath is not null && File.Exists(sidecar.TracePath))
             return true;
-        var id = detail.Summary.Id.ToString("D");
-        var idN = detail.Summary.Id.ToString("N");
-        return StalkCampaignStore.ListLayers(detail.Summary.Project, repoRoot)
+        var id = summary.Id.ToString("D");
+        var idN = summary.Id.ToString("N");
+        return StalkCampaignStore.ListLayers(summary.Project, repoRoot)
             .Any(l => string.Equals(l.CrashId, id, StringComparison.OrdinalIgnoreCase)
                       || string.Equals(l.CrashId, idN, StringComparison.OrdinalIgnoreCase));
     }
