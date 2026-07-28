@@ -116,9 +116,24 @@ public class CdbProbeEngineTests
     [Fact]
     public void WindowsCdbCrashAnalysisWriter_BuildScript_delegates_to_builder()
     {
+        // Capture once — DebuggerSymbolPathTests mutates _NT_SYMBOL_PATH / cache env in parallel,
+        // so two sequential FormatSympathScriptCommand() calls can disagree mid-assert.
         var legacy = WindowsCdbCrashAnalysisWriter.BuildScript(null);
-        var direct = CdbScriptBuilder.BuildInline(CdbProbePlan.StandardCrash);
-        Assert.Equal(direct, legacy);
+        var direct = CdbScriptBuilder.BuildInline(
+            CdbProbePlan.StandardCrash,
+            new CdbScriptOptions { MsecDllPath = null });
+
+        static string WithoutSympath(string script)
+        {
+            // Leading ".sympath \"…\"; " then the shared probe body.
+            const string sep = "; ";
+            var i = script.IndexOf(sep, StringComparison.Ordinal);
+            return i >= 0 ? script[(i + sep.Length)..] : script;
+        }
+
+        Assert.Equal(WithoutSympath(direct), WithoutSympath(legacy));
+        Assert.Contains("!analyze -v", legacy, StringComparison.Ordinal);
+        Assert.Contains(CdbMarkers.Begin(CdbProbeSection.Analyze), legacy, StringComparison.Ordinal);
     }
 
     [Fact]
