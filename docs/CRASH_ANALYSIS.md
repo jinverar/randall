@@ -54,7 +54,7 @@ Research-only — richer exploitability evidence for Scream Investigator; no she
 | `<guid>_corruption_chain.json` | **Corruption chain** — research-only input→mutation→fault attribution (lineage + register↔payload joins + pattern depth + debugger evidence) |
 | `<guid>_influence.json` | **Influence map** — input region → program state links with confirmation status (see [INFLUENCE_ENGINE.md](INFLUENCE_ENGINE.md)) |
 | `<guid>_backward_trace.json` | **Backward trace** — dump-only exploit narrative (mutation → register → bad-pointer source → fault instruction → crash); no live TTD |
-| `<guid>_exploit_research.json` | **Exploit Research panel** — faulting insn + static EA reconstruction + register/input **control matrix** (UNKNOWN→CONFIRMED) + destination vs written-value split + control-test rows + next experiment; stamped with `engine` build identity |
+| `<guid>_exploit_research.json` | **Exploit Research panel** — Evidence/Interpretation/Proven columns + faulting insn + static EA + register **control matrix** + dest-vs-value split + **CYCLIC ANALYSIS** (offsets + ASCII map) + control tests + next experiment; stamped with `engine` build identity |
 | `<guid>_root_cause.json` | **Root cause** — deterministic `RootCauseCandidate` + educational summary from correlated evidence facts |
 | `<guid>_scream_evolution.json` | **Scream evolution** — family phenotype, generation/ancestor, momentum (READ→WRITE→controlled WRITE), warming label |
 

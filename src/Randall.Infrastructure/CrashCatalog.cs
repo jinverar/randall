@@ -713,7 +713,8 @@ public static class CrashCatalog
                 researchPlan,
                 skeptic,
                 corruptionChain,
-                bytes);
+                bytes,
+                mutatorHint: summary.Mutator);
         return new CrashDetailDto(
             CrashIntelligenceBuilder.WithListIntelligence(summary, intelligence),
             bytes.Length,

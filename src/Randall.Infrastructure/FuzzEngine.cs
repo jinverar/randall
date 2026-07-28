@@ -2777,7 +2777,9 @@ public sealed class FuzzEngine
             {
                 ExploitResearchPanelBuilder.PersistForCrash(
                     crashesDir, crashId, project, debugger, influence, primitives, counterfactual,
-                    plan, skeptic, corruption, TryLoadCrashBytes(crashesDir, crashId));
+                    plan, skeptic, corruption, TryLoadCrashBytes(crashesDir, crashId),
+                    mutatorHint: corruption?.SuspectedMutator
+                                 ?? corruption?.MutatorLineage?.FirstOrDefault());
             }
             catch (Exception ex)
             {

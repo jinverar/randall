@@ -5940,3 +5940,52 @@ html:not([data-scream-anim="on"]) .scream-canister-liquid {
 }
 .exploit-write-split .label { color: var(--muted); margin: 0.4rem 0 0.15rem; }
 .ctrl-result { font-family: var(--mono); font-size: 0.84rem; }
+.exploit-honesty-split {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0.5rem 0 0.75rem;
+}
+.exploit-honesty-col {
+  border: 1px solid var(--border);
+  padding: 0.45rem 0.55rem;
+  min-height: 4rem;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+}
+.exploit-honesty-col .label {
+  margin: 0 0 0.3rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.exploit-honesty-col ul {
+  margin: 0;
+  padding-left: 1.05rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.exploit-honesty-col.col-evidence .label { color: var(--ok, #2f9e44); }
+.exploit-honesty-col.col-interpretation .label { color: #c9a227; }
+.exploit-honesty-col.col-proven .label { color: #3d8bfd; }
+.exploit-cyclic {
+  margin: 0.55rem 0 0.35rem;
+}
+.exploit-cyclic-summary { margin: 0.2rem 0; }
+.exploit-cyclic-hits {
+  margin: 0.25rem 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+.exploit-cyclic-map {
+  margin: 0.35rem 0;
+  padding: 0.45rem 0.55rem;
+  font-family: var(--mono, ui-monospace, Consolas, monospace);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  white-space: pre;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel) 88%, #000 6%);
+}
+@media (max-width: 900px) {
+  .exploit-honesty-split { grid-template-columns: 1fr; }
+}

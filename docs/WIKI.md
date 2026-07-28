@@ -53,7 +53,7 @@ Open ≠ Import. Open browses local journals; Import copies archives in.
 
 - Boundary/teardown null writes are **not** automatic R4 primitives.
 - After pull: restart server, open crash, **Re-analyze** if you see ⚠ older analysis engine.
-- Exploit Research panel (Investigation): **Faulting instruction · EA breakdown · Written value**, then **register/input control matrix** (UNKNOWN→CONFIRMED), **destination vs written-value** split (width + repeatability), **control tests** (Input · Reg/EA · Fault · Result; or planned next experiment), then next experiment. EA is static from `u @rip` + regs (`[rax-2Ch]` with RAX=`0x2C` → `0x0`). Zero/low-value never CONFIRMED; FF…FF/−1 stays CORRELATED without CF. Missing/garbage insn → `UNKNOWN` (never symbol-path). Re-analyze after pull if ⚠ older engine.
+- Exploit Research panel (Investigation): **Evidence / Interpretation / Proven** columns (hypotheses never look like facts), **Faulting instruction · EA · value**, register matrix (UNKNOWN→CONFIRMED), dest-vs-value split, **CYCLIC ANALYSIS** (RIP/RBP/RCX/fault EA/stack+N → offset + ASCII map when cyclic/pattern payload), control tests, next experiment. Zero/low-value never CONFIRMED; cyclic offset match = Evidence only until CF → Proven. Re-analyze after pull if ⚠ older engine.
 
 ## Common `doctor` warnings
 

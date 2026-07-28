@@ -3500,9 +3500,41 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
       </tr>`).join('')}</tbody></table>`
     : '<p class="hint">No counterfactual control tests yet — run live probes or wait for plan / skeptic next experiment.</p>';
 
+  const cyclic = panel.cyclicAnalysis;
+  const cyclicBlock = cyclic?.detected
+    ? `<div class="exploit-cyclic">
+        <p class="label">Cyclic analysis <span class="hint-inline">${escapeAttr(cyclic.detectionReason || '')}</span></p>
+        <p class="exploit-cyclic-summary"><code>${escapeAttr(cyclic.summaryLine || 'CYCLIC ANALYSIS')}</code></p>
+        ${(cyclic.hits || []).length
+          ? `<ul class="exploit-cyclic-hits">${cyclic.hits.slice(0, 12).map((h) =>
+              `<li><code>${escapeAttr(h.where)}</code> → offset <code>${h.offset}</code>${h.valueHex ? ` <span class="hint-inline">${escapeAttr(h.valueHex)}</span>` : ''}</li>`
+            ).join('')}</ul>`
+          : '<p class="hint">Pattern detected — no register / fault EA / stack hit yet.</p>'}
+        ${cyclic.asciiMap ? `<pre class="exploit-cyclic-map">${escapeAttr(cyclic.asciiMap)}</pre>` : ''}
+        <p class="hint">Offset matches are <strong>Evidence</strong> (bytes observed). “You control X” stays <strong>Interpretation</strong> until a counterfactual delta lands in Proven.</p>
+      </div>`
+    : '';
+
+  const listCol = (title, items, cls) => {
+    const rows = Array.isArray(items) ? items : [];
+    return `<div class="exploit-honesty-col ${cls}">
+      <p class="label">${escapeAttr(title)}</p>
+      ${rows.length
+        ? `<ul>${rows.slice(0, 14).map((x) => `<li>${escapeAttr(x)}</li>`).join('')}</ul>`
+        : '<p class="hint">—</p>'}
+    </div>`;
+  };
+  const honestySplit = `<div class="exploit-honesty-split" title="Evidence = observed · Interpretation = hypothesis · Proven = counterfactual only">
+      ${listCol('Evidence', panel.evidence, 'col-evidence')}
+      ${listCol('Interpretation', panel.interpretation, 'col-interpretation')}
+      ${listCol('Proven', panel.proven, 'col-proven')}
+    </div>
+    <p class="hint">Evidence ≠ Interpretation ≠ Proven — hypotheses never promote themselves.</p>`;
+
   return `<div class="triage-box exploit-research-box" id="exploit-research-panel">
     <h4>Exploit Research <span class="hint-inline">5 questions · research-only</span></h4>
     <p class="hint">${escapeAttr(panel.summary || '')}</p>
+    ${honestySplit}
     <div class="exploit-q">
       <h5>1–2. Faulting instruction · EA breakdown · written value</h5>
       ${eaBlock}
@@ -3511,6 +3543,7 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
       <h5>3. Register / input control matrix</h5>
       ${matrixRows}
       ${writeBlock}
+      ${cyclicBlock}
     </div>
     <div class="exploit-q">
       <h5>4. Control tests <span class="hint-inline">counterfactual</span></h5>
@@ -3881,7 +3914,7 @@ function renderCrashDetail(detail, title) {
       ${renderEngineStaleBanner(detail)}
       ${renderExploitResearchPanel(detail.exploitResearch, dbg)}
       ${evidenceFacts.length ? `<div class="triage-box evidence-facts-box">
-        <h4>Evidence facts <span class="hint-inline">${evidenceFacts.length} atom(s)</span>${academyResearchMode() ? ' <span class="hint-inline">dense</span>' : ''}</h4>
+        <h4>Evidence facts <span class="hint-inline">${evidenceFacts.length} atom(s)</span>${academyResearchMode() ? ' <span class="hint-inline">dense</span>' : ''} <span class="hint-inline">observed atoms · not Proven</span></h4>
         ${academyEduBlurb('evidence')}
         <table class="evidence-fact-table"><thead><tr><th>Type</th><th>Name</th><th>Value</th><th>Source</th><th>Conf</th></tr></thead><tbody>${evidenceFacts.slice(0, evidenceLimit).map((f) => {
           const conf = f.confidence != null ? `${Math.round(f.confidence * 100)}%` : '—';
