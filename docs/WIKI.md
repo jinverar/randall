@@ -25,6 +25,9 @@ Honesty / NULL-write / Exploit Research fixes live in the **running** binary + `
 - **Stop Labs** first, **or** uncheck **Coverage-guided**, then Start fuzz.
 - While Tracing with Labs + Coverage on: banner is **LIVE (no BB edges…)** — session/corpus-novelty graph keeps refreshing. Do **not** need Open completed run for a live session.
 - Banner *No BB graph… Open completed run* is for idle / completed only.
+- **Live novelty graph** (START → CORPUS+ → crash nodes) ≠ DynamoRIO **BB graph**. Novelty stays visible with Labs on; true basic-block edges need DynamoRIO + a free TCP port.
+- Click any crash event (timeline, crash log, canister, event list — including oracle_only / silent screams) → **Crashes → Investigation**. Pin pauses live; **Follow live** resumes.
+- Stuck “already running” / Idle STATUS → **Force clear**, then Start again.
 
 ## Troubleshooting
 
