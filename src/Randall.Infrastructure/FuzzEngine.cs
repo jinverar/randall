@@ -779,9 +779,7 @@ public sealed class FuzzEngine
                         var model = ProtocolLoader.Load(yamlPath, project.Model);
                         var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, project.Model);
                         payload = ModelFuzzer.BuildPayload(
-                            model, protoSeeds, mutator, rng,
-                            project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth, planned.TargetField,
-                            project.Fuzz.SyncNbssLength);
+                            model, protoSeeds, mutator, rng, project.Fuzz, planned.TargetField);
                         var baseline = model.Render(protoSeeds);
                         parentInputHash = InputHash.StackHash(baseline);
                         seedSource = "model";
@@ -886,9 +884,7 @@ public sealed class FuzzEngine
                     var model = ProtocolLoader.Load(yamlPath, project.Model);
                     var protoSeeds = ProtocolLoader.LoadProtocolSeeds(yamlPath, project.Model);
                     payload = ModelFuzzer.BuildPayload(
-                        model, protoSeeds, mutator, rng,
-                        project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth,
-                        targetField: null, project.Fuzz.SyncNbssLength);
+                        model, protoSeeds, mutator, rng, project.Fuzz);
                     commandName = $"model/{model.Name}";
                     parentInputHash = InputHash.StackHash(model.Render(protoSeeds));
                     seedSource = "model";
@@ -2261,12 +2257,11 @@ public sealed class FuzzEngine
             {
                 return new CommandPayloadBuild(
                     ModelFuzzer.BuildPayload(
-                        model, protoSeeds, mutator, rng,
-                        project.Fuzz.SyncLengthFields, project.Fuzz.HavocDepth, targetField,
-                        project.Fuzz.SyncNbssLength),
+                        model, protoSeeds, mutator, rng, project.Fuzz, targetField),
                     parentInputHash, seedSource, seedFiles);
             }
-            var baselineMsg = model.FinalizeMessage(baseline, project.Fuzz.SyncLengthFields);
+            var (lenPol, crcPol, lenDelta, crcDelta) = FuzzDependencyPolicies.Resolve(project.Fuzz);
+            var baselineMsg = model.FinalizeMessage(baseline, lenPol, crcPol, lenDelta, crcDelta);
             if (project.Fuzz.SyncNbssLength)
                 baselineMsg = NbssFraming.TrySyncLength(baselineMsg);
             return new CommandPayloadBuild(

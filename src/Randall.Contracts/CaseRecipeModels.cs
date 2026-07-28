@@ -256,7 +256,11 @@ public sealed record RecipeCatalogEntryDto(
     int? Port,
     string? Extension,
     IReadOnlyList<string> Mutators,
-    int DictionaryCount);
+    int DictionaryCount,
+    /// <summary>
+    /// Magic-only | Minimal valid | Representative | Structured model | Grammar-backed | Harness included
+    /// </summary>
+    string Quality = "Magic-only");
 
 /// <summary>Full catalog entry incl. a seed preview + dictionary (for detail view / instantiate).</summary>
 public sealed record RecipeCatalogDetailDto(

@@ -32,6 +32,18 @@ public static class BuiltInMutators
                 "duplicate" or "dup" => new DuplicateMutator(rng),
                 "shuffle" => new ShuffleMutator(rng),
                 "cyclic" or "pattern" => new CyclicMutator(rng),
+                "delete-range" or "delete" or "delete_range" => new ChunkOpMutator("delete-range", rng, MutationOps.DeleteRange),
+                "insert-at-offset" or "insert-at" or "insert_at_offset" => new ChunkOpMutator("insert-at-offset", rng, (b, r) => MutationOps.InsertAtOffset(b, r)),
+                "replace-chunk" or "replace" or "replace_chunk" => new ChunkOpMutator("replace-chunk", rng, MutationOps.ReplaceChunk),
+                "zero-range" or "zero" or "zero_range" => new ChunkOpMutator("zero-range", rng, MutationOps.ZeroRange),
+                "fill-range" or "fill" or "fill_range" => new ChunkOpMutator("fill-range", rng, MutationOps.FillRange),
+                "clone-chunk" or "clone" or "clone_chunk" => new ChunkOpMutator("clone-chunk", rng, MutationOps.CloneChunk),
+                "move-chunk" or "move" or "move_chunk" => new ChunkOpMutator("move-chunk", rng, MutationOps.MoveChunk),
+                "swap-records" or "swap" or "swap_records" => new ChunkOpMutator("swap-records", rng, MutationOps.SwapRecords),
+                "repeat-record" or "repeat" or "repeat_record" => new ChunkOpMutator("repeat-record", rng, MutationOps.RepeatRecord),
+                "lengthen-near-field" or "lengthen" => new ChunkOpMutator("lengthen-near-field", rng, MutationOps.LengthenNearField),
+                "shorten-near-field" or "shorten" => new ChunkOpMutator("shorten-near-field", rng, MutationOps.ShortenNearField),
+                "dictionary-at-field" or "dict-at-field" => new DictionaryMutator(rng, context.DictionaryTokens),
                 "splice" when context.PickAlternateSeed is not null =>
                     new SpliceMutator(rng, context.PickAlternateSeed),
                 _ => null,
@@ -156,6 +168,16 @@ internal sealed class InsertBlobMutator(Random rng) : IMutator
         rng.NextBytes(buf.AsSpan(input.Length));
         return buf;
     }
+}
+
+internal sealed class ChunkOpMutator(
+    string name,
+    Random rng,
+    Func<byte[], Random, byte[]> op) : IMutator
+{
+    public string Name => name;
+    public ReadOnlyMemory<byte> Mutate(ReadOnlyMemory<byte> input) =>
+        op(input.ToArray(), rng);
 }
 
 /// <summary>

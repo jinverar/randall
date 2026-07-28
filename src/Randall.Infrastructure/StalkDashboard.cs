@@ -1542,8 +1542,8 @@ public static class StalkDashboard
         if (!corpus.DynamoRioAvailable)
         {
             notes.Insert(0, liveForProject
-                ? "LIVE (no BB edges — DynamoRIO missing). Graph shows corpus-novelty / session path; install DynamoRIO for BB edges."
-                : "No basic-block coverage — DynamoRIO missing. Run `randall doctor` / install tools, or rely on corpus-novelty (corpus+) nodes.");
+                ? "Coverage unavailable — LIVE path-novelty / semantic stages only (DynamoRIO missing). edges=0 is not real BB coverage."
+                : "Coverage unavailable — DynamoRIO missing. Edge/block metrics are N/A; use corpus+ / pathlog semantic stages until BB provider is installed.");
             return;
         }
 
@@ -1553,7 +1553,7 @@ public static class StalkDashboard
             if (liveForProject)
             {
                 notes.Insert(0, guided
-                    ? "LIVE (no BB edges — stop Labs for DynamoRIO). Session / corpus-novelty graph stays live while Tracing."
+                    ? "Coverage unavailable for BB edges (stop Labs for DynamoRIO). Semantic/session path stays live — do not treat edges=0 as measured coverage."
                     : "LIVE — corpus-novelty / session path (no BB edges yet). Enable Coverage-guided with a free TCP port for DynamoRIO edges.");
             }
             else

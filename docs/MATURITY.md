@@ -25,7 +25,8 @@ This doc expands the unfinished surface into concrete gaps, done criteria, and p
 | Mistake catalog + arming | Capable | OWASP/AISW-informed channels; needs more field feedback |
 | Web (`http`/`https`) fuzz | Capable | Framing + status oracles + cookie jar stub; not a full web scanner |
 | Lab targets (vuln*) | Lab | Teaching crashes, not market parsers |
-| File templates (`file-text` / `file-framed`) | Capable | In-repo mini-parsers + seeds; still teaching-floor depth |
+| File templates (`file-text` / `file-framed`) | Capable | Mini-parsers + seeds; see [FILE_FUZZING.md](FILE_FUZZING.md) for competitive roadmap |
+| File-format engine (models/chunks/policies) | Capable | Peach-style blocks expanding; chunk mutators + length/checksum policies shipped |
 | AFL++ / honggfuzz adapters | Capable | Real campaigns + corpus sync; bake-off scaffold in BENCHMARKS |
 | Packaging (`pack` / standalone) | Capable | Host RID pack + win/linux scripts; no signed installer yet |
 | Serve / agent security | Capable | Token required on LAN bind; no users/roles/TLS termination |
@@ -61,7 +62,27 @@ Related: [ROADMAP.md](ROADMAP.md) · [ROADMAP_INTELLIGENCE.md](ROADMAP_INTELLIGE
 
 ---
 
-## 2. Demo-ish targets
+## 2. File-format fuzzing (competitive track)
+
+**Positioning:** Randall competes on **structure + dependency policies + crash research**. AFL++ still wins raw grind; adapters exist. See [FILE_FUZZING.md](FILE_FUZZING.md).
+
+**Strong today**
+- Custom / teaching parsers, harness demos, ReelDeck path stalking, crash-research integration
+- Block models (sized/checksum + uint/enum/flags/switch/array/padding/offset stubs)
+- Chunk mutators, length/checksum policies, corpus minimize, sanitizer-aware file exits
+
+**Not yet (ambitious NEXT)**
+- Full Peach PIT / Defensics grammar parity (PDF/PE/ZIP trees)
+- Grammar-backed catalog recipes at scale
+- SanCov-native Linux default without DynamoRIO
+
+**ReelDeck:** deepen corpus with structural seeds + semantic stages — not “discover grammar from scratch.”
+
+**Metrics:** keep **Edge** | **Block** | **Semantic stage** separate; edges=0 without DynamoRIO ⇒ Coverage unavailable.
+
+---
+
+## 2b. Demo-ish network targets
 
 **What works today**
 - Rich **teaching floor**: vulnserver, VulnHttp/Ftp/Ssh/Tftp/Rpc/Smb, VulnLab mitigation ladder, harness demos
@@ -70,7 +91,7 @@ Related: [ROADMAP.md](ROADMAP.md) · [ROADMAP_INTELLIGENCE.md](ROADMAP_INTELLIGE
 
 **Still lab**
 - Stock network targets (vuln*) remain intentionally crashable toys — great for onboarding
-- file-text / file-framed are **mini-parsers** (in-repo), not market formats — pair with ReelDeck for deeper file stalking
+- file-text / file-framed are **mini-parsers** (in-repo) — pair with ReelDeck + structured models for deeper file campaigns
 
 **Done when**
 - At least 2–3 **non-toy** example projects (oss parser or in-repo mini-parser with documented bugs) — **ReelDeck + file-text + file-framed shipped**

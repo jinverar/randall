@@ -21,6 +21,15 @@ Enable via project YAML `mutators:` or **Fuzz → Case builder** checkboxes. New
 | `insert` | Append random blob tail | Tail parser bugs |
 | `duplicate` | Repeat a random slice of the seed | AFL chunk duplication |
 | `shuffle` | Swap two short spans inside the seed | Local reorder / confusion |
+| `delete-range` | Splice out a random interior range | Peach / structure break |
+| `insert-at-offset` | Insert bytes at a random offset (not only append) | Field injection |
+| `replace-chunk` | Overwrite a random span | Chunk replace |
+| `zero-range` / `fill-range` | Clear or fill a span | Null / constant fill |
+| `clone-chunk` / `move-chunk` | Duplicate or relocate a span | Record confusion |
+| `swap-records` / `repeat-record` | Swap or repeat record-sized spans | Container fuzz |
+| `lengthen-near-field` / `shorten-near-field` | Grow/shrink near a length-ish prefix | Length relation stress |
+
+File-format campaigns, policies, multi-file: [FILE_FUZZING.md](FILE_FUZZING.md).
 
 Enable in project YAML:
 

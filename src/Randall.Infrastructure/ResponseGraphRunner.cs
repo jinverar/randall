@@ -129,7 +129,10 @@ public static class FuzzEngineHelpers
                 return MaybeSyncHttp(built, project);
             }
 
-            var msg = model.FinalizeMessage(model.Render(protoSeeds), project.Fuzz.SyncLengthFields);
+            var pols = FuzzDependencyPolicies.Resolve(project.Fuzz);
+            var msg = model.FinalizeMessage(
+                model.Render(protoSeeds),
+                pols.Length, pols.Checksum, pols.LengthDelta, pols.ChecksumDelta);
             if (project.Fuzz.SyncNbssLength)
                 msg = NbssFraming.TrySyncLength(msg);
             return MaybeSyncHttp(msg, project);

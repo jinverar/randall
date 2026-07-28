@@ -163,6 +163,161 @@ internal static class MutationOps
         return buf;
     }
 
+    public static byte[] DeleteRange(byte[] buf, Random rng)
+    {
+        if (buf.Length <= 1)
+            return buf;
+        var start = rng.Next(buf.Length);
+        var maxLen = buf.Length - start;
+        var len = rng.Next(1, Math.Min(64, maxLen) + 1);
+        var result = new byte[buf.Length - len];
+        buf.AsSpan(0, start).CopyTo(result);
+        buf.AsSpan(start + len).CopyTo(result.AsSpan(start));
+        return result;
+    }
+
+    public static byte[] InsertAtOffset(byte[] buf, Random rng, int? maxInsert = null)
+    {
+        var insertLen = rng.Next(1, Math.Min(maxInsert ?? 128, 256) + 1);
+        var pos = buf.Length > 0 ? rng.Next(buf.Length + 1) : 0;
+        var result = new byte[buf.Length + insertLen];
+        buf.AsSpan(0, pos).CopyTo(result);
+        rng.NextBytes(result.AsSpan(pos, insertLen));
+        buf.AsSpan(pos).CopyTo(result.AsSpan(pos + insertLen));
+        return result;
+    }
+
+    public static byte[] ReplaceChunk(byte[] buf, Random rng)
+    {
+        if (buf.Length == 0)
+            return [(byte)rng.Next(256)];
+        var start = rng.Next(buf.Length);
+        var len = rng.Next(1, Math.Min(64, buf.Length - start) + 1);
+        rng.NextBytes(buf.AsSpan(start, len));
+        return buf;
+    }
+
+    public static byte[] ZeroRange(byte[] buf, Random rng)
+    {
+        if (buf.Length == 0)
+            return buf;
+        var start = rng.Next(buf.Length);
+        var len = rng.Next(1, Math.Min(64, buf.Length - start) + 1);
+        buf.AsSpan(start, len).Clear();
+        return buf;
+    }
+
+    public static byte[] FillRange(byte[] buf, Random rng)
+    {
+        if (buf.Length == 0)
+            return buf;
+        var start = rng.Next(buf.Length);
+        var len = rng.Next(1, Math.Min(64, buf.Length - start) + 1);
+        var fill = (byte)rng.Next(256);
+        buf.AsSpan(start, len).Fill(fill);
+        return buf;
+    }
+
+    public static byte[] CloneChunk(byte[] buf, Random rng)
+    {
+        if (buf.Length == 0)
+            return buf;
+        var start = rng.Next(buf.Length);
+        var len = rng.Next(1, Math.Min(64, buf.Length - start) + 1);
+        var chunk = buf.AsSpan(start, len);
+        var insertAt = rng.Next(buf.Length + 1);
+        var result = new byte[buf.Length + len];
+        buf.AsSpan(0, insertAt).CopyTo(result);
+        chunk.CopyTo(result.AsSpan(insertAt));
+        buf.AsSpan(insertAt).CopyTo(result.AsSpan(insertAt + len));
+        return result;
+    }
+
+    public static byte[] MoveChunk(byte[] buf, Random rng)
+    {
+        if (buf.Length < 2)
+            return buf;
+        var start = rng.Next(buf.Length);
+        var len = rng.Next(1, Math.Min(32, buf.Length - start) + 1);
+        var chunk = buf.AsSpan(start, len).ToArray();
+        var without = DeleteRangeAt(buf, start, len);
+        var insertAt = without.Length > 0 ? rng.Next(without.Length + 1) : 0;
+        var result = new byte[without.Length + chunk.Length];
+        without.AsSpan(0, insertAt).CopyTo(result);
+        chunk.CopyTo(result.AsSpan(insertAt));
+        without.AsSpan(insertAt).CopyTo(result.AsSpan(insertAt + chunk.Length));
+        return result;
+    }
+
+    public static byte[] SwapRecords(byte[] buf, Random rng)
+    {
+        if (buf.Length < 4)
+            return ShuffleSpans(buf.ToArray(), rng);
+        var mid = buf.Length / 2;
+        var aLen = rng.Next(1, Math.Min(mid, 64) + 1);
+        var bStart = mid + rng.Next(0, Math.Max(1, buf.Length - mid - 1));
+        var bLen = Math.Min(aLen, buf.Length - bStart);
+        if (bLen <= 0)
+            return buf;
+        var result = buf.ToArray();
+        for (var i = 0; i < bLen; i++)
+            (result[i], result[bStart + i]) = (result[bStart + i], result[i]);
+        return result;
+    }
+
+    public static byte[] RepeatRecord(byte[] buf, Random rng) => DuplicateChunk(buf, rng);
+
+    public static byte[] LengthenNearField(byte[] buf, Random rng)
+    {
+        if (buf.Length < 4)
+            return Expand(buf, rng);
+        // Treat first 2–4 bytes as a length-ish field and inflate nearby body.
+        var width = buf.Length >= 4 && rng.NextDouble() < 0.5 ? 4 : 2;
+        var bodyStart = width;
+        var extra = rng.Next(4, 128);
+        var result = new byte[buf.Length + extra];
+        buf.AsSpan(0, bodyStart).CopyTo(result);
+        buf.AsSpan(bodyStart).CopyTo(result.AsSpan(bodyStart));
+        rng.NextBytes(result.AsSpan(buf.Length));
+        // Optionally bump the length field (little-endian).
+        if (rng.NextDouble() < 0.7)
+        {
+            uint cur = width == 2
+                ? (uint)(result[0] | (result[1] << 8))
+                : (uint)(result[0] | (result[1] << 8) | (result[2] << 16) | (result[3] << 24));
+            cur = unchecked(cur + (uint)extra);
+            if (width == 2)
+            {
+                result[0] = (byte)cur;
+                result[1] = (byte)(cur >> 8);
+            }
+            else
+            {
+                result[0] = (byte)cur;
+                result[1] = (byte)(cur >> 8);
+                result[2] = (byte)(cur >> 16);
+                result[3] = (byte)(cur >> 24);
+            }
+        }
+        return result;
+    }
+
+    public static byte[] ShortenNearField(byte[] buf, Random rng)
+    {
+        if (buf.Length <= 4)
+            return Truncate(buf, rng);
+        var keep = rng.Next(2, buf.Length);
+        return buf.AsSpan(0, keep).ToArray();
+    }
+
+    private static byte[] DeleteRangeAt(byte[] buf, int start, int len)
+    {
+        var result = new byte[buf.Length - len];
+        buf.AsSpan(0, start).CopyTo(result);
+        buf.AsSpan(start + len).CopyTo(result.AsSpan(start));
+        return result;
+    }
+
     public static byte[] Havoc(byte[] input, Random rng, int depth)
     {
         var buf = input.ToArray();
@@ -170,7 +325,9 @@ internal static class MutationOps
         ReadOnlySpan<Func<byte[], Random, byte[]>> ops =
         [
             BitFlip, Arith, InterestingByte, Truncate, Expand, InsertRandom,
-            DuplicateChunk, ShuffleSpans,
+            DuplicateChunk, ShuffleSpans, DeleteRange,
+            static (b, r) => InsertAtOffset(b, r),
+            ReplaceChunk, ZeroRange, CloneChunk, FillRange,
         ];
 
         for (var i = 0; i < rounds; i++)

@@ -108,13 +108,17 @@ public sealed class IntegerBlock : IBlockNode
 
     public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx)
     {
-        var kind = Width switch { 2 => "word", 8 => "qword", _ => "dword" };
+        var kind = Width switch { 1 => "uint8", 2 => "word", 8 => "qword", _ => "dword" };
         fields.Add(new FieldRegion(Name, baseOffset, Width, Mutable, kind, LittleEndian));
     }
 
     private void WriteInteger(Span<byte> dest, ulong value)
     {
-        if (Width == 2)
+        if (Width == 1)
+        {
+            dest[0] = (byte)value;
+        }
+        else if (Width == 2)
         {
             var v = (ushort)value;
             if (LittleEndian) { dest[0] = (byte)v; dest[1] = (byte)(v >> 8); }
@@ -368,29 +372,74 @@ public sealed class BlockModel : IProtocolModel
         }
     }
 
-    public byte[] FinalizeMessage(byte[] message, bool syncLengthFields = false)
+    public byte[] FinalizeMessage(byte[] message, bool syncLengthFields = false) =>
+        FinalizeMessage(
+            message,
+            syncLengthFields ? LengthPolicy.Valid : LengthPolicy.Independent,
+            ChecksumPolicy.Valid);
+
+    /// <summary>
+    /// Apply length/checksum dependency policies after mutation (Peach-style relations).
+    /// </summary>
+    public byte[] FinalizeMessage(
+        byte[] message,
+        LengthPolicy lengthPolicy,
+        ChecksumPolicy checksumPolicy,
+        int lengthDelta = 0,
+        int checksumDelta = 0)
     {
         var result = message;
         foreach (var spec in _derived.Where(d => d.Kind == "length").OrderBy(d => d.Offset))
         {
-            if (!syncLengthFields)
+            if (lengthPolicy is LengthPolicy.Mutate or LengthPolicy.Independent or LengthPolicy.Stale)
                 continue;
-            var payloadLen = result.Length - (spec.Offset + spec.Length);
-            WriteLengthAt(result, spec.Offset, spec.Length, spec.LittleEndian, (uint)Math.Max(0, payloadLen));
+
+            var actual = (uint)Math.Max(0, result.Length - (spec.Offset + spec.Length));
+            var value = lengthPolicy switch
+            {
+                LengthPolicy.Valid => actual,
+                LengthPolicy.OffByOne => actual > 0 && (actual % 2 == 0) ? actual - 1 : actual + 1,
+                LengthPolicy.Wrap => WrapToWidth(actual + 1, spec.Length),
+                LengthPolicy.ActualPlusDelta => unchecked(actual + (uint)lengthDelta),
+                LengthPolicy.Zero => 0u,
+                _ => actual,
+            };
+            WriteLengthAt(result, spec.Offset, spec.Length, spec.LittleEndian, value);
         }
 
         foreach (var spec in _derived.Where(d => d.Kind == "checksum"))
         {
+            if (checksumPolicy is ChecksumPolicy.Mutate or ChecksumPolicy.Independent or ChecksumPolicy.Stale)
+                continue;
+
             var coverLen = spec.Trailing
                 ? Math.Max(0, result.Length - spec.Length)
                 : Math.Max(0, spec.Offset);
             if (coverLen <= 0 || spec.Offset + spec.Length > result.Length)
                 continue;
+
             var crc = Crc32.Compute(result.AsSpan(0, coverLen));
-            WriteChecksumAt(result, spec.Offset, spec.Length, spec.LittleEndian, crc);
+            var value = checksumPolicy switch
+            {
+                ChecksumPolicy.Valid => crc,
+                ChecksumPolicy.OffByOne => crc + 1,
+                ChecksumPolicy.Wrap => unchecked(crc + 0x100),
+                ChecksumPolicy.ActualPlusDelta => unchecked(crc + (uint)checksumDelta),
+                ChecksumPolicy.Zero => 0u,
+                _ => crc,
+            };
+            WriteChecksumAt(result, spec.Offset, spec.Length, spec.LittleEndian, value);
         }
         return result;
     }
+
+    private static uint WrapToWidth(uint value, int width) =>
+        width switch
+        {
+            1 => value & 0xFF,
+            2 => value & 0xFFFF,
+            _ => value,
+        };
 
     private static void WriteLengthAt(byte[] buf, int offset, int width, bool le, uint value)
     {

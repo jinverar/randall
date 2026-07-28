@@ -279,10 +279,16 @@ function updateNoBbBanners(data, fuzzStatus) {
     || (isFuzzSessionActive(fuzzStatus) && document.getElementById('fuzz-coverage')?.checked === true);
   const edges = Number(data?.coverageEdges ?? fuzzStatus?.coverageEdges) || 0;
   const live = isFuzzSessionActive(fuzzStatus);
-  const providerMissing = /DynamoRIO missing|Coverage unavailable|without DynamoRIO/i.test(
-    (data?.coverageLabel || '') + ' ' + (data?.coverageDetail || '') + ' ' + (data?.notes || []).join(' '));
+  const kind = (data?.coverageKind || fuzzStatus?.coverageKind || '').toLowerCase();
+  const isFile = kind.includes('path') || /file|reeldeck|path-novelty/i.test(
+    (data?.coverageLabel || '') + ' ' + (data?.notes || []).join(' ') + ' ' + (fuzzStatus?.project || ''));
+  const providerMissing = /DynamoRIO missing|Coverage unavailable|without DynamoRIO|unavailable/i.test(
+    (data?.coverageLabel || '') + ' ' + (data?.coverageDetail || '') + ' ' + (data?.notes || []).join(' '))
+    || kind === 'unavailable' || kind === 'path-novelty';
   const msg = providerMissing
-    ? 'Coverage unavailable — no BB edge provider (install DynamoRIO / free the TCP port). Session path still updates.'
+    ? (isFile
+      ? 'Coverage unavailable — no BB edge provider. Semantic path stages (pathlog) may still update; edges=0 is not real BB coverage.'
+      : 'Coverage unavailable — no BB edge provider (install DynamoRIO / free the TCP port). Session path still updates.')
     : live
       ? 'LIVE (no BB edges — stop Labs for DynamoRIO). Session / corpus-novelty graph stays live while Tracing.'
       : 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.';
@@ -865,6 +871,7 @@ async function loadRecipeCatalog() {
           <strong>${escapeAttr(e.name)}</strong>
           <span class="recipe-kind">${escapeAttr(e.kind)}</span>
           <span class="recipe-cat">${escapeAttr(e.category)}</span>
+          <span class="recipe-quality" title="Recipe quality tier">${escapeAttr(e.quality || 'Magic-only')}</span>
           <div class="recipe-tags">${(e.tags || []).map((t) => `<span class="recipe-tag">${escapeAttr(t)}</span>`).join('')}</div>
         </div>
         <button type="button" class="btn primary recipe-make" data-id="${escapeAttr(e.id)}" data-name="${escapeAttr(e.id)}">Create project</button>

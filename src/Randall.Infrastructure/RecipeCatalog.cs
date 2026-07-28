@@ -13,7 +13,17 @@ namespace Randall.Infrastructure;
 /// </summary>
 public static class RecipeCatalog
 {
-    private static readonly string[] FileMut = ["bitflip", "havoc", "expand", "boundary", "insert", "truncate", "arith"];
+    private static readonly string[] FileMut =
+    [
+        "bitflip", "havoc", "expand", "boundary", "insert", "truncate", "arith",
+        "delete-range", "insert-at-offset", "replace-chunk", "zero-range", "clone-chunk",
+    ];
+    private static readonly string[] FileStructMut =
+    [
+        "havoc", "delete-range", "insert-at-offset", "replace-chunk", "clone-chunk",
+        "move-chunk", "swap-records", "lengthen-near-field", "shorten-near-field",
+        "dictionary", "bitflip", "interesting",
+    ];
     private static readonly string[] NetMut = ["bitflip", "havoc", "interesting", "dictionary", "insert", "arith"];
     private static readonly string[] WebMut = ["dictionary", "havoc", "insert", "expand"];
 
@@ -28,9 +38,21 @@ public static class RecipeCatalog
     private static readonly string[] SstiDict = ["{{7*7}}", "${7*7}", "#{7*7}", "<%= 7*7 %>", "{{config}}", "${T(java.lang.Runtime)}"];
     private static readonly string[] CmdiDict = [";id", "|id", "$(id)", "`id`", "&& id", "; cat /etc/passwd"];
 
+    /// <summary>Recipe maturity / honesty label — do not oversell magic-only formats as grammar-backed.</summary>
+    public static class RecipeQuality
+    {
+        public const string MagicOnly = "Magic-only";
+        public const string MinimalValid = "Minimal valid";
+        public const string Representative = "Representative";
+        public const string StructuredModel = "Structured model";
+        public const string GrammarBacked = "Grammar-backed";
+        public const string HarnessIncluded = "Harness included";
+    }
+
     private sealed record Cat(
         string Id, string Name, string Category, string Kind, string Desc,
-        string[] Tags, int? Port, string? Ext, byte[] Seed, string[] Mutators, string[] Dict);
+        string[] Tags, int? Port, string? Ext, byte[] Seed, string[] Mutators, string[] Dict,
+        string Quality = RecipeQuality.MagicOnly);
 
     private static readonly Lazy<IReadOnlyList<Cat>> All = new(Build);
 
@@ -105,7 +127,7 @@ public static class RecipeCatalog
     }
 
     private static RecipeCatalogEntryDto ToEntry(Cat e) =>
-        new(e.Id, e.Name, e.Category, e.Kind, e.Desc, e.Tags, e.Port, e.Ext, e.Mutators, e.Dict.Length);
+        new(e.Id, e.Name, e.Category, e.Kind, e.Desc, e.Tags, e.Port, e.Ext, e.Mutators, e.Dict.Length, e.Quality);
 
     // —— Dataset ——
 
@@ -114,17 +136,31 @@ public static class RecipeCatalog
         var list = new List<Cat>();
 
         // Binary file formats: (id, name, category, ext, magicHex, tags, extraDict)
-        void FileBin(string id, string name, string cat, string ext, string magicHex, string[] tags)
-            => list.Add(new Cat($"file-{id}", $"{name} file parser", cat, "file", $"Fuzz a {name} parser (magic-seeded).",
-                tags, null, ext, Pad(Hex(magicHex), 64), FileMut, OverflowDict));
+        void FileBin(string id, string name, string cat, string ext, string magicHex, string[] tags,
+            string quality = RecipeQuality.MagicOnly)
+            => list.Add(new Cat($"file-{id}", $"{name} file parser", cat, "file",
+                quality == RecipeQuality.MagicOnly
+                    ? $"Fuzz a {name} parser (magic-seeded — deepen with structured model)."
+                    : $"Fuzz a {name} parser ({quality.ToLowerInvariant()}).",
+                tags, null, ext, Pad(Hex(magicHex), 64), FileMut, OverflowDict, quality));
 
-        void FileText(string id, string name, string cat, string ext, string sample, string[] tags, string[]? dict = null)
-            => list.Add(new Cat($"file-{id}", $"{name} parser", cat, "file", $"Fuzz a {name} parser (text-seeded).",
-                tags, null, ext, Encoding.ASCII.GetBytes(sample), FileMut, dict ?? OverflowDict));
+        void FileText(string id, string name, string cat, string ext, string sample, string[] tags,
+            string[]? dict = null, string quality = RecipeQuality.MagicOnly)
+            => list.Add(new Cat($"file-{id}", $"{name} parser", cat, "file",
+                quality == RecipeQuality.MagicOnly
+                    ? $"Fuzz a {name} parser (text-seeded — not grammar-backed)."
+                    : $"Fuzz a {name} parser ({quality.ToLowerInvariant()}).",
+                tags, null, ext, Encoding.ASCII.GetBytes(sample), FileMut, dict ?? OverflowDict, quality));
 
-        // Images
+        void FileSeed(string id, string name, string cat, string ext, byte[] seed, string[] tags, string quality)
+            => list.Add(new Cat($"file-{id}", $"{name} file parser", cat, "file",
+                $"Fuzz a {name} parser ({quality.ToLowerInvariant()} seed + chunk mutators).",
+                tags, null, ext, seed, FileStructMut, OverflowDict, quality));
+
+        // Images — PNG upgraded to minimal-valid; PDF stays magic-honest.
         FileBin("jpeg", "JPEG", "Image", ".jpg", "FFD8FFE000104A464946", ["buffer-overflow", "heap-overflow", "media"]);
-        FileBin("png", "PNG", "Image", ".png", "89504E470D0A1A0A0000000D49484452", ["buffer-overflow", "integer-overflow", "media"]);
+        FileSeed("png", "PNG", "Image", ".png", BuildMinimalPng(),
+            ["buffer-overflow", "integer-overflow", "media"], RecipeQuality.MinimalValid);
         FileBin("gif", "GIF", "Image", ".gif", "4749463839610100010080", ["buffer-overflow", "media"]);
         FileBin("bmp", "BMP", "Image", ".bmp", "424D46000000000000003600", ["integer-overflow", "media"]);
         FileBin("tiff", "TIFF", "Image", ".tiff", "49492A000800000001000E01", ["heap-overflow", "media"]);
@@ -132,10 +168,12 @@ public static class RecipeCatalog
         FileBin("webp", "WebP", "Image", ".webp", "524946460000000057454250", ["media", "integer-overflow"]);
         FileBin("psd", "Photoshop PSD", "Image", ".psd", "38425053000100000000", ["media", "heap-overflow"]);
         FileBin("tga", "Truevision TGA", "Image", ".tga", "000002000000000000000000", ["media"]);
-        FileText("svg", "SVG", "Image", ".svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>", ["xxe", "media"], XxeDict);
+        FileText("svg", "SVG", "Image", ".svg", "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect/></svg>",
+            ["xxe", "media"], XxeDict, RecipeQuality.MinimalValid);
 
         // Audio
-        FileBin("wav", "WAV (PCM)", "Audio", ".wav", "52494646240000005741564566", ["buffer-overflow", "media"]);
+        FileSeed("wav", "WAV (PCM)", "Audio", ".wav", BuildMinimalWav(),
+            ["buffer-overflow", "media"], RecipeQuality.MinimalValid);
         FileBin("mp3", "MP3", "Audio", ".mp3", "494433030000000000", ["buffer-overflow", "media"]);
         FileBin("ogg", "OGG", "Audio", ".ogg", "4F67675300020000000000000000", ["media"]);
         FileBin("flac", "FLAC", "Audio", ".flac", "664C614300000022", ["media"]);
@@ -151,7 +189,8 @@ public static class RecipeCatalog
         FileBin("mpegts", "MPEG-TS", "Video", ".ts", "47400010000000", ["media"]);
 
         // Archives
-        FileBin("zip", "ZIP", "Archive", ".zip", "504B03040A0000000000", ["directory-traversal", "buffer-overflow"]);
+        FileSeed("zip", "ZIP", "Archive", ".zip", BuildMinimalZip(),
+            ["directory-traversal", "buffer-overflow"], RecipeQuality.MinimalValid);
         FileBin("gzip", "GZIP", "Archive", ".gz", "1F8B0800000000000003", ["buffer-overflow"]);
         FileBin("tar", "TAR", "Archive", ".tar", "000000000000000000000000757374617200", ["directory-traversal"]);
         FileBin("rar", "RAR", "Archive", ".rar", "526172211A0700CF9073", ["heap-overflow"]);
@@ -160,8 +199,10 @@ public static class RecipeCatalog
         FileBin("xz", "XZ", "Archive", ".xz", "FD377A585A000000FF12", ["buffer-overflow"]);
         FileBin("cab", "Microsoft CAB", "Archive", ".cab", "4D53434600000000", ["heap-overflow"]);
 
-        // Documents
-        FileText("pdf", "PDF", "Document", ".pdf", "%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>", ["buffer-overflow", "heap-overflow", "xxe"]);
+        // Documents — PDF stays Magic-only (no Peach-grammar claim).
+        FileText("pdf", "PDF", "Document", ".pdf",
+            "%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>",
+            ["buffer-overflow", "heap-overflow", "xxe"], quality: RecipeQuality.MagicOnly);
         FileBin("ole", "MS Office (OLE DOC/XLS/PPT)", "Document", ".doc", "D0CF11E0A1B11AE1000000", ["buffer-overflow", "object-injection"]);
         FileBin("ooxml", "OOXML (DOCX/XLSX/PPTX)", "Document", ".docx", "504B03040A00000000", ["xxe", "object-injection"]);
         FileText("rtf", "RTF", "Document", ".rtf", "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}AAAA}", ["buffer-overflow"]);
@@ -278,5 +319,128 @@ public static class RecipeCatalog
         Array.Copy(magic, buf, magic.Length);
         for (var i = magic.Length; i < total; i++) buf[i] = 0x41; // 'A' filler
         return buf;
+    }
+
+    /// <summary>1×1 IHDR+IEND PNG (minimal valid container — not a full PNG grammar).</summary>
+    private static byte[] BuildMinimalPng()
+    {
+        // signature + IHDR (13-byte data) + IEND
+        var sig = Hex("89504E470D0A1A0A");
+        var ihdrData = Hex("00000001000000010802000000"); // 1x1 RGB
+        var ihdr = PngChunk(Hex("49484452"), ihdrData);
+        var iend = PngChunk(Hex("49454E44"), []);
+        var result = new byte[sig.Length + ihdr.Length + iend.Length];
+        Buffer.BlockCopy(sig, 0, result, 0, sig.Length);
+        Buffer.BlockCopy(ihdr, 0, result, sig.Length, ihdr.Length);
+        Buffer.BlockCopy(iend, 0, result, sig.Length + ihdr.Length, iend.Length);
+        return result;
+    }
+
+    private static byte[] PngChunk(byte[] type4, byte[] data)
+    {
+        var len = BitConverter.GetBytes(data.Length);
+        if (BitConverter.IsLittleEndian) Array.Reverse(len);
+        var body = new byte[4 + data.Length];
+        Buffer.BlockCopy(type4, 0, body, 0, 4);
+        Buffer.BlockCopy(data, 0, body, 4, data.Length);
+        var crc = BitConverter.GetBytes(Crc32Ieee(body));
+        if (BitConverter.IsLittleEndian) Array.Reverse(crc);
+        var chunk = new byte[4 + body.Length + 4];
+        Buffer.BlockCopy(len, 0, chunk, 0, 4);
+        Buffer.BlockCopy(body, 0, chunk, 4, body.Length);
+        Buffer.BlockCopy(crc, 0, chunk, 4 + body.Length, 4);
+        return chunk;
+    }
+
+    private static uint Crc32Ieee(byte[] data)
+    {
+        uint crc = 0xFFFFFFFF;
+        foreach (var b in data)
+        {
+            crc ^= b;
+            for (var i = 0; i < 8; i++)
+                crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320u : crc >> 1;
+        }
+        return ~crc;
+    }
+
+    /// <summary>Minimal PCM WAV (8-bit mono silence) — representative RIFF structure.</summary>
+    private static byte[] BuildMinimalWav()
+    {
+        // RIFF header + fmt(16) + data(8 bytes silence)
+        var dataSize = 8;
+        var riffSize = 36 + dataSize;
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        bw.Write(Encoding.ASCII.GetBytes("RIFF"));
+        bw.Write(riffSize);
+        bw.Write(Encoding.ASCII.GetBytes("WAVE"));
+        bw.Write(Encoding.ASCII.GetBytes("fmt "));
+        bw.Write(16);
+        bw.Write((ushort)1); // PCM
+        bw.Write((ushort)1); // mono
+        bw.Write(8000); // sample rate
+        bw.Write(8000); // byte rate
+        bw.Write((ushort)1); // block align
+        bw.Write((ushort)8); // bits
+        bw.Write(Encoding.ASCII.GetBytes("data"));
+        bw.Write(dataSize);
+        bw.Write(new byte[dataSize]);
+        return ms.ToArray();
+    }
+
+    /// <summary>Minimal ZIP local-file header + empty payload + EOCD (not full archive grammar).</summary>
+    private static byte[] BuildMinimalZip()
+    {
+        var name = Encoding.ASCII.GetBytes("a.txt");
+        var payload = Encoding.ASCII.GetBytes("x");
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        // Local file header
+        bw.Write(0x04034b50);
+        bw.Write((ushort)20);
+        bw.Write((ushort)0);
+        bw.Write((ushort)0); // store
+        bw.Write((ushort)0);
+        bw.Write((ushort)0);
+        bw.Write(0); // crc
+        bw.Write(payload.Length);
+        bw.Write(payload.Length);
+        bw.Write((ushort)name.Length);
+        bw.Write((ushort)0);
+        bw.Write(name);
+        bw.Write(payload);
+        var localLen = (int)ms.Length;
+        // Central directory
+        var cdOffset = localLen;
+        bw.Write(0x02014b50);
+        bw.Write((ushort)20);
+        bw.Write((ushort)20);
+        bw.Write((ushort)0);
+        bw.Write((ushort)0);
+        bw.Write((ushort)0);
+        bw.Write((ushort)0);
+        bw.Write(0);
+        bw.Write(payload.Length);
+        bw.Write(payload.Length);
+        bw.Write((ushort)name.Length);
+        bw.Write((ushort)0);
+        bw.Write((ushort)0);
+        bw.Write((ushort)0);
+        bw.Write((ushort)0);
+        bw.Write(0);
+        bw.Write(0); // relative offset
+        bw.Write(name);
+        var cdSize = (int)ms.Length - cdOffset;
+        // EOCD
+        bw.Write(0x06054b50);
+        bw.Write((ushort)0);
+        bw.Write((ushort)0);
+        bw.Write((ushort)1);
+        bw.Write((ushort)1);
+        bw.Write(cdSize);
+        bw.Write(cdOffset);
+        bw.Write((ushort)0);
+        return ms.ToArray();
     }
 }

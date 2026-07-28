@@ -2,6 +2,15 @@
 
 Practical tricks operators forget. Keep this open in **Help → Operator wiki**.
 
+## File-format fuzzing
+
+Competitive track (Peach-style structure + crash research): [FILE_FUZZING.md](FILE_FUZZING.md).
+
+- Models: [MODEL.md](MODEL.md) · chunk mutators in [FUZZING.md](FUZZING.md)
+- ReelDeck path stalking: [REELDECK.md](REELDECK.md) — deepen structural seeds, not invent grammar
+- Metrics: **Edge** (DynamoRIO) ≠ **Block** ≠ **Semantic stage** (pathlog). edges=0 ⇒ Coverage unavailable
+- Corpus shrink: `randall corpus minimize -c projects/….yaml`
+
 ## After `git pull`
 
 | You run… | Do this |
@@ -98,4 +107,4 @@ dotnet run --project src/Randall.Server --urls http://127.0.0.1:5000
 # Crashes tab → select crash → Investigation → Exploit Research panel
 ```
 
-See also: [STALKING.md](STALKING.md) · [EXPLOIT_GUIDE.md](EXPLOIT_GUIDE.md) · [LAB_AGENT.md](LAB_AGENT.md) · [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md).
+See also: [STALKING.md](STALKING.md) · [EXPLOIT_GUIDE.md](EXPLOIT_GUIDE.md) · [LAB_AGENT.md](LAB_AGENT.md) · [CRASH_ANALYSIS.md](CRASH_ANALYSIS.md) · [FILE_FUZZING.md](FILE_FUZZING.md).

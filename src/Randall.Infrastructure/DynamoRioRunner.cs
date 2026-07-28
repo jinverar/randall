@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using Randall.Contracts;
 
 namespace Randall.Infrastructure;
@@ -136,7 +137,9 @@ public sealed class DynamoRioRunner
         var psi = new ProcessStartInfo
         {
             FileName = DrrunPath,
-            Arguments = BuildDrcovArgs(traceDir, targetExe, string.Join(' ', args), dumpText),
+            Arguments = BuildDrcovArgs(
+                traceDir, targetExe, string.Join(' ', args), dumpText,
+                project.Fuzz.CoverageModules, project.Fuzz.CoverageExcludeModules),
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -187,7 +190,9 @@ public sealed class DynamoRioRunner
         var psi = new ProcessStartInfo
         {
             FileName = DrrunPath,
-            Arguments = BuildDrcovArgs(traceDir, targetExe, args, dumpText),
+            Arguments = BuildDrcovArgs(
+                traceDir, targetExe, args, dumpText,
+                project.Fuzz.CoverageModules, project.Fuzz.CoverageExcludeModules),
             UseShellExecute = false,
             WorkingDirectory = workDir,
         };
@@ -195,13 +200,30 @@ public sealed class DynamoRioRunner
         return Process.Start(psi);
     }
 
-    public static string BuildDrcovArgs(string traceDir, string targetExe, string targetArgs, bool dumpText)
+    public static string BuildDrcovArgs(
+        string traceDir,
+        string targetExe,
+        string targetArgs,
+        bool dumpText,
+        IEnumerable<string>? coverageModules = null,
+        IEnumerable<string>? excludeModules = null)
     {
         var dump = dumpText ? "-dump_text " : "";
+        var mods = new StringBuilder();
+        if (coverageModules is not null)
+        {
+            foreach (var m in coverageModules.Where(s => !string.IsNullOrWhiteSpace(s)))
+                mods.Append($"-coverage_module \"{m.Trim()}\" ");
+        }
+        if (excludeModules is not null)
+        {
+            foreach (var m in excludeModules.Where(s => !string.IsNullOrWhiteSpace(s)))
+                mods.Append($"-exclude_module \"{m.Trim()}\" ");
+        }
         var tail = string.IsNullOrWhiteSpace(targetArgs)
             ? $"-- \"{targetExe}\""
             : $"-- \"{targetExe}\" {targetArgs.Trim()}";
-        return $"-t drcov {dump}-logdir \"{traceDir}\" {tail}".Trim();
+        return $"-t drcov {dump}{mods}-logdir \"{traceDir}\" {tail}".Trim();
     }
 
     private static Dictionary<string, DateTime> SnapshotLogTimes(string traceDir)

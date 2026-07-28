@@ -59,7 +59,9 @@ public static class TargetRunner
         ProjectConfig project,
         string yamlPath,
         string? filePath,
-        string? pathLogEnv = null)
+        string? pathLogEnv = null,
+        string? outputFile = null,
+        IReadOnlyDictionary<string, string>? extraPlaceholders = null)
     {
         var exe = project.Target.Executable;
         if (string.IsNullOrWhiteSpace(exe))
@@ -76,7 +78,17 @@ public static class TargetRunner
         exe = existing;
 
         var args = project.Target.Args.Select(a =>
-            a.Replace("{file}", filePath ?? "", StringComparison.OrdinalIgnoreCase)).ToList();
+        {
+            var s = a.Replace("{file}", filePath ?? "", StringComparison.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(outputFile))
+                s = s.Replace("{outputFile}", outputFile, StringComparison.OrdinalIgnoreCase);
+            if (extraPlaceholders is not null)
+            {
+                foreach (var (key, val) in extraPlaceholders)
+                    s = s.Replace(key, val, StringComparison.OrdinalIgnoreCase);
+            }
+            return s;
+        }).ToList();
 
         var workDir = string.IsNullOrWhiteSpace(project.Target.WorkingDirectory)
             ? Path.GetDirectoryName(exe) ?? ProjectLoader.ResolveProjectRoot(yamlPath)
@@ -88,6 +100,8 @@ public static class TargetRunner
             Arguments = string.Join(' ', args.Select(EscapeArg)),
             UseShellExecute = false,
             WorkingDirectory = workDir,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
         };
 
         // Cooperative file targets (ReelDeck) write function/stage hits here for path stalking.
@@ -103,32 +117,77 @@ public static class TargetRunner
         byte[] payload,
         CancellationToken cancellationToken)
     {
-        var ext = project.Transport.Extension;
-        if (!ext.StartsWith('.'))
-            ext = "." + ext;
+        var ext = FileFuzzExecution.PickExtension(project.Transport);
         var tempDir = Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CorpusDir), "_tmp");
         Directory.CreateDirectory(tempDir);
         var tempFile = Path.Combine(tempDir, $"fuzz_{Guid.NewGuid():N}{ext}");
-        await File.WriteAllBytesAsync(tempFile, payload, cancellationToken);
+        await FileFuzzExecution.WriteTempFileAsync(tempFile, payload, cancellationToken);
+
+        string? outputFile = null;
+        if (!string.IsNullOrWhiteSpace(project.Transport.OutputFile) ||
+            project.Target.Args.Any(a => a.Contains("{outputFile}", StringComparison.OrdinalIgnoreCase)))
+        {
+            var outExt = ".out";
+            outputFile = Path.Combine(tempDir, $"out_{Guid.NewGuid():N}{outExt}");
+        }
+
+        var extraFiles = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var bundleTemps = new List<string>();
+        foreach (var entry in project.Transport.Files)
+        {
+            var bext = FileFuzzExecution.NormalizeExt(entry.Extension);
+            var path = Path.Combine(tempDir, $"bundle_{entry.Name}_{Guid.NewGuid():N}{bext}");
+            byte[] bytes = [];
+            if (!string.IsNullOrWhiteSpace(entry.SeedFile))
+            {
+                try { bytes = ProjectLoader.LoadSeed(yamlPath, entry.SeedFile); }
+                catch { bytes = []; }
+            }
+            await FileFuzzExecution.WriteTempFileAsync(path, bytes, cancellationToken);
+            var ph = string.IsNullOrWhiteSpace(entry.Placeholder) ? "{file2}" : entry.Placeholder;
+            if (!ph.StartsWith('{'))
+                ph = "{" + ph.Trim('{', '}') + "}";
+            extraFiles[ph] = path;
+            bundleTemps.Add(path);
+        }
 
         var pathLog = tempFile + ".paths";
-        using var process = StartTarget(project, yamlPath, tempFile, pathLogEnv: pathLog);
+        using var process = StartTarget(
+            project, yamlPath, tempFile, pathLogEnv: pathLog, outputFile: outputFile, extraPlaceholders: extraFiles);
         if (process is null)
         {
-            try { File.Delete(tempFile); } catch { /* ignore */ }
+            TryDelete(tempFile);
+            TryDelete(pathLog);
+            if (outputFile is not null) TryDelete(outputFile);
+            foreach (var b in bundleTemps) TryDelete(b);
             return new TargetRunResult(false, null, null, "target not found");
         }
+
+        // Drain stdout/stderr concurrently so redirected pipes cannot deadlock the child.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
         var dumpsDir = Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CrashesDir), "dumps");
         var exited = await WaitForExitAsync(process, project.Target.TimeoutMs, cancellationToken);
         string? dumpPath = null;
+        string stderr = "";
+        try { stderr = await stderrTask; } catch { /* ignore */ }
+        try { await stdoutTask; } catch { /* ignore */ }
+
+        void CleanupTemps(bool retain)
+        {
+            if (retain) return;
+            TryDelete(tempFile);
+            TryDelete(pathLog);
+            if (outputFile is not null) TryDelete(outputFile);
+            foreach (var b in bundleTemps) TryDelete(b);
+        }
 
         if (!exited)
         {
             dumpPath = CrashDumpWriter.TryWrite(process, dumpsDir, $"hang_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
-            process.Kill(entireProcessTree: true);
-            try { File.Delete(tempFile); } catch { /* ignore */ }
-            try { File.Delete(pathLog); } catch { /* ignore */ }
+            try { process.Kill(entireProcessTree: true); } catch { /* ignore */ }
+            CleanupTemps(project.Fuzz.RetainOnCrash);
             return new TargetRunResult(true, null, dumpPath, "hang/timeout");
         }
 
@@ -144,13 +203,10 @@ public static class TargetRunner
                     .ToList();
             }
             catch { /* ignore */ }
-            try { File.Delete(pathLog); } catch { /* ignore */ }
         }
 
-        try { File.Delete(tempFile); } catch { /* ignore */ }
-
         var code = process.ExitCode;
-        var crashed = IsCrashExitCode(code);
+        var (crashed, detail) = FileFuzzExecution.ClassifyFileExit(code, stderr);
         if (crashed)
         {
             var baseName = $"file_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
@@ -160,13 +216,21 @@ public static class TargetRunner
             dumpPath = CrashDumpPaths.Sanitize(dumpPath);
         }
 
-        var detail = crashed ? "abnormal exit" : "ok";
+        // Crash inputs are preserved separately by CrashStore; temps deleted unless retainOnCrash.
+        CleanupTemps(crashed && project.Fuzz.RetainOnCrash);
+
         if (pathHits is { Count: > 0 })
             detail =
                 $"{detail}; paths={pathHits.Count}:{string.Join(',', pathHits.Take(16))}" +
                 (pathHits.Count > 16 ? ",…" : "");
 
         return new TargetRunResult(crashed, code, dumpPath, detail, PathHits: pathHits);
+    }
+
+    private static void TryDelete(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try { File.Delete(path); } catch { /* ignore */ }
     }
 
     private static async Task<TargetRunResult> RunTcpAsync(
@@ -466,6 +530,7 @@ public static class TargetRunner
     /// <summary>
     /// Windows NTSTATUS crash codes, or Linux shell-style <c>128+signal</c> (e.g. 139 = SIGSEGV).
     /// Negative non-<c>-1</c> codes stay treated as abnormal (historical Windows path).
+    /// Ordinary non-zero exits (parser reject = 1) are NOT crashes — see <see cref="FileFuzzExecution"/>.
     /// </summary>
     public static bool IsCrashExitCode(int code)
     {

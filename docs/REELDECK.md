@@ -7,6 +7,8 @@
 3. **Stalk** (path novelty + seeds/dict) to push deeper  
 4. Capitalize deeper crashes  
 
+ReelDeck **deepens a known structure** with structural seeds and semantic stage coverage (`REELDECK_PATHLOG`) — it is not a grammar-discovery engine. Pair with chunk mutators and length/checksum policies for Peach-like campaigns ([FILE_FUZZING.md](FILE_FUZZING.md)).
+
 Source: `targets/reeldeck/reeldeck.c` · Profile: `projects/reeldeck.yaml` · Lab library category **file** (profile-only) · Guide below.
 
 ## Container map (`.rndl`)

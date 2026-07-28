@@ -29,6 +29,7 @@ public static class DocsCatalog
         ("MQTT_LAB.md", "MQTT-shaped IoT lab (RMQ1)", "Lab"),
         ("ROBOT_LAB.md", "Robot protocol labs (RBT1 / RRBS / RMB1)", "Lab"),
         ("FUZZING.md", "Fuzzing techniques & mutators", "Fuzzing"),
+        ("FILE_FUZZING.md", "File-format fuzzing (competitive)", "Fuzzing"),
         ("ORACLES.md", "Hybrid semantic oracles", "Fuzzing"),
         ("BUG_HUNTER.md", "Bug Hunter — AI/human analysis", "Fuzzing"),
         ("AI_LAB.md", "AI-codegen / AI-gateway lab (RAG1)", "Lab"),

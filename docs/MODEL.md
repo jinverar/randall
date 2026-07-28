@@ -37,15 +37,31 @@ Classic **length + payload** layout — mutate the length field separately from 
 
 | Type | Purpose |
 |------|---------|
-| `static` | Fixed bytes (command prefix, headers) |
+| `static` / `hex` | Fixed bytes (command prefix, headers); `hex:` or `type: hex` |
 | `string` | Mutable text field (boofuzz `String`) |
 | `delim` | Separator — space, CRLF token (boofuzz `Delim`) |
 | `choices` | Pick one of several values (boofuzz `Group`) |
-| `word` / `dword` / `qword` | Fixed-width integers with endianness |
+| `uint8`/`int8`/`uint16`/`int16`/`uint32`/`int32`/`uint64`/`int64` | Signedness + endian integers |
+| `word` / `dword` / `qword` | Fixed-width unsigned (legacy aliases) |
+| `enum` | Constrained integer set (`enumValues`) |
+| `flags` / `bitfield` | Packed flags (`flags:` name→mask map) |
+| `switch` / `choice` | Pick one child case (`cases:`) |
+| `array` / `repeat` | Repeat child N times |
+| `padding` / `align` | Align to boundary |
+| `offset` / `relativeOffset` | Offset placeholder (back-patch TODO) |
+| `when` / `conditional` | Conditional child (eval stub — always renders today) |
 | `bytes` | Mutable binary payload with optional seed file |
 | `sized` | Length prefix + nested payload (field-aware) |
-| `checksum` | CRC32 over preceding bytes (auto-resync after mutation) |
-| `group` | Nested children |
+| `checksum` | CRC32 over preceding bytes (policy-controlled resync) |
+| `group` / `block` / `container` | Nested children |
+
+## Dependency policies (`fuzz.lengthPolicy` / `fuzz.checksumPolicy`)
+
+`valid` | `mutate` | `independent` | `off-by-one` | `wrap` | `actualPlusDelta` | `stale` | `zero`
+
+Default: length follows `syncLengthFields` (false ⇒ independent); checksum defaults to `valid`.
+
+File-format competitive guide: [FILE_FUZZING.md](FILE_FUZZING.md).
 
 ## Use in projects
 

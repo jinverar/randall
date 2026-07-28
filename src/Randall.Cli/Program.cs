@@ -47,6 +47,7 @@ return args[0].ToLowerInvariant() switch
     "ladder" => RunLadder(args.Skip(1).ToArray()),
     "gdb" => RunGdb(args.Skip(1).ToArray()),
     "case" => RunCase(args.Skip(1).ToArray()),
+    "corpus" => RunCorpus(args.Skip(1).ToArray()),
     "oracles" or "oracle" => RunOracles(args.Skip(1).ToArray()),
     "magician" or "mage" or "spell" or "spells" => RunMagician(args.Skip(1).ToArray()),
     "hunt" or "bughunter" or "bug-hunter" => RunHunt(args.Skip(1).ToArray()),
@@ -79,6 +80,9 @@ static void PrintHelp()
           randall pack -o publish/standalone [--rid win-x64|linux-x64|…]
           randall bundle export -c projects/vulnserver.yaml -o bundles/vulnserver.zip
           randall bundle import -i bundles/vulnserver.zip -o projects/imported
+          randall case catalog --instantiate <id> [--name p]
+          randall corpus minimize -c <project> [--dry-run] [-o dir]
+                                            Shrink corpus by coverage/path keys (AFL cmin-style)
           randall doctor -c <project>     Preflight lab checks before fuzzing
           randall notify test -c <project|campaign>   Test Discord/email channels
           randall graph -c <project>        Validate sessionGraph + print Mermaid
@@ -5007,6 +5011,52 @@ static int RunCase(string[] args)
         Console.Error.WriteLine(ex.Message);
         return 1;
     }
+}
+
+static int RunCorpus(string[] args)
+{
+    if (args.Length == 0 || args[0] is "-h" or "--help")
+    {
+        Console.WriteLine("""
+            randall corpus minimize -c <project.yaml> [--dry-run] [-o <outdir>]
+              Keep the smallest set of corpus inputs that preserve coverage / path keys.
+              Without DynamoRIO edge sidecars, falls back to content-hash novelty (honest).
+            """);
+        return 0;
+    }
+
+    var sub = args[0].ToLowerInvariant();
+    if (sub is not "minimize" and not "min" and not "cmin")
+        return Unknown($"corpus {args[0]}");
+
+    string? config = null, outDir = null;
+    var dry = false;
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i] is "-c" or "--config" && i + 1 < args.Length) config = args[++i];
+        else if (args[i] is "-o" or "--out" or "--output" && i + 1 < args.Length) outDir = args[++i];
+        else if (args[i] is "--dry-run" or "--dry") dry = true;
+    }
+
+    if (string.IsNullOrWhiteSpace(config))
+    {
+        Console.Error.WriteLine("Usage: randall corpus minimize -c <project.yaml> [--dry-run] [-o dir]");
+        return 1;
+    }
+
+    var yamlPath = Path.GetFullPath(config);
+    if (!File.Exists(yamlPath))
+    {
+        Console.Error.WriteLine($"Not found: {yamlPath}");
+        return 1;
+    }
+
+    var project = ProjectLoader.Load(yamlPath);
+    var corpus = ProjectLoader.ResolvePath(yamlPath, project.Fuzz.CorpusDir);
+    outDir ??= Path.Combine(corpus.TrimEnd(Path.DirectorySeparatorChar) + "_min");
+    var result = CorpusMinimizer.Minimize(corpus, outDir, dry);
+    Console.WriteLine(result.Message);
+    return result.Ok ? 0 : 1;
 }
 
 static int CaseOps()

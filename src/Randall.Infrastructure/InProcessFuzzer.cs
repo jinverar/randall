@@ -47,7 +47,7 @@ public sealed class InProcessSession : IAsyncDisposable
     private readonly ProjectConfig _project;
     private readonly string _harnessPath;
     private readonly string _mode; // managed | native
-    private readonly HarnessIsolation _isolation;
+    private HarnessIsolation _isolation;
     private ManagedHarnessHost? _managed;
     private NativeHarnessWorker? _native;
     private int _iterationsOnWorker;
@@ -105,6 +105,16 @@ public sealed class InProcessSession : IAsyncDisposable
         {
             session._managed = ManagedHarnessHost.Load(harnessPath);
             session.ValidateResetContract(session._managed);
+            if (project.Fuzz.HarnessDeterminismProbe && isolation.Persistent)
+            {
+                var probe = HarnessDeterminismProbe.Run(session._managed, isolation.Strict);
+                Console.WriteLine(probe.Message);
+                if (probe.DisabledPersistent)
+                {
+                    // Soft-disable: cold reload each case for honesty.
+                    session._isolation = isolation with { Persistent = false, Summary = "cold+probe-fail" };
+                }
+            }
         }
         else
         {

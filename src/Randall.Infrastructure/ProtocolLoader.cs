@@ -92,6 +92,16 @@ public static class ProtocolLoader
                 CollectSeedFiles(b.Children, projectYamlPath, dict);
             if (b.Child is not null)
                 CollectSeedFiles([b.Child], projectYamlPath, dict);
+            if (b.Cases is not null)
+            {
+                foreach (var c in b.Cases)
+                {
+                    if (c.Block is not null)
+                        CollectSeedFiles([c.Block], projectYamlPath, dict);
+                    if (c.Children is not null)
+                        CollectSeedFiles(c.Children, projectYamlPath, dict);
+                }
+            }
         }
     }
 
@@ -105,7 +115,13 @@ public static class ProtocolLoader
     private static IBlockNode BuildBlock(ProtocolBlockDefinition def) =>
         def.Type.ToLowerInvariant() switch
         {
-            "static" => new StaticBlock(def.Value ?? ""),
+            "static" when (def.Value ?? "").StartsWith("hex:", StringComparison.OrdinalIgnoreCase)
+                => new HexStaticBlock(def.Value![4..]),
+            "static" or "hex" => string.IsNullOrEmpty(def.Value)
+                ? new StaticBlock("")
+                : def.Type.Equals("hex", StringComparison.OrdinalIgnoreCase)
+                    ? new HexStaticBlock(def.Value!)
+                    : new StaticBlock(def.Value!),
             "delim" => new DelimBlock(def.Value ?? " ", def.Name ?? "delim", def.Mutable),
             "string" => new StringBlock
             {
@@ -116,38 +132,44 @@ public static class ProtocolLoader
                 MaxSize = def.MaxSize,
                 SeedFile = def.SeedFile,
             },
-            "word" => new IntegerBlock
+            "uint8" or "byte" => MakeNumber(def, 1, signed: false),
+            "int8" => MakeNumber(def, 1, signed: true),
+            "uint16" or "word" => MakeNumber(def, ResolveWidth(def, 2), signed: false),
+            "int16" => MakeNumber(def, ResolveWidth(def, 2), signed: true),
+            "uint32" or "dword" or "uint" => MakeNumber(def, ResolveWidth(def, 4), signed: false),
+            "int32" or "int" => MakeNumber(def, ResolveWidth(def, 4), signed: true),
+            "uint64" or "qword" => MakeNumber(def, ResolveWidth(def, 8), signed: false),
+            "int64" => MakeNumber(def, ResolveWidth(def, 8), signed: true),
+            "enum" => new EnumBlock
             {
-                Name = def.Name ?? "word",
-                Width = 2,
+                Name = def.Name ?? "enum",
+                Width = ResolveWidth(def, def.LengthBytes is 1 or 2 or 4 or 8 ? def.LengthBytes : 4),
                 LittleEndian = def.LittleEndian,
                 Mutable = def.Mutable,
-                DefaultValue = ParseIntegerDefault(def.Value, 2),
+                Values = ParseEnumValues(def),
+                DefaultValue = ParseIntegerDefault(def.Value, ResolveWidth(def, 4)),
             },
-            "dword" => new IntegerBlock
+            "flags" or "bitfield" => new FlagsBlock
             {
-                Name = def.Name ?? "dword",
-                Width = 4,
+                Name = def.Name ?? "flags",
+                Width = ResolveWidth(def, def.LengthBytes is 1 or 2 or 4 or 8 ? def.LengthBytes : 4),
                 LittleEndian = def.LittleEndian,
                 Mutable = def.Mutable,
-                DefaultValue = ParseIntegerDefault(def.Value, 4),
-            },
-            "qword" => new IntegerBlock
-            {
-                Name = def.Name ?? "qword",
-                Width = 8,
-                LittleEndian = def.LittleEndian,
-                Mutable = def.Mutable,
-                DefaultValue = ParseIntegerDefault(def.Value, 8),
+                DefaultValue = ParseIntegerDefault(def.Value, ResolveWidth(def, 4)),
+                FlagBits = def.Flags.ToDictionary(
+                    kv => kv.Key,
+                    kv => ParseIntegerDefault(kv.Value, 8),
+                    StringComparer.OrdinalIgnoreCase),
             },
             "choices" or "group_values" => new ChoiceBlock
             {
                 Name = def.Name ?? "choice",
                 Mutable = def.Mutable,
                 Values = (def.Values.Count > 0 ? def.Values : [def.Value ?? ""])
-                    .Select(v => Encoding.ASCII.GetBytes(v))
+                    .Select(StaticValueParser.Parse)
                     .ToList(),
             },
+            "switch" or "choice" => BuildSwitch(def),
             "bytes" or "data" or "payload" => new BytesBlock
             {
                 Name = def.Name ?? "payload",
@@ -156,7 +178,39 @@ public static class ProtocolLoader
                 MaxSize = def.MaxSize,
                 SeedFile = def.SeedFile,
             },
-            "group" => new GroupBlock((def.Children ?? []).Select(BuildBlock).ToList()),
+            "group" or "block" or "container" => new GroupBlock((def.Children ?? []).Select(BuildBlock).ToList()),
+            "array" or "repeat" => new RepeatBlock
+            {
+                Name = def.Name ?? "array",
+                Child = BuildSizedPayload(def),
+                Count = Math.Max(1, def.Count),
+                MinCount = def.MinCount,
+                MaxCount = def.MaxCount > 0 ? def.MaxCount : Math.Max(def.Count, 8),
+                CountMutable = def.CountMutable,
+            },
+            "padding" or "align" => new PaddingBlock
+            {
+                Align = def.Align > 0 ? def.Align : 4,
+                PadByte = ParsePadByte(def.PadByte),
+                Name = def.Name,
+            },
+            "offset" or "relativeoffset" => new OffsetBlock
+            {
+                Name = def.Name ?? "offset",
+                Width = ResolveWidth(def, def.LengthBytes is 2 or 4 or 8 ? def.LengthBytes : 4),
+                LittleEndian = def.LittleEndian,
+                Relative = def.Relative || def.Type.Equals("relativeoffset", StringComparison.OrdinalIgnoreCase),
+                TargetField = def.TargetField,
+                Mutable = def.Mutable,
+                DefaultValue = ParseIntegerDefault(def.Value, 4),
+            },
+            "when" or "conditional" => new ConditionalBlock
+            {
+                WhenField = def.When ?? def.Name ?? "",
+                WhenEquals = def.WhenEquals ?? def.Value ?? "",
+                Child = BuildSizedPayload(def),
+                AlwaysRenderStub = true, // TODO: evaluate against prior fields
+            },
             "sized" or "length" or "lengthprefix" => new LengthPrefixedBlock
             {
                 LengthName = def.LengthName ?? def.Name ?? "length",
@@ -172,8 +226,95 @@ public static class ProtocolLoader
                 LittleEndian = def.LittleEndian,
                 Mutable = def.Mutable,
             },
+            // Unknown types: preserve as static so YAML still loads (competitive catalog won't hard-fail).
             _ => new StaticBlock(def.Value ?? ""),
         };
+
+    private static IBlockNode MakeNumber(ProtocolBlockDefinition def, int width, bool signed) =>
+        signed
+            ? new NumberBlock
+            {
+                Name = def.Name ?? "int",
+                Width = width,
+                LittleEndian = def.LittleEndian,
+                Signed = true,
+                Mutable = def.Mutable,
+                DefaultValue = unchecked((long)ParseIntegerDefault(def.Value, width)),
+            }
+            : new IntegerBlock
+            {
+                Name = def.Name ?? "uint",
+                Width = width,
+                LittleEndian = def.LittleEndian,
+                Mutable = def.Mutable,
+                DefaultValue = ParseIntegerDefault(def.Value, width),
+            };
+
+    private static int ResolveWidth(ProtocolBlockDefinition def, int fallback)
+    {
+        if (def.Width is 1 or 2 or 4 or 8)
+            return def.Width;
+        return fallback;
+    }
+
+    private static IReadOnlyList<ulong> ParseEnumValues(ProtocolBlockDefinition def)
+    {
+        var list = new List<ulong>();
+        foreach (var v in def.EnumValues.Concat(def.Values))
+        {
+            if (string.IsNullOrWhiteSpace(v))
+                continue;
+            // Allow "NAME=0x01" or bare number.
+            var s = v;
+            var eq = s.IndexOf('=');
+            if (eq >= 0)
+                s = s[(eq + 1)..];
+            list.Add(ParseIntegerDefault(s.Trim(), 8));
+        }
+        if (list.Count == 0 && !string.IsNullOrWhiteSpace(def.Value))
+            list.Add(ParseIntegerDefault(def.Value, 8));
+        return list;
+    }
+
+    private static byte ParsePadByte(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return 0;
+        if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            return Convert.ToByte(value, 16);
+        return byte.TryParse(value, out var b) ? b : (byte)0;
+    }
+
+    private static IBlockNode BuildSwitch(ProtocolBlockDefinition def)
+    {
+        var cases = new List<(string Key, IBlockNode Node)>();
+        if (def.Cases is { Count: > 0 })
+        {
+            foreach (var c in def.Cases)
+            {
+                IBlockNode node;
+                if (c.Block is not null)
+                    node = BuildBlock(c.Block);
+                else if (c.Children is { Count: > 0 })
+                    node = BuildNode(c.Children);
+                else
+                    node = new StaticBlock("");
+                cases.Add((c.Key, node));
+            }
+        }
+        else if (def.Children is { Count: > 0 })
+        {
+            for (var i = 0; i < def.Children.Count; i++)
+                cases.Add((i.ToString(), BuildBlock(def.Children[i])));
+        }
+
+        return new SwitchBlock
+        {
+            Name = def.Name ?? "switch",
+            Mutable = def.Mutable,
+            Cases = cases,
+        };
+    }
 
     private static ulong ParseIntegerDefault(string? value, int width)
     {
@@ -191,7 +332,7 @@ public static class ProtocolLoader
             return BuildBlock(def.Child);
         if (def.Children is { Count: > 0 })
             return BuildNode(def.Children);
-        throw new InvalidOperationException("sized block requires child or children");
+        throw new InvalidOperationException($"{def.Type} block requires child or children");
     }
 }
 
@@ -224,12 +365,47 @@ public static class ModelFuzzer
         bool syncLengthFields,
         int havocDepth,
         FieldRegion? targetField,
-        bool syncNbssLength)
+        bool syncNbssLength) =>
+        BuildPayload(
+            model, seeds, mutator, rng, havocDepth, targetField, syncNbssLength,
+            DependencyPolicyParser.ParseLength(null, syncLengthFields),
+            DependencyPolicyParser.ParseChecksum(null),
+            lengthDelta: 0,
+            checksumDelta: 0);
+
+    public static byte[] BuildPayload(
+        BlockModel model,
+        IReadOnlyDictionary<string, byte[]> seeds,
+        IMutator mutator,
+        Random rng,
+        FuzzConfig fuzz,
+        FieldRegion? targetField = null)
+    {
+        var (lenPol, crcPol, lenDelta, crcDelta) = FuzzDependencyPolicies.Resolve(fuzz);
+        return BuildPayload(
+            model, seeds, mutator, rng, fuzz.HavocDepth, targetField, fuzz.SyncNbssLength,
+            lenPol, crcPol, lenDelta, crcDelta);
+    }
+
+    public static byte[] BuildPayload(
+        BlockModel model,
+        IReadOnlyDictionary<string, byte[]> seeds,
+        IMutator mutator,
+        Random rng,
+        int havocDepth,
+        FieldRegion? targetField,
+        bool syncNbssLength,
+        LengthPolicy lengthPolicy,
+        ChecksumPolicy checksumPolicy,
+        int lengthDelta = 0,
+        int checksumDelta = 0)
     {
         var baseline = model.Render(seeds);
         var mutable = model.GetMutableFields(seeds);
         if (mutable.Count == 0)
-            return MaybeSyncNbss(model.FinalizeMessage(baseline, syncLengthFields), syncNbssLength, fieldName: null);
+            return MaybeSyncNbss(
+                model.FinalizeMessage(baseline, lengthPolicy, checksumPolicy, lengthDelta, checksumDelta),
+                syncNbssLength, fieldName: null);
 
         var lengthFields = mutable.Where(f => f.Kind == "length").ToList();
         IReadOnlyList<FieldRegion> pool = targetField is not null
@@ -240,13 +416,15 @@ public static class ModelFuzzer
 
         var field = targetField ?? pool[rng.Next(pool.Count)];
         if (field.Offset + field.Length > baseline.Length && field.Kind is not "string" and not "choices")
-            return MaybeSyncNbss(model.FinalizeMessage(baseline, syncLengthFields), syncNbssLength, field.Name);
+            return MaybeSyncNbss(
+                model.FinalizeMessage(baseline, lengthPolicy, checksumPolicy, lengthDelta, checksumDelta),
+                syncNbssLength, field.Name);
 
         var slice = field.Offset + field.Length <= baseline.Length
             ? baseline.AsSpan(field.Offset, field.Length).ToArray()
             : Array.Empty<byte>();
         byte[] mutated;
-        if (field.Kind is "word" or "dword" or "qword")
+        if (IsIntegerKind(field.Kind))
             mutated = MutateIntegerField(slice, field, rng);
         else if (field.Kind == "length")
             mutated = MutateLengthField(slice, field, baseline, rng);
@@ -258,9 +436,15 @@ public static class ModelFuzzer
             mutated = mutator.Mutate(slice).ToArray();
 
         var patched = model.PatchField(baseline, field, mutated);
-        var finalized = model.FinalizeMessage(patched, syncLengthFields);
+        var finalized = model.FinalizeMessage(patched, lengthPolicy, checksumPolicy, lengthDelta, checksumDelta);
         return MaybeSyncNbss(finalized, syncNbssLength, field.Name);
     }
+
+    private static bool IsIntegerKind(string kind) =>
+        kind is "word" or "dword" or "qword" or "enum" or "flags"
+            or "uint8" or "uint16" or "uint32" or "uint64"
+            or "int8" or "int16" or "int32" or "int64"
+            or "offset" or "relativeOffset";
 
     private static byte[] MaybeSyncNbss(byte[] message, bool syncNbssLength, string? fieldName)
     {

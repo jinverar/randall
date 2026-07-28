@@ -3,12 +3,23 @@
 A browsable library of fuzzing recipes covering the target classes that dominate exploit‑db and
 commercial fuzzers (beSTORM / Defensics): binary **file formats**, text/config formats, **network
 protocols**, and **web‑application** payload classes. Each recipe carries a magic‑byte / starter seed,
-category tags (exploit‑db style: `buffer-overflow`, `heap-overflow`, `format-string`, `xxe`,
-`sql-injection`, …), suggested mutators, and a per‑class dictionary — so you can go from "pick a
-target class" to a ready‑to‑fuzz project in one click.
+**quality tier**, category tags, suggested mutators, and a per‑class dictionary.
+
+## Quality tiers (honesty labels)
+
+| Tier | Meaning |
+|------|---------|
+| **Magic-only** | Header/magic bytes — starting point, not a format model (e.g. PDF recipe) |
+| **Minimal valid** | Smallest structure a real parser often accepts (PNG IHDR, WAV RIFF, ZIP local+EOCD) |
+| **Representative** | Broader sample covering common paths |
+| **Structured model** | Project uses `model:` block YAML (sized/checksum/enum/…) |
+| **Grammar-backed** | Full recursive grammar (roadmap — do not claim yet) |
+| **Harness included** | In-process harness ships with the recipe |
+
+PNG / WAV / ZIP catalog entries ship as **Minimal valid** + chunk mutators. PDF stays **Magic-only**.
 
 > The catalog is table‑driven (`RecipeCatalog`), so it scales toward thousands of recipes without new
-> code — add rows, not plumbing.
+> code — add rows, not plumbing. Competitive file-format depth: [FILE_FUZZING.md](FILE_FUZZING.md).
 
 ## Categories (current)
 

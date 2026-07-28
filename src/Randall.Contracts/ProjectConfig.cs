@@ -165,6 +165,20 @@ public sealed class TransportConfig
 {
     public string Type { get; set; } = "file";
     public string Extension { get; set; } = ".bin";
+    /// <summary>Alternate extensions; with <see cref="MismatchChance"/> may pick a wrong one.</summary>
+    public List<string> Extensions { get; set; } = [];
+    /// <summary>Probability [0–1] of using a mismatched extension from <see cref="Extensions"/>.</summary>
+    public double MismatchChance { get; set; }
+    /// <summary>
+    /// Converter/output path template. Supports <c>{outputFile}</c> — Randfuzz creates a unique
+    /// path the target may write into; retained on crash when <see cref="FuzzConfig.RetainOnCrash"/>.
+    /// </summary>
+    public string? OutputFile { get; set; }
+    /// <summary>
+    /// Multi-file case bundle: additional named files written beside the primary <c>{file}</c>.
+    /// Each entry's <c>Args</c> placeholder (e.g. <c>{file2}</c>) is substituted in target args.
+    /// </summary>
+    public List<FileBundleEntry> Files { get; set; } = [];
     public string Host { get; set; } = "127.0.0.1";
     public int Port { get; set; } = 9999;
     /// <summary>TCP: optional static prefix before mutated payload (e.g. TRUN /.:/)</summary>
@@ -176,6 +190,17 @@ public sealed class TransportConfig
     public bool TlsInsecure { get; set; } = true;
     /// <summary>SNI / TLS host override.</summary>
     public string? TlsHost { get; set; }
+}
+
+/// <summary>Extra file in a multi-file fuzz case (sidecar / related asset).</summary>
+public sealed class FileBundleEntry
+{
+    public string Name { get; set; } = "sidecar";
+    /// <summary>Placeholder in target.args (e.g. <c>{file2}</c>).</summary>
+    public string Placeholder { get; set; } = "{file2}";
+    public string Extension { get; set; } = ".bin";
+    /// <summary>Optional fixed seed relative to project YAML; otherwise empty/minimal bytes.</summary>
+    public string? SeedFile { get; set; }
 }
 
 public sealed class FuzzConfig
@@ -275,6 +300,30 @@ public sealed class FuzzConfig
     public bool CoverageTcpSpawn { get; set; } = true;
     /// <summary>Re-sync length fields after model patch (default: keep mutated length).</summary>
     public bool SyncLengthFields { get; set; }
+    /// <summary>
+    /// Length dependency policy: valid | mutate | independent | off-by-one | wrap |
+    /// actualPlusDelta | stale | zero. Empty → derive from <see cref="SyncLengthFields"/>.
+    /// </summary>
+    public string LengthPolicy { get; set; } = "";
+    /// <summary>
+    /// Checksum dependency policy (same tokens as <see cref="LengthPolicy"/>). Default valid.
+    /// </summary>
+    public string ChecksumPolicy { get; set; } = "valid";
+    /// <summary>Delta for lengthPolicy=actualPlusDelta.</summary>
+    public int LengthPolicyDelta { get; set; }
+    /// <summary>Delta for checksumPolicy=actualPlusDelta.</summary>
+    public int ChecksumPolicyDelta { get; set; }
+    /// <summary>Keep temp input / outputFile artifacts when a crash is classified (file targets).</summary>
+    public bool RetainOnCrash { get; set; }
+    /// <summary>DynamoRIO <c>-coverage_module</c> list (basename or path fragment).</summary>
+    public List<string> CoverageModules { get; set; } = [];
+    /// <summary>DynamoRIO <c>-exclude_module</c> list.</summary>
+    public List<string> CoverageExcludeModules { get; set; } = [];
+    /// <summary>
+    /// Run A-B-A determinism probe on harness <c>Reset()</c> at session start; warn or disable
+    /// persistent when the same input yields divergent results across reset.
+    /// </summary>
+    public bool HarnessDeterminismProbe { get; set; } = true;
     /// <summary>
     /// After model patch, rewrite NetBIOS session (NBSS) 24-bit length to match the PDU.
     /// Needed for SMB-over-TCP labs so expand/insert on the body is actually delivered.

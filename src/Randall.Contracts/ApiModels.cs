@@ -133,7 +133,13 @@ public sealed record FuzzSessionStatusDto(
     string? Project = null,
     bool StopGoalMet = false,
     string? StopReason = null,
-    IntelligenceStopGoalProgressDto? GoalProgress = null);
+    IntelligenceStopGoalProgressDto? GoalProgress = null,
+    /// <summary>Basic-block count when available (often 0 without DynamoRIO).</summary>
+    int CoverageBlocks = 0,
+    /// <summary>Semantic stage / pathlog hits (ReelDeck REELDECK_PATHLOG etc.).</summary>
+    int SemanticStageHits = 0,
+    /// <summary>bb-edges | path-novelty | unavailable</summary>
+    string? CoverageKind = null);
 
 /// <summary>One recorder stopped during fuzz teardown or <c>randall recorders stop</c>.</summary>
 public sealed record RecordingStopItemDto(string Name, string? Path, string Status);
@@ -149,4 +155,7 @@ public sealed record CorpusStatsDto(
     int SeedFiles,
     int SeenInputs,
     int CoverageEdges,
-    bool DynamoRioAvailable);
+    bool DynamoRioAvailable,
+    int CoverageBlocks = 0,
+    int SemanticStageHits = 0,
+    string? CoverageKind = null);
