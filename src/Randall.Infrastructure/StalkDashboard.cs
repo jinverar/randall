@@ -82,15 +82,17 @@ public static class StalkDashboard
             : FindLatestRun(project, configPath, fuzzStatus);
         // Merge live counters into the graph spine when journal is still catching up.
         run = OverlayLiveRunCounters(run, fuzzStatus, configPath);
-        var timeline = BuildTimeline(run, latestDetail, crashes);
+        var liveForProject = fuzzStatus is not null
+            && (fuzzStatus.Running || fuzzStatus.Phase is "starting" or "running" or "stopping")
+            && PathsMatch(fuzzStatus.ConfigPath, configPath);
+        // Live fuzz must see all project crashes on the timeline (RunId on disk may lag
+        // or point at a prior journal while scream harvest already has new canisters).
+        var timeline = BuildTimeline(run, latestDetail, crashes, liveForProject);
         var crashEdges = focusCrashId is not null && latestDetail is not null
             ? LoadCrashCoverageEdges(latestDetail, repoRoot)
             : Array.Empty<string>();
         var usedCrashCoverage = false;
         var missingCrashCoverage = focusCrashId is not null && crashEdges.Count == 0;
-        var liveForProject = fuzzStatus is not null
-            && (fuzzStatus.Running || fuzzStatus.Phase is "starting" or "running" or "stopping")
-            && PathsMatch(fuzzStatus.ConfigPath, configPath);
         List<StalkBlockDto> blocks;
         List<StalkEdgeDto> edges;
         if (crashEdges.Count > 0 && focusCrashId is not null && latestDetail is not null)
@@ -850,19 +852,22 @@ public static class StalkDashboard
     public static IReadOnlyList<StalkTimelinePointDto> BuildTimelineSnapshot(
         FuzzRunManifestDto? run,
         CrashDetailDto? latestDetail,
-        IReadOnlyList<CrashSummaryDto> crashes)
-        => BuildTimeline(run, latestDetail, crashes);
+        IReadOnlyList<CrashSummaryDto> crashes,
+        bool liveForProject = false)
+        => BuildTimeline(run, latestDetail, crashes, liveForProject);
 
     private static List<StalkTimelinePointDto> BuildTimeline(
         FuzzRunManifestDto? run,
         CrashDetailDto? latestDetail,
-        IReadOnlyList<CrashSummaryDto> crashes)
+        IReadOnlyList<CrashSummaryDto> crashes,
+        bool liveForProject = false)
     {
         var runId = run?.RunId;
-        var isLiveOverlay = string.Equals(runId, "live", StringComparison.OrdinalIgnoreCase);
+        var isLiveOverlay = liveForProject
+            || string.Equals(runId, "live", StringComparison.OrdinalIgnoreCase);
 
         // Prefer crashes from the active run, then newest observation for that iteration.
-        // Live overlay has no real runId — use the whole project crash list.
+        // Live overlay / live fuzz has no trustworthy runId match — use the whole project list.
         var scopedCrashes = crashes
             .Where(c =>
                 isLiveOverlay
@@ -979,7 +984,12 @@ public static class StalkDashboard
                     CrashIdFor(iteration, crashed)));
             }
 
-            return EnsureCrashMarkersPresent(points, scopedCrashes, CrashIdFor);
+            return EnsureCrashMarkersPresent(
+                points,
+                scopedCrashes,
+                CrashIdFor,
+                run.CrashesFound,
+                latestDetail);
         }
 
         var lines = File.ReadLines(iterPath).TakeLast(200).ToList();
@@ -1010,58 +1020,118 @@ public static class StalkDashboard
         if (points.Count == 0)
             points.Add(new StalkTimelinePointDto(0, "hit", "seed", 0, false, 0));
 
-        return EnsureCrashMarkersPresent(points, scopedCrashes, CrashIdFor);
+        return EnsureCrashMarkersPresent(
+            points,
+            scopedCrashes,
+            CrashIdFor,
+            run.CrashesFound,
+            latestDetail);
     }
 
     /// <summary>
     /// Guarantee known crashes appear as red bars even when they fall outside the
     /// journal window or were logged without Crashed=true.
+    /// Out-of-window crashes are pinned onto tip slots (same CrashId) so clients that
+    /// sort-by-iteration + take-last-200 cannot drop them.
     /// </summary>
     private static List<StalkTimelinePointDto> EnsureCrashMarkersPresent(
         List<StalkTimelinePointDto> points,
         IReadOnlyList<CrashSummaryDto> scopedCrashes,
-        Func<int, bool, string?, Guid?> crashIdFor)
+        Func<int, bool, string?, Guid?> crashIdFor,
+        int crashesFound = 0,
+        CrashDetailDto? latestDetail = null)
     {
-        if (scopedCrashes.Count == 0)
-            return points;
+        if (points.Count == 0)
+            points.Add(new StalkTimelinePointDto(0, "hit", "seed", 0, false, 0));
+
+        var windowMin = points.Min(p => p.Iteration);
+        var windowMax = points.Max(p => p.Iteration);
 
         var byIter = points
             .GroupBy(p => p.Iteration)
             .ToDictionary(g => g.Key, g => g.Last());
 
-        var nextIndex = points.Count == 0 ? 0 : points.Max(p => p.Index) + 1;
+        // Crashes whose iteration already sits in the painted window → upgrade in place.
         foreach (var c in scopedCrashes.OrderBy(c => c.Iteration))
         {
-            if (byIter.TryGetValue(c.Iteration, out var existing))
-            {
-                if (existing.Kind == "crash" && existing.Crashed)
-                    continue;
-                var upgraded = existing with
-                {
-                    Kind = "crash",
-                    Crashed = true,
-                    CrashId = existing.CrashId ?? c.Id,
-                    Label = string.IsNullOrWhiteSpace(existing.Label) || existing.Label.StartsWith("iter_", StringComparison.Ordinal)
-                        ? (c.Mutator ?? "CRASH")
-                        : existing.Label,
-                };
-                var at = points.FindIndex(p => p.Index == existing.Index && p.Iteration == existing.Iteration);
-                if (at >= 0) points[at] = upgraded;
-                byIter[c.Iteration] = upgraded;
+            if (!byIter.TryGetValue(c.Iteration, out var existing))
                 continue;
-            }
+            if (existing.Kind == "crash" && existing.Crashed)
+                continue;
+            var upgraded = existing with
+            {
+                Kind = "crash",
+                Crashed = true,
+                CrashId = existing.CrashId ?? c.Id,
+                Label = string.IsNullOrWhiteSpace(existing.Label) || existing.Label.StartsWith("iter_", StringComparison.Ordinal)
+                    ? (c.Mutator ?? "CRASH")
+                    : existing.Label,
+            };
+            var at = points.FindIndex(p => p.Index == existing.Index && p.Iteration == existing.Iteration);
+            if (at >= 0) points[at] = upgraded;
+            byIter[c.Iteration] = upgraded;
+        }
 
-            // Crash outside the current window — append so the strip still shows it.
-            var marker = new StalkTimelinePointDto(
-                nextIndex++,
-                "crash",
-                c.Mutator ?? "CRASH",
-                c.Iteration,
-                true,
-                0,
-                c.Id);
-            points.Add(marker);
-            byIter[c.Iteration] = marker;
+        // Out-of-window (or catalog-only) crashes → pin onto tip slots inside the window.
+        var missing = scopedCrashes
+            .Where(c => !byIter.TryGetValue(c.Iteration, out var p) || p.Kind != "crash" || !p.Crashed)
+            .Where(c => c.Iteration < windowMin || c.Iteration > windowMax || !byIter.ContainsKey(c.Iteration))
+            .OrderByDescending(c => c.ObservedAt)
+            .ThenByDescending(c => c.Iteration)
+            .Take(32)
+            .ToList();
+
+        // Also catch in-window misses that somehow weren't upgraded (iteration drift).
+        if (missing.Count == 0)
+        {
+            missing = scopedCrashes
+                .Where(c => !points.Any(p => p.CrashId == c.Id && p.Kind == "crash"))
+                .OrderByDescending(c => c.ObservedAt)
+                .Take(32)
+                .ToList();
+        }
+
+        if (missing.Count == 0
+            && crashesFound > 0
+            && !points.Any(p => p.Kind == "crash" && p.Crashed))
+        {
+            // Counter says crashes exist but catalog empty / unmatched — mark tip.
+            var tip = points[^1];
+            points[^1] = tip with
+            {
+                Kind = "crash",
+                Crashed = true,
+                Label = "CRASH",
+                CrashId = tip.CrashId ?? latestDetail?.Summary.Id ?? crashIdFor(tip.Iteration, true, null),
+            };
+            return points.TakeLast(200).ToList();
+        }
+
+        var tipSlots = points
+            .Select((p, i) => (p, i))
+            .Where(t => t.p.Kind != "crash" || !t.p.Crashed)
+            .Select(t => t.i)
+            .Reverse()
+            .ToList();
+
+        var slot = 0;
+        foreach (var c in missing)
+        {
+            if (points.Any(p => p.CrashId == c.Id && p.Kind == "crash"))
+                continue;
+            if (slot >= tipSlots.Count)
+                break;
+            var at = tipSlots[slot++];
+            var host = points[at];
+            points[at] = host with
+            {
+                Kind = "crash",
+                Crashed = true,
+                Label = c.Mutator ?? "CRASH",
+                CrashId = c.Id,
+                // Keep host.Iteration so sort-by-iteration clients keep the bar in-window.
+                // Real crash iteration is recoverable via CrashId.
+            };
         }
 
         return points.TakeLast(200).ToList();

@@ -3889,6 +3889,16 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+.stalk-timeline-crash-count {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted, #8a93a3);
+  font-family: var(--mono);
+}
+.stalk-timeline-crash-count.has-crashes {
+  color: var(--stalk-red, #e85d5d);
+  font-weight: 600;
+}
 .stalk-timeline-selection {
   font-size: 0.78rem;
   color: var(--stalk-bright);

@@ -6,11 +6,17 @@ Practical tricks operators forget. Keep this open in **Help → Operator wiki**.
 
 | You run… | Do this |
 |----------|---------|
-| `dotnet run --project src/Randall.Server` | Pull + **restart** the process (rebuilds on start). Browser: **Ctrl+F5**. |
-| Prebuilt `bin\Release\...\Randall.Server.exe` | `dotnet build Randall.sln -c Release`, restart the exe, **Ctrl+F5**. |
+| `dotnet run --project src/Randall.Server` | **Stop** the server → `dotnet run …` once (rebuilds on start) → browser **Ctrl+F5**. **Never build twice.** |
+| Prebuilt `bin\Release\...\Randall.Server.exe` | `dotnet build Randall.sln -c Release` once, restart the exe, **Ctrl+F5**. |
 | Lab targets / native exes changed | `scripts/update-lab.ps1` (or `-SkipLabTargets` if UI-only). |
 
-Honesty / NULL-write / Exploit Research fixes live in the **running** binary + `wwwroot`. Pull alone is not enough.
+Honesty / NULL-write / Exploit Research / timeline crash-bar fixes live in the **running** binary + `wwwroot`. Pull alone is not enough — restart once, hard-refresh once.
+
+### Execution timeline crash bars
+
+- During live fuzz with ≥1 unique crash, the strip should show **red** bars and a header like `3 crashes in window`.
+- Click a red bar → diagram + Investigation pin to that crash (`Follow live` resumes).
+- If still all-blue after pull: you are on a stale process or cached `app.js` — stop server, one `dotnet run`, Ctrl+F5 (check Network for `app.js?v=ux-timeline-crashbars-2`).
 
 ## Live link / LAN
 

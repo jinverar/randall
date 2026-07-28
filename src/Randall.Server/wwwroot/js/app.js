@@ -2237,7 +2237,15 @@ function normalizeTimelinePoint(p, fallbackIndex) {
   };
 }
 
-/** Prefer crash > novel > hit when the same iteration appears in server + live streams. */
+function isTimelineCrash(p) {
+  return !!(p && (p.kind === 'crash' || p.crashed));
+}
+
+/**
+ * Prefer crash > novel > hit when the same iteration appears in server + live streams.
+ * Always retain crash bars even when their iteration falls outside the last-200 window
+ * (fd46169 server append was dropped here by sort+slice — root cause of all-blue live strip).
+ */
 function mergeTimeline(serverPoints) {
   if (Array.isArray(serverPoints))
     stalkServerTimeline = serverPoints;
@@ -2259,11 +2267,49 @@ function mergeTimeline(serverPoints) {
   (stalkServerTimeline || []).forEach(upsert);
   (stalkLiveTimeline || []).forEach(upsert);
 
-  const merged = [...byIter.values()]
+  const sorted = [...byIter.values()]
+    .sort((a, b) => Number(a.iteration) - Number(b.iteration) || Number(a.index) - Number(b.index));
+  const allCrashes = sorted.filter(isTimelineCrash);
+  // Dedupe crashes by crashId when present (tip-pinned + real-iter duplicates).
+  const crashById = new Map();
+  for (const c of allCrashes) {
+    const id = c.crashId ? String(c.crashId) : `iter:${c.iteration}`;
+    if (!crashById.has(id)) crashById.set(id, c);
+  }
+  const crashes = [...crashById.values()];
+  const window = sorted.slice(-200);
+  const inWindowIds = new Set(
+    window.filter(isTimelineCrash).map((p) => (p.crashId ? String(p.crashId) : `iter:${p.iteration}`)));
+  const missing = crashes.filter((c) => {
+    const id = c.crashId ? String(c.crashId) : `iter:${c.iteration}`;
+    return !inWindowIds.has(id);
+  });
+
+  let merged = window;
+  if (missing.length) {
+    const result = window.map((p) => ({ ...p }));
+    for (const c of missing) {
+      let slot = -1;
+      for (let i = result.length - 1; i >= 0; i--) {
+        if (!isTimelineCrash(result[i])) { slot = i; break; }
+      }
+      if (slot < 0) continue;
+      // Pin onto an in-window host iteration so the bar stays visible after sort.
+      result[slot] = {
+        ...result[slot],
+        kind: 'crash',
+        crashed: true,
+        crashId: c.crashId || result[slot].crashId || null,
+        label: c.label || 'CRASH',
+      };
+    }
+    merged = result;
+  }
+
+  return merged
     .sort((a, b) => Number(a.iteration) - Number(b.iteration) || Number(a.index) - Number(b.index))
     .slice(-200)
     .map((p, i) => ({ ...p, index: i }));
-  return merged;
 }
 
 function ensureTimelineClickDelegation() {
@@ -2287,6 +2333,21 @@ function ensureTimelineClickDelegation() {
   });
 }
 
+function updateTimelineCrashCount(list) {
+  const el = document.getElementById('stalk-timeline-crash-count');
+  if (!el) return;
+  const n = (list || []).filter(isTimelineCrash).length;
+  if (n <= 0) {
+    el.textContent = '0 crashes in window';
+    el.classList.add('is-empty');
+    el.classList.remove('has-crashes');
+    return;
+  }
+  el.textContent = `${n} crash${n === 1 ? '' : 'es'} in window`;
+  el.classList.remove('is-empty');
+  el.classList.add('has-crashes');
+}
+
 function renderTimeline(points) {
   const el = document.getElementById('stalk-timeline');
   const end = document.getElementById('stalk-timeline-end');
@@ -2295,6 +2356,7 @@ function renderTimeline(points) {
   const list = (points || []).slice(-200).map((p, i) => normalizeTimelinePoint(p, i));
   stalkRenderedTimeline = list;
   rememberTimelineCrashIds(list);
+  updateTimelineCrashCount(list);
   if (!list.length) {
     el.innerHTML = '';
     end.textContent = 'NOW';
@@ -6573,7 +6635,14 @@ function bindHubHandlers() {
     } else {
       stalkLiveTimeline.push(livePoint);
     }
-    if (stalkLiveTimeline.length > 200) stalkLiveTimeline = stalkLiveTimeline.slice(-200);
+    if (stalkLiveTimeline.length > 200) {
+      // Keep crash ticks when trimming — length-only slice dropped red bars after ~200 iters.
+      const crashes = stalkLiveTimeline.filter(isTimelineCrash);
+      const rest = stalkLiveTimeline.filter((p) => !isTimelineCrash(p));
+      const budget = Math.max(0, 200 - crashes.length);
+      stalkLiveTimeline = [...rest.slice(-budget), ...crashes]
+        .sort((a, b) => Number(a.iteration) - Number(b.iteration) || Number(a.index) - Number(b.index));
+    }
     if (e.crashed) {
       scheduleHarvestRefresh({
         project: stalkProject,

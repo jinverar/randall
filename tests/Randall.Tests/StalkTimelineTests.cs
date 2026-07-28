@@ -25,7 +25,7 @@ public class StalkTimelineTests
     public void Live_overlay_without_journal_places_crash_markers_not_flat_hits()
     {
         // Repro: OverlayLiveRunCounters fabricates RunId="live" with high Iterations;
-        // old synthetic path used `i == run.Iterations - 1` inside a ≤80 window → never crash.
+        // crashes outside the last-200 window must still paint as red tip bars (CrashId retained).
         var crashA = Crash(42);
         var crashB = Crash(180);
         var run = new FuzzRunManifestDto(
@@ -48,9 +48,37 @@ public class StalkTimelineTests
         Assert.True(timeline.Count <= 200);
         var crashes = timeline.Where(p => p.Kind == "crash" && p.Crashed).ToList();
         Assert.True(crashes.Count >= 2, $"Expected ≥2 crash bars, got {crashes.Count}");
-        Assert.Contains(crashes, p => p.Iteration == 42 && p.CrashId == crashA.Id);
-        Assert.Contains(crashes, p => p.Iteration == 180 && p.CrashId == crashB.Id);
+        Assert.Contains(crashes, p => p.CrashId == crashA.Id);
+        Assert.Contains(crashes, p => p.CrashId == crashB.Id);
+        // Pinned into the visible window so sort-by-iteration clients cannot drop them.
+        Assert.All(crashes, p => Assert.True(p.Iteration >= 301, $"crash bar iter {p.Iteration} outside window"));
         Assert.Contains(timeline, p => p.Kind is "hit" or "novel");
+    }
+
+    [Fact]
+    public void Live_for_project_ignores_runid_mismatch_and_shows_catalog_crashes()
+    {
+        // Live fuzz overlays an older journal RunId while catalog crashes carry the new RunId.
+        var crash = Crash(12, runId: "brand-new-run");
+        var run = new FuzzRunManifestDto(
+            "stale-old-run",
+            "vulnserver",
+            "tcp",
+            "projects/vulnserver.yaml",
+            DateTimeOffset.UtcNow,
+            null,
+            false,
+            false,
+            "novelty",
+            "stale journal",
+            Iterations: 80,
+            CrashesFound: 1);
+
+        var timeline = StalkDashboard.BuildTimelineSnapshot(
+            run, latestDetail: null, [crash], liveForProject: true);
+
+        var bar = Assert.Single(timeline, p => p.Kind == "crash" && p.Crashed);
+        Assert.Equal(crash.Id, bar.CrashId);
     }
 
     [Fact]
