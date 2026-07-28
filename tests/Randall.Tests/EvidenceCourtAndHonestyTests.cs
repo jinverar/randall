@@ -116,6 +116,147 @@ public class EvidenceCourtAndHonestyTests
     }
 
     [Fact]
+    public void Court_oracle_score_alone_does_not_confirm()
+    {
+        var id = Guid.NewGuid();
+        var primitives = new[]
+        {
+            new PrimitiveAssessmentDto(
+                "prim-1", PrimitiveKind.InputInfluencedWrite, PrimitiveState.Observed,
+                0.8, "write", null, ["oracle:score"]),
+        };
+        var oracleFacts = new[]
+        {
+            new EvidenceFact(
+                "oracle.score", "72", "oracle", null,
+                EvidenceObservationType.Inferred, 0.7, DateTimeOffset.UtcNow),
+        };
+        var skeptic = new SkepticReportDto(
+            true, id, "lab",
+            [new SkepticChallengeDto(
+                "skep-ok", "claim-1", ResearchClaimKind.InputInfluence,
+                "offset influences fault", 75,
+                "null: coincidental",
+                new HypothesisExperimentDto(HypothesisExperimentKind.MinimizeHold, "neutralize", OffsetBytes: 4),
+                "still faults", "clears",
+                SkepticChallengeStatus.Survived, 83,
+                Observation: "fault class unchanged after neutralize",
+                At: DateTimeOffset.UtcNow)],
+            "1 survived",
+            DateTimeOffset.UtcNow);
+
+        Assert.False(EvidenceCourt.IsCourtAdmissibleFact(oracleFacts[0]));
+        Assert.False(EvidenceCourt.PassesPromotionGate(skeptic, oracleFacts));
+        var court = EvidenceCourt.Evaluate(primitives, oracleFacts, skeptic);
+        Assert.NotEqual(EvidenceCourtVerdict.Confirmed, court.Overall);
+    }
+
+    [Fact]
+    public void Court_rejects_honesty_colon_tags_as_citations()
+    {
+        Assert.False(EvidenceCourt.IsAllowedSensorCitation("honesty:null-write-gate"));
+        Assert.False(EvidenceCourt.IsAllowedSensorCitation("court:rejected"));
+        Assert.False(EvidenceCourt.IsAllowedSensorCitation("oracle:score"));
+        Assert.True(EvidenceCourt.IsAllowedSensorCitation("debugger:faultAddress"));
+        Assert.True(EvidenceCourt.IsAllowedSensorCitation("influence:link-o"));
+    }
+
+    [Fact]
+    public void RootCause_write_av_without_control_does_not_claim_attacker_store()
+    {
+        var id = Guid.NewGuid();
+        var obs = ScreamInvestigator.ParseBlocks(
+            "EXCEPTION_CODE: (c0000005) Access violation\n",
+            exr: "Parameter[0]: 00000001\nAttempt to write to address 00007ff812340000\n",
+            regs: "rax=00007ff812340000 rcx=0000000000000001 rip=0000000000401000\n");
+
+        Assert.False(RootCauseEngine.HasWriteControlEvidence(obs, null, null));
+        var root = RootCauseEngine.Build(id, "lab", null, null, obs, null, null);
+        Assert.True(root.Ok);
+        Assert.DoesNotContain(
+            root.Candidate.Inferences,
+            i => i.Contains("attacker-controlled", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(
+            root.Candidate.Inferences,
+            i => i.Contains("control not established", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Fault_site_gate_ignores_unrelated_register_match()
+    {
+        var match = new RegisterPayloadMatchDto("rdx", "0x41414141", 4, 4, "dword");
+        var obs = new DebuggerObservation(
+            Ok: true,
+            DumpPath: null,
+            ObservationPath: null,
+            ExceptionCode: "0xC0000005",
+            ExceptionHint: "ACCESS_VIOLATION",
+            Access: DebuggerAccessKind.Write,
+            FaultAddress: null,
+            FaultAddressClass: DebuggerAddressClass.Unknown,
+            Rip: "0x401000",
+            FaultingModule: "lab",
+            FaultingFunction: "f",
+            FunctionOffset: "+0x10",
+            Stack: [],
+            StackHash: null,
+            RegistersText: "rdx=0000000041414141 rip=0000000000401000",
+            DisasmNearRip: "00401000  mov dword ptr [rax], ecx",
+            MemoryNearRsp: null,
+            ModulesText: null,
+            HeapProbeText: null,
+            AddressQueryText: null,
+            ExrText: null,
+            ExploitableClassification: null,
+            ExploitableDescription: null,
+            HeapSignal: null,
+            SuspectedInputInfluence: "LOW",
+            ExploitabilityHint: "UNKNOWN",
+            Confidence: 0.4,
+            Diagnosis: "write",
+            DebuggerScreamBonus: 0,
+            AnalyzeTimedOut: false,
+            Error: null,
+            At: DateTimeOffset.UtcNow,
+            RegisterMatches: [match]);
+
+        // Instruction present but no fault address / written-value fact — R2 site incomplete.
+        Assert.False(ResearchMaturityGates.HasFaultSiteEvidence(obs, facts: null));
+        Assert.Null(ResearchMaturityGates.ResolveFaultValue(obs, facts: null));
+    }
+
+    [Fact]
+    public void Heap_lifetime_link_not_Observed_from_unrelated_register_match()
+    {
+        var id = Guid.NewGuid();
+        var payload = new byte[] { 0x41, 0x41, 0x41, 0x41, 0x00, 0x01 };
+        var sidecar = new CrashSidecarDto(
+            id, "run", 1, "lab", "CMD", "havoc",
+            ["havoc"], null, "seed", [], "h", "x.bin", payload.Length,
+            -1073741819, "ACCESS_VIOLATION", "detail", null, 0, 0, "native",
+            null, null, null, null,
+            new TransportSnapshotDto("tcp", "127.0.0.1", 9999, false),
+            new FuzzSnapshotDto(false, false, "projects/lab.yaml"),
+            DateTimeOffset.UtcNow);
+
+        var obs = ScreamInvestigator.ParseBlocks(
+            "EXCEPTION_CODE: (c0000005)\n",
+            exr: "Attempt to write to address 0000012345678900\nParameter[0]: 00000001\n",
+            regs: "rax=0000000041414141 rip=0000000000401000\n",
+            heap: "Page Heap fingerprints detected\n",
+            sidecar: sidecar);
+
+        // Force heap signal without Freed/UAF class.
+        obs = obs with { HeapSignal = "HEAP_CORRUPTION", FaultAddressClass = DebuggerAddressClass.Heapish };
+
+        var map = InfluenceEngine.Build(id, "lab", sidecar, null, obs, null, payload: payload);
+        var heap = map.Links.Where(l => l.State.Kind == InfluencedStateKind.HeapObject).ToList();
+        Assert.NotEmpty(heap);
+        Assert.All(heap, l => Assert.Equal(InfluenceConfirmationStatus.Candidate, l.Status));
+        Assert.All(heap, l => Assert.Equal(InfluenceHonestyLabel.Hypothesized, l.Honesty));
+    }
+
+    [Fact]
     public void Stalk_crash_address_never_fakes_question_marks()
     {
         var label = StalkDashboard.FormatCrashNodeAddress(

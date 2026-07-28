@@ -341,12 +341,13 @@ public static class EvidenceFactBuilder
         if (score is not { Total: > 0 })
             yield break;
 
+        // OracleScore is interestingness metadata — Inferred, never Observed causal evidence.
         yield return Fact(
             "oracle.score",
             score.Total.ToString(),
             "oracle",
             sidecar?.InputPath,
-            EvidenceObservationType.Observed,
+            EvidenceObservationType.Inferred,
             Math.Clamp(score.Total / 100.0, 0.4, 0.95),
             sidecar?.ObservedAt ?? at);
 
@@ -357,7 +358,7 @@ public static class EvidenceFactBuilder
                 score.Summary,
                 "oracle",
                 null,
-                EvidenceObservationType.Observed,
+                EvidenceObservationType.Inferred,
                 Math.Clamp(score.Total / 100.0, 0.4, 0.95),
                 sidecar?.ObservedAt ?? at,
                 ["oracle.score"]);
@@ -370,7 +371,7 @@ public static class EvidenceFactBuilder
                 $"+{term.Points} {term.Label}",
                 "oracle",
                 null,
-                EvidenceObservationType.Observed,
+                EvidenceObservationType.Inferred,
                 Math.Clamp(Math.Abs(term.Points) / 100.0, 0.35, 0.9),
                 sidecar?.ObservedAt ?? at,
                 ["oracle.score"]);

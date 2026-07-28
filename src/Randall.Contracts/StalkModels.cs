@@ -63,7 +63,12 @@ public sealed record StalkTimelinePointDto(
     int Iteration,
     bool Crashed,
     int NewEdges,
-    Guid? CrashId = null);
+    Guid? CrashId = null,
+    /// <summary>
+    /// Real crash iteration when this bar is pinned into a later timeline window
+    /// (<see cref="Iteration"/> stays in-window for sort clients; do not treat host iter as the crash).
+    /// </summary>
+    int? CrashIteration = null);
 
 public sealed record StalkHotBlockDto(string Address, long Hits);
 

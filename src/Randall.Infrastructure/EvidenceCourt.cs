@@ -76,20 +76,21 @@ public static class EvidenceCourt
                 continue;
             }
 
-            if (p.State == PrimitiveState.Confirmed && skepticOk && evidenceCount >= 1)
+            // Court-confirm only with sensor evidence (not oracle scores / lineage alone).
+            if (p.State == PrimitiveState.Confirmed && skepticOk && HasClaimSupportingEvidence(factList, cited))
             {
                 rulings.Add(new EvidenceCourtRulingDto(
                     p.Id, statement, EvidenceCourtVerdict.Confirmed,
-                    "cited evidence + Skeptic survived",
+                    "cited sensor evidence + Skeptic survived",
                     Math.Max(cited, evidenceCount), confPct));
                 continue;
             }
 
-            if (p.State == PrimitiveState.Observed && skepticOk && evidenceCount >= 1)
+            if (p.State == PrimitiveState.Observed && skepticOk && HasClaimSupportingEvidence(factList, cited))
             {
                 rulings.Add(new EvidenceCourtRulingDto(
                     p.Id, statement, EvidenceCourtVerdict.Confirmed,
-                    "observed with evidence + Skeptic survived (R5+)",
+                    "observed with sensor evidence + Skeptic survived (R5+)",
                     Math.Max(cited, evidenceCount), confPct));
                 continue;
             }
@@ -199,8 +200,8 @@ public static class EvidenceCourt
     }
 
     /// <summary>
-    /// Sensor EvidenceFacts + explicit lines. Synthetic <c>primitive.*</c> atoms from
-    /// <see cref="PrimitiveEngine"/> do not satisfy the Court (avoids self-citation).
+    /// Sensor EvidenceFacts + explicit lines. Synthetic <c>primitive.*</c> atoms and
+    /// oracle score metadata do not satisfy the Court (avoids self-citation / score≠proof).
     /// </summary>
     private static int CountEvidence(
         IReadOnlyList<EvidenceFact>? facts,
@@ -213,7 +214,38 @@ public static class EvidenceCourt
     }
 
     internal static bool IsCourtAdmissibleFact(EvidenceFact f) =>
-        !f.Name.StartsWith("primitive.", StringComparison.OrdinalIgnoreCase);
+        !f.Name.StartsWith("primitive.", StringComparison.OrdinalIgnoreCase)
+        && !f.Name.StartsWith("oracle.", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(f.Source, "oracle", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Court confirmation needs a claim citation or a debugger/influence/heap-class sensor fact —
+    /// not an unrelated lineage / oracle score atom.
+    /// </summary>
+    internal static bool HasClaimSupportingEvidence(IReadOnlyList<EvidenceFact> facts, int cited) =>
+        cited >= 1 || facts.Any(IsClaimSupportingSensorFact);
+
+    internal static bool IsClaimSupportingSensorFact(EvidenceFact f)
+    {
+        if (!IsCourtAdmissibleFact(f))
+            return false;
+        var src = f.Source ?? "";
+        if (src.Contains("debugger", StringComparison.OrdinalIgnoreCase)
+            || src.Contains("cdb", StringComparison.OrdinalIgnoreCase)
+            || src.Contains("influence", StringComparison.OrdinalIgnoreCase)
+            || src.Contains("corruption", StringComparison.OrdinalIgnoreCase)
+            || src.Contains("counterfactual", StringComparison.OrdinalIgnoreCase)
+            || src.Contains("backward", StringComparison.OrdinalIgnoreCase)
+            || src.Contains("heap", StringComparison.OrdinalIgnoreCase)
+            || src.Equals("exr", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Named fault/write atoms are claim-supporting even when source is generic.
+        return f.Name.Contains("fault", StringComparison.OrdinalIgnoreCase)
+               || f.Name.Contains("write", StringComparison.OrdinalIgnoreCase)
+               || f.Name.Contains("register", StringComparison.OrdinalIgnoreCase)
+               || f.Name.Contains("heap", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static int CountClaimCitations(
         IReadOnlyList<string>? evidenceRefs,
@@ -223,6 +255,7 @@ public static class EvidenceCourt
             return 0;
 
         var factNames = facts
+            .Where(IsCourtAdmissibleFact)
             .Select(f => f.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var n = 0;
@@ -230,12 +263,39 @@ public static class EvidenceCourt
         {
             if (string.IsNullOrWhiteSpace(r))
                 continue;
-            // Explicit EvidenceFact name match, or a sensor tag (debugger:/influence:/…).
-            if (factNames.Contains(r) || r.Contains(':', StringComparison.Ordinal))
+            if (factNames.Contains(r))
+            {
+                n++;
+                continue;
+            }
+
+            // Allowed sensor tags only — honesty:/court:/oracle:/skeptic: are bookkeeping, not proof.
+            if (IsAllowedSensorCitation(r))
                 n++;
         }
 
         return n;
+    }
+
+    internal static bool IsAllowedSensorCitation(string r)
+    {
+        var colon = r.IndexOf(':');
+        if (colon <= 0)
+            return false;
+        var prefix = r[..colon];
+        return prefix.Equals("debugger", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("cdb", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("influence", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("counterfactual", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("heap", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("register", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("fault", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("backwardTrace", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("chain", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("pattern", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("corruption", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("written", StringComparison.OrdinalIgnoreCase)
+               || prefix.Equals("ea", StringComparison.OrdinalIgnoreCase);
     }
 
     private static double ConfidenceForState(PrimitiveState state) => state switch

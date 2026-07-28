@@ -2216,11 +2216,17 @@ function timelinePointKey(p, index) {
 
 function rememberTimelineCrashIds(points) {
   for (const p of points || []) {
-    if (p.crashId != null && p.iteration != null)
-      stalkCrashIdByIteration.set(Number(p.iteration), p.crashId);
+    if (p.crashId == null) continue;
+    // Prefer real crash iteration; pinned tip bars keep host Iteration for window sort only.
+    const crashIter = p.crashIteration != null ? Number(p.crashIteration) : Number(p.iteration);
+    if (!Number.isNaN(crashIter))
+      stalkCrashIdByIteration.set(crashIter, p.crashId);
   }
   for (const p of stalkLiveTimeline) {
-    if (!p.crashId && stalkCrashIdByIteration.has(Number(p.iteration)))
+    if (p.crashId) continue;
+    // Do not map host iteration → crash when this point is a pinned out-of-window bar.
+    if (p.crashIteration != null) continue;
+    if (stalkCrashIdByIteration.has(Number(p.iteration)))
       p.crashId = stalkCrashIdByIteration.get(Number(p.iteration));
   }
 }
@@ -2254,12 +2260,15 @@ function timelineKindRank(kind) {
 
 function normalizeTimelinePoint(p, fallbackIndex) {
   const kind = p.kind || (p.crashed ? 'crash' : (p.newEdges || p.newEdgeCount) > 0 ? 'novel' : 'hit');
-  const crashId = p.crashId || stalkCrashIdByIteration.get(Number(p.iteration)) || null;
+  const crashIteration = p.crashIteration != null ? Number(p.crashIteration) : null;
+  const lookupIter = crashIteration != null ? crashIteration : Number(p.iteration);
+  const crashId = p.crashId || stalkCrashIdByIteration.get(lookupIter) || null;
   return {
     ...p,
     kind,
     crashed: !!(p.crashed || kind === 'crash'),
     crashId,
+    crashIteration,
     index: p.index ?? fallbackIndex ?? 0,
     newEdges: p.newEdges || p.newEdgeCount || 0,
   };
@@ -2398,11 +2407,16 @@ function renderTimeline(points) {
     const key = timelinePointKey(p, i);
     const selected = selectedKey && key === selectedKey ? ' selected' : '';
     const crashBit = p.crashId ? ` · crash ${String(p.crashId).slice(0, 8)}` : '';
+    const crashIter = p.crashIteration != null ? Number(p.crashIteration) : null;
+    const pinned = kind === 'crash' && crashIter != null && crashIter !== Number(p.iteration);
     const title = kind === 'crash'
-      ? `#${p.iteration} CRASH${crashBit} — click to inspect`
+      ? (pinned
+        ? `CRASH at #${crashIter} (pinned in window @ #${p.iteration})${crashBit} — click to inspect`
+        : `#${crashIter ?? p.iteration} CRASH${crashBit} — click to inspect`)
       : `#${p.iteration} ${p.label || ''} (${kind})${crashBit} — click to inspect`;
     return `<button type="button" class="bar ${kind}${selected}" style="height:${h}%"
       data-index="${i}" data-iteration="${p.iteration}" data-kind="${kind}"
+      data-crash-iteration="${crashIter != null ? crashIter : ''}"
       data-label="${escapeXml(p.label || '')}"
       data-crash-id="${escapeXml(p.crashId || '')}"
       title="${escapeXml(title)}"
@@ -2459,14 +2473,15 @@ function highlightCrashLogRow(crashId) {
 
 async function selectTimelinePoint(point, index) {
   const kind = point.kind || (point.crashed ? 'crash' : 'hit');
-  let crashId = point.crashId || stalkCrashIdByIteration.get(Number(point.iteration)) || null;
+  const crashIter = point.crashIteration != null ? Number(point.crashIteration) : Number(point.iteration);
+  let crashId = point.crashId || stalkCrashIdByIteration.get(crashIter) || null;
   if ((kind === 'crash' || point.crashed) && !crashId)
-    crashId = await resolveCrashIdForIteration(point.iteration);
+    crashId = await resolveCrashIdForIteration(crashIter);
 
   stalkFollowLive = false;
   stalkSelection = {
     key: timelinePointKey({ ...point, crashId, kind }, index),
-    iteration: point.iteration,
+    iteration: crashIter,
     kind,
     label: point.label || '',
     crashId,

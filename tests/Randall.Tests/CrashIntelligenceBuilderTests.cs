@@ -10,43 +10,54 @@ public class CrashIntelligenceBuilderTests
     public void Build_UniqueCrash_HasHighNoveltyAndScreamScore()
     {
         var id = Guid.NewGuid();
-        var summary = new CrashSummaryDto(
-            id, "demo", 42, "cmd/havoc", "abc123", "x.bin",
-            null, "-1073741819", null, null, "run-1", DateTimeOffset.UtcNow,
-            "access_violation", "high", "0xDEAD", "AV", "demo|av|0xdead", true);
+        var dir = Path.Combine(Path.GetTempPath(), "randall-intel-unique-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var inputPath = Path.Combine(dir, "x.bin");
+        File.WriteAllBytes(inputPath, new byte[512]);
+        try
+        {
+            var summary = new CrashSummaryDto(
+                id, "demo", 42, "cmd/havoc", "abc123", inputPath,
+                null, "-1073741819", null, null, "run-1", DateTimeOffset.UtcNow,
+                "access_violation", "high", "0xDEAD", "AV", "demo|av|0xdead", true);
 
-        var triage = new CrashTriageDto(
-            "access_violation", "high", "test", true, false, "demo|av|0xdead",
-            "AV", "0xDEAD", null, "0x401000", "0x7fff0010", 128, "depth");
+            var triage = new CrashTriageDto(
+                "access_violation", "high", "test", true, false, "demo|av|0xdead",
+                "AV", "0xDEAD", null, "0x401000", "0x7fff0010", 128, "depth");
 
-        var sidecar = new CrashSidecarDto(
-            id, "run-1", 42, "demo", "cmd", "havoc", ["cmd", "havoc", "expand"],
-            "parent-hash", "corpus", [], "abc123", "x.bin", 512, -1073741819,
-            "AV", "tcp", null, 3, 120, "drcov", null, null, null, null,
-            new TransportSnapshotDto("tcp", "127.0.0.1", 9999, false),
-            new FuzzSnapshotDto(true, false, "projects/demo.yaml"),
-            DateTimeOffset.UtcNow,
-            null,
-            new OracleScore(85, [new OracleScoreTerm("crash", 80, "AV")], "+80 crash"));
+            var sidecar = new CrashSidecarDto(
+                id, "run-1", 42, "demo", "cmd", "havoc", ["cmd", "havoc", "expand"],
+                "parent-hash", "corpus", [], "abc123", inputPath, 512, -1073741819,
+                "AV", "tcp", null, 3, 120, "drcov", null, null, null, null,
+                new TransportSnapshotDto("tcp", "127.0.0.1", 9999, false),
+                new FuzzSnapshotDto(true, false, "projects/demo.yaml"),
+                DateTimeOffset.UtcNow,
+                null,
+                new OracleScore(85, [new OracleScoreTerm("crash", 80, "AV")], "+80 crash"));
 
-        var intel = CrashIntelligenceBuilder.Build(summary, triage, sidecar, 512, [summary]);
+            var intel = CrashIntelligenceBuilder.Build(summary, triage, sidecar, 512, [summary]);
 
-        Assert.Equal("high", intel.Severity);
-        Assert.True(intel.Novelty >= 70);
-        Assert.Equal(1, intel.SeenCount);
-        Assert.Equal(3, intel.CoverageDelta);
-        Assert.True(intel.Reproducible); // sidecar + run id present
-        Assert.True(intel.Minimized);
-        Assert.Equal(85, intel.OracleScore?.Total);
-        Assert.Equal(128, intel.Offset);
-        Assert.NotNull(intel.Lineage);
-        Assert.Equal(3, intel.Lineage!.MutatorChain.Count);
-        Assert.True(intel.Lineage.Partial);
-        Assert.True(intel.ScreamScore > 40);
-        Assert.NotNull(intel.PrimaryFault);
-        Assert.Equal(FaultSignalKind.AccessViolation, intel.PrimaryFault!.Kind);
-        Assert.NotNull(intel.FaultSignals);
-        Assert.NotEmpty(intel.FaultSignals!);
+            Assert.Equal("high", intel.Severity);
+            Assert.True(intel.Novelty >= 70);
+            Assert.Equal(1, intel.SeenCount);
+            Assert.Equal(3, intel.CoverageDelta);
+            Assert.True(intel.Reproducible); // input file on disk
+            Assert.False(intel.Minimized); // no *_minimized.bin — not "smallest alone"
+            Assert.Equal(85, intel.OracleScore?.Total);
+            Assert.Equal(128, intel.Offset);
+            Assert.NotNull(intel.Lineage);
+            Assert.Equal(3, intel.Lineage!.MutatorChain.Count);
+            Assert.True(intel.Lineage.Partial);
+            Assert.True(intel.ScreamScore > 40);
+            Assert.NotNull(intel.PrimaryFault);
+            Assert.Equal(FaultSignalKind.AccessViolation, intel.PrimaryFault!.Kind);
+            Assert.NotNull(intel.FaultSignals);
+            Assert.NotEmpty(intel.FaultSignals!);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* ignore */ }
+        }
     }
 
     [Fact]
@@ -80,8 +91,15 @@ public class CrashIntelligenceBuilderTests
             Assert.Equal(2, intelA.SeenCount);
             Assert.True(intelA.Novelty < 70);
             Assert.True(intelB.Novelty < 70);
-            Assert.True(intelA.Minimized);
+            // Smallest-in-cluster ≠ minimized; only *_minimized.bin counts.
+            Assert.False(intelA.Minimized);
             Assert.False(intelB.Minimized);
+            Assert.True(intelA.Reproducible);
+            Assert.True(intelB.Reproducible);
+
+            File.WriteAllBytes(CrashInputMinimizer.MinimizedPathFor(dir, a.Id), new byte[40]);
+            var intelAMin = CrashIntelligenceBuilder.Build(a, triage, null, 100, [a, b]);
+            Assert.True(intelAMin.Minimized);
         }
         finally
         {

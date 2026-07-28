@@ -1130,7 +1130,8 @@ public static class StalkDashboard
                 Label = c.Mutator ?? "CRASH",
                 CrashId = c.Id,
                 // Keep host.Iteration so sort-by-iteration clients keep the bar in-window.
-                // Real crash iteration is recoverable via CrashId.
+                // CrashIteration is the truthful crash iter (may be outside the window).
+                CrashIteration = c.Iteration,
             };
         }
 

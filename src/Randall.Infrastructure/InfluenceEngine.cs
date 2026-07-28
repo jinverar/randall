@@ -521,9 +521,19 @@ public static class InfluenceEngine
         if (links.Any(l => l.State.Kind == InfluencedStateKind.HeapObject))
             return;
 
-        var heapStatus = debugger?.RegisterMatches?.Count > 0
-            ? InfluenceConfirmationStatus.Observed
-            : InfluenceConfirmationStatus.Candidate;
+        // A register↔payload match alone does not prove input controls alloc/free/reuse.
+        // Only UAF/freed heap class + explicit heap timeline rises above Candidate.
+        var heapStatus = InfluenceConfirmationStatus.Candidate;
+        if ((debugger?.FaultAddressClass == DebuggerAddressClass.Freed
+             || string.Equals(debugger?.HeapSignal, "USE_AFTER_FREE", StringComparison.OrdinalIgnoreCase)
+             || !string.IsNullOrWhiteSpace(trace?.HeapTimeline))
+            && debugger?.RegisterMatches?.Any(m =>
+                !string.IsNullOrWhiteSpace(m.ValueHex)
+                && !InputAttributionEngine.IsExcludedFromRawInputAttribution(m.ValueHex)) == true)
+        {
+            heapStatus = InfluenceConfirmationStatus.Observed;
+        }
+
         const string heapMech = "input→heap object lifetime";
         links.Add(new InfluenceLinkDto(
             "inf-heap",

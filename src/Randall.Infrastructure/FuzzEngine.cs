@@ -729,6 +729,17 @@ public sealed class FuzzEngine
 
                     if (planned.Flow is not null && planned.Command is not null)
                     {
+                        if (planned.Flow.Steps.Count == 0
+                            || planned.FlowStepIndex < 0
+                            || planned.FlowStepIndex >= planned.Flow.Steps.Count)
+                        {
+                            throw new ArgumentOutOfRangeException(
+                                nameof(planned.FlowStepIndex),
+                                planned.FlowStepIndex,
+                                $"Invalid flow step index for '{planned.Label}' " +
+                                $"(steps={planned.Flow.Steps.Count}) — skipping case");
+                        }
+
                         var steps = new List<TargetRunner.TcpStep>();
                         for (var si = 0; si < planned.Flow.Steps.Count; si++)
                         {
@@ -1451,6 +1462,25 @@ public sealed class FuzzEngine
                         ? $"joker:{jokerTrick.TrickName}"
                         : $"{iterDetail}; joker:{jokerTrick.TrickName}";
 
+                // Crash-cascade guard BEFORE journal / progress — never record a rejected
+                // TCP-dead cascade as a crash (UI/API journal must match engine truth).
+                if (result.Crashed &&
+                    ProjectKinds.IsTcpLike(project) &&
+                    !result.Connected &&
+                    result.MiniDumpPath is null &&
+                    debuggerWait?.Scream?.ExceptionInfo is null)
+                {
+                    FuzzAnalystLog.Warn(progress,
+                        $"Rejected crash (no TCP connect — target already dead or unreachable): {result.Detail}",
+                        iterations);
+                    result = result with
+                    {
+                        Crashed = false,
+                        Detail = $"not a crash (connection never established): {result.Detail}",
+                    };
+                    iterDetail = result.Detail;
+                }
+
                 journal?.LogIteration(new IterationLogEntry(
                     iterations, DateTimeOffset.UtcNow, commandName,
                     jokerTrick is null ? mutator.Name : $"joker:{jokerTrick.TrickName}",
@@ -1485,25 +1515,6 @@ public sealed class FuzzEngine
                 }
 
                 FuzzAnalystLog.Step(progress, "Monitor / checkAlive", iterations);
-
-                // Crash-cascade guard: connection never established / target already dead
-                // is not an input-triggered crash. Health-check + Target Runtime restart
-                // (above) recycle the listener between iterations when adopt-lab is used.
-                if (result.Crashed &&
-                    ProjectKinds.IsTcpLike(project) &&
-                    !result.Connected &&
-                    result.MiniDumpPath is null &&
-                    debuggerWait?.Scream?.ExceptionInfo is null)
-                {
-                    FuzzAnalystLog.Warn(progress,
-                        $"Rejected crash (no TCP connect — target already dead or unreachable): {result.Detail}",
-                        iterations);
-                    result = result with
-                    {
-                        Crashed = false,
-                        Detail = $"not a crash (connection never established): {result.Detail}",
-                    };
-                }
 
                 if (result.Crashed)
                 {
@@ -2043,8 +2054,36 @@ public sealed class FuzzEngine
                 }
                 catch (Exception ex)
                 {
+                    var isBounds = ex is IndexOutOfRangeException or ArgumentOutOfRangeException;
                     FuzzAnalystLog.Warn(progress,
-                        $"Iteration error — continuing fuzz: {ex.Message}", iterations);
+                        isBounds
+                            ? $"Iteration bounds error (config/flow index) — recorded as failed, continuing: {ex.Message}"
+                            : $"Iteration error — continuing fuzz: {ex.Message}",
+                        iterations);
+                    // Keep journal/timeline accounting honest: iteration was counted but produced no case.
+                    try
+                    {
+                        journal?.LogIteration(new IterationLogEntry(
+                            iterations, DateTimeOffset.UtcNow, "?",
+                            isBounds ? "error:bounds" : "error:exception",
+                            ["error"],
+                            null, "error", 0, "0",
+                            false, 0, coverage.TotalEdges, 0,
+                            isBounds
+                                ? $"failed (bounds): {ex.Message}"
+                                : $"failed: {ex.Message}",
+                            null, stalkBackend, null,
+                            journal?.RunId ?? "", false));
+                        FuzzProgressGuard.Try(options.Progress, p => p.OnIteration(new FuzzIterationEvent(
+                            iterations, "error", 0, false, false, 0,
+                            corpus.SeenCount, coverage.TotalEdges,
+                            isBounds ? $"failed (bounds): {ex.Message}" : $"failed: {ex.Message}")));
+                    }
+                    catch
+                    {
+                        /* journal best-effort */
+                    }
+
                     if (runtime is not null)
                     {
                         try

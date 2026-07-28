@@ -64,6 +64,26 @@ public class ResearchMaturityGateTests
     }
 
     [Fact]
+    public void Written_value_fact_satisfies_fault_site_without_address()
+    {
+        var obs = ScreamInvestigator.ParseBlocks(
+            "EXCEPTION_CODE: (c0000005) Access violation\n",
+            regs: "rip=0000000000401020\n",
+            disasm: "00401020  mov dword ptr [rax], ecx");
+        // Strip fault address if parser filled one.
+        obs = obs with { FaultAddress = null };
+
+        var facts = new[]
+        {
+            new EvidenceFact(
+                "writtenValue", "0x41414141", "debugger", null,
+                EvidenceObservationType.Observed, 0.9, DateTimeOffset.UtcNow),
+        };
+        Assert.True(ResearchMaturityGates.HasFaultSiteEvidence(obs, facts));
+        Assert.Equal("0x41414141", ResearchMaturityGates.ResolveFaultValue(obs, facts));
+    }
+
+    [Fact]
     public void Cannot_reach_R5_without_counterfactual_and_skeptic()
     {
         var id = Guid.NewGuid();

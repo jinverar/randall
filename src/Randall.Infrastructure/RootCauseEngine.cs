@@ -430,13 +430,48 @@ public static class RootCauseEngine
         if (trace?.SuspectedMutator is { } tm && tm != chain?.SuspectedMutator)
             list.Add($"Backward trace attributes `{tm}` as the introducing step");
         if (debugger?.Access is DebuggerAccessKind.Write && !IsNullOrNearNullWrite(debugger))
-            list.Add("Write AV implies attacker-controlled store — prioritize length/index hypotheses");
+        {
+            if (HasWriteControlEvidence(debugger, chain, trace))
+                list.Add("Write AV with input-control evidence — prioritize length/index hypotheses");
+            else
+                list.Add("Write fault observed — investigate destination/value influence (control not established)");
+        }
         else if (IsNullOrNearNullWrite(debugger))
             list.Add("Null/invalid destination write — do not assume controlled store from zero-coincidence");
         if (!string.IsNullOrWhiteSpace(sidecar?.Command) && !IsNullOrNearNullWrite(debugger))
             list.Add($"Session node `{sidecar.Command}` may scope which field was mutated");
 
         return list;
+    }
+
+    /// <summary>
+    /// True only with non-trivial attribution — a bare write AV is not "attacker-controlled."
+    /// </summary>
+    internal static bool HasWriteControlEvidence(
+        DebuggerObservation? debugger,
+        CrashCorruptionChainDto? chain,
+        CrashBackwardTraceDto? trace)
+    {
+        if (debugger?.FaultAddressClass == DebuggerAddressClass.AsciiPattern)
+            return true;
+        if (string.Equals(debugger?.SuspectedInputInfluence, "HIGH", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (chain?.RegisterMatches is { Count: > 0 } || debugger?.RegisterMatches is { Count: > 0 })
+        {
+            var matches = chain?.RegisterMatches ?? debugger!.RegisterMatches!;
+            if (matches.Any(m =>
+                    !string.IsNullOrWhiteSpace(m.ValueHex)
+                    && !InputAttributionEngine.IsExcludedFromRawInputAttribution(m.ValueHex)))
+                return true;
+        }
+
+        if (chain?.PatternDepthBytes is > 0 && chain.Confidence is "HIGH" or "MEDIUM")
+            return true;
+        if (trace is { Ok: true } && !string.IsNullOrWhiteSpace(trace.FaultRegister)
+            && !string.IsNullOrWhiteSpace(trace.BadPointerSource)
+            && !trace.BadPointerSource.Contains("insufficient", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
     }
 
     private static string BuildEducationalSummary(

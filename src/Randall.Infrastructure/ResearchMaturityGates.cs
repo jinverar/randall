@@ -142,19 +142,10 @@ public static class ResearchMaturityGates
         DebuggerObservation? debugger,
         IReadOnlyList<EvidenceFact>? facts)
     {
-        var fromFact = FindFactValue(facts, "writtenValue", "causingValue", "fault.value", "write.value");
-        if (!string.IsNullOrWhiteSpace(fromFact))
-            return fromFact;
-
-        if (debugger?.RegisterMatches is { Count: > 0 })
-        {
-            var m = debugger.RegisterMatches.FirstOrDefault(r =>
-                !string.IsNullOrWhiteSpace(r.ValueHex) && !IsUnknownToken(r.ValueHex));
-            if (m is not null)
-                return m.ValueHex;
-        }
-
-        return null;
+        // Only explicit write/cause value atoms — never an unrelated register↔payload match.
+        // (RegisterMatches can satisfy attribution elsewhere; they are not the fault operand.)
+        _ = debugger;
+        return FindFactValue(facts, "writtenValue", "causingValue", "fault.value", "write.value");
     }
 
     private static string? FindFactValue(IReadOnlyList<EvidenceFact>? facts, params string[] names)

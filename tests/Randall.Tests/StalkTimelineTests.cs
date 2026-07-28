@@ -52,6 +52,10 @@ public class StalkTimelineTests
         Assert.Contains(crashes, p => p.CrashId == crashB.Id);
         // Pinned into the visible window so sort-by-iteration clients cannot drop them.
         Assert.All(crashes, p => Assert.True(p.Iteration >= 301, $"crash bar iter {p.Iteration} outside window"));
+        // Host Iteration is window-pin only — CrashIteration keeps the true crash iter.
+        var pinnedA = Assert.Single(crashes, p => p.CrashId == crashA.Id);
+        Assert.Equal(42, pinnedA.CrashIteration);
+        Assert.NotEqual(42, pinnedA.Iteration);
         Assert.Contains(timeline, p => p.Kind is "hit" or "novel");
     }
 

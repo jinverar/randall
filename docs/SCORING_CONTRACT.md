@@ -45,7 +45,7 @@ Computed by `ResearchMaturityGates` + `PrimitiveEngine` — levels are **capped*
 | **R6** | Confirmed | ≥1 Confirmed capability under the same Court / Skeptic / counterfactual gate |
 | **R7** | Research package | ≥2 Confirmed capabilities + HIGH-confidence root cause under the same gate |
 
-Evidence Court lite (`EvidenceCourt`) demotes high-confidence claims with zero EvidenceFacts and blocks R5+ without Skeptic survival.
+Evidence Court lite (`EvidenceCourt`) demotes high-confidence claims with zero EvidenceFacts and blocks R5+ without Skeptic survival. **Oracle score atoms** (`oracle.*`) and bookkeeping tags (`honesty:` / `court:` / `skeptic:`) are not Court proof. Court confirmation needs a sensor fact (debugger / influence / corruption / counterfactual / fault*) or an allowed sensor citation.
 
 ## Related docs
 

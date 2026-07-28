@@ -257,42 +257,20 @@ public static class CrashIntelligenceBuilder
         return Math.Clamp(sev * 12 + novelty / 2 + uniqueBonus + ipBonus + oracleBonus + dbgBonus + attrBonus + momentumBonus, 0, 100);
     }
 
+    /// <summary>
+    /// Reproducible only when a crash input file is actually on disk — sidecar presence alone
+    /// is not a successful replay.
+    /// </summary>
     private static bool ReproLooksReady(CrashSummaryDto summary, CrashSidecarDto? sidecar)
     {
-        if (sidecar is not null)
-            return true;
-
-        if (string.IsNullOrWhiteSpace(summary.InputPath))
-            return false;
-        try
+        foreach (var path in new[] { summary.InputPath, sidecar?.InputPath })
         {
-            return File.Exists(summary.InputPath);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool IsMinimized(
-        CrashSummaryDto summary,
-        IReadOnlyList<CrashSummaryDto> clusterMembers,
-        int inputLength)
-    {
-        if (inputLength <= 0)
-            return false;
-
-        foreach (var member in clusterMembers)
-        {
-            if (member.Id == summary.Id)
-                continue;
-            if (!File.Exists(member.InputPath))
+            if (string.IsNullOrWhiteSpace(path))
                 continue;
             try
             {
-                var len = (int)new FileInfo(member.InputPath).Length;
-                if (len < inputLength)
-                    return false;
+                if (File.Exists(path))
+                    return true;
             }
             catch
             {
@@ -300,7 +278,31 @@ public static class CrashIntelligenceBuilder
             }
         }
 
-        return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Minimized only when a recorded minimize artifact exists — "smallest among cluster files"
+    /// is not evidence that minimization preserved the crash.
+    /// </summary>
+    private static bool IsMinimized(
+        CrashSummaryDto summary,
+        IReadOnlyList<CrashSummaryDto> clusterMembers,
+        int inputLength)
+    {
+        _ = clusterMembers;
+        _ = inputLength;
+        try
+        {
+            var dir = Path.GetDirectoryName(summary.InputPath);
+            if (string.IsNullOrWhiteSpace(dir))
+                return false;
+            return File.Exists(CrashInputMinimizer.MinimizedPathFor(dir, summary.Id));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static CrashLineageDto? BuildLineage(CrashSidecarDto? sidecar) =>
