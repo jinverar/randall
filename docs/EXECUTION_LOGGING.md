@@ -20,9 +20,12 @@ Each fuzz session creates:
 data/runs/<project>_<timestamp>_<guid>/
   run.json           # manifest — project, config, stalk backend, totals
   iterations.jsonl   # one JSON object per iteration (append-only)
+  fuzz-console.log   # plain-text tee of the primary FuzzAnalystLog / Live log
 ```
 
-Console prints: `Run journal: <path>`
+Console prints: `Run journal: <path>` (and `Fuzz console log → …/fuzz-console.log`).
+
+When `executionLog: false`, Randall still allocates a run folder and writes `fuzz-console.log` (no `run.json` / `iterations.jsonl`).
 
 ### `run.json` manifest
 

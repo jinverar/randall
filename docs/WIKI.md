@@ -40,13 +40,18 @@ Honesty / NULL-write / Exploit Research / timeline crash-bar fixes live in the *
 | What | Where |
 |------|--------|
 | **Live server / CLI stdout** | The terminal running `dotnet run --project src/Randall.Server` (or `Randall.Cli`) — STATUS lines, analyst log, crash notices |
-| **Per-run journal + captures** | `data/runs/<runId>/` (`run.json`, timeline, hot edges, linked inputs) |
-| **Crash artifacts / canisters** | `data/crashes/<project>/` (`*_crash.json`, inputs, `dumps/`, sidecars) |
+| **Primary fuzz console (file tee)** | `data/runs/<runId>/fuzz-console.log` — append-only plain-text mirror of `FuzzAnalystLog` (same stream as the Fuzz UI Live log / server console), written while the run is active |
+| **Per-run journal + captures** | `data/runs/<runId>/` (`run.json`, `iterations.jsonl`, timeline, hot edges, linked inputs, optional Procmon/ETW/pcap/…) |
+| **Crash artifacts / canisters** | `data/crashes/<project>/` (`*_crash.json`, inputs, `dumps/`, sidecars, `*_intel.txt`) |
 | **Oracle findings** | `data/crashes/<project>/_oracles/oracle_findings.jsonl` |
 | **Stalk layers / edges** | `data/stalk/<project>/` |
 | **Saved sessions / exports** | `data/sessions/saved/`, `data/exports/` |
 
-Fuzz UI log panels poll `/api/fuzz/logs` (and SignalR when Live link is connected) — they mirror the same analyst stream as the server terminal, they are not a separate file.
+There is **no** Serilog / rolling FileLogger for the ASP.NET host. Host + fuzz share process stdout; only the fuzz analyst stream is teed to `fuzz-console.log` under the active run folder (one run, many crashes — prefer this over per-crash copies).
+
+Fuzz UI log panels poll `/api/fuzz/logs` (and SignalR when Live link is connected) — they mirror the same analyst stream as the server terminal and `fuzz-console.log`, not a separate file.
+
+Crash-specific text (when present): `data/crashes/<project>/<…>_intel.txt`, `dumps/`, coverage `traces/<guid>.log`, DebugView `data/runs/<runId>/debugview.log` (Windows OutputDebugString capture, not the Randall console).
 
 ## Troubleshooting
 

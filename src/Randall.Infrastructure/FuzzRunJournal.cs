@@ -22,6 +22,20 @@ public sealed class FuzzRunJournal
         _iterationsPath = Path.Combine(runDir, "iterations.jsonl");
     }
 
+    /// <summary>
+    /// Allocate <c>data/runs/&lt;project&gt;_&lt;timestamp&gt;_&lt;guid&gt;/</c> without writing a journal
+    /// (used when <c>executionLog</c> is off but the session still needs a run folder for console tee / captures).
+    /// </summary>
+    public static string AllocateRunDirectory(ProjectConfig project, string yamlPath)
+    {
+        var runsRoot = ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir);
+        Directory.CreateDirectory(runsRoot);
+        var runId = $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}";
+        var runDir = Path.Combine(runsRoot, runId);
+        Directory.CreateDirectory(runDir);
+        return runDir;
+    }
+
     public static FuzzRunJournal Start(
         ProjectConfig project,
         string yamlPath,
@@ -30,12 +44,8 @@ public sealed class FuzzRunJournal
         string stalkBackend,
         string stalkBackendNote)
     {
-        var runsRoot = ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir);
-        Directory.CreateDirectory(runsRoot);
-
-        var runId = $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}";
-        var runDir = Path.Combine(runsRoot, runId);
-        Directory.CreateDirectory(runDir);
+        var runDir = AllocateRunDirectory(project, yamlPath);
+        var runId = Path.GetFileName(runDir);
 
         var manifest = new FuzzRunManifestDto(
             runId,

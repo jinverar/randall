@@ -45,6 +45,7 @@ public sealed class FuzzEngine
         if (project.Fuzz.SyncCookies || ProjectKinds.IsHttp(project))
             HttpCookieSession.Begin();
 
+        FuzzRunConsoleLog? consoleLog = null;
         try
         {
         ObservationBus = new ObservationBus();
@@ -108,12 +109,21 @@ public sealed class FuzzEngine
         if (fallbackWarn is not null)
             Console.WriteLine($"Warning: {fallbackWarn}");
         FuzzRunJournal? journal = null;
+        string? runDir = null;
         if (project.Fuzz.ExecutionLog)
         {
             journal = FuzzRunJournal.Start(project, yamlPath, dryRun, coverageGuided, stalkBackend, stalkNote);
+            runDir = journal.RunDirectory;
             Console.WriteLine($"Run journal: {journal.RunDirectory}");
         }
-        var runId = journal?.RunId ?? Guid.NewGuid().ToString("N");
+        else
+        {
+            // Still allocate a run folder so the primary console tee has a stable home.
+            runDir = FuzzRunJournal.AllocateRunDirectory(project, yamlPath);
+            Console.WriteLine($"Run folder: {runDir}");
+        }
+        consoleLog = FuzzRunConsoleLog.Attach(runDir);
+        var runId = journal?.RunId ?? Path.GetFileName(runDir) ?? Guid.NewGuid().ToString("N");
         var useCoverage = coverageGuided && stalk.IsAvailable;
         var useCoverageFile = useCoverage &&
                               project.Kind.Equals("file", StringComparison.OrdinalIgnoreCase);
@@ -156,6 +166,7 @@ public sealed class FuzzEngine
             $"Fuzzing '{project.Name}' ({project.Kind}) — max {maxIterations} iterations" +
             (dryRun ? " [dry-run]" : "") +
             (verbose ? " [verbose]" : ""));
+        FuzzAnalystLog.Info(progress, $"Fuzz console log → {consoleLog.Path}");
         if (verbose)
             LogVerboseEngineBanner(project, progress, coverageGuided, useCoverage);
 
@@ -183,13 +194,8 @@ public sealed class FuzzEngine
         var wantSysinternalsSnap = options.SysinternalsSnapshots ?? project.Fuzz.SysinternalsSnapshots;
         var wantStringsOnCrash = options.StringsOnCrash ?? project.Fuzz.StringsOnCrash;
         var wantCdbAnalyze = options.CdbAnalyzeCrash ?? project.Fuzz.CdbAnalyzeCrash;
-        string? runDir = journal?.RunDirectory;
         if (!dryRun && (wantProcmon || wantTcpvcon || wantPktmon || wantTshark || wantEtw || wantDebugView || wantSysinternalsSnap))
-        {
-            runDir ??= Path.Combine(ProjectLoader.ResolvePath(yamlPath, project.Fuzz.RunsDir),
-                $"{project.Name}_{DateTime.UtcNow:yyyyMMdd_HHmmss}");
-            Directory.CreateDirectory(runDir);
-        }
+            Directory.CreateDirectory(runDir!);
 
         string? targetExeResolved = null;
         if (!string.IsNullOrWhiteSpace(project.Target.Executable))
@@ -2140,8 +2146,12 @@ public sealed class FuzzEngine
                     mutatorCredit.WriteRunJson(statsDir);
                     mutatorChainTracker.WriteRunJson(statsDir);
                 }
-                Console.WriteLine(mutatorCredit.FormatLeaderboard());
-                Console.WriteLine(mutatorChainTracker.FormatLeaderboard());
+                var creditBoard = mutatorCredit.FormatLeaderboard();
+                var chainBoard = mutatorChainTracker.FormatLeaderboard();
+                Console.WriteLine(creditBoard);
+                Console.WriteLine(chainBoard);
+                consoleLog?.AppendPlain(creditBoard);
+                consoleLog?.AppendPlain(chainBoard);
             }
             catch { /* ignore */ }
 
@@ -2162,6 +2172,10 @@ public sealed class FuzzEngine
                 }
             }
             catch { /* intel write-back must not break teardown */ }
+
+            try { consoleLog?.Dispose(); }
+            catch { /* ignore */ }
+            consoleLog = null;
         }
 
         var runResult = new FuzzRunResult(iterations, corpusAdded, crashCount, crashes, stopGoalReached, stopReason);
@@ -2170,6 +2184,8 @@ public sealed class FuzzEngine
         }
         finally
         {
+            try { consoleLog?.Dispose(); }
+            catch { /* ignore */ }
             HttpCookieSession.End();
         }
     }

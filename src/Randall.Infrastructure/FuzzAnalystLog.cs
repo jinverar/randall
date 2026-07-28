@@ -2,9 +2,12 @@ using System.Text;
 
 namespace Randall.Infrastructure;
 
-/// <summary>Boofuzz-inspired analyst log lines for UI + console.</summary>
+/// <summary>Boofuzz-inspired analyst log lines for UI + console (+ optional run-folder file tee).</summary>
 public static class FuzzAnalystLog
 {
+    private static readonly object SessionLogGate = new();
+    private static FuzzRunConsoleLog? _sessionLog;
+
     static FuzzAnalystLog()
     {
         TryEnableAnsiConsole();
@@ -12,6 +15,24 @@ public static class FuzzAnalystLog
 
     /// <summary>Call once at process start so Quick Edit cannot freeze console writes before first fuzz log.</summary>
     public static void EnsureConsoleReady() => TryEnableAnsiConsole();
+
+    /// <summary>Tee subsequent Emit lines into the active run's <c>fuzz-console.log</c>.</summary>
+    internal static void AttachSessionLog(FuzzRunConsoleLog log)
+    {
+        ArgumentNullException.ThrowIfNull(log);
+        lock (SessionLogGate)
+            _sessionLog = log;
+    }
+
+    /// <summary>Clear the session file tee when the run ends (only if still this instance).</summary>
+    internal static void DetachSessionLog(FuzzRunConsoleLog log)
+    {
+        lock (SessionLogGate)
+        {
+            if (ReferenceEquals(_sessionLog, log))
+                _sessionLog = null;
+        }
+    }
 
     public static void Info(IFuzzProgressSink? sink, string message, int? iteration = null) =>
         Emit(sink, "info", $"Info: {message}", iteration);
@@ -54,6 +75,10 @@ public static class FuzzAnalystLog
         var entry = new FuzzLogEvent(kind, message, at, iteration, byteLength, hexPreview);
         sink?.OnLog(entry);
         WriteConsole(kind, at, message);
+        FuzzRunConsoleLog? file;
+        lock (SessionLogGate)
+            file = _sessionLog;
+        file?.Append(kind, at, message);
     }
 
     public static string HexPreview(ReadOnlySpan<byte> data, int maxBytes = 24)
