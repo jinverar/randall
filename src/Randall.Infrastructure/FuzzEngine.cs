@@ -1197,7 +1197,7 @@ public sealed class FuzzEngine
                     if (trace is not null && File.Exists(trace))
                     {
                         newEdges = coverage.RegisterTrace(trace);
-                        if (newEdges == 0 && project.Fuzz.SanitizerCoverage)
+                        if (newEdges == 0 && CoverageBackendResolver.ShouldIngestSancov(project))
                             newEdges = SanitizerCoverageBackend.TryIngestTraceDirectory(coverage, traceDir);
                         newCoverage = newEdges > 0;
                         if (newCoverage && !result.Crashed)
@@ -1215,7 +1215,7 @@ public sealed class FuzzEngine
                         project, yamlPath, payload, traceDir, cancellationToken);
                     iterTracePath = covRun.TracePath;
                     newEdges = coverage.RegisterTrace(covRun.TracePath);
-                    if (newEdges == 0 && project.Fuzz.SanitizerCoverage)
+                    if (newEdges == 0 && CoverageBackendResolver.ShouldIngestSancov(project))
                         newEdges = SanitizerCoverageBackend.TryIngestTraceDirectory(coverage, traceDir);
                     newCoverage = newEdges > 0;
                     if (newCoverage && !result.Crashed)

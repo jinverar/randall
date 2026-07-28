@@ -4,7 +4,8 @@ namespace Randall.Infrastructure;
 
 /// <summary>
 /// LLVM SanitizerCoverage (sancov) hook — complements DynamoRIO drcov when targets emit <c>*.sancov</c> PCs.
-/// Full inline-guard wiring remains platform-specific; see docs/SANITIZER_COVERAGE.md.
+/// Select via <c>coverage.backend: sancov</c> or <c>fuzz.sanitizerCoverage: true</c>.
+/// See docs/SANITIZER_COVERAGE.md.
 /// </summary>
 public static class SanitizerCoverageBackend
 {
@@ -18,34 +19,57 @@ public static class SanitizerCoverageBackend
 
     public static Status Resolve(ProjectConfig project)
     {
-        var requested = project.Fuzz.SanitizerCoverage;
+        var cov = CoverageBackendResolver.Resolve(project);
+        var requested = cov.PreferSancovIngest || project.Fuzz.SanitizerCoverage ||
+                        cov.Requested is CoverageBackendResolver.Sancov;
+
+        if (cov.SemanticOnly && !requested)
+        {
+            return new Status(
+                false,
+                false,
+                CoverageBackendResolver.Semantic,
+                cov.Note);
+        }
+
         if (!requested)
         {
             return new Status(
                 false,
                 DynamoRioRunner.Discover().IsAvailable,
-                "drcov",
-                "SanitizerCoverage disabled — using stalk backends (DynamoRIO drcov when available).");
+                cov.Effective,
+                "SanitizerCoverage disabled — using stalk backends (DynamoRIO drcov when available). " +
+                "Set coverage.backend: sancov or fuzz.sanitizerCoverage: true to ingest *.sancov.");
         }
 
         var dynamo = DynamoRioRunner.Discover();
-        if (dynamo.IsAvailable)
+        if (dynamo.IsAvailable && cov.Requested is not CoverageBackendResolver.Sancov)
         {
             return new Status(
                 true,
                 true,
                 "drcov+sancov",
-                "fuzz.sanitizerCoverage: drcov active; also ingests *.sancov PCs from trace dir when present.");
+                "coverage.backend=" + cov.Requested + ": drcov active; also ingests *.sancov PCs from trace dir when present.");
         }
 
-        if (OperatingSystem.IsLinux())
+        if (dynamo.IsAvailable && cov.Requested is CoverageBackendResolver.Sancov)
         {
             return new Status(
                 true,
                 true,
-                "sancov",
-                "Linux: build target with -fsanitize=address -fsanitize-coverage=trace-pc-guard (or fuzzer no-link) " +
-                "and set ASAN_OPTIONS=coverage=1 — Randfuzz ingests *.sancov from corpus/traces when DynamoRIO is absent.");
+                "sancov+drcov",
+                cov.Note);
+        }
+
+        if (OperatingSystem.IsLinux() || cov.Requested is CoverageBackendResolver.Sancov)
+        {
+            return new Status(
+                true,
+                true,
+                CoverageBackendResolver.Sancov,
+                "Linux/sancov: build target with -fsanitize=address -fsanitize-coverage=trace-pc-guard " +
+                "and set ASAN_OPTIONS=coverage=1 — Randfuzz ingests *.sancov from corpus/traces when DynamoRIO is absent. " +
+                cov.Note);
         }
 
         return new Status(

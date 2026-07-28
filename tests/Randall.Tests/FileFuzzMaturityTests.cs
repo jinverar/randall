@@ -177,7 +177,7 @@ public class FileFuzzMaturityTests
     {
         var pdf = RecipeCatalog.Get("file-pdf");
         Assert.NotNull(pdf);
-        Assert.Equal(RecipeCatalog.RecipeQuality.MagicOnly, pdf!.Entry.Quality);
+        Assert.Equal(RecipeCatalog.RecipeQuality.StructuredModel, pdf!.Entry.Quality);
 
         var png = RecipeCatalog.Get("file-png");
         Assert.NotNull(png);
@@ -187,6 +187,14 @@ public class FileFuzzMaturityTests
         var zip = RecipeCatalog.Get("file-zip");
         Assert.NotNull(zip);
         Assert.Equal(RecipeCatalog.RecipeQuality.StructuredModel, zip!.Entry.Quality);
+
+        var pe = RecipeCatalog.Get("file-pe");
+        Assert.NotNull(pe);
+        Assert.Equal(RecipeCatalog.RecipeQuality.StructuredModel, pe!.Entry.Quality);
+
+        var tlv = RecipeCatalog.Get("file-tlv");
+        Assert.NotNull(tlv);
+        Assert.Equal(RecipeCatalog.RecipeQuality.GrammarBacked, tlv!.Entry.Quality);
     }
 
     [Fact]
@@ -299,6 +307,99 @@ public class FileFuzzMaturityTests
         var cdStart = fields.First(f => f.Name == "cd_sig").Offset;
         Assert.Equal(cdStart, BitConverter.ToInt32(bytes, cdOff.Offset));
         Assert.Equal(0x06054b50u, BitConverter.ToUInt32(bytes, fields.First(f => f.Name == "eocd_sig").Offset));
+    }
+
+    [Fact]
+    public void StructuredPe_GenerateRoundTrip_MzAndPeSignature()
+    {
+        var repo = FindRepoRoot();
+        var proj = Path.Combine(repo, "projects", "file-text.yaml");
+        var model = ProtocolLoader.Load(proj, "protocols/pe_structured.yaml");
+        var bytes = model.Render();
+        Assert.True(bytes.Length > 128);
+        Assert.Equal((byte)'M', bytes[0]);
+        Assert.Equal((byte)'Z', bytes[1]);
+        var eLfanew = BitConverter.ToInt32(bytes, 0x3C);
+        Assert.True(eLfanew > 0 && eLfanew < bytes.Length - 4);
+        Assert.Equal(0x00004550u, BitConverter.ToUInt32(bytes, eLfanew));
+        var fields = model.GetFields();
+        Assert.Contains(fields, f => f.Name == "e_lfanew");
+        Assert.Contains(fields, f => f.Name == "pointer_to_raw_data");
+        var rawPtr = fields.First(f => f.Name == "pointer_to_raw_data");
+        var rawOff = BitConverter.ToInt32(bytes, rawPtr.Offset);
+        Assert.Equal(fields.First(f => f.Name == "text_blob").Offset, rawOff);
+    }
+
+    [Fact]
+    public void StructuredPdf_GenerateRoundTrip_HeaderXrefStartxref()
+    {
+        var repo = FindRepoRoot();
+        var proj = Path.Combine(repo, "projects", "file-text.yaml");
+        var model = ProtocolLoader.Load(proj, "protocols/pdf_structured.yaml");
+        var bytes = model.Render();
+        var text = System.Text.Encoding.ASCII.GetString(bytes);
+        Assert.StartsWith("%PDF-1.4", text);
+        Assert.Contains("xref", text);
+        Assert.Contains("startxref", text);
+        Assert.Contains("%%EOF", text);
+        var fields = model.GetFields();
+        var start = fields.First(f => f.Name == "startxref_off");
+        Assert.Equal("asciiOffset", start.Kind);
+        var xrefIdx = text.IndexOf("xref\n", StringComparison.Ordinal);
+        Assert.True(xrefIdx >= 0);
+        var ascii = System.Text.Encoding.ASCII.GetString(bytes, start.Offset, start.Length);
+        Assert.Equal(xrefIdx, int.Parse(ascii));
+    }
+
+    [Fact]
+    public void TlvGrammar_GenerateRoundTrip_MagicAndSwitch()
+    {
+        var repo = FindRepoRoot();
+        var proj = Path.Combine(repo, "projects", "file-text.yaml");
+        var model = ProtocolLoader.Load(proj, "protocols/tlv_grammar.yaml");
+        var bytes = model.Render();
+        Assert.True(bytes.Length >= 6);
+        Assert.Equal("TLV1", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
+        var fields = model.GetFields();
+        Assert.Contains(fields, f => f.Kind == "switch" || f.Name == "tlv_body");
+        Assert.Contains(fields, f => f.Name == "tlv_type" || f.Kind == "enum");
+    }
+
+    [Fact]
+    public void AsciiOffset_BackPatchesDecimalDigits()
+    {
+        var root = new GroupBlock([
+            new BytesBlock { Name = "pad", DefaultValue = [1, 2, 3, 4, 5], Mutable = false },
+            new GroupBlock([
+                new StaticBlock("XREF"),
+            ], "xref"),
+            new OffsetBlock
+            {
+                Name = "sx",
+                Width = 8,
+                AsciiDecimal = true,
+                TargetField = "xref",
+                DefaultValue = 0,
+            },
+        ]);
+        var bytes = new BlockModel("ascii-off", root).Render();
+        var ascii = System.Text.Encoding.ASCII.GetString(bytes, 9, 8);
+        Assert.Equal("00000005", ascii);
+    }
+
+    [Fact]
+    public void CoverageBackendResolver_Tokens()
+    {
+        var p = new Randall.Contracts.ProjectConfig();
+        p.Coverage.Backend = "semantic";
+        var r = CoverageBackendResolver.Resolve(p);
+        Assert.Equal(CoverageBackendResolver.Semantic, r.Effective);
+        Assert.True(r.SemanticOnly);
+
+        p.Coverage.Backend = "sancov";
+        r = CoverageBackendResolver.Resolve(p);
+        Assert.True(r.PreferSancovIngest);
+        Assert.True(CoverageBackendResolver.ShouldIngestSancov(p));
     }
 
     private static string FindRepoRoot()

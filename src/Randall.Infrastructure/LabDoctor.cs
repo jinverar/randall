@@ -394,15 +394,21 @@ public static class LabDoctor
             Add("stalkMode", "ok", $"requested={stalkMode}, resolved={resolved}");
         }
 
+        var covBackend = CoverageBackendResolver.Resolve(project);
+        Add("coverage.backend", covBackend.SemanticOnly && !covBackend.PreferSancovIngest ? "ok" :
+                (covBackend.PreferDynamoRio && !DynamoRioRunner.Discover().IsAvailable &&
+                 covBackend.Requested is CoverageBackendResolver.DynamoRio ? "warn" : "ok"),
+            covBackend.Note);
+
         var sancov = SanitizerCoverageBackend.Resolve(project);
         if (sancov.Requested)
         {
             Add("sanitizerCoverage", sancov.Available ? "ok" : "warn", sancov.Note);
         }
-        else if (project.Fuzz.CoverageGuided)
+        else if (project.Fuzz.CoverageGuided && !covBackend.SemanticOnly)
         {
             Add("sanitizerCoverage", "ok",
-                "optional fuzz.sanitizerCoverage for ASan-built targets (*.sancov PCs) — drcov remains default");
+                "optional coverage.backend: sancov (or fuzz.sanitizerCoverage) for ASan *.sancov PCs — drcov remains default");
         }
 
         var procmonExe = ProcmonCapture.DiscoverExecutable();

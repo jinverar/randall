@@ -53,10 +53,17 @@ blocks:
         name: local_extra_len
         value: "0"
         littleEndian: true
+        mutable: true
       - type: string
         name: local_name
         value: "a.txt"
         mutable: true
+      - type: bytes
+        name: local_extra
+        mutable: true
+        minSize: 0
+        maxSize: 0
+        value: "hex:"
       - type: bytes
         name: local_data
         mutable: true
@@ -122,6 +129,7 @@ blocks:
         name: cd_comment_len
         value: "0"
         littleEndian: true
+        mutable: true
       - type: uint16
         name: cd_disk_start
         value: "0"
@@ -134,6 +142,7 @@ blocks:
         name: cd_ext_attr
         value: "0"
         littleEndian: true
+        mutable: true
       - type: offset
         name: local_header_offset
         width: 4
@@ -145,6 +154,18 @@ blocks:
         name: cd_name
         value: "a.txt"
         mutable: true
+      - type: bytes
+        name: cd_extra
+        mutable: true
+        minSize: 0
+        maxSize: 0
+        value: "hex:"
+      - type: bytes
+        name: cd_comment
+        mutable: true
+        minSize: 0
+        maxSize: 0
+        value: "hex:"
 
   - type: group
     name: eocd
@@ -165,10 +186,12 @@ blocks:
         name: eocd_entries_disk
         value: "1"
         littleEndian: true
+        mutable: true
       - type: uint16
         name: eocd_entries_total
         value: "1"
         littleEndian: true
+        mutable: true
       - type: uint32
         name: eocd_cd_size
         value: "51"
@@ -185,3 +208,10 @@ blocks:
         name: eocd_comment_len
         value: "0"
         littleEndian: true
+        mutable: true
+      - type: bytes
+        name: eocd_comment
+        mutable: true
+        minSize: 0
+        maxSize: 0
+        value: "hex:"

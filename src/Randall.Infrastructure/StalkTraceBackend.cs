@@ -37,7 +37,19 @@ public static class StalkTraceBackendFactory
 {
     public static IStalkTraceBackend Create(ProjectConfig project)
     {
+        var cov = CoverageBackendResolver.Resolve(project);
+        if (cov.SemanticOnly)
+            return NullStalkTraceBackend.Instance;
+
         var mode = (project.Fuzz.StalkMode ?? "auto").Trim().ToLowerInvariant();
+        if (cov.Requested is CoverageBackendResolver.DynamoRio)
+            mode = "external";
+        else if (cov.Requested is CoverageBackendResolver.Sancov && mode == "auto")
+        {
+            // Prefer native/null for BB spawn; sancov ingest is post-run from *.sancov files.
+            // Still allow DynamoRIO when present as supplement unless stalkMode forces otherwise.
+        }
+
         var native = new NativeStalkRunner();
         var external = new ExternalDrcovStalkBackend(DynamoRioRunner.Discover());
 

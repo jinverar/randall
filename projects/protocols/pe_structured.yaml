@@ -1,0 +1,164 @@
+name: pe-structured
+description: >
+  Structured PE — minimal DOS header (MZ + e_lfanew offset back-patch), PE signature,
+  COFF header, PE32 optional-header stub, one section table entry, and a tiny .text raw blob.
+  Not a loadable EXE claim — header/section model for PE parsers.
+blocks:
+  - type: group
+    name: dos_header
+    children:
+      - type: static
+        value: "MZ"
+      # Bytes 0x02..0x3B (58) — DOS stub padding so e_lfanew sits at classic 0x3C
+      - type: hex
+        value: "90000300000004000000FFFF0000B800000000000000400000000000000000000000000000000000000000000000000000000000000000000000"
+      - type: offset
+        name: e_lfanew
+        width: 4
+        littleEndian: true
+        targetField: pe_header
+        relative: false
+        mutable: true
+
+  - type: group
+    name: pe_header
+    children:
+      - type: hex
+        value: "50450000"
+      - type: uint16
+        name: machine
+        value: "0x14c"
+        littleEndian: true
+        mutable: true
+      - type: uint16
+        name: number_of_sections
+        value: "1"
+        littleEndian: true
+        mutable: true
+      - type: uint32
+        name: time_date_stamp
+        value: "0"
+        littleEndian: true
+        mutable: true
+      - type: uint32
+        name: pointer_to_symbol_table
+        value: "0"
+        littleEndian: true
+      - type: uint32
+        name: number_of_symbols
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: size_of_optional_header
+        value: "28"
+        littleEndian: true
+        mutable: true
+      - type: flags
+        name: characteristics
+        width: 2
+        littleEndian: true
+        value: "0x0102"
+        mutable: true
+        flags: { RELOCS_STRIPPED: "0x0001", EXECUTABLE_IMAGE: "0x0002", "32BIT_MACHINE": "0x0100" }
+
+      # Minimal PE32 optional header (Magic + key sizes; not a full IMAGE_OPTIONAL_HEADER32)
+      - type: group
+        name: optional_header
+        children:
+          - type: uint16
+            name: opt_magic
+            value: "0x10b"
+            littleEndian: true
+          - type: uint8
+            name: major_linker
+            value: "0"
+          - type: uint8
+            name: minor_linker
+            value: "0"
+          - type: uint32
+            name: size_of_code
+            value: "16"
+            littleEndian: true
+            mutable: true
+          - type: uint32
+            name: size_of_initialized
+            value: "0"
+            littleEndian: true
+          - type: uint32
+            name: size_of_uninitialized
+            value: "0"
+            littleEndian: true
+          - type: uint32
+            name: address_of_entry_point
+            value: "0x1000"
+            littleEndian: true
+            mutable: true
+          - type: uint32
+            name: base_of_code
+            value: "0x1000"
+            littleEndian: true
+
+      - type: group
+        name: section_table
+        children:
+          - type: bytes
+            name: section_name
+            mutable: true
+            minSize: 8
+            maxSize: 8
+            value: "hex:2E74657874000000"
+          - type: uint32
+            name: virtual_size
+            value: "16"
+            littleEndian: true
+            mutable: true
+          - type: uint32
+            name: virtual_address
+            value: "0x1000"
+            littleEndian: true
+            mutable: true
+          - type: uint32
+            name: size_of_raw_data
+            value: "16"
+            littleEndian: true
+            mutable: true
+          - type: offset
+            name: pointer_to_raw_data
+            width: 4
+            littleEndian: true
+            targetField: section_raw
+            relative: false
+            mutable: true
+          - type: uint32
+            name: pointer_to_relocs
+            value: "0"
+            littleEndian: true
+          - type: uint32
+            name: pointer_to_linenumbers
+            value: "0"
+            littleEndian: true
+          - type: uint16
+            name: number_of_relocs
+            value: "0"
+            littleEndian: true
+          - type: uint16
+            name: number_of_linenumbers
+            value: "0"
+            littleEndian: true
+          - type: flags
+            name: section_characteristics
+            width: 4
+            littleEndian: true
+            value: "0x60000020"
+            mutable: true
+            flags: { CNT_CODE: "0x00000020", MEM_EXECUTE: "0x20000000", MEM_READ: "0x40000000" }
+
+  - type: group
+    name: section_raw
+    children:
+      - type: bytes
+        name: text_blob
+        mutable: true
+        minSize: 16
+        maxSize: 16
+        value: "hex:909090909090909090909090909090C3"

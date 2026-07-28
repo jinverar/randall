@@ -1,0 +1,81 @@
+name: tlv-grammar
+description: >
+  Near-grammar TLV — choice-heavy records: type byte selects leaf payload vs nested
+  child list (array of TLV siblings). Owned teaching format for switch/array grammar
+  practice — not a third-party file type claim.
+blocks:
+  - type: group
+    name: envelope
+    children:
+      - type: static
+        value: "TLV1"
+      - type: uint8
+        name: version
+        value: "1"
+        mutable: true
+      - type: array
+        name: records
+        count: 2
+        minCount: 1
+        maxCount: 4
+        countMutable: true
+        child:
+          type: group
+          name: tlv
+          children:
+            - type: enum
+              name: tlv_type
+              width: 1
+              enumValues: ["1", "2", "3"]
+              value: "1"
+            - type: switch
+              name: tlv_body
+              cases:
+                - key: leaf
+                  children:
+                    - type: sized
+                      lengthName: leaf_len
+                      lengthBytes: 2
+                      littleEndian: true
+                      child:
+                        type: bytes
+                        name: leaf_payload
+                        mutable: true
+                        minSize: 1
+                        maxSize: 8
+                        value: "hex:41"
+                - key: nested
+                  children:
+                    - type: uint16
+                      name: child_count
+                      value: "1"
+                      littleEndian: true
+                      mutable: true
+                    - type: array
+                      name: children
+                      count: 1
+                      minCount: 0
+                      maxCount: 3
+                      countMutable: true
+                      child:
+                        type: group
+                        name: nested_tlv
+                        children:
+                          - type: choices
+                            name: nested_tag
+                            values: ["A", "B", "C"]
+                          - type: sized
+                            lengthName: nested_len
+                            lengthBytes: 1
+                            littleEndian: true
+                            child:
+                              type: bytes
+                              name: nested_payload
+                              mutable: true
+                              minSize: 1
+                              maxSize: 4
+                              value: "hex:42"
+                - key: empty
+                  block:
+                    type: static
+                    value: ""

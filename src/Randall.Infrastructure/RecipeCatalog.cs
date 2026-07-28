@@ -180,7 +180,7 @@ public static class RecipeCatalog
                 (modelPath is null ? "" : " + structured model") + ").",
                 tags, null, ext, seed, FileStructMut, OverflowDict, quality, modelPath));
 
-        // Images — PNG structured model; PDF stays magic-honest.
+        // Images — PNG structured model.
         FileBin("jpeg", "JPEG", "Image", ".jpg", "FFD8FFE000104A464946", ["buffer-overflow", "heap-overflow", "media"]);
         FileSeed("png", "PNG", "Image", ".png", BuildMinimalPng(),
             ["buffer-overflow", "integer-overflow", "media"], RecipeQuality.StructuredModel,
@@ -213,10 +213,13 @@ public static class RecipeCatalog
         FileBin("mov", "QuickTime MOV", "Video", ".mov", "0000001466747970710000", ["media"]);
         FileBin("mpegts", "MPEG-TS", "Video", ".ts", "47400010000000", ["media"]);
 
-        // Archives
+        // Archives — ZIP structured; TLV grammar-backed teaching format
         FileSeed("zip", "ZIP", "Archive", ".zip", BuildMinimalZip(),
             ["directory-traversal", "buffer-overflow"], RecipeQuality.StructuredModel,
             "protocols/zip_structured.yaml");
+        FileSeed("tlv", "TLV (nested grammar)", "Archive", ".tlv", BuildMinimalTlv(),
+            ["buffer-overflow", "integer-overflow"], RecipeQuality.GrammarBacked,
+            "protocols/tlv_grammar.yaml");
         FileBin("gzip", "GZIP", "Archive", ".gz", "1F8B0800000000000003", ["buffer-overflow"]);
         FileBin("tar", "TAR", "Archive", ".tar", "000000000000000000000000757374617200", ["directory-traversal"]);
         FileBin("rar", "RAR", "Archive", ".rar", "526172211A0700CF9073", ["heap-overflow"]);
@@ -225,10 +228,10 @@ public static class RecipeCatalog
         FileBin("xz", "XZ", "Archive", ".xz", "FD377A585A000000FF12", ["buffer-overflow"]);
         FileBin("cab", "Microsoft CAB", "Archive", ".cab", "4D53434600000000", ["heap-overflow"]);
 
-        // Documents — PDF stays Magic-only (no Peach-grammar claim).
-        FileText("pdf", "PDF", "Document", ".pdf",
-            "%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>",
-            ["buffer-overflow", "heap-overflow", "xxe"], quality: RecipeQuality.MagicOnly);
+        // Documents — PDF structured (header/body/xref/startxref), not full grammar
+        FileSeed("pdf", "PDF", "Document", ".pdf", BuildMinimalPdf(),
+            ["buffer-overflow", "heap-overflow", "xxe"], RecipeQuality.StructuredModel,
+            "protocols/pdf_structured.yaml");
         FileBin("ole", "MS Office (OLE DOC/XLS/PPT)", "Document", ".doc", "D0CF11E0A1B11AE1000000", ["buffer-overflow", "object-injection"]);
         FileBin("ooxml", "OOXML (DOCX/XLSX/PPTX)", "Document", ".docx", "504B03040A00000000", ["xxe", "object-injection"]);
         FileText("rtf", "RTF", "Document", ".rtf", "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}AAAA}", ["buffer-overflow"]);
@@ -258,9 +261,11 @@ public static class RecipeCatalog
         FileBin("pcap", "PCAP capture", "Data/Config", ".pcap", "D4C3B2A102000400000000000000000000000400", ["buffer-overflow"]);
         FileText("html", "HTML", "Data/Config", ".html", "<html><body><h1>x</h1></body></html>", ["xss", "buffer-overflow"], XssDict);
 
-        // Executable / system
+        // Executable / system — PE structured (DOS+COFF+section)
         FileBin("elf", "ELF binary", "Executable/System", ".elf", "7F454C46020101000000000000000000", ["buffer-overflow", "out-of-bounds"]);
-        FileBin("pe", "PE (EXE/DLL)", "Executable/System", ".exe", "4D5A90000300000004000000", ["buffer-overflow"]);
+        FileSeed("pe", "PE (EXE/DLL)", "Executable/System", ".exe", BuildMinimalPe(),
+            ["buffer-overflow", "out-of-bounds"], RecipeQuality.StructuredModel,
+            "protocols/pe_structured.yaml");
         FileBin("macho", "Mach-O", "Executable/System", ".macho", "CFFAEDFE0700000103000000", ["buffer-overflow"]);
         FileBin("lnk", "Windows LNK", "Executable/System", ".lnk", "4C0000000114020000000000C0", ["buffer-overflow"]);
         FileBin("ani", "Windows ANI cursor", "Executable/System", ".ani", "524946460000000041434F4E616E6968", ["buffer-overflow"]);
@@ -467,6 +472,89 @@ public static class RecipeCatalog
         bw.Write(cdSize);
         bw.Write(cdOffset);
         bw.Write((ushort)0);
+        return ms.ToArray();
+    }
+
+    /// <summary>Minimal PDF with xref + startxref stub (not a full PDF grammar).</summary>
+    private static byte[] BuildMinimalPdf()
+    {
+        var body =
+            "%PDF-1.4\n%\n" +
+            "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n" +
+            "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n" +
+            "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n";
+        var xref =
+            "xref\n0 4\n" +
+            "0000000000 65535 f \n" +
+            "0000000009 00000 n \n" +
+            "0000000068 00000 n \n" +
+            "0000000125 00000 n \n";
+        var xrefOff = body.Length;
+        var trailer =
+            "trailer\n<< /Size 4 /Root 1 0 R >>\n" +
+            $"startxref\n{xrefOff}\n%%EOF\n";
+        return Encoding.ASCII.GetBytes(body + xref + trailer);
+    }
+
+    /// <summary>Minimal DOS+PE header seed (structure target — not a runnable image).</summary>
+    private static byte[] BuildMinimalPe()
+    {
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        bw.Write((ushort)0x5A4D); // MZ
+        bw.Write(new byte[58]);
+        var eLfanewPos = (int)ms.Length;
+        bw.Write(0); // e_lfanew placeholder
+        var peOff = (int)ms.Length;
+        ms.Position = eLfanewPos;
+        bw.Write(peOff);
+        ms.Position = peOff;
+        bw.Write(0x00004550); // PE\0\0
+        bw.Write((ushort)0x014C);
+        bw.Write((ushort)1);
+        bw.Write(0);
+        bw.Write(0);
+        bw.Write(0);
+        bw.Write((ushort)28);
+        bw.Write((ushort)0x0102);
+        bw.Write((ushort)0x10B);
+        bw.Write((byte)0);
+        bw.Write((byte)0);
+        bw.Write(16);
+        bw.Write(0);
+        bw.Write(0);
+        bw.Write(0x1000);
+        bw.Write(0x1000);
+        // section .text
+        bw.Write(Encoding.ASCII.GetBytes(".text\0\0\0"));
+        bw.Write(16);
+        bw.Write(0x1000);
+        bw.Write(16);
+        var rawPtrPos = (int)ms.Length;
+        bw.Write(0); // PointerToRawData
+        bw.Write(0);
+        bw.Write(0);
+        bw.Write((ushort)0);
+        bw.Write((ushort)0);
+        bw.Write(0x60000020);
+        var rawOff = (int)ms.Length;
+        ms.Position = rawPtrPos;
+        bw.Write(rawOff);
+        ms.Position = rawOff;
+        bw.Write(Hex("909090909090909090909090909090C3"));
+        return ms.ToArray();
+    }
+
+    /// <summary>Minimal TLV1 envelope + one leaf record (grammar teaching seed).</summary>
+    private static byte[] BuildMinimalTlv()
+    {
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        bw.Write(Encoding.ASCII.GetBytes("TLV1"));
+        bw.Write((byte)1);
+        bw.Write((byte)1); // type leaf
+        bw.Write((ushort)1);
+        bw.Write((byte)'A');
         return ms.ToArray();
     }
 }

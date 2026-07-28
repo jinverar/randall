@@ -207,6 +207,7 @@ public static class ProtocolLoader
                 TargetField = def.TargetField,
                 Mutable = def.Mutable,
                 DefaultValue = ParseIntegerDefault(def.Value, 4),
+                AsciiDecimal = def.Ascii || def.AsciiDecimal,
             },
             "when" or "conditional" => new ConditionalBlock
             {

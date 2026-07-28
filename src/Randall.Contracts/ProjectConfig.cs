@@ -10,6 +10,11 @@ public sealed class ProjectConfig
     public TargetConfig Target { get; set; } = new();
     public TransportConfig Transport { get; set; } = new();
     public FuzzConfig Fuzz { get; set; } = new();
+    /// <summary>
+    /// Coverage edge source selection (<c>coverage.backend</c>).
+    /// Complements <see cref="FuzzConfig.SanitizerCoverage"/> / stalkMode.
+    /// </summary>
+    public CoverageConfig Coverage { get; set; } = new();
     public List<string> Seeds { get; set; } = [];
     public List<string> Mutators { get; set; } = ["bitflip", "expand", "truncate"];
     /// <summary>TCP session commands (vulnserver TRUN, GMON, etc.) — random pick per iteration.</summary>
@@ -402,9 +407,14 @@ public sealed class FuzzConfig
     public bool StringsOnCrash { get; set; }
     /// <summary>
     /// Prefer SanitizerCoverage (LLVM sancov) when available; falls back to DynamoRIO drcov today.
-    /// Stub flag — see docs/SANITIZER_COVERAGE.md. Does not disable existing stalk backends.
+    /// Prefer <c>coverage.backend: sancov</c> when set — see docs/SANITIZER_COVERAGE.md.
     /// </summary>
     public bool SanitizerCoverage { get; set; }
+    /// <summary>
+    /// Alias for <c>coverage.backend</c> when nested coverage: is omitted.
+    /// Values: auto | sancov | dynamorio | semantic (empty → inherit coverage.backend / auto).
+    /// </summary>
+    public string CoverageBackend { get; set; } = "";
     /// <summary>
     /// Stub: when true, Magician logs a rewindScream hint on crash (TTD record/replay is external).
     /// Does not capture TTD traces — see docs/RECORDING.md.
@@ -413,4 +423,19 @@ public sealed class FuzzConfig
 
     /// <summary>Before marking Deep Scream, attempt replay-based input shrink (soft-skip on failure).</summary>
     public bool DeepScreamAutoMinimize { get; set; }
+}
+
+/// <summary>
+/// Explicit coverage edge source (<c>coverage.backend</c>).
+/// Values: auto | sancov | dynamorio | semantic.
+/// </summary>
+public sealed class CoverageConfig
+{
+    /// <summary>
+    /// auto — DynamoRIO when present, else sancov ingest when requested, else semantic/path-novelty.
+    /// sancov — prefer LLVM *.sancov PC ingest (enables sanitizerCoverage); DynamoRIO optional supplement.
+    /// dynamorio — force external drcov stalk (warn when missing).
+    /// semantic — path-novelty / ReelDeck stages only (no BB edges expected).
+    /// </summary>
+    public string Backend { get; set; } = "auto";
 }

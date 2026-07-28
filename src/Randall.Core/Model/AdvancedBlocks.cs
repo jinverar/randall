@@ -281,6 +281,7 @@ public sealed class ConditionalBlock : IBlockNode
 /// <summary>
 /// Offset / relativeOffset — reserves space; back-patched after layout to a named field start.
 /// Absolute: target offset. Relative: target − (patchOffset + width).
+/// When <see cref="AsciiDecimal"/> is true, writes zero-padded ASCII digits (PDF startxref).
 /// </summary>
 public sealed class OffsetBlock : IBlockNode
 {
@@ -291,19 +292,23 @@ public sealed class OffsetBlock : IBlockNode
     public string? TargetField { get; init; }
     public bool Mutable { get; init; } = true;
     public ulong DefaultValue { get; init; }
+    public bool AsciiDecimal { get; init; }
 
     public int Render(Span<byte> buffer, int offset, RenderContext ctx)
     {
-        Write(buffer[offset..], DefaultValue);
+        if (AsciiDecimal)
+            WriteAscii(buffer[offset..], DefaultValue);
+        else
+            Write(buffer[offset..], DefaultValue);
         ctx.NoteField(Name, offset, DefaultValue.ToString());
         ctx.OffsetPatches.Add(new OffsetPatchRequest(
-            Name, offset, Width, LittleEndian, Relative, TargetField));
+            Name, offset, Width, LittleEndian, Relative, TargetField, AsciiDecimal));
         return Width;
     }
 
     public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx) =>
         fields.Add(new FieldRegion(Name, baseOffset, Width, Mutable,
-            Relative ? "relativeOffset" : "offset", LittleEndian));
+            AsciiDecimal ? "asciiOffset" : Relative ? "relativeOffset" : "offset", LittleEndian));
 
     private void Write(Span<byte> dest, ulong value)
     {
@@ -312,6 +317,15 @@ public sealed class OffsetBlock : IBlockNode
             var shift = LittleEndian ? 8 * i : 8 * (Width - 1 - i);
             dest[i] = (byte)(value >> shift);
         }
+    }
+
+    private void WriteAscii(Span<byte> dest, ulong value)
+    {
+        var s = value.ToString();
+        if (s.Length > Width)
+            s = s[^Width..];
+        s = s.PadLeft(Width, '0');
+        Encoding.ASCII.GetBytes(s.AsSpan(), dest[..Width]);
     }
 }
 

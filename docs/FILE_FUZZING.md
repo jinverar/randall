@@ -7,7 +7,7 @@ coverage scoping — with **crash-research integration** as the differentiator v
 | Competitor strength | Randall stance |
 |---------------------|----------------|
 | Peach / Defensics structure + relations | **Compete** — block models, length/checksum policies, chunk mutators, recipe catalog |
-| AFL++ / WinAFL raw grind + SanCov | **Partner** — adapters + DynamoRIO; they still win pure exec/s |
+| AFL++ / WinAFL raw grind + SanCov | **Partner** — adapters + DynamoRIO; `coverage.backend: sancov` for native PC ingest |
 | Crash triage / exploit research loop | **Lead** — scream canisters, intel, counterfactuals, R0–R7 research maturity |
 
 ## What is strong today
@@ -16,30 +16,31 @@ coverage scoping — with **crash-research integration** as the differentiator v
 - Crash research workbench (Investigation / Exploit Research / Evidence)
 - Block models with sized/checksum + Peach-style types (uint/int, enum, flags, switch, array, padding)
 - **`when` / conditional evaluation** against prior field values (`field == N` / `!=` / `whenEquals`)
-- **`offset` / `relativeOffset` back-patch** after layout (named `targetField`)
+- **`offset` / `relativeOffset` / ASCII decimal offset** back-patch after layout (`targetField`, `ascii: true` for PDF startxref)
 - Checksum `coverFrom` (CRC over type+data for PNG-style chunks)
 - Chunk-aware mutators (delete/insert/replace/clone/move/swap/zero/fill/lengthen…)
 - Explicit `lengthPolicy` / `checksumPolicy`
 - File OOP exit honesty (tool reject ≠ AV) + sanitizer stderr
 - Temp file lifecycle (unique paths, flush+close, crash inputs via CrashStore)
-- Recipe quality tiers — PNG / ZIP / WAV at **Structured model** (`protocols/*_structured.yaml`)
+- Recipe quality tiers — PNG / ZIP / WAV / **PDF / PE** at **Structured model**; **TLV** at **Grammar-backed**
 - `randall corpus minimize`
 - Live UI **Edge | Block | Semantic** counters (honest `—` when BB provider missing)
+- **`coverage.backend: auto|sancov|dynamorio|semantic`** — clear native path without DynamoRIO
 
 ## Scorecard (structure climb)
 
 | Capability | Status |
 |------------|--------|
 | Minimal-valid PNG/WAV/ZIP seeds | Done |
-| Structured model recipes (PNG/ZIP/WAV) | Done — IHDR/IDAT/IEND + ZIP local/CD/EOCD offsets + WAV chunks |
+| Structured model recipes (PNG/ZIP/WAV/PDF/PE) | Done — IHDR/IDAT + ZIP local/CD/EOCD + WAV + PDF xref/startxref + PE DOS/COFF/section |
 | `when` / conditional | Done — equality / inequality on prior fields |
-| `offset` / `relativeOffset` back-patch | Done — absolute + relative after layout |
+| `offset` / `relativeOffset` / ASCII offset | Done — absolute + relative + PDF startxref digits |
 | Length / checksum policies | Done |
 | Chunk mutators | Done |
 | Live Edge \| Block \| Semantic status | Done — Fuzz STATUS + Dashboard |
-| Grammar-backed recipes (owned formats) | Next |
-| SanCov-native Linux (no DynamoRIO) | Next |
-| Richer PDF / PE structured models | Next |
+| Grammar-backed recipes (owned formats) | Done — `file-tlv` / `protocols/tlv_grammar.yaml` (switch + array) |
+| SanCov-native Linux (no DynamoRIO) | Done — `coverage.backend: sancov` + `*.sancov` ingest plumbing |
+| Richer PDF / PE structured models | Done — not magic-only |
 
 ## Metrics (keep separate)
 
@@ -83,9 +84,12 @@ fuzz:
   coverageModules: [myparser]
   coverageExcludeModules: [ntdll.dll, libc.so.6]
   harnessDeterminismProbe: true
+  sanitizerCoverage: true      # or use coverage.backend below
+coverage:
+  backend: sancov              # auto | sancov | dynamorio | semantic
 ```
 
-### Structured model sketch (ZIP offsets + PNG when)
+### Structured model sketch (ZIP offsets + PNG when + PDF startxref)
 
 ```yaml
 # ZIP — absolute offset back-patch to local_header / central_directory
@@ -102,6 +106,13 @@ fuzz:
       name: plte_len
       value: "3"
       littleEndian: false
+
+# PDF — ASCII decimal startxref → xref group
+- type: offset
+  name: startxref_off
+  width: 10
+  ascii: true
+  targetField: xref
 ```
 
 ## ReelDeck
@@ -114,19 +125,21 @@ See [REELDECK.md](REELDECK.md).
 
 **NEXT**
 
-- Grammar-backed recipes where we own the format
-- Richer PDF/PE structured models (not magic-only)
-- SanCov-native Linux without DynamoRIO
+- Deeper PDF object streams / PE data directories where honest
+- Full LibAFL-style sancov bitmap merge (today: PC-key ingest)
+- More owned grammar recipes beyond TLV
 
 **Shipped this climb**
 
-- Full conditional/`when` evaluation + offset back-patch
-- Structured PNG / ZIP / WAV models + recipe catalog tier bump
-- Live Edge | Block | Semantic counters in Fuzz/Dashboard status
+- Structured PE + PDF models + catalog tier bump
+- `coverage.backend` plumbing (sancov | dynamorio | semantic)
+- Grammar-backed TLV recipe (switch/array) + ZIP CD extra/comment completeness
+- ASCII decimal offset for PDF startxref
 
 **Not claiming**
 
 - AFL++-class throughput as the default engine
 - Complete Peach PIT / Defensics XML parity overnight
+- Loadable PE images or full PDF ISO grammar
 
-Related: [MODEL.md](MODEL.md) · [FUZZING.md](FUZZING.md) · [MATURITY.md](MATURITY.md) · [RECIPE_CATALOG.md](RECIPE_CATALOG.md) · [STALKING.md](STALKING.md)
+Related: [MODEL.md](MODEL.md) · [FUZZING.md](FUZZING.md) · [MATURITY.md](MATURITY.md) · [RECIPE_CATALOG.md](RECIPE_CATALOG.md) · [STALKING.md](STALKING.md) · [SANITIZER_COVERAGE.md](SANITIZER_COVERAGE.md)

@@ -47,6 +47,12 @@ public sealed class ProtocolBlockDefinition
     public string? WhenEquals { get; set; }
     public bool Relative { get; set; }
     public string? TargetField { get; set; }
+    /// <summary>
+    /// When true on <c>offset</c>, back-patch as ASCII decimal digits (PDF startxref) instead of binary LE/BE.
+    /// </summary>
+    public bool Ascii { get; set; }
+    /// <summary>Alias for <see cref="Ascii"/> (YAML <c>asciiDecimal: true</c>).</summary>
+    public bool AsciiDecimal { get; set; }
     /// <summary>Checksum cover start: named field whose offset begins the CRC range.</summary>
     public string? CoverFrom { get; set; }
     /// <summary>Per-block length policy override (valid|mutate|independent|off-by-one|wrap|actualPlusDelta|stale|zero).</summary>

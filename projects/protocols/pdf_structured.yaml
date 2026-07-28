@@ -1,0 +1,75 @@
+name: pdf-structured
+description: >
+  Structured PDF — header, body objects (Catalog/Pages/Page stubs), xref table stub,
+  trailer, startxref (ASCII decimal offset back-patch to xref), %%EOF.
+  Not a full PDF grammar — object/xref skeleton for parser fuzzing.
+blocks:
+  - type: group
+    name: header
+    children:
+      - type: static
+        value: "%PDF-1.4\n"
+      - type: static
+        value: "%\n"
+
+  - type: group
+    name: body
+    children:
+      - type: string
+        name: obj1_catalog
+        value: "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+        mutable: true
+      - type: string
+        name: obj2_pages
+        value: "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+        mutable: true
+      - type: string
+        name: obj3_page
+        value: "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n"
+        mutable: true
+      - type: bytes
+        name: body_extra
+        mutable: true
+        minSize: 0
+        maxSize: 0
+        value: "hex:"
+
+  - type: group
+    name: xref
+    children:
+      - type: static
+        value: "xref\n0 4\n"
+      - type: string
+        name: xref_free
+        value: "0000000000 65535 f \n"
+        mutable: true
+      - type: string
+        name: xref_obj1
+        value: "0000000009 00000 n \n"
+        mutable: true
+      - type: string
+        name: xref_obj2
+        value: "0000000068 00000 n \n"
+        mutable: true
+      - type: string
+        name: xref_obj3
+        value: "0000000125 00000 n \n"
+        mutable: true
+
+  - type: group
+    name: trailer
+    children:
+      - type: static
+        value: "trailer\n<< /Size 4 /Root 1 0 R >>\n"
+      - type: static
+        value: "startxref\n"
+      - type: offset
+        name: startxref_off
+        width: 10
+        ascii: true
+        littleEndian: true
+        targetField: xref
+        relative: false
+        mutable: true
+      - type: static
+        value: "\n%%EOF\n"

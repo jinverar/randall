@@ -9,14 +9,14 @@ protocols**, and **web‑application** payload classes. Each recipe carries a ma
 
 | Tier | Meaning |
 |------|---------|
-| **Magic-only** | Header/magic bytes — starting point, not a format model (e.g. PDF recipe) |
+| **Magic-only** | Header/magic bytes — starting point, not a format model |
 | **Minimal valid** | Smallest structure a real parser often accepts (PNG IHDR, WAV RIFF, ZIP local+EOCD) |
 | **Representative** | Broader sample covering common paths |
 | **Structured model** | Project uses `model:` block YAML (sized/checksum/enum/…) |
-| **Grammar-backed** | Full recursive grammar (roadmap — do not claim yet) |
+| **Grammar-backed** | Choice/array/switch grammar (owned formats, e.g. TLV) |
 | **Harness included** | In-process harness ships with the recipe |
 
-PNG / WAV / ZIP catalog entries ship as **Structured model** (`protocols/*_structured.yaml` + chunk mutators). PDF stays **Magic-only**.
+PNG / WAV / ZIP / **PDF** / **PE** catalog entries ship as **Structured model** (`protocols/*_structured.yaml` + chunk mutators). **TLV** ships as **Grammar-backed** (`protocols/tlv_grammar.yaml`).
 
 > The catalog is table‑driven (`RecipeCatalog`), so it scales toward thousands of recipes without new
 > code — add rows, not plumbing. Competitive file-format depth: [FILE_FUZZING.md](FILE_FUZZING.md).

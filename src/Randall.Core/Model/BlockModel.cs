@@ -23,7 +23,8 @@ public sealed record OffsetPatchRequest(
     int Width,
     bool LittleEndian,
     bool Relative,
-    string? TargetField);
+    string? TargetField,
+    bool AsciiDecimal = false);
 
 public sealed class RenderContext
 {
@@ -555,8 +556,22 @@ public sealed class BlockModel : IProtocolModel
                 : target;
             if (value < 0)
                 value = 0;
-            WriteIntegerAt(message, p.PatchOffset, p.Width, p.LittleEndian, (ulong)value);
+            if (p.AsciiDecimal)
+                WriteAsciiDecimalAt(message, p.PatchOffset, p.Width, (ulong)value);
+            else
+                WriteIntegerAt(message, p.PatchOffset, p.Width, p.LittleEndian, (ulong)value);
         }
+    }
+
+    private static void WriteAsciiDecimalAt(Span<byte> buf, int offset, int width, ulong value)
+    {
+        if (offset < 0 || width <= 0 || offset + width > buf.Length)
+            return;
+        var s = value.ToString();
+        if (s.Length > width)
+            s = s[^width..];
+        s = s.PadLeft(width, '0');
+        Encoding.ASCII.GetBytes(s.AsSpan(), buf.Slice(offset, width));
     }
 
     private static void WriteIntegerAt(Span<byte> buf, int offset, int width, bool le, ulong value)
