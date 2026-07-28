@@ -320,20 +320,13 @@ public static class PrimitiveEngine
             rationale = "crash discovered; no analysis yet";
         }
 
-        // Evidence Court + Skeptic: R5+ requires Survived + ≥1 EvidenceFact. Cap at R4 otherwise.
-        if (level >= ResearchMaturity.R5 && !EvidenceCourt.PassesPromotionGate(skeptic, facts))
+        // Machine-enforced R0–R7 evidence caps (fault site, Court/Skeptic, counterfactual).
+        var (gated, gateReason) = ResearchMaturityGates.Enforce(
+            level, rootCause, influence, primitives, triage, debugger, facts, skeptic, court);
+        if (gateReason is not null)
         {
-            var reason = EvidenceCourt.PromotionGateFailureReason(skeptic, facts);
-            return (
-                ResearchMaturity.R4,
-                $"{reason} — held at R4 (Candidate) pending Court/Skeptic");
-        }
-
-        if (court?.Overall == EvidenceCourtVerdict.Rejected && level >= ResearchMaturity.R5)
-        {
-            return (
-                ResearchMaturity.R4,
-                $"{court.SummaryLine} — {court.Detail ?? "demoted"} — held at R4");
+            level = gated;
+            rationale = $"{rationale} — {gateReason}";
         }
 
         if (nullWriteCapped)
@@ -360,13 +353,16 @@ public static class PrimitiveEngine
             else if (level > ResearchMaturity.R2)
             {
                 // Cap at R1–R2 (triaged / root-cause) without EA/instruction/counterfactual control.
-                var cap = rootCause is { Ok: true } && rootCause.Candidate.Category != RootCauseCategory.Unknown
+                var cap = ResearchMaturityGates.MeetsR2(rootCause, debugger, facts)
                     ? ResearchMaturity.R2
                     : ResearchMaturity.R1;
-                return (
-                    cap,
-                    "Null/near-null write without destination/value/length/index control evidence — held at "
-                    + $"{cap} (boundary mutator alone ≠ write-length control)");
+                if (level > cap)
+                {
+                    return (
+                        cap,
+                        "Null/near-null write without destination/value/length/index control evidence — held at "
+                        + $"{cap} (boundary mutator alone ≠ write-length control)");
+                }
             }
         }
 
