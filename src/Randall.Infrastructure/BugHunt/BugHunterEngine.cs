@@ -58,7 +58,7 @@ public static class BugHunterEngine
         {
             project.Oracles = BugHunterOracleSuggestions.MergeInto(project.Oracles);
             FuzzAnalystLog.Info(progress,
-                "Bug Hunter: suggested oracle pack → Oracle engine (auth/state/integer/structure/resource)");
+                "Bug Hunter: suggested oracle pack → Oracle engine (state/structure/resource; auth+length require explicit enable)");
         }
 
         if (cfg.AutoArmDictionary)

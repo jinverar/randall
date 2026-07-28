@@ -129,7 +129,23 @@ Observation { Type, RunId, Confidence, Novelty, Severity, Data }
 OracleScore   { Total, Terms[], Summary }
 ```
 
-**Score formula** (additive, clamped to 100): new coverage min(30, edges×10); violation min(50, count×35); near miss min(24, count×12); state/auth +20; semantic +15; runtime min(40, count×25). Crashes: +80 crash + up to +20 coverage-at-crash.
+**Score formula** (additive, clamped to 100):
+- **Crash / runtime** dominates: crash base **90** (+ up to 10 coverage-at-crash); runtime findings up to 40 (+ repro boost)
+- Validated violation min(50, count×35); near miss min(24, count×12); state/auth +20; semantic +15
+- **Experimental AI** rules (`ai-*` or `experimental: true`): violation ×8 (cap 16), near-miss ×3 (cap 9) — never outrank a real crash
+- New coverage only when `newEdges > 0` (no fake points when the BB provider is absent)
+- Length-prefix rules require `modeled: true` or `whenCommand`; auth rules require `authEnabled: true`
+
+**Disable noisy rules**
+```yaml
+oracles:
+  authEnabled: false   # no auth heuristics (vulnserver)
+  auth: []
+  integer: []          # no length-prefix unless modeled
+bugHunter:
+  autoArmOracles: false
+```
+Optional experimental auth/length pack: `BugHunterOracleSuggestions.CreateExperimentalAuthAndLength()` (not auto-merged).
 
 **Where scores appear:** verbose fuzz log; `oracle_findings.jsonl` (`oracleScoreTotal` / `oracleScoreTerms`); crash sidecars (`randallScore`). `InterestingnessScore` == `Score.Total`.
 

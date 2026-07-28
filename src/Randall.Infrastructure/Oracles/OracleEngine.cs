@@ -62,7 +62,11 @@ public static class OracleEngine
         foreach (var f in findings)
             max = Max(max, ParseSeverity(f.Severity));
 
-        var score = OracleScorer.Score(obs, findings, max);
+        var score = OracleScorer.PreferCrash(
+            OracleScorer.Score(obs, findings, max),
+            obs.Result.Detail,
+            obs.NewEdges,
+            obs.Result.Crashed);
         var retain = max switch
         {
             OracleSeverity.Runtime => false, // crashes already handled
@@ -101,7 +105,7 @@ public static class OracleEngine
         var store = new OracleFindingStore(dir);
         foreach (var f in eval.Findings)
         {
-            store.Append(f with
+            store.AppendOrAggregate(f with
             {
                 OracleScoreTotal = eval.Score.Total,
                 OracleScoreTerms = eval.Score.Terms,
@@ -267,11 +271,18 @@ public static class OracleEngine
         OracleConfig cfg,
         List<OracleFindingDto> findings)
     {
+        // Targets without AuthN (vulnserver, many labs) must opt in via oracles.authEnabled.
+        if (!cfg.AuthEnabled || cfg.Auth.Count == 0)
+            return;
+
         var session = obs.Session;
         foreach (var rule in cfg.Auth)
         {
             var id = string.IsNullOrWhiteSpace(rule.Id) ? (rule.Type ?? "auth") : rule.Id;
-            var sev = string.IsNullOrWhiteSpace(rule.Severity) ? "violation" : rule.Severity;
+            var experimental = rule.Experimental || IsAiRuleId(id);
+            var sev = string.IsNullOrWhiteSpace(rule.Severity)
+                ? (experimental ? "nearMiss" : "violation")
+                : rule.Severity;
             var type = (rule.Type ?? "").Trim().ToLowerInvariant();
 
             switch (type)
@@ -285,11 +296,12 @@ public static class OracleEngine
                     if (!authed &&
                         ResponseMatcher.Matches(obs.Result.ResponseBytes, rule.ForbidResponse))
                     {
-                        findings.Add(MakeFinding(obs, id, "AuthRule", sev, 0.9,
+                        findings.Add(MakeFinding(obs, id, "AuthRule", sev, experimental ? 0.35 : 0.9,
                             $"must not see '{rule.ForbidResponse}' before '{rule.UntilResponse}'",
                             $"got privileged/success response pre-auth; session={session?.Snapshot()}",
                             NormalizeObservation(obs.Result),
-                            "auth.forbidUntil"));
+                            "auth.forbidUntil",
+                            experimental));
                     }
                     break;
                 }
@@ -304,11 +316,12 @@ public static class OracleEngine
                         // Near-miss if rejected; violation if accepted (success-class response)
                         var accepted = LooksAccepted(obs.Result);
                         var useSev = accepted ? sev : "nearMiss";
-                        findings.Add(MakeFinding(obs, id, "AuthRule", useSev, accepted ? 0.9 : 0.6,
+                        findings.Add(MakeFinding(obs, id, "AuthRule", useSev, experimental ? 0.3 : (accepted ? 0.9 : 0.6),
                             $"command '{rule.WhenCommand}' requires prior '{rule.UntilResponse}'",
                             $"session={session?.Snapshot()}; accepted={accepted}",
                             NormalizeObservation(obs.Result),
-                            "auth.requireAuth"));
+                            "auth.requireAuth",
+                            experimental));
                     }
                     break;
                 }
@@ -381,11 +394,24 @@ public static class OracleEngine
             if (!CommandMatches(obs.CommandName, rule.WhenCommand))
                 continue;
             var id = string.IsNullOrWhiteSpace(rule.Id) ? (rule.Type ?? "integer") : rule.Id;
-            var sev = string.IsNullOrWhiteSpace(rule.Severity) ? "violation" : rule.Severity;
+            var experimental = rule.Experimental || IsAiRuleId(id);
+            var sev = string.IsNullOrWhiteSpace(rule.Severity)
+                ? (experimental ? "nearMiss" : "violation")
+                : rule.Severity;
             var type = (rule.Type ?? "").Trim().ToLowerInvariant();
             var width = rule.Width is 1 or 2 or 4 ? rule.Width : 4;
             if (obs.Payload.Length < rule.Offset + width)
                 continue;
+
+            if (type is "lengthprefix" or "claimedexceedspayload")
+            {
+                // Gate: only fields with an explicit length model (modeled / WhenCommand).
+                // Prevents TRUN/GTER/HTER ASCII from being read as uint32 (0x4E555254…).
+                if (!rule.Modeled && string.IsNullOrWhiteSpace(rule.WhenCommand))
+                    continue;
+                if (LooksLikeAsciiCommandPrefix(obs.Payload, rule.Offset, width))
+                    continue;
+            }
 
             ulong claimed = ReadInt(obs.Payload, rule.Offset, width, rule.Endian);
             var bodyStart = rule.Offset + width;
@@ -408,19 +434,21 @@ public static class OracleEngine
 
                 if ((exceeds || absurd || wrap) && LooksAccepted(obs.Result))
                 {
-                    findings.Add(MakeFinding(obs, id, "IntegerRule", sev, 0.85,
+                    findings.Add(MakeFinding(obs, id, "IntegerRule", sev, experimental ? 0.35 : 0.85,
                         "length field consistent with payload / plausible bounds",
                         $"claimed={claimed} remaining={remaining} exceeds={exceeds} absurd={absurd} wrap={wrap}",
                         $"{{\"claimed\":{claimed},\"remaining\":{remaining},\"payload_len\":{obs.Payload.Length}}}",
-                        "integer.lengthPrefix"));
+                        "integer.lengthPrefix",
+                        experimental));
                 }
                 else if ((exceeds || absurd || wrap) && !obs.Result.Crashed)
                 {
-                    findings.Add(MakeFinding(obs, id, "IntegerRule", "nearMiss", 0.5,
+                    findings.Add(MakeFinding(obs, id, "IntegerRule", "nearMiss", experimental ? 0.25 : 0.5,
                         "length field consistent (rejected or ignored is OK)",
                         $"claimed={claimed} remaining={remaining}",
                         $"{{\"claimed\":{claimed},\"remaining\":{remaining}}}",
-                        "integer.lengthPrefix"));
+                        "integer.lengthPrefix",
+                        experimental));
                 }
             }
         }
@@ -621,6 +649,15 @@ public static class OracleEngine
                 {
                     if (obs.Result.Crashed)
                         continue;
+                    // Constrain: only mostly-printable text payloads; skip binary / command-ASCII protocols
+                    // where whitespace changes are mutator noise (vulnserver TRUN etc.).
+                    if (!LooksLikeMostlyText(obs.Payload))
+                        continue;
+                    if (LooksLikeAsciiCommandLine(obs.Payload))
+                        continue;
+
+                    var experimental = rule.Experimental || IsAiRuleId(id);
+                    var useSev = experimental ? "nearMiss" : sev;
                     var transformed = CollapseWhitespace(obs.Payload);
                     if (transformed.AsSpan().SequenceEqual(obs.Payload))
                         continue;
@@ -629,11 +666,12 @@ public static class OracleEngine
                         obs.Project, obs.YamlPath, transformed, longLivedServer: null, ct);
                     if (second.Crashed)
                     {
-                        findings.Add(MakeFinding(obs, id, "MetamorphicRule", sev, 0.75,
+                        findings.Add(MakeFinding(obs, id, "MetamorphicRule", useSev, experimental ? 0.35 : 0.75,
                             "whitespace-normalized input preserves non-crash",
                             $"transformed crashed: {second.Detail}",
                             NormalizeObservation(second),
-                            "collapseWhitespace"));
+                            "collapseWhitespace",
+                            experimental));
                         continue;
                     }
 
@@ -641,11 +679,12 @@ public static class OracleEngine
                     var b = ResponseClass(second.ResponseBytes);
                     if (!string.Equals(a, b, StringComparison.Ordinal))
                     {
-                        findings.Add(MakeFinding(obs, id, "MetamorphicRule", sev, 0.7,
+                        findings.Add(MakeFinding(obs, id, "MetamorphicRule", useSev, experimental ? 0.3 : 0.7,
                             "response class invariant under whitespace normalize",
                             $"original={a} transformed={b}",
                             $"{{\"original\":\"{a}\",\"transformed\":\"{b}\"}}",
-                            "collapseWhitespace"));
+                            "collapseWhitespace",
+                            experimental));
                     }
                 }
                 else if (type is "duplicateidempotent" or "idempotent")
@@ -737,11 +776,14 @@ public static class OracleEngine
         string expected,
         string actual,
         string? normalized,
-        string? transformation)
+        string? transformation,
+        bool experimental = false)
     {
         var covSig = obs.NewEdges > 0
             ? $"edges+{obs.NewEdges}/{obs.CoverageEdgeTotal}"
-            : $"edges={obs.CoverageEdgeTotal}";
+            : obs.CoverageEdgeTotal > 0
+                ? $"edges={obs.CoverageEdgeTotal}"
+                : "coverage-unavailable";
         var fault = FaultSignalMapper.FromOracleFinding(ruleId, severity, actual, confidence);
         return new OracleFindingDto(
             Guid.NewGuid().ToString("N"),
@@ -761,7 +803,62 @@ public static class OracleEngine
             covSig,
             1,
             DateTimeOffset.UtcNow,
-            Fault: fault);
+            Fault: fault,
+            Experimental: experimental || IsAiRuleId(ruleId));
+    }
+
+    private static bool IsAiRuleId(string? ruleId) =>
+        !string.IsNullOrWhiteSpace(ruleId) &&
+        ruleId.StartsWith("ai-", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when bytes at offset look like an ASCII command name (TRUN, GTER, …).</summary>
+    internal static bool LooksLikeAsciiCommandPrefix(byte[] payload, int offset, int width)
+    {
+        if (payload.Length < offset + width || width <= 0)
+            return false;
+        var letters = 0;
+        for (var i = 0; i < width; i++)
+        {
+            var b = payload[offset + i];
+            if (b is (>= (byte)'A' and <= (byte)'Z') or (>= (byte)'a' and <= (byte)'z'))
+                letters++;
+            else if (b is (byte)' ' or (byte)'\t' or (byte)'/' or (byte)'.' or (byte)':' or (byte)'_')
+                continue;
+            else
+                return false;
+        }
+        return letters >= Math.Min(3, width);
+    }
+
+    /// <summary>Command-line style PDU: leading token + space/slash (vulnserver TRUN /.:/…).</summary>
+    internal static bool LooksLikeAsciiCommandLine(byte[] payload)
+    {
+        if (payload.Length < 4)
+            return false;
+        if (!LooksLikeAsciiCommandPrefix(payload, 0, Math.Min(4, payload.Length)))
+            return false;
+        // Presence of space or slash after command token is a strong signal.
+        for (var i = 3; i < Math.Min(payload.Length, 16); i++)
+        {
+            if (payload[i] is (byte)' ' or (byte)'/' or (byte)'\t')
+                return true;
+        }
+        return false;
+    }
+
+    internal static bool LooksLikeMostlyText(byte[] payload)
+    {
+        if (payload.Length == 0)
+            return false;
+        var printable = 0;
+        var sample = Math.Min(payload.Length, 256);
+        for (var i = 0; i < sample; i++)
+        {
+            var b = payload[i];
+            if (b is >= 32 and <= 126 or 9 or 10 or 13)
+                printable++;
+        }
+        return printable >= sample * 0.9;
     }
 
     private static string NormalizeObservation(TargetRunResult r)

@@ -24,6 +24,13 @@ public sealed class OracleConfig
     /// <summary>Single-execution invariants (expect / forbid / max length / exit code).</summary>
     public List<OracleInvariantRuleConfig> Invariants { get; set; } = [];
 
+    /// <summary>
+    /// Master switch for auth rules. Off by default — targets without authentication
+    /// (e.g. vulnserver) must not run forbidUntil/requireAuth heuristics.
+    /// Set <c>authEnabled: true</c> when the protocol has real AuthN/AuthZ.
+    /// </summary>
+    public bool AuthEnabled { get; set; }
+
     /// <summary>Authentication / authorization semantic rules.</summary>
     public List<OracleAuthRuleConfig> Auth { get; set; } = [];
 
@@ -81,6 +88,8 @@ public sealed class OracleAuthRuleConfig
     /// <summary>Response substring that marks authentication / bind success.</summary>
     public string? UntilResponse { get; set; }
     public string? WhenCommand { get; set; }
+    /// <summary>When true, findings score as experimental (low weight) until validated.</summary>
+    public bool Experimental { get; set; }
     public string Severity { get; set; } = "violation";
 }
 
@@ -98,6 +107,8 @@ public sealed class OracleStateRuleConfig
     public string? PriorResponse { get; set; }
     public string? ForbidResponse { get; set; }
     public string? UntilResponse { get; set; }
+    /// <summary>When true, findings score as experimental (low weight) until validated.</summary>
+    public bool Experimental { get; set; }
     public string Severity { get; set; } = "violation";
 }
 
@@ -120,6 +131,14 @@ public sealed class OracleIntegerRuleConfig
     /// <summary>Optional max plausible length (semantic ceiling).</summary>
     public int? MaxPlausible { get; set; }
     public string? WhenCommand { get; set; }
+    /// <summary>
+    /// Required for lengthPrefix / claimedExceedsPayload: the wire model must declare an
+    /// explicit length field (YAML <c>modeled: true</c> / oracleLength). Without this,
+    /// ASCII command names (TRUN/GTER/…) are never treated as uint32 lengths.
+    /// </summary>
+    public bool Modeled { get; set; }
+    /// <summary>When true, findings score as experimental (low weight) until validated.</summary>
+    public bool Experimental { get; set; }
     public string Severity { get; set; } = "violation";
 }
 
@@ -138,6 +157,8 @@ public sealed class OracleStructureRuleConfig
     /// If false, treat as violations (useful when the target accepted a malformed PDU).
     /// </summary>
     public bool OnlyWhenAccepted { get; set; } = true;
+    /// <summary>When true, findings score as experimental (low weight) until validated.</summary>
+    public bool Experimental { get; set; }
     public string Severity { get; set; } = "nearMiss";
 }
 
@@ -151,6 +172,8 @@ public sealed class OracleResourceRuleConfig
     /// <summary>For responseToPayloadRatio — flag when response_len &gt; ratio * payload_len.</summary>
     public double? MaxRatio { get; set; }
     public string? WhenCommand { get; set; }
+    /// <summary>When true, findings score as experimental (low weight) until validated.</summary>
+    public bool Experimental { get; set; }
     public string Severity { get; set; } = "violation";
 }
 
@@ -172,6 +195,8 @@ public sealed class OracleMetamorphicRuleConfig
     /// duplicateIdempotent — send payload twice on one TCP connection; second response class should match first (lab).
     /// </summary>
     public string Type { get; set; } = "whitespaceInsensitive";
+    /// <summary>When true, findings score as experimental (low weight) until validated.</summary>
+    public bool Experimental { get; set; }
     /// <summary>violation | nearMiss</summary>
     public string Severity { get; set; } = "nearMiss";
 }
@@ -197,4 +222,6 @@ public sealed record OracleFindingDto(
     int? OracleScoreTotal = null,
     IReadOnlyList<OracleScoreTerm>? OracleScoreTerms = null,
     /// <summary>Normalized fault when the finding is runtime/sanitizer/crash shaped.</summary>
-    FaultSignal? Fault = null);
+    FaultSignal? Fault = null,
+    /// <summary>Unvalidated AI / heuristic rule — scored at experimental low weight.</summary>
+    bool Experimental = false);

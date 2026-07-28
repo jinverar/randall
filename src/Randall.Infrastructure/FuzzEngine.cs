@@ -1478,6 +1478,25 @@ public sealed class FuzzEngine
 
                 FuzzAnalystLog.Step(progress, "Monitor / checkAlive", iterations);
 
+                // Crash-cascade guard: connection never established / target already dead
+                // is not an input-triggered crash. Health-check + Target Runtime restart
+                // (above) recycle the listener between iterations when adopt-lab is used.
+                if (result.Crashed &&
+                    ProjectKinds.IsTcpLike(project) &&
+                    !result.Connected &&
+                    result.MiniDumpPath is null &&
+                    debuggerWait?.Scream?.ExceptionInfo is null)
+                {
+                    FuzzAnalystLog.Warn(progress,
+                        $"Rejected crash (no TCP connect — target already dead or unreachable): {result.Detail}",
+                        iterations);
+                    result = result with
+                    {
+                        Crashed = false,
+                        Detail = $"not a crash (connection never established): {result.Detail}",
+                    };
+                }
+
                 if (result.Crashed)
                 {
                     FuzzAnalystLog.Crash(progress, iterations, $"{caseLabel} — {result.Detail}");
@@ -1529,9 +1548,11 @@ public sealed class FuzzEngine
                         ? $"{commandName}/{mutator.Name}"
                         : $"{commandName}/joker:{jokerTrick.TrickName}";
                     var expectedInputPath = Path.Combine(crashesDir, $"{project.Name}_{iterations}_{payloadHash}.bin");
-                    var randallScore = oracleEval is { Score.Total: > 0 }
-                        ? oracleEval.Score
-                        : OracleScorer.CrashScore(result.Detail, newEdges);
+                    var randallScore = OracleScorer.PreferCrash(
+                        oracleEval?.Score,
+                        result.Detail,
+                        newEdges,
+                        crashed: true);
                     ObservationBus.Publish(ObservationEvents.Crash(
                         runId, iterations, payloadHash, result.ExitCode, result.Detail, newEdges, project.Name));
                     var crashFaultPreview = CrashTriage.Classify(

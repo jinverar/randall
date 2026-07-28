@@ -11,7 +11,11 @@ public sealed record TargetRunResult(
     string Detail,
     byte[]? ResponseBytes = null,
     /// <summary>Optional function/stage hits from a cooperative file target (e.g. ReelDeck).</summary>
-    IReadOnlyList<string>? PathHits = null);
+    IReadOnlyList<string>? PathHits = null,
+    /// <summary>TCP/UDP connect succeeded for this attempt.</summary>
+    bool Connected = false,
+    /// <summary>At least one payload/PDU was written on the wire.</summary>
+    bool PayloadSent = false);
 
 public static class TargetRunner
 {
@@ -175,9 +179,12 @@ public static class TargetRunner
     {
         tcpOptions ??= new TcpSendOptions();
         byte[]? lastResponse = null;
+        var connected = false;
+        var payloadSent = false;
         try
         {
             await using var tube = await TcpTube.ConnectAsync(project.Transport, cancellationToken);
+            connected = true;
 
             if (tcpOptions.ReadBanner)
                 lastResponse = await tube.RecvAsync(project.Transport.ReceiveTimeoutMs, cancellationToken);
@@ -185,10 +192,12 @@ public static class TargetRunner
             if (tcpOptions.Preamble is { Length: > 0 })
             {
                 await tube.SendAsync(tcpOptions.Preamble, cancellationToken);
+                payloadSent = true;
                 lastResponse = await tube.RecvAsync(project.Transport.ReceiveTimeoutMs, cancellationToken);
             }
 
             await tube.SendAsync(payload, cancellationToken);
+            payloadSent = true;
             lastResponse = await tube.RecvAsync(project.Transport.ReceiveTimeoutMs, cancellationToken);
 
             if (!ResponseMatcher.Matches(lastResponse, tcpOptions.ExpectResponse))
@@ -201,6 +210,8 @@ public static class TargetRunner
                     {
                         return finished with
                         {
+                            Connected = true,
+                            PayloadSent = payloadSent,
                             Detail =
                                 $"{finished.Detail}; response mismatch expect={tcpOptions.ExpectResponse} got={ResponseMatcher.Describe(lastResponse)}",
                         };
@@ -212,16 +223,20 @@ public static class TargetRunner
                     null,
                     null,
                     $"response mismatch expect={tcpOptions.ExpectResponse} got={ResponseMatcher.Describe(lastResponse)}",
-                    lastResponse);
+                    lastResponse,
+                    Connected: true,
+                    PayloadSent: payloadSent);
             }
         }
         catch (Exception ex)
         {
-            return await ClassifyTcpTransportFailureAsync(
+            var classified = await ClassifyTcpTransportFailureAsync(
                 project, server, yamlPath, lastResponse, ex, cancellationToken);
+            return classified with { Connected = connected, PayloadSent = payloadSent };
         }
 
-        return await FinishTcpRun(project, server, yamlPath, lastResponse, cancellationToken);
+        var ok = await FinishTcpRun(project, server, yamlPath, lastResponse, cancellationToken);
+        return ok with { Connected = true, PayloadSent = payloadSent };
     }
 
     private static async Task<TargetRunResult> FinishTcpRun(

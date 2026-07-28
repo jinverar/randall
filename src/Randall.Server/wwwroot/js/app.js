@@ -279,9 +279,13 @@ function updateNoBbBanners(data, fuzzStatus) {
     || (isFuzzSessionActive(fuzzStatus) && document.getElementById('fuzz-coverage')?.checked === true);
   const edges = Number(data?.coverageEdges ?? fuzzStatus?.coverageEdges) || 0;
   const live = isFuzzSessionActive(fuzzStatus);
-  const msg = live
-    ? 'LIVE (no BB edges — stop Labs for DynamoRIO). Session / corpus-novelty graph stays live while Tracing.'
-    : 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.';
+  const providerMissing = /DynamoRIO missing|Coverage unavailable|without DynamoRIO/i.test(
+    (data?.coverageLabel || '') + ' ' + (data?.coverageDetail || '') + ' ' + (data?.notes || []).join(' '));
+  const msg = providerMissing
+    ? 'Coverage unavailable — no BB edge provider (install DynamoRIO / free the TCP port). Session path still updates.'
+    : live
+      ? 'LIVE (no BB edges — stop Labs for DynamoRIO). Session / corpus-novelty graph stays live while Tracing.'
+      : 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.';
   // Show on Fuzz + Dashboard when coverage-guided session has zero BB edges (typical: lab already on :port).
   const show = !!guided && edges <= 0 && live;
   for (const id of ['stalk-nobb-banner', 'fuzz-nobb-banner']) {
@@ -1805,8 +1809,8 @@ function updateStalkGraphBanner(data) {
   }
   if (edges <= 0 && (data?.mode || '').toLowerCase().includes('mutation')) {
     banner.textContent = live
-      ? 'LIVE — showing session / corpus-novelty path (no BB edges yet). Check DynamoRIO + free TCP port (`randall doctor`).'
-      : 'No BB graph yet — showing session / corpus-novelty path. Check DynamoRIO + free TCP port (`randall doctor`).';
+      ? 'Coverage unavailable — LIVE session / corpus-novelty path (no BB provider). Check DynamoRIO + free TCP port (`randall doctor`).'
+      : 'Coverage unavailable — showing session / corpus-novelty path. Check DynamoRIO + free TCP port (`randall doctor`).';
     banner.classList.remove('hidden');
     banner.classList.add('info');
     if (nobb) nobb.classList.add('hidden');
@@ -2539,9 +2543,13 @@ function patchLiveDashboardCounters(data) {
 
   const stats = document.getElementById('stalk-coverage-stats');
   if (stats && (data.currentBlocks != null || data.coverageEdges != null || data.corpusSize != null)) {
+    const edges = Number(data.coverageEdges) || 0;
+    const blocks = Number(data.currentBlocks) || 0;
+    const covUnavailable = edges <= 0 && blocks <= 0 && !data.dynamoRioAvailable;
+    if (labelEl && covUnavailable) labelEl.textContent = 'Coverage unavailable';
     stats.innerHTML = `
-    <li>Path / BB units <strong>${data.currentBlocks ?? 0}</strong></li>
-    <li>BB edges <strong>${data.coverageEdges ?? 0}</strong></li>
+    <li>Path / BB units <strong>${covUnavailable ? 'N/A' : (data.currentBlocks ?? 0)}</strong></li>
+    <li>BB edges <strong>${covUnavailable ? 'N/A' : (data.coverageEdges ?? 0)}</strong></li>
     <li>Corpus size <strong>${data.corpusSize ?? 0}</strong></li>
     <li>DynamoRIO <strong>${data.dynamoRioAvailable ? 'Ready' : 'Missing'}</strong></li>`;
   }
@@ -2641,7 +2649,7 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
     document.querySelector('#stalk-compare tbody').innerHTML = `
     <tr><td>Blocks hit</td><td>${noBb ? 'N/A' : base}</td><td>${noBb ? 'N/A' : cur}</td><td class="diff">${blockDiff}</td></tr>
     <tr><td>Edge coverage</td><td>${edgeBase}</td><td>${edgeCur}</td><td class="diff">${edgeDiff}</td></tr>
-    <tr><td>Crashes</td><td>0</td><td>${data.crashes ?? 0}</td><td class="diff">${fmtDiff(Number(data.crashes) || 0)}</td></tr>`;
+    <tr><td>Session crashes</td><td>0</td><td>${data.crashes ?? 0}</td><td class="diff">${fmtDiff(Number(data.crashes) || 0)}</td></tr>`;
   }
 
   document.getElementById('stalk-divergence').textContent = data.firstDivergence || '—';

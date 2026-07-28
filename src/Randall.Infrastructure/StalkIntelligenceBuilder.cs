@@ -216,14 +216,28 @@ public static class StalkIntelligenceBuilder
         return $"{baseText} · fault {f.Fault.Kind}/{f.Fault.Source}: {faultLine}";
     }
 
-    private static int ScoreOracleFinding(OracleFindingDto f) =>
-        ParseOracleSeverity(f.Severity) switch
+    private static int ScoreOracleFinding(OracleFindingDto f)
+    {
+        if (OracleScorer.IsExperimental(f))
         {
-            OracleSeverity.Violation => 85,
-            OracleSeverity.Runtime => 70,
-            OracleSeverity.NearMiss => 45,
-            _ => 25,
+            return ParseOracleSeverity(f.Severity) switch
+            {
+                OracleSeverity.Runtime => 70,
+                OracleSeverity.Violation => 18,
+                OracleSeverity.NearMiss => 8,
+                _ => 5,
+            };
+        }
+
+        return ParseOracleSeverity(f.Severity) switch
+        {
+            // Runtime / crash evidence outranks unvalidated semantic FPs.
+            OracleSeverity.Runtime => 92,
+            OracleSeverity.Violation => 55,
+            OracleSeverity.NearMiss => 28,
+            _ => 12,
         };
+    }
 
     private static OracleScore BuildFrontierScoreBreakdown(FrontierBranchDto f)
     {
@@ -347,19 +361,43 @@ public static class StalkIntelligenceBuilder
     private static OracleScore BuildOracleScoreBreakdown(OracleFindingDto f)
     {
         var terms = new List<OracleScoreTerm>();
+        var experimental = OracleScorer.IsExperimental(f);
         var sev = ParseOracleSeverity(f.Severity);
-        if (sev >= OracleSeverity.Violation)
-            terms.Add(new OracleScoreTerm("violation", 35, f.RuleId));
-        else if (sev >= OracleSeverity.NearMiss)
-            terms.Add(new OracleScoreTerm("near miss", 12, f.RuleId));
-        else if (sev >= OracleSeverity.Runtime)
-            terms.Add(new OracleScoreTerm("runtime signal", 25, f.RuleId));
 
-        if (!string.IsNullOrWhiteSpace(f.RuleClass))
+        // Check Runtime before Violation — enum ranks Runtime > Violation.
+        if (experimental)
+        {
+            if (sev == OracleSeverity.Runtime)
+                terms.Add(new OracleScoreTerm("runtime signal", 70, f.RuleId));
+            else if (sev == OracleSeverity.Violation)
+                terms.Add(new OracleScoreTerm("experimental AI", OracleScorer.ExperimentalViolationPoints, f.RuleId));
+            else if (sev == OracleSeverity.NearMiss)
+                terms.Add(new OracleScoreTerm("experimental near miss", OracleScorer.ExperimentalNearMissPoints, f.RuleId));
+        }
+        else if (sev == OracleSeverity.Runtime)
+            terms.Add(new OracleScoreTerm("runtime signal", 70, f.RuleId));
+        else if (sev == OracleSeverity.Violation)
+            terms.Add(new OracleScoreTerm("violation", OracleScorer.ValidatedViolationPoints, f.RuleId));
+        else if (sev == OracleSeverity.NearMiss)
+            terms.Add(new OracleScoreTerm("near miss", OracleScorer.ValidatedNearMissPoints, f.RuleId));
+
+        if (!experimental && !string.IsNullOrWhiteSpace(f.RuleClass))
             terms.Add(new OracleScoreTerm("rule class", 10, f.RuleClass));
 
-        if (f.Confidence >= 0.7)
+        if (!experimental && f.Confidence >= 0.7)
             terms.Add(new OracleScoreTerm("confidence", (int)Math.Round(f.Confidence * 10), $"{f.Confidence:P0}"));
+
+        if (f.ReproductionCount > 1)
+            terms.Add(new OracleScoreTerm("reproducible", Math.Min(15, (f.ReproductionCount - 1) * 5),
+                $"×{f.ReproductionCount}"));
+
+        // Coverage signature only contributes when edges were actually observed.
+        if (f.CoverageSignature is { Length: > 0 } &&
+            f.CoverageSignature.Contains("edges+", StringComparison.Ordinal) &&
+            !f.CoverageSignature.Contains("coverage-unavailable", StringComparison.OrdinalIgnoreCase))
+        {
+            terms.Add(new OracleScoreTerm("coverage hint", 5, f.CoverageSignature));
+        }
 
         if (terms.Count == 0)
             terms.Add(new OracleScoreTerm("oracle hint", ScoreOracleFinding(f), f.RuleId));

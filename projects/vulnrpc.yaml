@@ -37,6 +37,7 @@ fuzz:
 # Semantic oracles — auth/state/logic (docs/ORACLES.md). Seeds still hunt memory bugs.
 oracles:
   enabled: true
+  authEnabled: true
   retainOnViolation: true
   retainOnNearMiss: true
   promoteExpectResponse: true

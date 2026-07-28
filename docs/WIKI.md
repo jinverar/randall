@@ -35,6 +35,19 @@ Honesty / NULL-write / Exploit Research / timeline crash-bar fixes live in the *
 - Click any crash event (timeline, crash log, canister, event list — including oracle_only / silent screams) → **Crashes → Investigation**. Pin pauses live; **Follow live** resumes.
 - Stuck “already running” / Idle STATUS → **Force clear**, then Start again.
 
+## Where are the logs?
+
+| What | Where |
+|------|--------|
+| **Live server / CLI stdout** | The terminal running `dotnet run --project src/Randall.Server` (or `Randall.Cli`) — STATUS lines, analyst log, crash notices |
+| **Per-run journal + captures** | `data/runs/<runId>/` (`run.json`, timeline, hot edges, linked inputs) |
+| **Crash artifacts / canisters** | `data/crashes/<project>/` (`*_crash.json`, inputs, `dumps/`, sidecars) |
+| **Oracle findings** | `data/crashes/<project>/_oracles/oracle_findings.jsonl` |
+| **Stalk layers / edges** | `data/stalk/<project>/` |
+| **Saved sessions / exports** | `data/sessions/saved/`, `data/exports/` |
+
+Fuzz UI log panels poll `/api/fuzz/logs` (and SignalR when Live link is connected) — they mirror the same analyst stream as the server terminal, they are not a separate file.
+
 ## Troubleshooting
 
 | Symptom | Fix |

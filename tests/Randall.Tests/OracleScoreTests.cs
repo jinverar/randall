@@ -62,6 +62,26 @@ public class OracleScoreTests
     }
 
     [Fact]
+    public void CrashScore_IsAtLeastNinety()
+    {
+        var score = OracleScorer.CrashScore("AV", 0);
+        Assert.Equal(90, score.Total);
+    }
+
+    [Fact]
+    public void ExperimentalAiViolation_IsLowWeight()
+    {
+        var findings = new List<OracleFindingDto>
+        {
+            MakeFinding("ai-length-prefix", "IntegerRule", "violation") with { Experimental = true },
+        };
+        var score = OracleScorer.Score(
+            Obs("TRUN"u8.ToArray(), new TargetRunResult(false, 0, null, "ok", "OK"u8.ToArray())),
+            findings, OracleSeverity.Violation);
+        Assert.True(score.Total <= 16, $"got {score.Total}");
+    }
+
+    [Fact]
     public async Task EvaluateAsync_AttachesScoreToResult()
     {
         var project = new ProjectConfig

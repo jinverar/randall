@@ -81,6 +81,19 @@ mutators:
   - expand
   - boundary
   - insert
+# Vulnserver has no AuthN and no binary length-prefix framing (commands are ASCII).
+# Keep AI auto-arm from injecting auth / length-prefix false positives.
+bugHunter:
+  enabled: false
+  autoArmOracles: false
+oracles:
+  enabled: true
+  authEnabled: false
+  auth: []
+  integer: []
+  persistFindings: true
+  retainOnViolation: true
+  retainOnNearMiss: false
 plugins:
   - path: ../plugins/xor-silly
     hook: mutate
