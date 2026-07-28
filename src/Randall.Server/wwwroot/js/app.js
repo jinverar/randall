@@ -3458,37 +3458,47 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
           · access ${escapeAttr(ea?.accessKind || '—')}</dd>
       </dl>`;
 
+  const statusLabel = (s) => String(s || 'Unknown').toUpperCase();
   const matrixRows = matrix.length
     ? `<table class="exploit-reg-matrix"><thead><tr>
-        <th>Register</th><th>Value</th><th>Input relationship</th><th>Status</th><th>Honesty</th>
+        <th>Register</th><th>Value</th><th>Input relationship</th><th>Status</th>
       </tr></thead><tbody>${matrix.slice(0, 16).map((r) => `<tr>
         <td><code>${escapeAttr(r.register)}</code></td>
         <td><code>${escapeAttr(r.valueHex || '—')}</code></td>
         <td>${escapeAttr(r.inputRelationship || '')}${r.payloadOffset != null ? ` <span class="hint-inline">+${r.payloadOffset}</span>` : ''}</td>
-        <td><span class="ctrl-status ctrl-${escapeAttr(String(r.status || 'Unknown').toLowerCase())}">${escapeAttr(r.status || 'Unknown')}</span></td>
-        <td class="${honestyCls(r.honesty)}">${escapeAttr(r.honesty || '')}</td>
+        <td><span class="ctrl-status ctrl-${escapeAttr(String(r.status || 'Unknown').toLowerCase())}" title="${escapeAttr(r.honesty || '')}">${escapeAttr(statusLabel(r.status))}</span></td>
       </tr>`).join('')}</tbody></table>
-      <p class="hint">Statuses never promote zero-coincidence to CONTROLLED/CONFIRMED.</p>`
+      <p class="hint">UNKNOWN · CORRELATED · INFLUENCED · CONTROLLED · CONFIRMED — zero/low-value coincidence never reaches CONFIRMED; FF…FF/−1 stays CORRELATED without counterfactual.</p>`
     : '<p class="hint">No register/input links yet.</p>';
 
   const writeBlock = write
-    ? `<ul class="exploit-write-split">
-        <li><span class="label">Destination</span> ${escapeAttr(write.destinationControl)} <span class="${honestyCls(write.honesty)}">${escapeAttr(write.honesty)}</span></li>
-        <li><span class="label">Value</span> ${escapeAttr(write.valueControl)}</li>
-        <li><span class="label">Width / repeat</span> ${escapeAttr(write.widthLabel || '—')} · ${escapeAttr(write.repeatability || '—')}</li>
-      </ul>`
+    ? `<div class="exploit-write-split">
+        <p class="label">Destination vs written-value control</p>
+        <ul>
+          <li><span class="label">Destination control</span> ${escapeAttr(write.destinationControl)}
+            ${write.destinationStatus ? ` <span class="ctrl-status ctrl-${escapeAttr(String(write.destinationStatus).toLowerCase())}">${escapeAttr(statusLabel(write.destinationStatus))}</span>` : ''}
+            <span class="${honestyCls(write.honesty)}">${escapeAttr(write.honesty || '')}</span></li>
+          <li><span class="label">Written value control</span> ${escapeAttr(write.valueControl)}
+            ${write.valueStatus ? ` <span class="ctrl-status ctrl-${escapeAttr(String(write.valueStatus).toLowerCase())}">${escapeAttr(statusLabel(write.valueStatus))}</span>` : ''}</li>
+          <li><span class="label">Width</span> ${escapeAttr(write.widthLabel || '—')}</li>
+          <li><span class="label">Repeatability</span> ${escapeAttr(write.repeatability || '—')}</li>
+        </ul>
+        <p class="hint">Not a generic “Controlled write” — destination and value are separate claims.</p>
+      </div>`
     : '';
 
   const testRows = tests.length
-    ? `<table class="exploit-control-tests"><thead><tr><th>Test</th><th>ΔB</th><th>Off</th><th>Outcome</th><th>Honesty</th></tr></thead><tbody>
+    ? `<table class="exploit-control-tests"><thead><tr>
+        <th>Input</th><th>Reg/EA</th><th>Fault address</th><th>Result</th>
+      </tr></thead><tbody>
       ${tests.map((t) => `<tr>
-        <td>${escapeAttr(t.description)}</td>
-        <td>${t.byteDelta}</td>
-        <td>+${t.offsetBytes}</td>
-        <td><code>${escapeAttr(t.outcome)}</code></td>
-        <td class="${honestyCls(t.honesty)}">${escapeAttr(t.honesty)}</td>
+        <td>${escapeAttr(t.input || t.description || '—')}${t.description && t.result === 'planned' ? `<div class="hint-inline">${escapeAttr(t.description)}</div>` : ''}</td>
+        <td><code>${escapeAttr(t.target || '—')}</code></td>
+        <td><code>${escapeAttr(t.faultAddress || '—')}</code></td>
+        <td><span class="ctrl-result">${escapeAttr(t.result || t.outcome || '—')}</span>
+          <span class="hint-inline ${honestyCls(t.honesty)}">${escapeAttr(t.honesty || '')}</span></td>
       </tr>`).join('')}</tbody></table>`
-    : '<p class="hint">No counterfactual control tests yet — run live probes or wait for plan.</p>';
+    : '<p class="hint">No counterfactual control tests yet — run live probes or wait for plan / skeptic next experiment.</p>';
 
   return `<div class="triage-box exploit-research-box" id="exploit-research-panel">
     <h4>Exploit Research <span class="hint-inline">5 questions · research-only</span></h4>

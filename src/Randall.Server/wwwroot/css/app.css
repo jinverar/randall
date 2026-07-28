@@ -5932,6 +5932,11 @@ html:not([data-scream-anim="on"]) .scream-canister-liquid {
 .honesty-unverified { color: var(--muted); }
 .exploit-write-split {
   margin: 0.35rem 0 0.5rem;
-  padding-left: 1.1rem;
   line-height: 1.45;
 }
+.exploit-write-split ul {
+  margin: 0.25rem 0 0.35rem;
+  padding-left: 1.1rem;
+}
+.exploit-write-split .label { color: var(--muted); margin: 0.4rem 0 0.15rem; }
+.ctrl-result { font-family: var(--mono); font-size: 0.84rem; }
