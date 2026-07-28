@@ -177,7 +177,7 @@ Full details: [docs/INSTALL_WINDOWS.md](docs/INSTALL_WINDOWS.md#uninstall).
 
 Open **[http://127.0.0.1:5000](http://127.0.0.1:5000)** — Dashboard (stalker CFG), Fuzz, Crashes, Case builder, Help.
 
-**Help:** in-app **Help** tab (docs index) · operator cheat codes [docs/WIKI.md](docs/WIKI.md) · [EXPLOIT_GUIDE.md](docs/EXPLOIT_GUIDE.md) · [STALKING.md](docs/STALKING.md).
+**Help:** in-app **Help** tab (docs index) · operator cheat codes [docs/WIKI.md](docs/WIKI.md) · [EXPLOIT_GUIDE.md](docs/EXPLOIT_GUIDE.md) · [STALKING.md](docs/STALKING.md) · scoring meanings [docs/SCORING_CONTRACT.md](docs/SCORING_CONTRACT.md).
 
 Smoke:
 

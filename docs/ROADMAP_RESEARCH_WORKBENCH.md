@@ -6,6 +6,8 @@ Living inventory was historically tracked under [ROADMAP_INTELLIGENCE.md](ROADMA
 
 **Maturity vocabulary (prefer these over bare ✅):** `STUB` → `EXPERIMENTAL` → `TESTED` → `INTEGRATED` → `VALIDATED`.
 
+**Scoring honesty:** metric meanings and “must not mean exploitability” rules live in [SCORING_CONTRACT.md](SCORING_CONTRACT.md). R0–R7 evidence gates are machine-enforced by `ResearchMaturityGates`. Accuracy scorecard scaffold: [RESEARCH_BENCHMARK.md](RESEARCH_BENCHMARK.md).
+
 ---
 
 ## Shipped (main)
@@ -59,6 +61,7 @@ Living inventory was historically tracked under [ROADMAP_INTELLIGENCE.md](ROADMA
 |-------|--------|
 | `ResearchMaturity` enum + `PrimitiveEngine.ComputeMaturity` | ✅ shipped (study-depth ladder, not exploit completion) |
 | **Skeptic promotion gate** | ✅ R5+ and Confirmed require Survived + observation + no Falsified |
+| **ResearchMaturityGates** | ✅ machine caps: R2 needs fault insn+addr/value; R5+ needs Court + counterfactual delta |
 | Persistence on `{guid}_primitives.json` | ✅ |
 | CrashIntelligence fields (`ResearchMaturity`, label, rationale, primitive summary) | ✅ data fields |
 | Investigation UI maturity scale / chips (R0 Crash … R7 Research package) | ✅ **DONE** |

@@ -54,9 +54,21 @@ Engines should **read `CrashEvidenceDto.Facts` or call `EvidenceFactBuilder.Coll
 
 `CdbProbePlan.StandardCrash` remains the headless consumer that **emits Observed facts** via Scream Investigator provenance (`.exr -1`, `r`, `kv`, `!address`, …). No change to probe scripts — facts are derived from existing CDB blocks.
 
+## Evidence Ledger (display taxonomy)
+
+Investigation / Exploit Research show an **Evidence Ledger** derived from the same atoms (no parallel store). `EvidenceLedger.KindFor` maps `observationType` → Kind:
+
+| Kind | From ObservationType |
+|------|----------------------|
+| **Observed** | `Observed` |
+| **Confirmed** | `ExperimentallyConfirmed` |
+| **Derived** | `Inferred` (confidence ≥ 0.55) |
+| **Heuristic** | `Inferred` (confidence &lt; 0.55) |
+| **Hypothesis** | `Hypothesized` |
+
 ## Investigation UI
 
-Crashes → Investigation shows an **Evidence facts** table with type badges:
+Crashes → Investigation shows **Evidence Ledger** + **Evidence facts** with type badges:
 
 - **Observed** — read from sensor output
 - **Confirmed** — hypothesis experiment succeeded
