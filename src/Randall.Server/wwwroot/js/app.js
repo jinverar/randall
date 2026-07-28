@@ -3423,17 +3423,40 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
   const tests = panel.controlTests || [];
   const write = panel.writeControl;
   const honestyCls = (h) => `honesty-${String(h || 'Unverified').toLowerCase()}`;
-  const eaBlock = ea
-    ? `<dl class="exploit-ea-dl">
-        <dt>Instruction</dt><dd><code>${escapeAttr(ea.instruction || panel.faultInstruction || '—')}</code>
-          <span class="hint-inline">${escapeAttr(ea.reconstructionKind || 'Static')} · ${escapeAttr(ea.honesty || '')}</span></dd>
-        <dt>Effective address</dt><dd><code>${escapeAttr(ea.effectiveAddressHex || panel.causingAddress || '—')}</code>
-          ${ea.baseRegister ? `<span class="hint-inline">${escapeAttr(ea.note || '')}</span>` : ''}</dd>
-        <dt>Value / width</dt><dd><code>${escapeAttr(ea.valueHex || panel.causingValue || '—')}</code>
-          · ${escapeAttr(ea.widthLabel || '?')} (${ea.widthBytes ?? '?'}B)
-          · access ${escapeAttr(ea.accessKind || '—')}</dd>
-      </dl>`
-    : `<p class="hint">Fault insn: <code>${escapeAttr(panel.faultInstruction || '—')}</code> · addr <code>${escapeAttr(panel.causingAddress || '—')}</code></p>`;
+  const faultInsn = (ea?.instruction || panel.faultInstruction || '').trim();
+  const insnUnknown = !faultInsn || /^unknown$/i.test(faultInsn);
+  const eaHex = ea?.effectiveAddressHex || (panel.causingAddress && panel.causingAddress !== 'UNKNOWN' ? panel.causingAddress : null);
+  const valueHex = ea?.valueHex || (panel.causingValue && panel.causingValue !== 'UNKNOWN' ? panel.causingValue : null);
+  const matchFault = ea?.matchesFaultAddress;
+  const matchLabel = matchFault === true
+    ? 'matches fault address'
+    : matchFault === false
+      ? '≠ debugger fault address'
+      : '';
+  const breakdown = ea && (ea.baseRegister || ea.indexRegister || ea.displacement)
+    ? [
+        ea.expression ? `expr ${ea.expression}` : null,
+        ea.baseRegister ? `base ${ea.baseRegister}` : null,
+        ea.indexRegister ? `index ${ea.indexRegister}*${ea.scale ?? 1}` : null,
+        (ea.displacement != null && ea.displacement !== 0) ? `disp ${ea.displacement}` : null,
+      ].filter(Boolean).join(' · ')
+    : '';
+  const eaBlock = `<dl class="exploit-ea-dl">
+        <dt>Faulting instruction</dt><dd>${insnUnknown
+          ? `<code class="ea-unknown">UNKNOWN</code> <span class="hint-inline">no parseable u @rip line (symbol-path rejected)</span>`
+          : `<code>${escapeAttr(faultInsn)}</code>
+          <span class="hint-inline">${escapeAttr(ea?.reconstructionKind || 'Static')} · ${escapeAttr(ea?.honesty || '')}</span>`}</dd>
+        <dt>Effective address</dt><dd>${eaHex
+          ? `<code>${escapeAttr(eaHex)}</code>${matchLabel ? ` <span class="hint-inline">${escapeAttr(matchLabel)}</span>` : ''}`
+          : `<code class="ea-unknown">UNKNOWN</code>`}
+          ${breakdown ? `<div class="hint-inline ea-breakdown">${escapeAttr(breakdown)}</div>` : ''}
+          ${ea?.note && !eaHex ? `<div class="hint-inline">${escapeAttr(ea.note)}</div>` : ''}</dd>
+        <dt>Written value</dt><dd>${valueHex
+          ? `<code>${escapeAttr(valueHex)}</code>`
+          : `<code class="ea-unknown">UNKNOWN</code>`}
+          · ${escapeAttr(ea?.widthLabel || '?')} (${ea?.widthBytes ?? '?'}B)
+          · access ${escapeAttr(ea?.accessKind || '—')}</dd>
+      </dl>`;
 
   const matrixRows = matrix.length
     ? `<table class="exploit-reg-matrix"><thead><tr>
@@ -3471,7 +3494,7 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
     <h4>Exploit Research <span class="hint-inline">5 questions · research-only</span></h4>
     <p class="hint">${escapeAttr(panel.summary || '')}</p>
     <div class="exploit-q">
-      <h5>1–2. Fault instruction &amp; causing address/value</h5>
+      <h5>1–2. Faulting instruction · EA breakdown · written value</h5>
       ${eaBlock}
     </div>
     <div class="exploit-q">

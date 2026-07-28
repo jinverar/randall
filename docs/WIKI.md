@@ -53,7 +53,7 @@ Open ≠ Import. Open browses local journals; Import copies archives in.
 
 - Boundary/teardown null writes are **not** automatic R4 primitives.
 - After pull: restart server, open crash, **Re-analyze** if you see ⚠ older analysis engine.
-- Exploit Research panel (Investigation): fault insn, EA, register matrix, control tests, next experiment.
+- Exploit Research panel (Investigation): **Faulting instruction · EA breakdown · Written value**, then register matrix / control tests / next experiment. EA is static from `u @rip` + regs (`[rax-2Ch]` with RAX=`0x2C` → `0x0`). Missing/garbage insn → `UNKNOWN` (never symbol-path). Re-analyze after pull if ⚠ older engine.
 
 ## Common `doctor` warnings
 

@@ -5903,6 +5903,8 @@ html:not([data-scream-anim="on"]) .scream-canister-liquid {
 }
 .exploit-ea-dl dt { color: var(--muted); }
 .exploit-ea-dl dd { margin: 0; }
+.exploit-ea-dl .ea-unknown { color: var(--muted); font-style: italic; }
+.exploit-ea-dl .ea-breakdown { margin-top: 0.15rem; }
 .exploit-reg-matrix,
 .exploit-control-tests {
   width: 100%;

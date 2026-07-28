@@ -7,69 +7,102 @@ namespace Randall.Infrastructure;
 /// <summary>
 /// Static reconstruction of faulting x86/x64 memory operands from <c>u @rip</c> / disasm text
 /// plus a register dump. Research-only — no TTD required.
-/// Fixture-tested for forms like <c>mov dword ptr [rax-2Ch],ecx</c>.
+/// Fixture-tested for forms like <c>mov dword ptr [rax-2Ch],ecx</c> (RAX=0x2C → EA=0).
 /// </summary>
 public static class EffectiveAddressReconstructor
 {
-    // Optional CDB prefix: address + raw bytes before the mnemonic (packed or spaced).
+    // Optional CDB prefix: address + optional opcode bytes (packed or spaced; linear — no ReDoS).
     private const string InsnPrefix =
-        @"(?:(?:[0-9a-fA-F`]+|\s|[0-9a-fA-F]{2})+?\s+)?";
+        @"(?:[0-9a-fA-F`]{4,}\s+(?:(?:[0-9a-fA-F]{2}\s+)+|[0-9a-fA-F]{2,}\s+)?)?";
 
     // mov dword ptr [rax-2Ch],ecx
     // mov qword ptr [rbx+rcx*8+10h],rax
     // mov byte ptr [rsi],al
+    // lea rax,[rip+1234h]
     private static readonly Regex MemWrite = new(
         @"^\s*" + InsnPrefix + @"(?<mnem>mov|add|sub|xor|or|and|xchg|lea)\s+"
         + @"(?:(?<width>byte|word|dword|qword)\s+ptr\s+)?"
         + @"\[(?<mem>[^\]]+)\]\s*,\s*(?<src>[^\s,;]+)",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex MemRead = new(
         @"^\s*" + InsnPrefix + @"(?<mnem>mov|add|sub|xor|or|and|xchg|lea|cmp|test)\s+"
         + @"(?<dst>[^\s,\[]+)\s*,\s*"
         + @"(?:(?<width>byte|word|dword|qword)\s+ptr\s+)?"
         + @"\[(?<mem>[^\]]+)\]",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    private static readonly Regex MemOp = new(
-        @"^(?:(?<base>[a-z0-9]+))?"
-        + @"(?:\+(?<index>[a-z0-9]+)(?:\*(?<scale>[1248]))?)?"
-        + @"(?<disp>[+-](?:0x)?[0-9a-fA-Fh]+)?$"
-        + @"|^(?<dispOnly>[+-]?(?:0x)?[0-9a-fA-Fh]+)$",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
+    /// <summary>
+    /// Reconstruct EA from a faulting instruction line + register dump.
+    /// When <paramref name="faultAddress"/> is present, compares computed EA to it.
+    /// </summary>
     public static EffectiveAddressDto Reconstruct(
         string? disasmOrInstruction,
         string? registersText,
         string? preferRip = null,
-        DebuggerAccessKind access = DebuggerAccessKind.Unknown)
+        DebuggerAccessKind access = DebuggerAccessKind.Unknown,
+        string? faultAddress = null)
     {
-        var insn = ScreamInvestigator.ExtractFaultInstructionLine(disasmOrInstruction, preferRip)
-                   ?? FirstInstructionish(disasmOrInstruction);
+        var insn = PickFaultInstruction(disasmOrInstruction, preferRip);
         if (string.IsNullOrWhiteSpace(insn))
         {
-            return new EffectiveAddressDto(
-                false, null, null, "unknown", null, null, null, 1, 0, null, null, null, null,
-                access == DebuggerAccessKind.Unknown ? null : access.ToString(),
-                nameof(ExploitClaimKind.Unverified),
-                "No parseable faulting instruction in u @rip / disasm.",
-                "Static");
+            return Unknown(
+                instruction: null,
+                mnemonic: null,
+                honesty: nameof(ExploitClaimKind.Unverified),
+                note: "UNKNOWN — no parseable faulting instruction in u @rip / disasm (symbol-path noise rejected).",
+                access: access,
+                faultAddress: faultAddress);
         }
 
         var write = MemWrite.Match(insn);
         if (write.Success)
-            return BuildFromMatch(insn, write, isWrite: true, registersText, access);
+            return BuildFromMatch(insn, write, isWrite: true, registersText, preferRip, access, faultAddress);
 
         var read = MemRead.Match(insn);
         if (read.Success)
-            return BuildFromMatch(insn, read, isWrite: false, registersText, access);
+            return BuildFromMatch(insn, read, isWrite: false, registersText, preferRip, access, faultAddress);
 
+        // Instruction line is real but memory operand not decoded — show insn honestly, EA UNKNOWN.
+        return Unknown(
+            instruction: insn.Trim(),
+            mnemonic: TryMnemonic(insn),
+            honesty: nameof(ExploitClaimKind.Hypothesized),
+            note: "UNKNOWN — instruction seen but memory operand not decoded (no symbol-path fallback).",
+            access: access,
+            faultAddress: faultAddress);
+    }
+
+    private static EffectiveAddressDto Unknown(
+        string? instruction,
+        string? mnemonic,
+        string honesty,
+        string note,
+        DebuggerAccessKind access,
+        string? faultAddress)
+    {
+        var faultHex = NormalizeAddressHex(faultAddress);
         return new EffectiveAddressDto(
-            false, insn.Trim(), TryMnemonic(insn), "unknown", null, null, null, 1, 0, null, null, null, null,
-            access == DebuggerAccessKind.Unknown ? null : access.ToString(),
-            nameof(ExploitClaimKind.Hypothesized),
-            "Instruction seen but memory operand not decoded.",
-            "Static");
+            Ok: false,
+            Instruction: instruction,
+            Mnemonic: mnemonic,
+            WidthLabel: "unknown",
+            WidthBytes: null,
+            BaseRegister: null,
+            IndexRegister: null,
+            Scale: 1,
+            Displacement: 0,
+            SourceRegister: null,
+            DestinationRegister: null,
+            EffectiveAddressHex: null,
+            ValueHex: null,
+            AccessKind: access == DebuggerAccessKind.Unknown ? null : access.ToString(),
+            Honesty: honesty,
+            Note: note,
+            ReconstructionKind: "Static",
+            Expression: null,
+            MatchesFaultAddress: null,
+            FaultAddressHex: faultHex);
     }
 
     private static EffectiveAddressDto BuildFromMatch(
@@ -77,7 +110,9 @@ public static class EffectiveAddressReconstructor
         Match m,
         bool isWrite,
         string? registersText,
-        DebuggerAccessKind access)
+        string? preferRip,
+        DebuggerAccessKind access,
+        string? faultAddress)
     {
         var mnem = m.Groups["mnem"].Value.ToLowerInvariant();
         var widthLabel = m.Groups["width"].Success
@@ -95,9 +130,38 @@ public static class EffectiveAddressReconstructor
             dst = NormalizeReg(m.Groups["dst"].Value);
 
         var regs = ParseRegisters(registersText);
+        // Prefer dump RIP; fall back to preferRip / line address for RIP-relative.
+        EnsureRip(regs, preferRip, insn);
+
         ulong? ea = null;
         string? eaNote = null;
-        if (baseReg is not null && regs.TryGetValue(CanonicalReg(baseReg), out var baseVal))
+        var isRipRel = string.Equals(baseReg, "rip", StringComparison.OrdinalIgnoreCase)
+                       || string.Equals(baseReg, "eip", StringComparison.OrdinalIgnoreCase);
+
+        if (isRipRel)
+        {
+            if (regs.TryGetValue("rip", out var ripVal))
+            {
+                var insnLen = TryInsnByteLength(insn);
+                long eaSigned = unchecked((long)ripVal);
+                if (insnLen is int len)
+                {
+                    eaSigned += len;
+                }
+                else
+                {
+                    eaNote = "RIP-relative: instruction length unknown — used RIP+disp (may be off by insn size)";
+                }
+
+                eaSigned += disp;
+                ea = unchecked((ulong)eaSigned);
+            }
+            else
+            {
+                eaNote = "base rip missing from register dump";
+            }
+        }
+        else if (baseReg is not null && regs.TryGetValue(CanonicalReg(baseReg), out var baseVal))
         {
             long eaSigned = unchecked((long)baseVal);
             if (indexReg is not null)
@@ -110,6 +174,19 @@ public static class EffectiveAddressReconstructor
 
             eaSigned += disp;
             ea = unchecked((ulong)eaSigned);
+        }
+        else if (baseReg is null && indexReg is not null)
+        {
+            // [index*scale(+disp)]
+            if (regs.TryGetValue(CanonicalReg(indexReg), out var indexVal))
+            {
+                long eaSigned = unchecked((long)indexVal) * scale + disp;
+                ea = unchecked((ulong)eaSigned);
+            }
+            else
+            {
+                eaNote = $"index {indexReg} missing from register dump";
+            }
         }
         else if (baseReg is null && indexReg is null)
         {
@@ -132,16 +209,27 @@ public static class EffectiveAddressReconstructor
             ? access.ToString()
             : isWrite ? nameof(DebuggerAccessKind.Write) : nameof(DebuggerAccessKind.Read);
 
+        var expression = FormatExpression(baseReg, indexReg, scale, disp);
+        var faultHex = NormalizeAddressHex(faultAddress);
+        bool? matchesFault = null;
+        if (ea is ulong computed && faultHex is not null)
+        {
+            var eaHex = NormalizeAddressHex($"0x{computed:X}");
+            matchesFault = string.Equals(eaHex, faultHex, StringComparison.OrdinalIgnoreCase);
+            if (matchesFault == false)
+                eaNote = AppendNote(eaNote, $"computed EA 0x{computed:X} ≠ fault {faultHex}");
+            else
+                eaNote = AppendNote(eaNote, "matches debugger fault address");
+        }
+
         var honesty = ea is not null
             ? nameof(ExploitClaimKind.Observed)
             : nameof(ExploitClaimKind.Hypothesized);
 
         var note = ea is not null
-            ? $"EA = {(baseReg ?? "0")}"
-              + (indexReg is not null ? $" + {indexReg}*{scale}" : "")
-              + (disp != 0 ? $" + {disp:+#;-#;0}" : "")
+            ? $"EA = {expression}"
               + (eaNote is not null ? $" ({eaNote})" : "")
-            : eaNote ?? "Could not compute effective address.";
+            : eaNote ?? "UNKNOWN — could not compute effective address.";
 
         return new EffectiveAddressDto(
             Ok: true,
@@ -160,7 +248,10 @@ public static class EffectiveAddressReconstructor
             AccessKind: accessKind,
             Honesty: honesty,
             Note: note,
-            ReconstructionKind: "Static");
+            ReconstructionKind: "Static",
+            Expression: expression,
+            MatchesFaultAddress: matchesFault,
+            FaultAddressHex: faultHex);
     }
 
     internal static void ParseMem(
@@ -196,22 +287,39 @@ public static class EffectiveAddressReconstructor
         if (string.IsNullOrEmpty(head))
             return;
 
-        // base
-        // base+index
-        // base+index*scale
-        // index*scale  (rare)
-        var m = Regex.Match(
+        // Forms (after disp peel):
+        //   base
+        //   base+index
+        //   base+index*scale
+        //   index*scale
+        var indexed = Regex.Match(
             head,
-            @"^(?:(?<base>[a-z][a-z0-9]*))?(?:\+(?<index>[a-z][a-z0-9]*)(?:\*(?<scale>[1248]))?)?$",
+            @"^(?:(?<base>[a-z][a-z0-9]*)\+)?(?<index>[a-z][a-z0-9]*)\*(?<scale>[1248])$",
             RegexOptions.IgnoreCase);
-        if (!m.Success)
+        if (indexed.Success)
+        {
+            if (indexed.Groups["base"].Success)
+                baseReg = NormalizeReg(indexed.Groups["base"].Value);
+            indexReg = NormalizeReg(indexed.Groups["index"].Value);
+            if (int.TryParse(indexed.Groups["scale"].Value, out var sc))
+                scale = sc;
             return;
-        if (m.Groups["base"].Success)
-            baseReg = NormalizeReg(m.Groups["base"].Value);
-        if (m.Groups["index"].Success)
-            indexReg = NormalizeReg(m.Groups["index"].Value);
-        if (m.Groups["scale"].Success && int.TryParse(m.Groups["scale"].Value, out var sc))
-            scale = sc;
+        }
+
+        var basePlusIndex = Regex.Match(
+            head,
+            @"^(?<base>[a-z][a-z0-9]*)\+(?<index>[a-z][a-z0-9]*)$",
+            RegexOptions.IgnoreCase);
+        if (basePlusIndex.Success)
+        {
+            baseReg = NormalizeReg(basePlusIndex.Groups["base"].Value);
+            indexReg = NormalizeReg(basePlusIndex.Groups["index"].Value);
+            return;
+        }
+
+        var baseOnly = Regex.Match(head, @"^(?<base>[a-z][a-z0-9]*)$", RegexOptions.IgnoreCase);
+        if (baseOnly.Success)
+            baseReg = NormalizeReg(baseOnly.Groups["base"].Value);
     }
 
     private static bool TryParseDisp(string raw, out long disp)
@@ -283,6 +391,41 @@ public static class EffectiveAddressReconstructor
         return map;
     }
 
+    private static void EnsureRip(Dictionary<string, ulong> regs, string? preferRip, string insn)
+    {
+        if (regs.ContainsKey("rip"))
+            return;
+        if (TryParseAddress(preferRip, out var fromPrefer))
+        {
+            regs["rip"] = fromPrefer;
+            return;
+        }
+
+        // Leading address on a CDB u @rip line.
+        var m = Regex.Match(insn.Trim(), @"^([0-9a-fA-F`]+)\s+");
+        if (m.Success && TryParseAddress(m.Groups[1].Value, out var fromLine))
+            regs["rip"] = fromLine;
+    }
+
+    /// <summary>Count opcode bytes between address and mnemonic on a CDB line (for RIP-relative).</summary>
+    internal static int? TryInsnByteLength(string insn)
+    {
+        // 00007ff6`12340100 8948d4  mov ...
+        // 00007ff6`12340100 48 89 48 d4  mov ...
+        var m = Regex.Match(
+            insn.Trim(),
+            @"^[0-9a-fA-F`]+\s+((?:[0-9a-fA-F]{2}\s+)+|[0-9a-fA-F]{2,})\s+(?:mov|lea|add|sub|xor|or|and|xchg|cmp|test)\b",
+            RegexOptions.IgnoreCase);
+        if (!m.Success)
+            return null;
+        var bytes = m.Groups[1].Value.Replace(" ", "", StringComparison.Ordinal);
+        if (bytes.Length < 2 || bytes.Length % 2 != 0)
+            return null;
+        if (!bytes.All(c => Uri.IsHexDigit(c)))
+            return null;
+        return bytes.Length / 2;
+    }
+
     private static string CanonicalReg(string reg)
     {
         var r = NormalizeReg(reg) ?? reg.ToLowerInvariant();
@@ -341,10 +484,45 @@ public static class EffectiveAddressReconstructor
         };
     }
 
+    private static string FormatExpression(string? baseReg, string? indexReg, int scale, long disp)
+    {
+        var parts = new List<string>();
+        if (baseReg is not null)
+            parts.Add(baseReg);
+        if (indexReg is not null)
+            parts.Add(scale == 1 ? indexReg : $"{indexReg}*{scale}");
+        if (disp != 0 || parts.Count == 0)
+        {
+            var dispLabel = disp switch
+            {
+                0 => "0",
+                > 0 and <= 9 => disp.ToString(CultureInfo.InvariantCulture),
+                > 0 => $"0x{disp:X}",
+                < 0 and >= -9 => $"({disp})",
+                _ => $"(-0x{-disp:X})",
+            };
+            parts.Add(dispLabel);
+        }
+
+        return string.Join(" + ", parts);
+    }
+
     private static string? TryMnemonic(string insn)
     {
-        var m = Regex.Match(insn, @"\b(mov|add|sub|xor|lea|cmp|test|call|jmp|ret)\b", RegexOptions.IgnoreCase);
+        var m = Regex.Match(insn, @"\b(mov|add|sub|xor|lea|cmp|test|call|jmp|ret|xchg|or|and)\b", RegexOptions.IgnoreCase);
         return m.Success ? m.Groups[1].Value.ToLowerInvariant() : null;
+    }
+
+    /// <summary>
+    /// Prefer marker/RIP-matched instruction lines; never accept symbol-path noise as the fault insn.
+    /// </summary>
+    private static string? PickFaultInstruction(string? text, string? preferRip)
+    {
+        var extracted = ScreamInvestigator.ExtractFaultInstructionLine(text, preferRip);
+        if (!string.IsNullOrWhiteSpace(extracted) && !ScreamInvestigator.LooksLikeCdbNoise(extracted))
+            return extracted;
+
+        return FirstInstructionish(text);
     }
 
     private static string? FirstInstructionish(string? text)
@@ -354,10 +532,41 @@ public static class EffectiveAddressReconstructor
         foreach (var line in text.Split('\n'))
         {
             var t = line.Trim();
-            if (t.Length > 8 && Regex.IsMatch(t, @"\b(mov|add|sub|lea|cmp|xor)\b", RegexOptions.IgnoreCase))
+            if (t.Length < 5 || ScreamInvestigator.LooksLikeCdbNoise(t))
+                continue;
+            if (ScreamInvestigator.LooksLikeInstructionLine(t))
+                return t;
+            // Bare fixture / stripped form: mov dword ptr [rax-2Ch],ecx
+            if (Regex.IsMatch(
+                    t,
+                    @"^(?:[0-9a-fA-F`]+\s+(?:[0-9a-fA-F]{2}\s+)*)?(mov|add|sub|lea|cmp|xor|xchg|or|and|test)\b.+\[[^\]]+\]",
+                    RegexOptions.IgnoreCase))
                 return t;
         }
 
         return null;
     }
+
+    internal static string? NormalizeAddressHex(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+        if (!TryParseAddress(raw, out var v))
+            return null;
+        return $"0x{v:X}";
+    }
+
+    private static bool TryParseAddress(string? raw, out ulong value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+        var s = raw.Trim()
+            .Replace("`", "", StringComparison.Ordinal)
+            .Replace("0x", "", StringComparison.OrdinalIgnoreCase);
+        return ulong.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static string AppendNote(string? existing, string add) =>
+        string.IsNullOrWhiteSpace(existing) ? add : $"{existing}; {add}";
 }
