@@ -65,14 +65,31 @@ public static partial class BackwardTraceBuilder
         if (!string.IsNullOrWhiteSpace(sidecar?.SeedSource))
             steps.Add(new BackwardTraceStepDto(++order, "seed", sidecar.SeedSource!, "origin seed", "MEDIUM"));
 
+        var hasDebugger = debugger is { Ok: true };
         for (var i = 0; i < lineage.Count; i++)
         {
             var attributed = attribution.SuspectedMutatorStep == i
                              || corruptionChain?.SuspectedMutatorStep == i;
-            var conf = attributed ? "HIGH" : i == lineage.Count - 1 ? "MEDIUM" : "LOW";
-            steps.Add(new BackwardTraceStepDto(
-                ++order, "mutation", lineage[i],
-                attributed ? "introduced value seen at fault" : null, conf));
+            // Lineage-only attribution is MEDIUM max — HIGH needs debugger observation.
+            string conf;
+            string? detail;
+            if (attributed && hasDebugger)
+            {
+                conf = "HIGH";
+                detail = "introduced value seen at fault";
+            }
+            else if (attributed)
+            {
+                conf = "MEDIUM";
+                detail = "lineage-attributed mutator (no debugger observation)";
+            }
+            else
+            {
+                conf = i == lineage.Count - 1 ? "MEDIUM" : "LOW";
+                detail = null;
+            }
+
+            steps.Add(new BackwardTraceStepDto(++order, "mutation", lineage[i], detail, conf));
         }
 
         foreach (var match in matches.Take(4))

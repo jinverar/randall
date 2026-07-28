@@ -428,8 +428,8 @@ public static class ResearchPackageReportBuilder
             qs.Add("Which input region most strongly influences the faulting state?");
         if (primitives is null || primitives.Maturity < ResearchMaturity.R5)
             qs.Add("Can an independent Skeptic neutralize/replay confirm the primitive observation?");
-        if (skeptic is null || !SkepticEngine.PassesPromotionGate(skeptic))
-            qs.Add("Run Skeptic falsification until a claim Survives with observation (gate for R5+).");
+        if (skeptic is null || !EvidenceCourt.PassesPromotionGate(skeptic, primitives?.Facts))
+            qs.Add("Run Skeptic + cite ≥1 EvidenceFact (Court gate for CONFIRMED / R5+).");
         if (counterfactual is not { LiveExecuted: true })
             qs.Add("Map adjacent safe vs corrupt with a live counterfactual re-exec.");
         if (qs.Count == 0)

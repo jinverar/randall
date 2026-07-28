@@ -118,4 +118,6 @@ public sealed record CrashPrimitiveReportDto(
     /// <summary>JSON schema version for persisted research artifacts (v1). Absent on legacy files → default 1.</summary>
     int SchemaVersion = 1,
     /// <summary>Randall analysis-engine identity at write time (optional on legacy files).</summary>
-    RandallBuildIdentityDto? Engine = null);
+    RandallBuildIdentityDto? Engine = null,
+    /// <summary>Evidence Court lite — rejected / candidate / confirmed for CONFIRMED / R5+.</summary>
+    EvidenceCourtReportDto? Court = null);

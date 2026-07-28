@@ -53,7 +53,10 @@ Open ≠ Import. Open browses local journals; Import copies archives in.
 
 - Boundary/teardown null writes are **not** automatic R4 primitives.
 - After pull: restart server, open crash, **Re-analyze** if you see ⚠ older analysis engine.
-- Exploit Research panel (Investigation): **Evidence / Interpretation / Proven** columns (hypotheses never look like facts), **Faulting instruction · EA · value**, register matrix (UNKNOWN→CONFIRMED), dest-vs-value split, **CYCLIC ANALYSIS** (RIP/RBP/RCX/fault EA/stack+N → offset + ASCII map when cyclic/pattern payload), control tests, next experiment. Zero/low-value never CONFIRMED; cyclic offset match = Evidence only until CF → Proven. Re-analyze after pull if ⚠ older engine.
+- Exploit Research panel (Investigation): **Evidence / Interpretation / Proven** columns (hypotheses never look like facts), **Faulting instruction · EA · value**, register matrix (UNKNOWN→CONFIRMED), dest-vs-value split, **CYCLIC ANALYSIS**, **STACK STATE** (RSP/frames/slots; Static unless TTD), control tests with Off/Outcome/Honesty, **Court: rejected|candidate|confirmed** (needs ≥1 EvidenceFact + Skeptic for R5+/CONFIRMED). Zero/low-value never CONFIRMED; cyclic = Evidence until CF → Proven.
+- Stalker: crash nodes show real fault address or **PC unknown** (never `0x????????`); path comparison Diff is **N/A** without BB edges.
+- Counterfactual honesty: scheduled/executed/observed/unverified counts; sweep Off varies by center±N; Outcome ≠ Honesty.
+- Cluster: **Exact crash occurrences** vs **Triage family occurrences**. Lineage HIGH needs debugger; introducing mutator ≠ source function.
 
 ## Common `doctor` warnings
 

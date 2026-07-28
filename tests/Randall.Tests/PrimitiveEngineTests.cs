@@ -82,7 +82,11 @@ public class PrimitiveEngineTests
         var without = PrimitiveEngine.Build(id, "lab", influence);
 
         Assert.Equal(ResearchMaturity.R4, without.Maturity);
-        Assert.Contains("Skeptic gate", without.MaturityRationale, StringComparison.OrdinalIgnoreCase);
+        Assert.True(
+            without.MaturityRationale.Contains("Skeptic", StringComparison.OrdinalIgnoreCase)
+            || without.MaturityRationale.Contains("Court", StringComparison.OrdinalIgnoreCase)
+            || without.Court?.Overall == EvidenceCourtVerdict.Rejected
+            || (without.Summary?.Contains("Court:", StringComparison.OrdinalIgnoreCase) ?? false));
         Assert.DoesNotContain(without.Primitives, p => p.State == PrimitiveState.Confirmed);
     }
 
@@ -92,12 +96,37 @@ public class PrimitiveEngineTests
         var id = Guid.NewGuid();
         var influence = ObservedWriteInfluence(id);
         var skeptic = SurvivedSkeptic(id);
+        var facts = new[]
+        {
+            new EvidenceFact(
+                "faultAddress", "0x41414141", "debugger", null,
+                EvidenceObservationType.Observed, 0.9, DateTimeOffset.UtcNow),
+        };
 
         Assert.True(SkepticEngine.PassesPromotionGate(skeptic));
-        var withGate = PrimitiveEngine.Build(id, "lab", influence, skeptic: skeptic);
+        Assert.True(EvidenceCourt.PassesPromotionGate(skeptic, facts));
+        var withGate = PrimitiveEngine.Build(id, "lab", influence, skeptic: skeptic, facts: facts);
 
         Assert.True(withGate.Maturity >= ResearchMaturity.R5);
         Assert.DoesNotContain("held at R4", withGate.MaturityRationale, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(EvidenceCourtVerdict.Confirmed, withGate.Court?.Overall);
+    }
+
+    [Fact]
+    public void Court_rejects_high_confidence_without_evidence_facts()
+    {
+        var id = Guid.NewGuid();
+        var influence = ObservedWriteInfluence(id);
+        var skeptic = SurvivedSkeptic(id);
+
+        // Skeptic alone is not enough — Court needs ≥1 sensor EvidenceFact.
+        Assert.True(SkepticEngine.PassesPromotionGate(skeptic));
+        Assert.False(EvidenceCourt.PassesPromotionGate(skeptic, facts: []));
+
+        var report = PrimitiveEngine.Build(id, "lab", influence, skeptic: skeptic, facts: []);
+        Assert.Equal(ResearchMaturity.R4, report.Maturity);
+        Assert.Equal(EvidenceCourtVerdict.Rejected, report.Court?.Overall);
+        Assert.Contains("Court:", report.Summary, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -135,7 +164,9 @@ public class PrimitiveEngineTests
 
         Assert.Equal(ResearchMaturity.R4, report.Maturity);
         Assert.DoesNotContain(report.Primitives, p => p.State == PrimitiveState.Confirmed);
-        Assert.Contains(report.Primitives, p => p.State == PrimitiveState.Observed);
+        // Skeptic demotes Confirmed→Observed; Court may further demote to Candidate without EvidenceFacts.
+        Assert.Contains(report.Primitives, p =>
+            p.State is PrimitiveState.Observed or PrimitiveState.Candidate);
     }
 
     private static CrashInfluenceMapDto ObservedWriteInfluence(Guid id) =>

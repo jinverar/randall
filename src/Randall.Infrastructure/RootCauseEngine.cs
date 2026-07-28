@@ -520,6 +520,7 @@ public static class RootCauseEngine
         CrashCorruptionChainDto? chain,
         CrashSidecarDto? sidecar)
     {
+        // Suspected source function = code symbol only — never a mutator name.
         var stack = debugger?.Stack;
         if (stack is { Count: > 1 })
         {
@@ -527,7 +528,13 @@ public static class RootCauseEngine
             if (caller?.Symbol is not null)
                 return $"{caller.Module ?? "?"}!{caller.Symbol}{caller.Offset ?? ""}";
         }
-        return chain?.SuspectedMutator ?? sidecar?.Mutator;
+
+        if (!string.IsNullOrWhiteSpace(debugger?.FaultingFunction))
+            return null; // caller unknown; faulting fn is separate
+
+        _ = chain;
+        _ = sidecar;
+        return null;
     }
 
     private static string? FormatInputRegion(

@@ -158,13 +158,14 @@ public static class StalkDashboard
                     $"Diagram shows {crashEdges.Count} BB edges from this crash's drcov/trace (novel blocks highlighted vs baseline).");
             }
         }
-        var crashAddr = latestDetail?.Analysis?.FaultAddress
-            ?? latestDetail?.Sidecar?.ExceptionHint
-            ?? "—";
         var exception = latestDetail?.Analysis?.ExceptionHint
             ?? latestDetail?.Sidecar?.ExceptionHint
             ?? latestCrash?.TargetExitCode
             ?? "—";
+        var crashAddr = FormatCrashNodeAddress(
+            latestDetail,
+            latestDetail?.Analysis?.FaultAddress ?? latestCrash?.FaultAddress,
+            exception);
 
         var pathBlocks = blocks.Where(b => b.Id is not "__entry" and not "__crash_site").ToList();
         var hitPath = pathBlocks.Count(b => b.Kind is "hit" or "novel" or "crash" || b.OnCrashPath);
@@ -176,17 +177,30 @@ public static class StalkDashboard
             mode,
             corpus.DynamoRioAvailable);
 
-        var currentBlocks = usedCrashCoverage
-            ? crashEdges.Count
-            : corpus.CoverageEdges > 0
-                ? corpus.CoverageEdges
-                : hitPath;
-        var baselineBlocks = Math.Max(0, currentBlocks - Math.Max(0, (int)(run?.HotEdges?.Sum(h => h.HitCount > 0 ? 1 : 0) ?? 0)));
-        if (usedCrashCoverage)
-            baselineBlocks = Math.Max(0, currentBlocks - blocks.Count(b => b.Kind is "novel" or "crash"));
-        if (baselineBlocks >= currentBlocks && currentBlocks > 0)
-            baselineBlocks = Math.Max(0, currentBlocks - Math.Min(12, currentBlocks / 4 + 1));
-        var diff = currentBlocks - baselineBlocks;
+        // Path comparison: only real BB edges. Without coverage backend, Diff is N/A (not fake +1).
+        var hasBbEdges = corpus.CoverageEdges > 0 || (usedCrashCoverage && crashEdges.Count > 0);
+        int currentBlocks;
+        int baselineBlocks;
+        int diff;
+        if (!hasBbEdges)
+        {
+            currentBlocks = 0;
+            baselineBlocks = 0;
+            diff = 0;
+        }
+        else
+        {
+            currentBlocks = usedCrashCoverage
+                ? crashEdges.Count
+                : corpus.CoverageEdges;
+            var hotNovel = Math.Max(0, (int)(run?.HotEdges?.Sum(h => h.HitCount > 0 ? 1 : 0) ?? 0));
+            baselineBlocks = usedCrashCoverage
+                ? Math.Max(0, currentBlocks - blocks.Count(b => b.Kind is "novel"))
+                : Math.Max(0, currentBlocks - hotNovel);
+            if (baselineBlocks > currentBlocks)
+                baselineBlocks = currentBlocks;
+            diff = currentBlocks - baselineBlocks;
+        }
 
         var firstDiv = blocks.FirstOrDefault(b => b.OnCrashPath && b.Kind is "novel" or "crash")?.Label
             ?? blocks.FirstOrDefault(b => b.Kind is "novel" or "crash")?.Label
@@ -424,7 +438,7 @@ public static class StalkDashboard
 
         if (hasCrash)
         {
-            var fault = string.IsNullOrWhiteSpace(crashAddr) ? "0x????????" : crashAddr;
+            var fault = FormatCrashNodeAddress(latestDetail, crashAddr, exception);
             var triage = latestDetail?.Triage;
             var analysis = latestDetail?.Analysis;
             var regs = analysis?.Registers;
@@ -474,7 +488,7 @@ public static class StalkDashboard
         }
 
         if (hasCrash && path.Count > 0)
-            edges.Add(new StalkEdgeDto(Sanitize(path[^1]), "__crash_site", "💥 fault", true, true));
+            edges.Add(new StalkEdgeDto(Sanitize(path[^1]), "__crash_site", "fault", true, true));
 
         // Forks: session-graph edges and orphan commands hanging off ENTRY.
         foreach (var e in graph.Edges)
@@ -570,7 +584,7 @@ public static class StalkDashboard
             {
                 var c = recent[ci];
                 var id = $"crash_{c.Id:N}"[..14];
-                var fault = string.IsNullOrWhiteSpace(c.FaultAddress) ? "0x????????" : c.FaultAddress!;
+                var fault = FormatCrashNodeAddress(null, c.FaultAddress, c.ExceptionHint ?? c.TargetExitCode);
                 blocks.Add(new StalkBlockDto(
                     id,
                     ShortCrashId(c.Id),
@@ -599,7 +613,7 @@ public static class StalkDashboard
             }
             else if (latestDetail is not null && recent.All(c => c.Id != latestDetail.Summary.Id))
             {
-                var fault = string.IsNullOrWhiteSpace(crashAddr) ? "0x????????" : crashAddr;
+                var fault = FormatCrashNodeAddress(latestDetail, crashAddr, exception);
                 blocks.Add(new StalkBlockDto(
                     "__crash_site",
                     "CRASH",
@@ -607,11 +621,12 @@ public static class StalkDashboard
                     "crash",
                     false,
                     false,
-                    $"{exception} at {fault}",
+                    exception,
                     blocks.Count,
                     true,
                     Role: "crash",
-                    CrashId: latestDetail.Summary.Id));
+                    CrashId: latestDetail.Summary.Id,
+                    ExceptionHint: exception));
             }
 
             _ = spineTail;
@@ -619,7 +634,7 @@ public static class StalkDashboard
         }
         else if (latestDetail is not null)
         {
-            var fault = string.IsNullOrWhiteSpace(crashAddr) ? "0x????????" : crashAddr;
+            var fault = FormatCrashNodeAddress(latestDetail, crashAddr, exception);
             blocks.Add(new StalkBlockDto(
                 "__crash_site",
                 "CRASH",
@@ -627,9 +642,10 @@ public static class StalkDashboard
                 "crash",
                 false,
                 false,
-                $"{exception} at {fault}",
+                exception,
                 blocks.Count,
-                true));
+                true,
+                ExceptionHint: exception));
         }
 
         var edges = new List<StalkEdgeDto>();
@@ -1057,7 +1073,7 @@ public static class StalkDashboard
             ?? detail.Sidecar?.ExceptionHint
             ?? detail.Summary.TargetExitCode
             ?? "CRASH";
-        var crashAddr = detail.Analysis?.FaultAddress ?? "0x????????";
+        var crashAddr = FormatCrashNodeAddress(detail, detail.Analysis?.FaultAddress, exception);
         var blocks = new List<StalkBlockDto>
         {
             new(
@@ -1145,13 +1161,11 @@ public static class StalkDashboard
         var (novelEdge, _, _) = CrashStalker.FindNovelFocus(crashEdges, baseline.ToList());
         // Compact spine: entry → sample of path (prefer novel) → crash site
         var sample = SampleCrashPathEdges(crashEdges, novelEdge, maxBlocks: 12);
-        var crashAddr = detail.Analysis?.FaultAddress
-            ?? detail.Sidecar?.ExceptionHint
-            ?? "0x????????";
         var exception = detail.Analysis?.ExceptionHint
             ?? detail.Sidecar?.ExceptionHint
             ?? detail.Summary.TargetExitCode
             ?? "CRASH";
+        var crashAddr = FormatCrashNodeAddress(detail, detail.Analysis?.FaultAddress, exception);
         var module = detail.Analysis?.FaultModule
             ?? Path.GetFileName(detail.Summary.Project);
 
@@ -1202,7 +1216,7 @@ public static class StalkDashboard
         blocks.Add(new StalkBlockDto(
             "__crash_site",
             "CRASH",
-            string.IsNullOrWhiteSpace(crashAddr) ? "0x????????" : crashAddr,
+            crashAddr,
             "crash",
             false,
             false,
@@ -1583,6 +1597,66 @@ public static class StalkDashboard
     }
 
     private static string ShortCrashId(Guid id) => $"CRASH_{id.ToString("N")[..6].ToUpperInvariant()}";
+
+    /// <summary>
+    /// Crash-node address label. Never invent a fake PC (<c>0x????????</c>).
+    /// Prefer real fault address; otherwise clearly mark PC unknown and show exception/code.
+    /// </summary>
+    internal static string FormatCrashNodeAddress(
+        CrashDetailDto? detail,
+        string? faultAddress,
+        string? exceptionOrCode)
+    {
+        var addr = FirstRealAddress(
+            faultAddress,
+            detail?.Analysis?.FaultAddress,
+            detail?.DebuggerObservation?.FaultAddress,
+            detail?.Summary.FaultAddress);
+        if (addr is not null)
+            return addr;
+
+        var hint = FirstNonEmpty(
+            exceptionOrCode,
+            detail?.Analysis?.ExceptionHint,
+            detail?.Sidecar?.ExceptionHint,
+            detail?.Summary.ExceptionHint,
+            detail?.Summary.TargetExitCode);
+        return string.IsNullOrWhiteSpace(hint)
+            ? "PC unknown"
+            : $"PC unknown ({hint})";
+    }
+
+    private static string? FirstRealAddress(params string?[] candidates)
+    {
+        foreach (var c in candidates)
+        {
+            if (string.IsNullOrWhiteSpace(c))
+                continue;
+            var t = c.Trim();
+            if (t.Contains('?', StringComparison.Ordinal))
+                continue;
+            if (t.Equals("PC unknown", StringComparison.OrdinalIgnoreCase))
+                continue;
+            // Exception hints are not addresses.
+            if (t.Contains("ACCESS", StringComparison.OrdinalIgnoreCase)
+                || t.Contains("VIOLATION", StringComparison.OrdinalIgnoreCase)
+                || t.Contains("SIGSEGV", StringComparison.OrdinalIgnoreCase)
+                || t.Contains(' ', StringComparison.Ordinal))
+                continue;
+            return t;
+        }
+        return null;
+    }
+
+    private static string? FirstNonEmpty(params string?[] candidates)
+    {
+        foreach (var c in candidates)
+        {
+            if (!string.IsNullOrWhiteSpace(c))
+                return c.Trim();
+        }
+        return null;
+    }
 
     private static string ShortRunId(string runId)
     {

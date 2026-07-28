@@ -272,19 +272,22 @@ public static class CounterfactualEngine
         var probes = new List<CounterfactualProbeDto>();
         // Keep SweepRange aligned with Evaluate() / HypothesisEngine default (±4).
         const int range = 4;
+        var maxOff = Math.Max(0, payload.Length - 1);
 
-        // SweepOffset indices cover center ± range (HypothesisEngine layout).
+        // SweepOffset indices cover center ± range. OffsetBytes = actual mutated byte
+        // (not the center) so UI Off columns vary; Evaluate still applies via SweepIndex.
         var sweepCount = range * 2 + 1;
         for (var i = 0; i < sweepCount; i++)
         {
             var delta = i - range;
+            var actual = Math.Clamp(offset + delta, 0, maxOff);
             probes.Add(new CounterfactualProbeDto(
                 $"cf-sweep-{i}",
                 HypothesisExperimentKind.SweepOffset,
                 i,
-                offset,
+                actual,
                 ByteDelta: 1,
-                $"Bit-flip sweep index {i} (center{delta:+0;-0}) via HypothesisEngine.SweepOffset",
+                $"Bit-flip at +{actual} (center{delta:+#;-#;0}, sweep #{i})",
                 CounterfactualOutcome.Pending));
         }
 

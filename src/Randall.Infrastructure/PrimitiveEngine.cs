@@ -85,11 +85,17 @@ public static class PrimitiveEngine
         merged = mergedAfterNullGate;
 
         var collectedFacts = CollectFacts(facts, influence, rootCause, merged);
+        // Court lite: sensor EvidenceFacts only (not synthetic primitive.*); demote INVALID / no-cite.
+        var court = EvidenceCourt.Evaluate(merged, collectedFacts, skeptic);
+        merged = EvidenceCourt.ApplyDemotions(merged, court);
+        if (court.Rulings.Any(r => r.Verdict == EvidenceCourtVerdict.Rejected))
+            court = EvidenceCourt.Evaluate(merged, collectedFacts, skeptic);
+
         var confidence = RollupConfidence(merged);
         var (maturity, rationale) = ComputeMaturity(
             merged, rootCause, influence, triage, debugger, collectedFacts, skeptic, nullWriteCapped,
-            corruptionChain);
-        var summary = BuildSummary(maturity, merged, confidence);
+            corruptionChain, court);
+        var summary = BuildSummary(maturity, merged, confidence, court);
 
         return new CrashPrimitiveReportDto(
             merged.Count > 0 || maturity > ResearchMaturity.R0,
@@ -106,7 +112,8 @@ public static class PrimitiveEngine
                 .ToList(),
             collectedFacts,
             DateTimeOffset.UtcNow,
-            Engine: RandallBuildInfo.Current);
+            Engine: RandallBuildInfo.Current,
+            Court: court);
     }
 
     public static CrashPrimitiveReportDto PersistForCrash(
@@ -262,7 +269,8 @@ public static class PrimitiveEngine
         IReadOnlyList<EvidenceFact> facts,
         SkepticReportDto? skeptic = null,
         bool nullWriteCapped = false,
-        CrashCorruptionChainDto? corruptionChain = null)
+        CrashCorruptionChainDto? corruptionChain = null,
+        EvidenceCourtReportDto? court = null)
     {
         var confirmed = primitives.Count(p => p.State == PrimitiveState.Confirmed);
         var observed = primitives.Count(p => p.State == PrimitiveState.Observed);
@@ -312,13 +320,20 @@ public static class PrimitiveEngine
             rationale = "crash discovered; no analysis yet";
         }
 
-        // Mandatory Skeptic gate: R5+ (Observed/Confirmed/package) and Candidate→Confirmed
-        // require Survived + observation + no falsified contradiction. Cap at R4 otherwise.
-        if (level >= ResearchMaturity.R5 && !SkepticEngine.PassesPromotionGate(skeptic))
+        // Evidence Court + Skeptic: R5+ requires Survived + ≥1 EvidenceFact. Cap at R4 otherwise.
+        if (level >= ResearchMaturity.R5 && !EvidenceCourt.PassesPromotionGate(skeptic, facts))
+        {
+            var reason = EvidenceCourt.PromotionGateFailureReason(skeptic, facts);
+            return (
+                ResearchMaturity.R4,
+                $"{reason} — held at R4 (Candidate) pending Court/Skeptic");
+        }
+
+        if (court?.Overall == EvidenceCourtVerdict.Rejected && level >= ResearchMaturity.R5)
         {
             return (
                 ResearchMaturity.R4,
-                $"{SkepticEngine.PromotionGateFailureReason(skeptic)} — held at R4 (Candidate) pending Skeptic survival");
+                $"{court.SummaryLine} — {court.Detail ?? "demoted"} — held at R4");
         }
 
         if (nullWriteCapped)
@@ -530,13 +545,16 @@ public static class PrimitiveEngine
     private static string BuildSummary(
         ResearchMaturity maturity,
         IReadOnlyList<PrimitiveAssessmentDto> primitives,
-        string confidence)
+        string confidence,
+        EvidenceCourtReportDto? court = null)
     {
         var sb = new StringBuilder();
         sb.Append($"[{maturity} · {MaturityLabel(maturity)}] ");
         if (primitives.Count == 0)
         {
             sb.Append("no capability primitives assessed");
+            if (court is not null)
+                sb.Append($" · {court.SummaryLine}");
             return sb.ToString();
         }
 
@@ -547,6 +565,8 @@ public static class PrimitiveEngine
         sb.Append($"{KindLabel(top.Kind)} ({top.State}) [{confidence}]");
         if (primitives.Count > 1)
             sb.Append($" · +{primitives.Count - 1} more");
+        if (court is not null)
+            sb.Append($" · {court.SummaryLine}");
         return sb.ToString();
     }
 

@@ -5966,6 +5966,23 @@ html:not([data-scream-anim="on"]) .scream-canister-liquid {
 .exploit-honesty-col.col-evidence .label { color: var(--ok, #2f9e44); }
 .exploit-honesty-col.col-interpretation .label { color: #c9a227; }
 .exploit-honesty-col.col-proven .label { color: #3d8bfd; }
+.exploit-court-line .label { margin-right: 0.35rem; }
+.exploit-stack-state { margin-top: 0.65rem; }
+.exploit-stack-frames {
+  margin: 0.25rem 0 0.5rem 1.1rem;
+  padding: 0;
+  font-size: 0.85rem;
+}
+.exploit-stack-slots { width: 100%; font-size: 0.8rem; border-collapse: collapse; }
+.exploit-stack-slots th, .exploit-stack-slots td {
+  text-align: left;
+  padding: 0.15rem 0.35rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border, #333) 70%, transparent);
+}
+.exploit-stack-slots tr.stack-slot-hot td { color: var(--warn, #c9a227); }
+.evidence-quality-badge { opacity: 0.9; }
+.maturity-canonical-box { margin: 0.5rem 0 0.75rem; }
+.exploit-cf-counts { margin-bottom: 0.35rem; }
 .exploit-cyclic {
   margin: 0.55rem 0 0.35rem;
 }

@@ -1942,18 +1942,13 @@ function renderStalkGraph(blocks, edges) {
     const title = b.label || b.id;
     const addr = b.address || '';
     const detail = b.detail || '';
-    const skull = b.kind === 'crash'
-      ? `<text x="${p.x + nodeW - 18}" y="${p.y + 18}" font-size="14">☠</text>`
-      : '';
-    const step = b.onCrashPath && b.pathIndex >= 0
-      ? `<text class="stalk-step" x="${p.x + 8}" y="${p.y + 14}">${b.pathIndex + 1}</text>`
-      : '';
-    const forkTag = !b.onCrashPath
+    // No skull / step-number bubble alerts — labels only.
+    const forkTag = !b.onCrashPath && b.kind !== 'crash'
       ? `<text class="stalk-fork-tag" x="${p.x + nodeW - 8}" y="${p.y + 14}" text-anchor="end">fork</text>`
       : '';
     return `<g class="stalk-node-g" data-id="${escapeXml(b.id)}">
       <rect class="stalk-node ${b.kind}" x="${p.x}" y="${p.y}" width="${nodeW}" height="${nodeH}" rx="8" />
-      ${step}${skull}${forkTag}
+      ${forkTag}
       <text class="stalk-node-label" x="${p.x + nodeW / 2}" y="${p.y + 30}">${escapeXml(title)}</text>
       <text class="stalk-node-sub" x="${p.x + nodeW / 2}" y="${p.y + 46}">${escapeXml(addr)}</text>
       <text class="stalk-node-detail" x="${p.x + nodeW / 2}" y="${p.y + 64}">${escapeXml(detail.length > 30 ? `${detail.slice(0, 30)}…` : detail)}</text>
@@ -2541,10 +2536,22 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
   renderStalkGraph(data.blocks, data.edges);
   updateStalkGraphBanner(data);
 
-  document.querySelector('#stalk-compare tbody').innerHTML = `
-    <tr><td>Blocks hit</td><td>${data.baselineBlocks}</td><td>${data.currentBlocks}</td><td class="diff">+${data.diffBlocks}</td></tr>
-    <tr><td>Edge coverage</td><td>${Math.max(0, data.coverageEdges - data.diffBlocks)}</td><td>${data.coverageEdges}</td><td class="diff">+${data.diffBlocks}</td></tr>
-    <tr><td>Crashes</td><td>0</td><td>${data.crashes}</td><td class="diff">+${data.crashes}</td></tr>`;
+  {
+    const edges = Number(data.coverageEdges) || 0;
+    const base = Number(data.baselineBlocks) || 0;
+    const cur = Number(data.currentBlocks) || 0;
+    const diff = Number(data.diffBlocks) || 0;
+    const noBb = edges <= 0 && cur <= 0;
+    const fmtDiff = (n) => (n > 0 ? `+${n}` : String(n));
+    const edgeBase = noBb ? 'N/A' : String(Math.max(0, edges - Math.max(0, diff)));
+    const edgeCur = noBb ? 'N/A' : String(edges);
+    const edgeDiff = noBb ? 'N/A' : fmtDiff(diff);
+    const blockDiff = noBb ? 'N/A' : fmtDiff(cur - base);
+    document.querySelector('#stalk-compare tbody').innerHTML = `
+    <tr><td>Blocks hit</td><td>${noBb ? 'N/A' : base}</td><td>${noBb ? 'N/A' : cur}</td><td class="diff">${blockDiff}</td></tr>
+    <tr><td>Edge coverage</td><td>${edgeBase}</td><td>${edgeCur}</td><td class="diff">${edgeDiff}</td></tr>
+    <tr><td>Crashes</td><td>0</td><td>${data.crashes ?? 0}</td><td class="diff">${fmtDiff(Number(data.crashes) || 0)}</td></tr>`;
+  }
 
   document.getElementById('stalk-divergence').textContent = data.firstDivergence || '—';
   document.getElementById('stalk-notes').innerHTML = (data.notes || []).map((n) => `<li>${n}</li>`).join('');
@@ -3354,6 +3361,19 @@ function faultKindLabel(kind) {
   return names[kind] || String(kind);
 }
 
+/** FaultSignalSource — never show raw enum ordinals (e.g. CrashTriage=9). */
+function faultSourceLabel(source) {
+  if (source == null || source === '') return '';
+  if (typeof source === 'string' && !/^\d+$/.test(source)) return source;
+  const names = {
+    0: 'Unknown', 1: 'ExitCode', 2: 'MinidumpAnalysis', 3: 'CdbAnalyze', 4: 'LinuxCore',
+    5: 'PageHeap', 6: 'SanitizerLog', 7: 'OracleRuntime', 8: 'RppPlugin', 9: 'CrashTriage',
+    10: 'DebuggerInvestigation',
+  };
+  const n = typeof source === 'number' ? source : Number(source);
+  return names[n] || '';
+}
+
 function formatRootCauseCategory(category) {
   if (category == null || category === '') return 'Unknown';
   const s = String(category);
@@ -3487,17 +3507,20 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
       </div>`
     : '';
 
+  const cfRepeat = write?.repeatability || '';
   const testRows = tests.length
-    ? `<table class="exploit-control-tests"><thead><tr>
-        <th>Input</th><th>Reg/EA</th><th>Fault address</th><th>Result</th>
+    ? `${cfRepeat ? `<p class="hint exploit-cf-counts">${escapeAttr(cfRepeat)}</p>` : ''}
+      <table class="exploit-control-tests"><thead><tr>
+        <th>Off</th><th>Kind</th><th>Outcome</th><th>Honesty</th><th>Detail</th>
       </tr></thead><tbody>
       ${tests.map((t) => `<tr>
-        <td>${escapeAttr(t.input || t.description || '—')}${t.description && t.result === 'planned' ? `<div class="hint-inline">${escapeAttr(t.description)}</div>` : ''}</td>
-        <td><code>${escapeAttr(t.target || '—')}</code></td>
-        <td><code>${escapeAttr(t.faultAddress || '—')}</code></td>
-        <td><span class="ctrl-result">${escapeAttr(t.result || t.outcome || '—')}</span>
-          <span class="hint-inline ${honestyCls(t.honesty)}">${escapeAttr(t.honesty || '')}</span></td>
-      </tr>`).join('')}</tbody></table>`
+        <td><code>+${t.offsetBytes != null ? t.offsetBytes : '—'}</code></td>
+        <td><code>${escapeAttr(t.kind || t.input || '—')}</code></td>
+        <td><span class="ctrl-result">${escapeAttr(t.outcome || t.result || '—')}</span></td>
+        <td><span class="hint-inline ${honestyCls(t.honesty)}">${escapeAttr(t.honesty || '')}</span></td>
+        <td>${escapeAttr(t.description || t.input || '—')}</td>
+      </tr>`).join('')}</tbody></table>
+      <p class="hint">Outcome = Crash / No crash / … · Honesty = Observed vs Unverified (separate).</p>`
     : '<p class="hint">No counterfactual control tests yet — run live probes or wait for plan / skeptic next experiment.</p>';
 
   const cyclic = panel.cyclicAnalysis;
@@ -3513,6 +3536,35 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
         ${cyclic.asciiMap ? `<pre class="exploit-cyclic-map">${escapeAttr(cyclic.asciiMap)}</pre>` : ''}
         <p class="hint">Offset matches are <strong>Evidence</strong> (bytes observed). “You control X” stays <strong>Interpretation</strong> until a counterfactual delta lands in Proven.</p>
       </div>`
+    : '';
+
+  const stack = panel.stackState;
+  const stackBlock = stack
+    ? `<div class="exploit-stack-state">
+        <p class="label">Stack state <span class="hint-inline">${escapeAttr(stack.reconstructionKind || 'Static')} reconstruction</span></p>
+        <p class="hint"><code>${escapeAttr(stack.summaryLine || 'STACK STATE')}</code></p>
+        ${stack.ok
+          ? `${stack.rspHex ? `<p class="hint">RSP <code>${escapeAttr(stack.rspHex)}</code></p>` : ''}
+            ${(stack.topFrames || []).length
+              ? `<ol class="exploit-stack-frames">${stack.topFrames.slice(0, 6).map((f) =>
+                  `<li><code>${escapeAttr(f.module || '?')}!${escapeAttr(f.symbol || f.address || '?')}${escapeAttr(f.offset || '')}</code></li>`
+                ).join('')}</ol>`
+              : ''}
+            ${(stack.slots || []).length
+              ? `<table class="exploit-stack-slots"><thead><tr><th>Slot</th><th>Value</th><th>Kind</th></tr></thead><tbody>
+                ${stack.slots.slice(0, 12).map((s) => `<tr class="${s.highlighted ? 'stack-slot-hot' : ''}">
+                  <td><code>${escapeAttr(s.label)}</code></td>
+                  <td><code>${escapeAttr(s.valueHex || '—')}</code></td>
+                  <td>${escapeAttr(s.kind || '')}${s.note ? ` <span class="hint-inline">${escapeAttr(s.note)}</span>` : ''}${s.cyclicOffset != null ? ` <span class="hint-inline">cyclic@${s.cyclicOffset}</span>` : ''}</td>
+                </tr>`).join('')}</tbody></table>`
+              : '<p class="hint">No MemoryNearRsp slots.</p>'}`
+          : `<p class="empty">${escapeAttr(stack.emptyReason || 'No stack data')}</p>`}
+      </div>`
+    : '';
+
+  const court = panel.court;
+  const courtLine = court?.summaryLine
+    ? `<p class="hint exploit-court-line" title="${escapeAttr(court.detail || '')}"><span class="label">Court</span> ${escapeAttr(court.summaryLine.replace(/^Court:\s*/i, ''))}</p>`
     : '';
 
   const listCol = (title, items, cls) => {
@@ -3534,6 +3586,7 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
   return `<div class="triage-box exploit-research-box" id="exploit-research-panel">
     <h4>Exploit Research <span class="hint-inline">5 questions · research-only</span></h4>
     <p class="hint">${escapeAttr(panel.summary || '')}</p>
+    ${courtLine}
     ${honestySplit}
     <div class="exploit-q">
       <h5>1–2. Faulting instruction · EA breakdown · written value</h5>
@@ -3544,12 +3597,13 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
       ${matrixRows}
       ${writeBlock}
       ${cyclicBlock}
+      ${stackBlock}
     </div>
     <div class="exploit-q">
       <h5>4. Control tests <span class="hint-inline">counterfactual</span></h5>
       ${testRows}
     </div>
-    <div class="exploit-q">
+    <div class="exploit-q exploit-next-experiment">
       <h5>5. Next experiment <span class="hint-inline">prove / disprove</span></h5>
       <p>${escapeAttr(panel.nextExperiment || '—')}</p>
       ${panel.primitiveHint ? `<p class="hint"><span class="label">${/R4|Candidate/i.test(panel.primitiveHint) ? 'Candidate' : 'Capability'}</span> ${escapeAttr(panel.primitiveHint)}</p>` : ''}
@@ -3874,14 +3928,32 @@ function renderCrashDetail(detail, title) {
     const intelBits = intel
       ? ` · novelty ${intel.novelty}${intel.oracleScore?.total != null ? ` · oracle ${intel.oracleScore.total}` : ''}${maturityBit}`
       : '';
+    const exactHits = Number(intel?.seenCount) > 0 ? intel.seenCount : 1;
     metaEl.textContent = cluster
-      ? `score ${intelScore}${intelBits}${evoWarm ? ` · ${evo?.momentumLabel || intel?.screamMomentumLabel || 'warming'} ${evo?.momentumScore ?? intel?.screamMomentum}` : ''} · ${clusterN}× in cluster`
-      : `score ${intelScore}${intelBits}${evoWarm ? ` · ${evo?.momentumLabel || intel?.screamMomentumLabel || 'warming'}` : ''}`;
+      ? `priority ${intelScore}${intelBits}${evoWarm ? ` · ${evo?.momentumLabel || intel?.screamMomentumLabel || 'warming'} ${evo?.momentumScore ?? intel?.screamMomentum}` : ''} · exact ${exactHits} · triage family ${clusterN}`
+      : `priority ${intelScore}${intelBits}${evoWarm ? ` · ${evo?.momentumLabel || intel?.screamMomentumLabel || 'warming'}` : ''}`;
   }
 
   const maturityScaleHtml = !hidePrimitives
-    ? renderResearchMaturityScale(intel || { researchMaturity: null })
+    ? `<div class="triage-box maturity-canonical-box">
+        <h4>Research maturity</h4>
+        ${renderResearchMaturityScale(intel || { researchMaturity: null })}
+      </div>`
     : '';
+
+  const srcLabel = faultSourceLabel(primaryFault?.source);
+  const evidenceQuality = (() => {
+    const facts = evidenceFacts.length;
+    const hasDbg = !!(dbg?.ok);
+    const hasCf = !!(detail.exploitResearch?.controlTests || []).some((t) =>
+      /Crash|No crash|Observed/i.test(String(t.outcome || t.honesty || '')));
+    let q = 20;
+    if (hasDbg) q += 35;
+    if (facts > 0) q += Math.min(25, facts * 2);
+    if (hasCf) q += 15;
+    if (intel?.researchMaturity && /R[5-7]/i.test(String(intel.researchMaturity))) q += 5;
+    return Math.min(100, q);
+  })();
 
   box.innerHTML = `
     <div class="crash-why${intelHot ? ' scream-hot' : ''}${deepScreamCandidate ? ' deep-scream' : ''}">
@@ -3890,15 +3962,15 @@ function renderCrashDetail(detail, title) {
         <h3>${escapeAttr(title)}</h3>
         ${deepScreamCandidate ? '<span class="deep-scream-badge" title="Deep Scream — TTD operator path eligible">⏪ Deep Scream</span>' : ''}
         ${silentScream ? '<span class="silent-scream-badge" title="Oracle violation — no memory crash">🔇 Silent scream</span>' : ''}
-        ${researchMaturityBadgeHtml(intel?.researchMaturity, intel?.researchMaturityLabel)}
-        <span class="crash-score-badge" title="Scream intelligence score">★ ${intelScore}</span>
+        <span class="crash-score-badge" title="Research priority (triage ranking) — not evidence quality">Priority ${intelScore}</span>
+        <span class="crash-score-badge evidence-quality-badge" title="Evidence quality / completeness">Evidence ${evidenceQuality}</span>
       </div>
       <p class="crash-why-line">${silentScream ? 'Why it screamed (oracle)' : 'Why it crashed'}</p>
       ${maturityScaleHtml}
       ${primaryFault ? `<p class="crash-primary-fault severity-${(primaryFault.severity || sev).toLowerCase()}">
         <span class="label">Primary fault</span>
         <code>${escapeAttr(faultKindLabel(primaryFault.kind))}</code>
-        <span class="hint-inline">${escapeAttr(primaryFault.source || '')}</span>
+        ${srcLabel ? `<span class="hint-inline">via ${escapeAttr(srcLabel)}</span>` : ''}
         · ${escapeAttr(primaryFault.summary || primaryFault.detail || '')}
         ${primaryFault.confidence != null ? `<span class="hint-inline">(${(primaryFault.confidence * 100).toFixed(0)}%)</span>` : ''}
       </p>` : ''}
@@ -3979,8 +4051,13 @@ function renderCrashDetail(detail, title) {
         <p class="root-cause-edu">${escapeAttr(intel?.rootCauseSummary || rootCause.educationalSummary || '')}</p>
         ${rootCause.candidate ? `<dl class="root-cause-dl">
           <dt>Category</dt><dd><code>${escapeAttr(formatRootCauseCategory(rootCause.candidate.category || intel?.rootCauseCategory))}</code></dd>
-          ${rootCause.candidate.faultingFunction ? `<dt>Faulting fn</dt><dd><code>${escapeAttr(rootCause.candidate.faultingFunction)}</code></dd>` : ''}
-          ${rootCause.candidate.suspectedSourceFunction ? `<dt>Source fn</dt><dd><code>${escapeAttr(rootCause.candidate.suspectedSourceFunction)}</code></dd>` : ''}
+          ${rootCause.candidate.faultingFunction ? `<dt>Faulting fn / module</dt><dd><code>${escapeAttr(rootCause.candidate.faultingFunction)}</code>${dbg?.faultingModule && !String(rootCause.candidate.faultingFunction).includes('!') ? ` · <code>${escapeAttr(dbg.faultingModule)}</code>` : ''}</dd>` : ''}
+          ${rootCause.candidate.suspectedSourceFunction && !/^(havoc|bitflip|splice|expand|interesting|dictionary|cyclic|pattern|truncate|insert)$/i.test(String(rootCause.candidate.suspectedSourceFunction).trim())
+            ? `<dt>Suspected source fn</dt><dd><code>${escapeAttr(rootCause.candidate.suspectedSourceFunction)}</code></dd>`
+            : ''}
+          ${(chain?.suspectedMutator || backwardTrace?.suspectedMutator || detail.summary?.mutator)
+            ? `<dt>Introducing mutator</dt><dd><code>${escapeAttr(chain?.suspectedMutator || backwardTrace?.suspectedMutator || detail.summary.mutator)}</code>${chain?.suspectedMutatorStep != null ? ` <span class="hint-inline">(step ${chain.suspectedMutatorStep + 1})</span>` : ''}</dd>`
+            : ''}
           ${rootCause.candidate.suspectedSink ? `<dt>Sink</dt><dd><code>${escapeAttr(rootCause.candidate.suspectedSink)}</code></dd>` : ''}
           ${rootCause.candidate.inputRegion ? `<dt>Input region</dt><dd><code>${escapeAttr(rootCause.candidate.inputRegion)}</code></dd>` : ''}
           ${rootCause.candidate.allocationSite ? `<dt>Allocation</dt><dd><code>${escapeAttr(rootCause.candidate.allocationSite)}</code></dd>` : ''}
@@ -3995,10 +4072,9 @@ function renderCrashDetail(detail, title) {
         ${academyEduBlurb('rootCause')}
         <p class="root-cause-edu">${escapeAttr(intel.rootCauseSummary)}</p>
       </div>` : '')}
-      ${!hidePrimitives && (intel?.primitiveSummary || intel?.researchMaturity) ? `<div class="triage-box primitives-box">
-        <h4>Primitives <span class="hint-inline">capabilities</span>${intel.researchMaturity ? ` ${researchMaturityBadgeHtml(intel.researchMaturity, intel.researchMaturityLabel)}` : ''}</h4>
-        <p class="hint">${escapeAttr(intel.primitiveSummary || intel.researchMaturityLabel || '')}${intel.primitiveCount ? ` · ${intel.primitiveCount} capability(ies)` : ''}</p>
-        ${academyResearchMode() && intel.researchMaturityRationale ? `<p class="hint"><span class="label">Maturity</span> ${escapeAttr(intel.researchMaturityRationale)}</p>` : ''}
+      ${!hidePrimitives && (intel?.primitiveSummary || intel?.primitiveCount) ? `<div class="triage-box primitives-box">
+        <h4>Primitives <span class="hint-inline">capabilities</span>${intel?.court?.summaryLine ? ` <span class="hint-inline">${escapeAttr(intel.court.summaryLine)}</span>` : ''}</h4>
+        <p class="hint">${escapeAttr(intel.primitiveSummary || '')}${intel.primitiveCount ? ` · ${intel.primitiveCount} capability(ies)` : ''}</p>
       </div>` : ''}
       ${!hidePlan && intel?.topHypothesisStatement ? `<div class="triage-box research-plan-box">
         <h4>Research plan / claims <span class="hint-inline">scaffolding</span></h4>
@@ -4052,21 +4128,45 @@ function renderCrashDetail(detail, title) {
       ${intel ? `<div class="scream-intel-box${intelHot ? ' scream-hot' : ''}">
         <h4>Scream intelligence</h4>
         <dl class="scream-intel-dl">
-          ${primaryFault ? `<dt>Primary fault</dt><dd><code>${escapeAttr(faultKindLabel(primaryFault.kind))}</code> · ${escapeAttr(primaryFault.summary || primaryFault.detail || '')}</dd>` : ''}
+          ${primaryFault ? `<dt>Primary fault</dt><dd><code>${escapeAttr(faultKindLabel(primaryFault.kind))}</code>${srcLabel ? ` <span class="hint-inline">via ${escapeAttr(srcLabel)}</span>` : ''} · ${escapeAttr(primaryFault.summary || primaryFault.detail || '')}</dd>` : ''}
           <dt>Severity</dt><dd><span class="severity-${intel.severity}">${escapeAttr(intel.severity)}</span></dd>
           <dt>Novelty</dt><dd><span class="scream-intel-meter">${intel.novelty}</span>/100</dd>
-          <dt>Cluster</dt><dd><code title="${escapeAttr(intel.clusterKey || '')}">${intel.seenCount}×</code>${intel.clusterKey ? ` · <code>${escapeAttr(intel.clusterKey.slice(0, 48))}${intel.clusterKey.length > 48 ? '…' : ''}</code>` : ''}</dd>
+          <dt>Exact crash occurrences</dt><dd><code>${intel.seenCount || 1}</code></dd>
+          <dt>Triage family occurrences</dt><dd><code title="${escapeAttr(intel.clusterKey || '')}">${clusterN}</code>${intel.clusterKey ? ` · <code>${escapeAttr(intel.clusterKey.slice(0, 48))}${intel.clusterKey.length > 48 ? '…' : ''}</code>` : ''}</dd>
           ${intel.coverageDelta != null ? `<dt>Coverage Δ</dt><dd>+${intel.coverageDelta} edges</dd>` : ''}
-          ${intel.function ? `<dt>Function</dt><dd><code>${escapeAttr(intel.function)}</code></dd>` : ''}
+          ${intel.function ? `<dt>Faulting function</dt><dd><code>${escapeAttr(intel.function)}</code></dd>` : ''}
           ${!hideOffset && intel.offset != null ? `<dt>Offset</dt><dd><code>${intel.offset}</code> bytes in input</dd>` : ''}
           ${intel.corruptionChainSummary ? `<dt>Corruption chain</dt><dd><span class="severity-${(intel.corruptionConfidence || 'low').toLowerCase()}">${escapeAttr(intel.corruptionConfidence || '')}</span> — ${escapeAttr(intel.corruptionChainSummary)}</dd>` : ''}
           ${!hideRoot && intel.rootCauseSummary ? `<dt>Root cause</dt><dd><code>${escapeAttr(formatRootCauseCategory(intel.rootCauseCategory))}</code> <span class="hint-inline">[${escapeAttr(intel.rootCauseConfidence || '')}]</span> — ${escapeAttr(intel.rootCauseSummary)}</dd>` : ''}
-          ${!hidePrimitives && intel.researchMaturity ? `<dt>Maturity</dt><dd>${researchMaturityBadgeHtml(intel.researchMaturity, intel.researchMaturityLabel)} <code>${escapeAttr(intel.researchMaturity)}</code> ${escapeAttr(intel.researchMaturityLabel || '')}${intel.researchMaturityRationale && academyResearchMode() ? ` — <span class="hint-inline">${escapeAttr(intel.researchMaturityRationale)}</span>` : ''}</dd>` : ''}
-          ${intel.oracleScore?.total != null ? `<dt>Oracle</dt><dd><span class="scream-intel-oracle">${intel.oracleScore.total}</span>${intel.oracleScore.summary ? ` — ${escapeAttr(intel.oracleScore.summary)}` : ''}</dd>` : ''}
-          ${(evo?.ok || intel?.screamMomentum > 0) ? `<dt>Evolution</dt><dd><span class="severity-${evoWarm ? 'high' : 'medium'}">${escapeAttr(evo?.momentumLabel || intel?.screamMomentumLabel || 'stable')}</span> momentum <strong>${evo?.momentumScore ?? intel?.screamMomentum ?? 0}</strong>${(evo?.generation ?? intel?.screamGeneration) > 0 ? ` · gen ${evo?.generation ?? intel?.screamGeneration}` : ''}${evo?.familySize > 1 ? ` · family×${evo.familySize}` : ''}</dd>` : ''}
+          ${(() => {
+            const terms = intel.oracleScore?.terms || [];
+            const seen = new Set();
+            const uniq = [];
+            for (const t of terms) {
+              const key = `${t.label || ''}|${t.points ?? ''}`;
+              if (seen.has(key)) continue;
+              // Collapse duplicate runtime_signal aliases
+              if (/runtime_signal/i.test(String(t.label || '')) && [...seen].some((k) => /runtime_signal/i.test(k)))
+                continue;
+              seen.add(key);
+              uniq.push(t);
+            }
+            if (intel.oracleScore?.total == null) return '';
+            const termBits = uniq.length
+              ? ` — ${uniq.slice(0, 6).map((t) => `${t.points >= 0 ? '+' : ''}${t.points} ${t.label}`).join(', ')}`
+              : (intel.oracleScore.summary ? ` — ${escapeAttr(intel.oracleScore.summary)}` : '');
+            return `<dt>Oracle</dt><dd><span class="scream-intel-oracle">${intel.oracleScore.total}</span>${termBits}</dd>`;
+          })()}
+          ${(evo?.ok || intel?.screamMomentum > 0) ? `<dt>Evolution</dt><dd><span class="severity-${evoWarm ? 'high' : 'medium'}">${escapeAttr(evo?.momentumLabel || intel?.screamMomentumLabel || 'stable')}</span> momentum <strong>${evo?.momentumScore ?? intel?.screamMomentum ?? 0}</strong>${(evo?.generation ?? intel?.screamGeneration) > 0 ? ` · gen ${evo?.generation ?? intel?.screamGeneration}` : ''}${evo?.familySize > 1 ? ` · family ${evo.familySize}` : ''}</dd>` : ''}
           ${evo?.progressionStep ? `<dt>Progression</dt><dd><code>${escapeAttr(evo.progressionStep)}</code>${evo.progressionDelta > 0 ? ` <span class="hint-inline">↑${evo.progressionDelta} vs ancestor</span>` : ''}</dd>` : ''}
           ${evo?.summary ? `<dt>Evolution note</dt><dd class="hint">${escapeAttr(evo.summary)}</dd>` : (intel?.screamEvolutionSummary ? `<dt>Evolution note</dt><dd class="hint">${escapeAttr(intel.screamEvolutionSummary)}</dd>` : '')}
-          <dt>Repro</dt><dd>${intel.reproducible ? 'ready' : 'needs sidecar/input'}</dd>
+          <dt>Repro</dt><dd>${(() => {
+            const hasInput = !!(detail.summary?.inputPath || detail.inputLength > 0 || intel.reproducible);
+            const hasDump = !!(detail.summary?.miniDumpPath || a?.dumpPath || dbg?.dumpPath);
+            if (hasInput && hasDump) return 'VERIFIED (input + dump)';
+            if (hasInput) return 'AVAILABLE (input; dump not verified)';
+            return 'unavailable';
+          })()}</dd>
           <dt>Minimized</dt><dd>${intel.minimized ? 'yes (shortest in cluster)' : 'no'}${intel.deepScreamMinimizedBonus ? ' · Deep Scream bonus' : ''}</dd>
           ${intel.deepScreamCandidate ? `<dt>Deep Scream</dt><dd><span class="deep-scream-badge inline">⏪ candidate</span>${intel.deepScreamSummary ? ` — ${escapeAttr(intel.deepScreamSummary)}` : ''}</dd>` : ''}
           <dt>First seen</dt><dd>${new Date(intel.firstSeen).toLocaleString()}</dd>
@@ -4831,7 +4931,7 @@ function renderCrashEventList(opts = {}) {
   const shown = list.slice(0, CRASH_LIST_CAP);
   const more = list.length - shown.length;
   el.innerHTML = `<table class="crash-event-table"><thead><tr>
-    <th>#</th><th>When</th><th>Sev</th><th>R</th><th>Class</th><th>×</th><th>Mutator</th><th>Fault</th><th>★</th>
+    <th>#</th><th>When</th><th>Sev</th><th>R</th><th>Class</th><th>Hits</th><th>Mutator</th><th>Fault</th><th>Pri</th>
   </tr></thead><tbody>${shown.map((c, i) => {
     const sel = crashIdsEqual(c.id, crashState.selectedId) ? 'selected' : '';
     const score = scoreCrash(c);
@@ -4849,10 +4949,10 @@ function renderCrashEventList(opts = {}) {
       <td class="severity-${crashSev(c)}">${crashSev(c)}</td>
       <td class="crash-maturity" title="${escapeAttr(c.researchMaturityLabel || c.researchMaturity || 'not assessed')}">${maturityCell}</td>
       <td><code>${escapeAttr(crashClassKey(c))}</code></td>
-      <td class="crash-dup" title="cluster size">${n}</td>
+      <td class="crash-dup" title="Triage family occurrences">${n}</td>
       <td title="${escapeAttr(c.mutator)}"><code>${escapeAttr(shortMutator(c.mutator))}</code></td>
       <td title="${escapeAttr(c.faultAddress || c.exceptionHint || '')}"><code>${escapeAttr(shortFault(c))}</code></td>
-      <td class="crash-score">${score}</td>
+      <td class="crash-score" title="Research priority">${score}</td>
     </tr>`;
   }).join('')}</tbody></table>
   ${more > 0 ? `<p class="hint crash-list-more">${more} more not shown — brush timeline / Unique only / cluster filter to narrow.</p>` : ''}
