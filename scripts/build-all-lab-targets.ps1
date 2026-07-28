@@ -67,7 +67,8 @@ $Optional = @(
     "build-screamcrash.ps1",
     "build-reeldeck.ps1",
     "build-file-text.ps1",
-    "build-file-framed.ps1"
+    "build-file-framed.ps1",
+    "build-png-demo.ps1"
 )
 
 $skippedOptional = @()

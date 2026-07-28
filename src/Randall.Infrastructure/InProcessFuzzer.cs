@@ -272,7 +272,33 @@ public sealed class InProcessSession : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(raw))
             return null;
         var path = ProjectLoader.ResolvePath(yamlPath, raw);
-        return File.Exists(path) ? path : null;
+        return FindExistingHarness(path);
+    }
+
+    /// <summary>
+    /// Profiles are authored with Windows <c>.dll</c>; Linux builds produce <c>.so</c>.
+    /// </summary>
+    internal static string? FindExistingHarness(string? resolvedPath)
+    {
+        if (string.IsNullOrWhiteSpace(resolvedPath))
+            return null;
+        if (File.Exists(resolvedPath))
+            return resolvedPath;
+
+        if (resolvedPath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+        {
+            var so = Path.ChangeExtension(resolvedPath, ".so");
+            if (File.Exists(so))
+                return so;
+        }
+        else if (resolvedPath.EndsWith(".so", StringComparison.OrdinalIgnoreCase))
+        {
+            var dll = Path.ChangeExtension(resolvedPath, ".dll");
+            if (File.Exists(dll))
+                return dll;
+        }
+
+        return null;
     }
 
     private static string ResolveHarnessType(ProjectConfig project, string harnessPath)

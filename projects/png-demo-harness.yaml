@@ -1,0 +1,37 @@
+# Competitive PNG demo — native in-process persistent harness (LLVMFuzzerTestOneInput).
+# Build: scripts/build-png-demo.ps1 | scripts/build-png-demo.sh
+name: png-demo-harness
+description: In-process native PNG chunk-walker (same parser as png-demo.yaml)
+kind: harness
+model: protocols/png_structured.yaml
+target:
+  harness: ../targets/png-demo/png-demo.dll
+  harnessType: native
+  harnessExport: LLVMFuzzerTestOneInput
+  timeoutMs: 3000
+transport:
+  type: file
+  extension: .png
+fuzz:
+  executionMode: in-process
+  persistent: true
+  forkServer: true
+  maxIterations: 300
+  coverageGuided: true
+  lengthPolicy: valid
+  checksumPolicy: valid
+  corpusDir: ../data/corpus/png-demo-harness
+  crashesDir: ../data/crashes/png-demo-harness
+coverage:
+  backend: semantic
+seeds:
+  - seeds/png_demo_minimal.png
+  - seeds/png_demo_fuzzboom.png
+mutators:
+  - havoc
+  - dictionary
+  - replace-chunk
+  - clone-chunk
+  - insert-at-offset
+  - lengthen-near-field
+dictionaryFile: dictionaries/png-demo.txt

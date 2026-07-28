@@ -1,0 +1,44 @@
+# Competitive PNG demo — cold out-of-process {file} + structured model + chunk mutators.
+# Build: scripts/build-png-demo.ps1 | scripts/build-png-demo.sh
+# Intentional lab vulns in targets/png-demo (not upstream CVE hunt). See docs/FILE_FUZZING.md.
+name: png-demo
+description: Competitive PNG chunk-walker demo (structured model + chunk mutators + dictionary)
+kind: file
+model: protocols/png_structured.yaml
+target:
+  executable: ../targets/png-demo/app.exe
+  args:
+    - "{file}"
+  timeoutMs: 5000
+transport:
+  type: file
+  extension: .png
+  extensions: [.png, .bin]
+  mismatchChance: 0.02
+fuzz:
+  maxIterations: 400
+  coverageGuided: true
+  lengthPolicy: valid
+  checksumPolicy: valid
+  coverageModules: [png-demo, app]
+  corpusDir: ../data/corpus/png-demo
+  crashesDir: ../data/crashes/png-demo
+  retainOnCrash: true
+coverage:
+  backend: auto   # dynamorio when present; else semantic / novelty
+seeds:
+  - seeds/png_demo_minimal.png
+  - seeds/png_demo_fuzzboom.png
+mutators:
+  - havoc
+  - bitflip
+  - interesting
+  - dictionary
+  - delete-range
+  - insert-at-offset
+  - replace-chunk
+  - clone-chunk
+  - move-chunk
+  - lengthen-near-field
+  - shorten-near-field
+dictionaryFile: dictionaries/png-demo.txt

@@ -14,6 +14,7 @@ public class LabCatalogTests
         Assert.Contains(lib.Labs, l => l.Id == "vulndrone-tcp" && l.Category == "drone");
         Assert.Contains(lib.Labs, l => l.Id == "file-text" && l.Category == "file" && !l.Startable);
         Assert.Contains(lib.Labs, l => l.Id == "file-framed" && l.Category == "file" && !l.Startable);
+        Assert.Contains(lib.Labs, l => l.Id == "png-demo" && l.Category == "file" && !l.Startable);
         Assert.Contains(lib.Labs, l => l.Id == "reeldeck" && l.Category == "file" && !l.Startable);
         Assert.Contains(lib.Categories, c => c == "drone");
         Assert.Contains(lib.Categories, c => c == "defense");
@@ -32,7 +33,7 @@ public class LabCatalogTests
     public void FileLabs_AreProfileOnly_AndRefuseStart()
     {
         var files = LabServerManager.List(category: "file");
-        Assert.Equal(3, files.Count);
+        Assert.Equal(4, files.Count);
         Assert.All(files, l =>
         {
             Assert.Equal("file", l.Category);
@@ -221,6 +222,8 @@ public class LabCatalogTests
         var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
         Assert.True(File.Exists(Path.Combine(root, "projects", "file-text.yaml")));
         Assert.True(File.Exists(Path.Combine(root, "projects", "file-framed.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "png-demo.yaml")));
+        Assert.True(File.Exists(Path.Combine(root, "projects", "png-demo-harness.yaml")));
         Assert.True(File.Exists(Path.Combine(root, "projects", "reeldeck.yaml")));
         Assert.True(File.Exists(Path.Combine(root, "docs", "REELDECK.md")));
         Assert.True(File.Exists(Path.Combine(root, "docs", "TARGETS.md")));

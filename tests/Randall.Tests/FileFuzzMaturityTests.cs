@@ -1,3 +1,4 @@
+using Randall.Contracts;
 using Randall.Core.Model;
 using Randall.Infrastructure;
 using Randall.Infrastructure.Mutators;
@@ -446,6 +447,120 @@ public class FileFuzzMaturityTests
             try { Directory.Delete(dir, true); } catch { /* ignore */ }
             try { Directory.Delete(dir + "_min", true); } catch { /* ignore */ }
         }
+    }
+
+    [Fact]
+    public void PngDemo_ProfileAndSeeds_Present()
+    {
+        var repo = FindRepoRoot();
+        Assert.True(File.Exists(Path.Combine(repo, "projects", "png-demo.yaml")));
+        Assert.True(File.Exists(Path.Combine(repo, "projects", "png-demo-harness.yaml")));
+        Assert.True(File.Exists(Path.Combine(repo, "projects", "dictionaries", "png-demo.txt")));
+        Assert.True(File.Exists(Path.Combine(repo, "projects", "seeds", "png_demo_minimal.png")));
+        Assert.True(File.Exists(Path.Combine(repo, "projects", "seeds", "png_demo_fuzzboom.png")));
+        Assert.True(File.Exists(Path.Combine(repo, "projects", "seeds", "png_demo_reject.bin")));
+        Assert.True(File.Exists(Path.Combine(repo, "targets", "png-demo", "png_parse.c")));
+        Assert.Contains("Competitive demo: png-demo",
+            File.ReadAllText(Path.Combine(repo, "docs", "FILE_FUZZING.md")),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PngDemo_StructuredModel_LoadsAgainstProfile()
+    {
+        var repo = FindRepoRoot();
+        var proj = Path.Combine(repo, "projects", "png-demo.yaml");
+        var model = ProtocolLoader.Load(proj, "protocols/png_structured.yaml");
+        var bytes = model.Render();
+        Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }, bytes[..8]);
+    }
+
+    [Fact]
+    public void PngDemo_NativeBinary_RejectNotCrash_AndBoomIsCrashShaped()
+    {
+        var repo = FindRepoRoot();
+        var exe = Path.Combine(repo, "targets", "png-demo", "app.exe");
+        if (!File.Exists(exe))
+            exe = Path.Combine(repo, "targets", "png-demo", "app");
+        if (!File.Exists(exe))
+            exe = Path.Combine(repo, "targets", "png-demo", "png-demo.exe");
+        if (!File.Exists(exe))
+            exe = Path.Combine(repo, "targets", "png-demo", "png-demo");
+        if (!File.Exists(exe))
+            return; // binary optional in CI — build scripts cover the grind path
+
+        var reject = Path.Combine(repo, "projects", "seeds", "png_demo_reject.bin");
+        var boom = Path.Combine(repo, "projects", "seeds", "png_demo_fuzzboom.png");
+        var ok = Path.Combine(repo, "projects", "seeds", "png_demo_minimal.png");
+
+        var rejectCode = RunNative(exe, reject);
+        Assert.False(TargetRunner.IsCrashExitCode(rejectCode));
+        var (rejectCrash, rejectDetail) = FileFuzzExecution.ClassifyFileExit(rejectCode, null);
+        Assert.False(rejectCrash);
+        Assert.Contains("tool-reject", rejectDetail);
+
+        var okCode = RunNative(exe, ok);
+        Assert.Equal(0, okCode);
+        Assert.False(TargetRunner.IsCrashExitCode(okCode));
+
+        var boomCode = RunNative(exe, boom);
+        Assert.True(TargetRunner.IsCrashExitCode(boomCode));
+        var (boomCrash, _) = FileFuzzExecution.ClassifyFileExit(boomCode, null);
+        Assert.True(boomCrash);
+    }
+
+    [Fact]
+    public void PngDemo_ResearchPipeline_EvidenceAndRootCausePersist()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "randall-png-demo-research-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var id = Guid.NewGuid();
+            const string project = "png-demo";
+            var payload = File.ReadAllBytes(
+                Path.Combine(FindRepoRoot(), "projects", "seeds", "png_demo_fuzzboom.png"));
+            var sidecar = new CrashSidecarDto(
+                id, "run-png", 1, project, "FUZZ", "dictionary",
+                ["dictionary", "replace-chunk"], null, "seed", ["png_demo_fuzzboom.png"],
+                "deadbeef", Path.Combine(dir, "boom.png"), payload.Length,
+                unchecked((int)0xC0000409), "STATUS_STACK_BUFFER_OVERRUN", "abort", null, 1, 10, "native",
+                null, null, null, null,
+                new TransportSnapshotDto("file", "", 0, false),
+                new FuzzSnapshotDto(true, false, "projects/png-demo.yaml"),
+                DateTimeOffset.UtcNow,
+                null,
+                new OracleScore(70, [new OracleScoreTerm("crash", 60, "AV")], "+60 crash"));
+            File.WriteAllBytes(sidecar.InputPath!, payload);
+
+            var triage = CrashTriage.Classify(null, sidecar, null, payload);
+            var root = RootCauseEngine.PersistForCrash(dir, id, project, sidecar, triage, null, null, null, sidecar.RandallScore);
+            var evidence = EvidenceFactBuilder.PersistForCrash(dir, id, project, sidecar, triage, null, null,
+                oracleScore: sidecar.RandallScore);
+            Assert.True(root.Ok);
+            Assert.True(evidence.Ok);
+            Assert.True(File.Exists(RootCauseEngine.PathFor(dir, id)));
+            Assert.True(File.Exists(EvidenceFactBuilder.PathFor(dir, id)));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { /* ignore */ }
+        }
+    }
+
+    private static int RunNative(string exe, string input)
+    {
+        using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = exe,
+            Arguments = $"\"{input}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+        }) ?? throw new InvalidOperationException("failed to start " + exe);
+        p.WaitForExit(5000);
+        return p.ExitCode;
     }
 
     [Fact]

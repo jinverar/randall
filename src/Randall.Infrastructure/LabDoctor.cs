@@ -809,6 +809,8 @@ public static class LabDoctor
             return win ? "run scripts/build-file-text.ps1" : "run scripts/build-file-text.sh";
         if (name.Contains("file-framed") || exe.Contains("file-framed"))
             return win ? "run scripts/build-file-framed.ps1" : "run scripts/build-file-framed.sh";
+        if (name.Contains("png-demo") || exe.Contains("png-demo"))
+            return win ? "run scripts/build-png-demo.ps1" : "run scripts/build-png-demo.sh";
         if (name.Contains("reeldeck") || exe.Contains("reeldeck"))
             return win ? "run scripts/build-reeldeck.ps1" : "run scripts/build-reeldeck.sh";
         if (name.Contains("vulnserver") || exe.Contains("vulnserver"))
@@ -819,8 +821,8 @@ public static class LabDoctor
                 : "run scripts/build-lab-targets.sh vulnftp";
         if (project.Kind.Equals("file", StringComparison.OrdinalIgnoreCase))
             return win
-                ? "build the file target (scripts/build-file-text.ps1 | build-file-framed.ps1 | build-reeldeck.ps1)"
-                : "build the file target (scripts/build-file-text.sh | build-file-framed.sh | build-reeldeck.sh)";
+                ? "build the file target (scripts/build-file-text.ps1 | build-file-framed.ps1 | build-png-demo.ps1 | build-reeldeck.ps1)"
+                : "build the file target (scripts/build-file-text.sh | build-file-framed.sh | build-png-demo.sh | build-reeldeck.sh)";
         return win
             ? "run scripts/build-all-lab-targets.ps1 (or the matching build-*.ps1)"
             : "run scripts/build-lab-targets.sh";

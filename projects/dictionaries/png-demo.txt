@@ -1,0 +1,10 @@
+IHDR
+IDAT
+IEND
+PLTE
+tEXt
+FUZZ
+BOOM
+PNG
+\xff\xff\xff\xff
+AAAA

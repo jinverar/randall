@@ -131,6 +131,7 @@ See [REELDECK.md](REELDECK.md).
 
 **Shipped this climb**
 
+- Competitive **png-demo** (cold `{file}` + native harness + minimize + research path)
 - Structured PE + PDF models + catalog tier bump
 - `coverage.backend` plumbing (sancov | dynamorio | semantic)
 - Grammar-backed TLV recipe (switch/array) + ZIP CD extra/comment completeness
@@ -141,5 +142,65 @@ See [REELDECK.md](REELDECK.md).
 - AFL++-class throughput as the default engine
 - Complete Peach PIT / Defensics XML parity overnight
 - Loadable PE images or full PDF ISO grammar
+
+## Competitive demo: png-demo
+
+End-to-end file-format campaign against a **tiny real PNG chunk walker**
+(`targets/png-demo`) — signature + length/type/CRC layout (ISO 15948), not a full
+zlib/IDAT decoder. **Bug discovery is via intentional lab vulns** in this fork
+(length-past-EOF, IHDR width×height overflow, private `FUZZ`+`BOOM` chunk) —
+documented as intentional, not an upstream CVE hunt.
+
+| Mandate item | How |
+|--------------|-----|
+| Cold OOP `{file}` | `projects/png-demo.yaml` → `app.exe` / `png-demo` |
+| Persistent in-process | `projects/png-demo-harness.yaml` → `png-demo.dll` / `.so` (`LLVMFuzzerTestOneInput`) |
+| Coverage growth | `coverage.backend: auto` (DynamoRIO when installed) or `semantic` on harness |
+| Corpus minimize | `randall corpus minimize -c projects/png-demo.yaml` |
+| Known bug / intentional | **Intentional** lab vulns A/B/C — see `targets/png-demo/README.md` |
+| Research triage | CrashStore → Evidence / RootCause sidecars under `data/crashes/png-demo/` |
+| No false crashes on reject | Soft reject exit **1**; `FileFuzzExecution.ClassifyFileExit` → tool-reject |
+
+### Exact commands (Windows)
+
+```powershell
+.\scripts\build-png-demo.ps1
+
+# 1) Cold out-of-process
+dotnet run --project src/Randall.Cli -- doctor -c projects/png-demo.yaml
+dotnet run --project src/Randall.Cli -- fuzz -c projects/png-demo.yaml
+
+# 2) Persistent in-process native harness
+dotnet run --project src/Randall.Cli -- fuzz -c projects/png-demo-harness.yaml
+
+# 3) Corpus minimize (after a run has written corpus+)
+dotnet run --project src/Randall.Cli -- corpus minimize -c projects/png-demo.yaml
+
+# 4) Triage / research package (replace <guid> from crashes list)
+dotnet run --project src/Randall.Cli -- crashes -p png-demo
+dotnet run --project src/Randall.Cli -- stalk research-package -i <guid>
+```
+
+### Exact commands (Linux)
+
+```bash
+scripts/build-png-demo.sh
+dotnet run --project src/Randall.Cli -- fuzz -c projects/png-demo.yaml
+dotnet run --project src/Randall.Cli -- fuzz -c projects/png-demo-harness.yaml
+dotnet run --project src/Randall.Cli -- corpus minimize -c projects/png-demo.yaml
+```
+
+### Human grind (not CI)
+
+Raise `fuzz.maxIterations` (or `--unlimited` / stalk profile) and leave DynamoRIO
+installed for edge counters. Seed `png_demo_fuzzboom.png` proves bug C immediately;
+structured `width`/`height` + chunk mutators explore bugs A/B. Soft reject proof:
+
+```powershell
+.\targets\png-demo\app.exe .\projects\seeds\png_demo_reject.bin   # exit 1 — not a crash
+.\targets\png-demo\app.exe .\projects\seeds\png_demo_fuzzboom.png # abort / crash-shaped
+```
+
+CI covers classify/minimize/model smoke only — no long grind in the test suite.
 
 Related: [MODEL.md](MODEL.md) · [FUZZING.md](FUZZING.md) · [MATURITY.md](MATURITY.md) · [RECIPE_CATALOG.md](RECIPE_CATALOG.md) · [STALKING.md](STALKING.md) · [SANITIZER_COVERAGE.md](SANITIZER_COVERAGE.md)

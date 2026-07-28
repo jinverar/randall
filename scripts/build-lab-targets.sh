@@ -78,10 +78,14 @@ fi
 if [ "$want" = "all" ] || [ "$want" = "file-framed" ]; then
   bash "$ROOT/scripts/build-file-framed.sh" || echo "[!] file-framed build skipped/failed (need gcc)"
 fi
+if [ "$want" = "all" ] || [ "$want" = "png-demo" ]; then
+  bash "$ROOT/scripts/build-png-demo.sh" || echo "[!] png-demo build skipped/failed (need gcc)"
+fi
 
 echo
 echo "Done ($built target(s)). Preflight + fuzz, e.g.:"
 echo "  dotnet run --project src/Randall.Cli -- doctor -c projects/vulnserver.yaml"
 echo "  dotnet run --project src/Randall.Cli -- fuzz   -c projects/vulnserver.yaml"
 echo "  scripts/build-file-text.sh && dotnet run --project src/Randall.Cli -- fuzz -c projects/file-text.yaml"
+echo "  scripts/build-png-demo.sh && dotnet run --project src/Randall.Cli -- fuzz -c projects/png-demo.yaml"
 echo "  scripts/build-reeldeck.sh && dotnet run --project src/Randall.Cli -- fuzz -c projects/reeldeck.yaml"

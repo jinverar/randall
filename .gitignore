@@ -95,6 +95,12 @@ targets/file-framed/file-framed
 targets/file-framed/file-framed.exe
 targets/file-framed/app
 targets/file-framed/app.exe
+targets/png-demo/png-demo
+targets/png-demo/png-demo.exe
+targets/png-demo/png-demo.dll
+targets/png-demo/png-demo.so
+targets/png-demo/app
+targets/png-demo/app.exe
 data/bench/
 data/rop/
 tools/python/

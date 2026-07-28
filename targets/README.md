@@ -67,6 +67,7 @@ Out-of-box `doctor`/`fuzz` — no external exe required after build:
 |--------|---------|-------|
 | **file-text** | `projects/file-text.yaml` | `scripts/build-file-text.sh` / `.ps1` |
 | **file-framed** | `projects/file-framed.yaml` | `scripts/build-file-framed.sh` / `.ps1` |
+| **png-demo** | `projects/png-demo.yaml` (+ harness) | `scripts/build-png-demo.sh` / `.ps1` |
 | **ReelDeck** | `projects/reeldeck.yaml` | `scripts/build-reeldeck.sh` / `.ps1` |
 
 ```bash

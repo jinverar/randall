@@ -188,6 +188,7 @@ public class DoctorHintTests
 {
     [Theory]
     [InlineData("file-text", "../targets/file-text/app.exe", "build-file-text")]
+    [InlineData("png-demo", "../targets/png-demo/app.exe", "build-png-demo")]
     [InlineData("reeldeck", "../targets/reeldeck/reeldeck", "build-reeldeck")]
     [InlineData("vulnserver", "../targets/vulnserver/randall-vulnserver.exe", "vulnserver")]
     public void SuggestBuildHint_IsProjectAware(string name, string exe, string needle)
