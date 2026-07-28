@@ -2795,6 +2795,10 @@ tr.mutate-row td { background: #2a2218; }
   border-left: 3px solid color-mix(in srgb, var(--stalk-purple) 55%, var(--border));
 }
 
+.evidence-ledger-box {
+  border-left: 3px solid color-mix(in srgb, #3d9970 50%, var(--border));
+}
+
 .evidence-fact-table {
   width: 100%;
   border-collapse: collapse;
@@ -2827,19 +2831,28 @@ tr.mutate-row td { background: #2a2218; }
   border: 1px solid color-mix(in srgb, #3d9970 40%, var(--border));
 }
 
-.evidence-badge-inferred {
+.evidence-badge-inferred,
+.evidence-badge-derived {
   background: color-mix(in srgb, var(--warn) 18%, transparent);
   color: var(--warn);
   border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border));
 }
 
-.evidence-badge-hypothesized {
+.evidence-badge-heuristic {
+  background: color-mix(in srgb, #aaa 22%, transparent);
+  color: #888;
+  border: 1px solid color-mix(in srgb, #888 35%, var(--border));
+}
+
+.evidence-badge-hypothesized,
+.evidence-badge-hypothesis {
   background: color-mix(in srgb, var(--stalk-purple) 18%, transparent);
   color: var(--stalk-purple);
   border: 1px solid color-mix(in srgb, var(--stalk-purple) 35%, var(--border));
 }
 
-.evidence-badge-experimentallyconfirmed {
+.evidence-badge-experimentallyconfirmed,
+.evidence-badge-confirmed {
   background: color-mix(in srgb, #0074d9 18%, transparent);
   color: #0074d9;
   border: 1px solid color-mix(in srgb, #0074d9 35%, var(--border));

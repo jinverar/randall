@@ -3427,7 +3427,7 @@ function exploitResearchLooksEmpty(panel, debuggerObservation) {
   return !panel.ok && !panel.faultInstruction && !(panel.registerMatrix || []).length;
 }
 
-function renderExploitResearchPanel(panel, debuggerObservation = null) {
+function renderExploitResearchPanel(panel, debuggerObservation = null, evidenceFacts = null) {
   if (exploitResearchLooksEmpty(panel, debuggerObservation)) {
     const silent = !debuggerObservation?.ok;
     return `<div class="triage-box exploit-research-box exploit-research-empty" id="exploit-research-panel">
@@ -3436,6 +3436,7 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
       <p class="hint">${silent
         ? 'Re-analyze / wait for CDB (or gdb) to populate fault insn, EA, and register matrix. Silent screams / oracle-only events stay research-empty until a memory crash dump is analyzed.'
         : 'Re-analyze / wait for CDB — dump probes have not produced a usable observation yet.'}</p>
+      ${renderEvidenceLedger(evidenceFacts, { limit: 8, title: 'Evidence Ledger' })}
     </div>`;
   }
   const ea = panel.effectiveAddress;
@@ -3608,6 +3609,7 @@ function renderExploitResearchPanel(panel, debuggerObservation = null) {
       <p>${escapeAttr(panel.nextExperiment || '—')}</p>
       ${panel.primitiveHint ? `<p class="hint"><span class="label">${/R4|Candidate/i.test(panel.primitiveHint) ? 'Candidate' : 'Capability'}</span> ${escapeAttr(panel.primitiveHint)}</p>` : ''}
     </div>
+    ${renderEvidenceLedger(evidenceFacts, { limit: 12, title: 'Evidence Ledger' })}
   </div>`;
 }
 
@@ -3780,17 +3782,55 @@ async function initAcademyPrefs() {
   applyAcademyPrefs({ presentationMode: mode, instructorLevel: level, persist: true });
 }
 
-function evidenceTypeBadge(observationType) {
+function evidenceKindFromFact(f) {
+  const t = String(f?.observationType || 'Observed').toLowerCase().replace(/[^a-z]/g, '');
+  if (t === 'experimentallyconfirmed') return 'Confirmed';
+  if (t === 'hypothesized') return 'Hypothesis';
+  if (t === 'inferred') return (f?.confidence != null && f.confidence < 0.55) ? 'Heuristic' : 'Derived';
+  return 'Observed';
+}
+
+function evidenceTypeBadge(observationType, fact) {
+  const kind = fact ? evidenceKindFromFact(fact) : null;
   const t = String(observationType || 'Observed');
-  const key = t.toLowerCase().replace(/[^a-z]/g, '');
+  const key = (kind || t).toLowerCase().replace(/[^a-z]/g, '');
   const labels = {
     observed: 'Observed',
     experimentallyconfirmed: 'Confirmed',
-    inferred: 'Inferred',
-    hypothesized: 'Hypothesized',
+    confirmed: 'Confirmed',
+    inferred: 'Derived',
+    derived: 'Derived',
+    heuristic: 'Heuristic',
+    hypothesized: 'Hypothesis',
+    hypothesis: 'Hypothesis',
   };
-  const label = labels[key] || t;
-  return `<span class="evidence-badge evidence-badge-${key || 'observed'}" title="${escapeAttr(t)}">${escapeAttr(label)}</span>`;
+  const label = labels[key] || kind || t;
+  return `<span class="evidence-badge evidence-badge-${key || 'observed'}" title="${escapeAttr(kind ? `Kind: ${kind} · ${t}` : t)}">${escapeAttr(label)}</span>`;
+}
+
+function renderEvidenceLedger(facts, { limit = 24, title = 'Evidence Ledger' } = {}) {
+  if (!facts?.length) return '';
+  const rows = facts.slice(0, limit).map((f) => {
+    const kind = evidenceKindFromFact(f);
+    const conf = f.confidence != null ? `${Math.round(f.confidence * 100)}%` : '—';
+    const artifact = f.sourceArtifact ? `<br><span class="hint-inline">${escapeAttr(f.sourceArtifact)}</span>` : '';
+    return `<tr>
+      <td>${evidenceTypeBadge(f.observationType, f)}</td>
+      <td><code>${escapeAttr(f.name || '')}</code></td>
+      <td>${escapeAttr(f.value || '—')}</td>
+      <td>${escapeAttr(f.source || '')}${artifact}</td>
+      <td>${conf}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="triage-box evidence-ledger-box">
+    <h4>${escapeAttr(title)} <span class="hint-inline">${facts.length} claim(s)</span>
+      <span class="hint-inline">Observed · Derived · Heuristic · Hypothesis · Confirmed</span></h4>
+    <p class="hint">Canonical claims from EvidenceFact (Court / Investigation) — Kind is display taxonomy, not a second store.</p>
+    <table class="evidence-fact-table evidence-ledger-table"><thead><tr>
+      <th>Kind</th><th>Claim</th><th>Value</th><th>Source</th><th>Conf</th>
+    </tr></thead><tbody>${rows}</tbody></table>
+    ${facts.length > limit ? `<p class="hint">Showing ${limit} of ${facts.length} — see evidence JSON</p>` : ''}
+  </div>`;
 }
 
 /** Influence map honesty: Observed / Confirmed / Hypothesized / Unverified — Candidate ≠ Observed. */
@@ -3984,22 +4024,22 @@ function renderCrashDetail(detail, title) {
         ${dbg.stackHash ? `<span class="hint-inline">stack ${escapeAttr(dbg.stackHash)}</span>` : ''}
       </p>` : ''}
       ${renderEngineStaleBanner(detail)}
-      ${renderExploitResearchPanel(detail.exploitResearch, dbg)}
-      ${evidenceFacts.length ? `<div class="triage-box evidence-facts-box">
-        <h4>Evidence facts <span class="hint-inline">${evidenceFacts.length} atom(s)</span>${academyResearchMode() ? ' <span class="hint-inline">dense</span>' : ''} <span class="hint-inline">observed atoms · not Proven</span></h4>
+      ${renderExploitResearchPanel(detail.exploitResearch, dbg, evidenceFacts)}
+      ${renderEvidenceLedger(evidenceFacts, { limit: evidenceLimit, title: 'Evidence Ledger' })}
+      ${evidenceFacts.length && academyResearchMode() ? `<div class="triage-box evidence-facts-box">
+        <h4>Evidence facts <span class="hint-inline">dense · raw ObservationType</span></h4>
         ${academyEduBlurb('evidence')}
         <table class="evidence-fact-table"><thead><tr><th>Type</th><th>Name</th><th>Value</th><th>Source</th><th>Conf</th></tr></thead><tbody>${evidenceFacts.slice(0, evidenceLimit).map((f) => {
           const conf = f.confidence != null ? `${Math.round(f.confidence * 100)}%` : '—';
           const artifact = f.sourceArtifact ? `<br><span class="hint-inline">${escapeAttr(f.sourceArtifact)}</span>` : '';
           return `<tr>
-            <td>${evidenceTypeBadge(f.observationType)}</td>
+            <td>${evidenceTypeBadge(f.observationType, f)}</td>
             <td><code>${escapeAttr(f.name || '')}</code>${f.relatedFacts?.length ? `<br><span class="hint-inline">↔ ${f.relatedFacts.map((r) => escapeAttr(r)).join(', ')}</span>` : ''}</td>
             <td>${escapeAttr(f.value || '—')}</td>
             <td>${escapeAttr(f.source || '')}${artifact}</td>
             <td>${conf}</td>
           </tr>`;
         }).join('')}</tbody></table>
-        ${evidenceFacts.length > evidenceLimit ? `<p class="hint">Showing ${evidenceLimit} of ${evidenceFacts.length} facts — see <code>${escapeAttr(detail.summary?.id?.replace(/-/g, '') || '')}_evidence.json</code></p>` : ''}
       </div>` : ''}
       ${!hideInfluence && influenceMap?.ok && influenceMap.links?.length ? `<div class="triage-box influence-box">
         <h4>Influence map <span class="hint-inline">input → state</span> <span class="hint-inline">[${escapeAttr(influenceMap.confidence)}]</span></h4>
