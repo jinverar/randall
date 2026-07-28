@@ -52,7 +52,8 @@ public static class RecipeCatalog
     private sealed record Cat(
         string Id, string Name, string Category, string Kind, string Desc,
         string[] Tags, int? Port, string? Ext, byte[] Seed, string[] Mutators, string[] Dict,
-        string Quality = RecipeQuality.MagicOnly);
+        string Quality = RecipeQuality.MagicOnly,
+        string? ModelPath = null);
 
     private static readonly Lazy<IReadOnlyList<Cat>> All = new(Build);
 
@@ -121,8 +122,28 @@ public static class RecipeCatalog
         if (e.Dict.Length > 0)
             try { CaseRecipeStore.SaveDict(new CaseSaveDictRequest(projName, e.Dict, true), repoRoot); } catch { /* best-effort */ }
 
+        if (!string.IsNullOrWhiteSpace(e.ModelPath) && !string.IsNullOrWhiteSpace(created.Path))
+        {
+            try
+            {
+                var yaml = File.ReadAllText(created.Path);
+                if (!yaml.Contains("\nmodel:", StringComparison.Ordinal))
+                {
+                    // local/ projects → ../protocols/; stock projects/ → protocols/
+                    var rel = localFolder ? $"../{e.ModelPath}" : e.ModelPath!;
+                    yaml = yaml.Replace(
+                        "\nkind: file\n",
+                        $"\nkind: file\nmodel: {rel}\n",
+                        StringComparison.Ordinal);
+                    File.WriteAllText(created.Path, yaml);
+                }
+            }
+            catch { /* best-effort */ }
+        }
+
         return new CaseSaveResultDto(true,
-            $"Created project '{projName}' from recipe '{e.Id}' ({e.Category}) — seed + {e.Mutators.Length} mutators + {e.Dict.Length} dict tokens",
+            $"Created project '{projName}' from recipe '{e.Id}' ({e.Category}) — seed + {e.Mutators.Length} mutators + {e.Dict.Length} dict tokens" +
+            (string.IsNullOrWhiteSpace(e.ModelPath) ? "" : $" + model {e.ModelPath}"),
             created.Path, e.Seed.Length);
     }
 
@@ -152,15 +173,18 @@ public static class RecipeCatalog
                     : $"Fuzz a {name} parser ({quality.ToLowerInvariant()}).",
                 tags, null, ext, Encoding.ASCII.GetBytes(sample), FileMut, dict ?? OverflowDict, quality));
 
-        void FileSeed(string id, string name, string cat, string ext, byte[] seed, string[] tags, string quality)
+        void FileSeed(string id, string name, string cat, string ext, byte[] seed, string[] tags, string quality,
+            string? modelPath = null)
             => list.Add(new Cat($"file-{id}", $"{name} file parser", cat, "file",
-                $"Fuzz a {name} parser ({quality.ToLowerInvariant()} seed + chunk mutators).",
-                tags, null, ext, seed, FileStructMut, OverflowDict, quality));
+                $"Fuzz a {name} parser ({quality.ToLowerInvariant()} seed + chunk mutators" +
+                (modelPath is null ? "" : " + structured model") + ").",
+                tags, null, ext, seed, FileStructMut, OverflowDict, quality, modelPath));
 
-        // Images — PNG upgraded to minimal-valid; PDF stays magic-honest.
+        // Images — PNG structured model; PDF stays magic-honest.
         FileBin("jpeg", "JPEG", "Image", ".jpg", "FFD8FFE000104A464946", ["buffer-overflow", "heap-overflow", "media"]);
         FileSeed("png", "PNG", "Image", ".png", BuildMinimalPng(),
-            ["buffer-overflow", "integer-overflow", "media"], RecipeQuality.MinimalValid);
+            ["buffer-overflow", "integer-overflow", "media"], RecipeQuality.StructuredModel,
+            "protocols/png_structured.yaml");
         FileBin("gif", "GIF", "Image", ".gif", "4749463839610100010080", ["buffer-overflow", "media"]);
         FileBin("bmp", "BMP", "Image", ".bmp", "424D46000000000000003600", ["integer-overflow", "media"]);
         FileBin("tiff", "TIFF", "Image", ".tiff", "49492A000800000001000E01", ["heap-overflow", "media"]);
@@ -173,7 +197,8 @@ public static class RecipeCatalog
 
         // Audio
         FileSeed("wav", "WAV (PCM)", "Audio", ".wav", BuildMinimalWav(),
-            ["buffer-overflow", "media"], RecipeQuality.MinimalValid);
+            ["buffer-overflow", "media"], RecipeQuality.StructuredModel,
+            "protocols/wav_structured.yaml");
         FileBin("mp3", "MP3", "Audio", ".mp3", "494433030000000000", ["buffer-overflow", "media"]);
         FileBin("ogg", "OGG", "Audio", ".ogg", "4F67675300020000000000000000", ["media"]);
         FileBin("flac", "FLAC", "Audio", ".flac", "664C614300000022", ["media"]);
@@ -190,7 +215,8 @@ public static class RecipeCatalog
 
         // Archives
         FileSeed("zip", "ZIP", "Archive", ".zip", BuildMinimalZip(),
-            ["directory-traversal", "buffer-overflow"], RecipeQuality.MinimalValid);
+            ["directory-traversal", "buffer-overflow"], RecipeQuality.StructuredModel,
+            "protocols/zip_structured.yaml");
         FileBin("gzip", "GZIP", "Archive", ".gz", "1F8B0800000000000003", ["buffer-overflow"]);
         FileBin("tar", "TAR", "Archive", ".tar", "000000000000000000000000757374617200", ["directory-traversal"]);
         FileBin("rar", "RAR", "Archive", ".rar", "526172211A0700CF9073", ["heap-overflow"]);

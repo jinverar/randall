@@ -177,8 +177,12 @@ public static class ProtocolLoader
                 MinSize = def.MinSize,
                 MaxSize = def.MaxSize,
                 SeedFile = def.SeedFile,
+                DefaultValue = string.IsNullOrWhiteSpace(def.Value)
+                    ? null
+                    : StaticValueParser.Parse(def.Value),
             },
-            "group" or "block" or "container" => new GroupBlock((def.Children ?? []).Select(BuildBlock).ToList()),
+            "group" or "block" or "container" => new GroupBlock(
+                (def.Children ?? []).Select(BuildBlock).ToList(), def.Name),
             "array" or "repeat" => new RepeatBlock
             {
                 Name = def.Name ?? "array",
@@ -207,9 +211,9 @@ public static class ProtocolLoader
             "when" or "conditional" => new ConditionalBlock
             {
                 WhenField = def.When ?? def.Name ?? "",
-                WhenEquals = def.WhenEquals ?? def.Value ?? "",
+                WhenEquals = def.WhenEquals ?? "",
                 Child = BuildSizedPayload(def),
-                AlwaysRenderStub = true, // TODO: evaluate against prior fields
+                AlwaysRenderStub = false,
             },
             "sized" or "length" or "lengthprefix" => new LengthPrefixedBlock
             {
@@ -225,6 +229,7 @@ public static class ProtocolLoader
                 LengthBytes = def.LengthBytes is 2 or 4 ? def.LengthBytes : 4,
                 LittleEndian = def.LittleEndian,
                 Mutable = def.Mutable,
+                CoverFrom = def.CoverFrom,
             },
             // Unknown types: preserve as static so YAML still loads (competitive catalog won't hard-fail).
             _ => new StaticBlock(def.Value ?? ""),

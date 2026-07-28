@@ -42,11 +42,13 @@ public sealed class ProtocolBlockDefinition
     public bool CountMutable { get; set; } = true;
     public int Align { get; set; } = 4;
     public string? PadByte { get; set; }
-    /// <summary>Conditional: field name that must equal WhenEquals (stub eval today).</summary>
+    /// <summary>Conditional: field name, or Peach-style <c>field == value</c> / <c>!=</c>.</summary>
     public string? When { get; set; }
     public string? WhenEquals { get; set; }
     public bool Relative { get; set; }
     public string? TargetField { get; set; }
+    /// <summary>Checksum cover start: named field whose offset begins the CRC range.</summary>
+    public string? CoverFrom { get; set; }
     /// <summary>Per-block length policy override (valid|mutate|independent|off-by-one|wrap|actualPlusDelta|stale|zero).</summary>
     public string? LengthPolicy { get; set; }
     /// <summary>Per-block checksum policy override.</summary>

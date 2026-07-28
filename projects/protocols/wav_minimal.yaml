@@ -1,5 +1,5 @@
 name: wav-minimal
-description: Minimal PCM WAV (RIFF) — chunk sizes are length-policy targets. Not a full WAVE grammar.
+description: Minimal PCM WAV (RIFF) — see wav_structured for named chunk groups. Chunk sizes are length-policy targets.
 blocks:
   - type: group
     children:

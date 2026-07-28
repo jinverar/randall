@@ -298,6 +298,9 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
                 Crashes = _status.Crashes + (ev.Crashed ? 1 : 0),
                 CorpusAdded = ev.CorpusSize,
                 CoverageEdges = ev.CoverageEdgeTotal,
+                CoverageBlocks = ev.CoverageBlocks,
+                SemanticStageHits = ev.SemanticStageHits,
+                CoverageKind = ev.CoverageKind ?? _status.CoverageKind,
                 LastMessage = ev.Crashed
                     ? $"CRASH iter={ev.Iteration} {ev.Mutator}"
                     : ev.NewCoverage

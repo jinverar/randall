@@ -26,7 +26,10 @@ public sealed record FuzzIterationEvent(
     int NewEdgeCount,
     int CorpusSize,
     int CoverageEdgeTotal,
-    string Detail);
+    string Detail,
+    int CoverageBlocks = 0,
+    int SemanticStageHits = 0,
+    string? CoverageKind = null);
 
 /// <summary>
 /// Rich live-log event. <see cref="Kind"/> drives UI/console colors:

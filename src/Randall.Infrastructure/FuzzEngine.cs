@@ -943,7 +943,10 @@ public sealed class FuzzEngine
                         false, 0, coverage.TotalEdges, sw.ElapsedMilliseconds, "dry-run", null,
                         stalkBackend, null, journal?.RunId ?? "", true));
                     FuzzProgressGuard.Try(progress, p => p.OnIteration(new FuzzIterationEvent(
-                        iterations, dryLabel, payload.Length, false, false, 0, corpus.SeenCount, coverage.TotalEdges, "dry-run")));
+                        iterations, dryLabel, payload.Length, false, false, 0, corpus.SeenCount, coverage.TotalEdges, "dry-run",
+                        CoverageBlocks: coverage.TotalEdges,
+                        SemanticStageHits: pathCoverage.Total,
+                        CoverageKind: DescribeCoverageKind(coverage.TotalEdges, pathCoverage.Total, coverageGuided))));
                     FuzzAnalystLog.Ok(progress, "Check OK: dry-run (not sent).", iterations);
                     mutatorCredit.Record(mutator.Name, 0, uniqueCrash: false);
                     mutatorChainTracker.RecordLineage(fullLineageChain, newEdges: 0, uniqueCrash: false);
@@ -1466,7 +1469,10 @@ public sealed class FuzzEngine
                     newEdges,
                     corpus.SeenCount,
                     coverage.TotalEdges,
-                    iterDetail)));
+                    iterDetail,
+                    CoverageBlocks: coverage.TotalEdges,
+                    SemanticStageHits: pathCoverage.Total,
+                    CoverageKind: DescribeCoverageKind(coverage.TotalEdges, pathCoverage.Total, coverageGuided))));
 
                 if (verbose)
                 {
@@ -3009,4 +3015,11 @@ public sealed class FuzzEngine
         FaultSignalMapper.PublishFaults(
             ObservationBus, runId, iterations, payloadHash, project.Name, faults);
     }
+
+    /// <summary>Honest coverage mode label for live UI (bb-edges | path-novelty | unavailable).</summary>
+    private static string DescribeCoverageKind(int edges, int semanticStages, bool coverageGuided) =>
+        edges > 0 ? "bb-edges"
+        : semanticStages > 0 ? "path-novelty"
+        : coverageGuided ? "unavailable"
+        : "unavailable";
 }

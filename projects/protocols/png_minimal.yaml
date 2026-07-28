@@ -1,58 +1,62 @@
 name: png-minimal
-description: Minimal valid PNG — signature + IHDR + IEND (chunk length/type/CRC). Not a full PNG grammar.
+description: Minimal valid PNG — signature + IHDR + IEND (chunk length/type/CRC). Prefer png_structured for when/PLTE/IDAT.
 blocks:
   - type: group
     children:
       - type: hex
         value: "89504E470D0A1A0A"
-      - type: sized
-        lengthName: ihdr_len
-        lengthBytes: 4
+      - type: uint32
+        name: ihdr_len
+        value: "13"
         littleEndian: false
-        lengthMutable: true
-        child:
-          type: group
-          children:
-            - type: static
-              value: "IHDR"
-            - type: uint32
-              name: width
-              value: "1"
-              littleEndian: false
-            - type: uint32
-              name: height
-              value: "1"
-              littleEndian: false
-            - type: uint8
-              name: bit_depth
-              value: "8"
-            - type: enum
-              name: color_type
-              width: 1
-              enumValues: ["0", "2", "3", "4", "6"]
-              value: "2"
-            - type: uint8
-              name: compression
-              value: "0"
-            - type: uint8
-              name: filter
-              value: "0"
-            - type: uint8
-              name: interlace
-              value: "0"
+        mutable: true
+      - type: group
+        name: ihdr_type
+        children:
+          - type: static
+            value: "IHDR"
+          - type: uint32
+            name: width
+            value: "1"
+            littleEndian: false
+          - type: uint32
+            name: height
+            value: "1"
+            littleEndian: false
+          - type: uint8
+            name: bit_depth
+            value: "8"
+          - type: enum
+            name: color_type
+            width: 1
+            enumValues: ["0", "2", "3", "4", "6"]
+            value: "2"
+          - type: uint8
+            name: compression
+            value: "0"
+          - type: uint8
+            name: filter
+            value: "0"
+          - type: uint8
+            name: interlace
+            value: "0"
       - type: checksum
         name: ihdr_crc
         lengthBytes: 4
         littleEndian: false
+        coverFrom: ihdr_type
         mutable: true
-      - type: sized
-        lengthName: iend_len
-        lengthBytes: 4
+      - type: uint32
+        name: iend_len
+        value: "0"
         littleEndian: false
-        child:
-          type: static
-          value: "IEND"
+      - type: group
+        name: iend_type
+        children:
+          - type: static
+            value: "IEND"
       - type: checksum
         name: iend_crc
         lengthBytes: 4
         littleEndian: false
+        coverFrom: iend_type

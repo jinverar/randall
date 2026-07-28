@@ -192,6 +192,19 @@ function setStatus(text) {
   if (statusEl) statusEl.textContent = text;
 }
 
+/** Live Edge | Block | Semantic counters — never imply edges=0 is measured BB coverage. */
+function formatCoverageCounters(s) {
+  if (!s) return '';
+  const kind = (s.coverageKind || '').toLowerCase();
+  const edges = Number(s.coverageEdges) || 0;
+  const blocks = Number(s.coverageBlocks) || 0;
+  const semantic = Number(s.semanticStageHits) || 0;
+  const bb = kind === 'bb-edges' || edges > 0;
+  const edgeLabel = bb ? `Edge ${edges}` : 'Edge —';
+  const blockLabel = bb ? `Block ${blocks}` : (kind === 'path-novelty' ? 'Block —' : 'Block —');
+  return `${edgeLabel} | ${blockLabel} | Semantic ${semantic}`;
+}
+
 /** Map server phase → operator-facing STATUS text. Never sticky "starting:" after Idle/Running/Tracing. */
 function formatFuzzStatusText(s) {
   if (!s) return 'Idle';
@@ -201,25 +214,27 @@ function formatFuzzStatusText(s) {
   const pid = s.targetPid != null ? ` · pid ${s.targetPid}` : '';
   const goal = s.stopGoalMet ? ' 🎯 goal met · ' : formatGoalProgress(s.goalProgress);
   const msg = s.lastMessage || '…';
+  const cov = formatCoverageCounters(s);
+  const covSuffix = cov ? ` · ${cov}` : '';
 
   if (!active) {
     if (phase === 'idle') return 'Idle';
     const goalDone = s.stopGoalMet ? '🎯 stop goal met · ' : formatGoalProgress(s.goalProgress);
-    if (phase === 'completed') return `${goalDone}Completed: ${s.lastMessage || 'done'}`;
-    if (phase === 'stopped') return `${goalDone}Stopped: ${s.lastMessage || ''}`;
+    if (phase === 'completed') return `${goalDone}Completed: ${s.lastMessage || 'done'}${covSuffix}`;
+    if (phase === 'stopped') return `${goalDone}Stopped: ${s.lastMessage || ''}${covSuffix}`;
     if (phase === 'error') return `Error: ${s.lastMessage || ''}`;
     // Never leave UI on "starting: …" when server already Idle/Completed/etc.
     if (phase === 'starting') return 'Idle';
-    return `${goalDone}${s.phase}: ${s.lastMessage || ''}`;
+    return `${goalDone}${s.phase}: ${s.lastMessage || ''}${covSuffix}`;
   }
 
   if (phase === 'stopping')
-    return `${iter}${goal}stopping: ${msg}${pid}`;
+    return `${iter}${goal}stopping: ${msg}${pid}${covSuffix}`;
   if (phase === 'running' || Number(s.iterations) > 0)
-    return `${iter}${goal}Running: ${msg}${pid}`;
+    return `${iter}${goal}Running: ${msg}${pid}${covSuffix}`;
   if (phase === 'starting')
     return `${iter}${goal}Starting: ${msg}${pid}`;
-  return `${iter}${goal}${s.phase}: ${msg}${pid}`;
+  return `${iter}${goal}${s.phase}: ${msg}${pid}${covSuffix}`;
 }
 
 function resolveLiveStalkStatusLabel(dataStatus) {
@@ -1026,8 +1041,10 @@ function renderScareBrainStrip(strip, fuzzStatus, brainDecision) {
     if (phase !== 'idle') {
       chips.push(`<span class="scare-brain-chip chip-phase" title="${escapeAttr(fuzzStatus.lastMessage || '')}">${escapeAttr(phase)}</span>`);
     }
-    if (fuzzStatus.coverageEdges > 0) {
-      chips.push(`<span class="scare-brain-chip">edges <strong>${fuzzStatus.coverageEdges}</strong></span>`);
+    {
+      const cov = formatCoverageCounters(fuzzStatus);
+      if (cov)
+        chips.push(`<span class="scare-brain-chip" title="Edge | Block | Semantic stage coverage">${escapeAttr(cov)}</span>`);
     }
   }
   if (strip) {
@@ -2552,11 +2569,16 @@ function patchLiveDashboardCounters(data) {
   if (stats && (data.currentBlocks != null || data.coverageEdges != null || data.corpusSize != null)) {
     const edges = Number(data.coverageEdges) || 0;
     const blocks = Number(data.currentBlocks) || 0;
-    const covUnavailable = edges <= 0 && blocks <= 0 && !data.dynamoRioAvailable;
+    const semantic = Number(fuzzStatusCache?.semanticStageHits ?? data.semanticStageHits) || 0;
+    const kind = (fuzzStatusCache?.coverageKind || data.coverageKind || '').toLowerCase();
+    const covUnavailable = edges <= 0 && blocks <= 0 && !data.dynamoRioAvailable && kind !== 'bb-edges';
     if (labelEl && covUnavailable) labelEl.textContent = 'Coverage unavailable';
+    const edgeDisp = covUnavailable ? '—' : (data.coverageEdges ?? 0);
+    const blockDisp = covUnavailable ? '—' : (data.currentBlocks ?? 0);
     stats.innerHTML = `
-    <li>Path / BB units <strong>${covUnavailable ? 'N/A' : (data.currentBlocks ?? 0)}</strong></li>
-    <li>BB edges <strong>${covUnavailable ? 'N/A' : (data.coverageEdges ?? 0)}</strong></li>
+    <li>Edge <strong>${edgeDisp}</strong></li>
+    <li>Block <strong>${blockDisp}</strong></li>
+    <li>Semantic <strong>${semantic}</strong></li>
     <li>Corpus size <strong>${data.corpusSize ?? 0}</strong></li>
     <li>DynamoRIO <strong>${data.dynamoRioAvailable ? 'Ready' : 'Missing'}</strong></li>`;
   }
@@ -6630,7 +6652,13 @@ function bindHubHandlers() {
 
   hub.on('fuzzIteration', (e) => {
     // Rich lines come from fuzzLog; iteration only updates status / stalker timeline
-    setStatus(`iter ${e.iteration} · corpus ${e.corpusSize} · edges ${e.coverageEdgeTotal}`);
+    const liveCov = formatCoverageCounters({
+      coverageEdges: e.coverageEdgeTotal,
+      coverageBlocks: e.coverageBlocks,
+      semanticStageHits: e.semanticStageHits,
+      coverageKind: e.coverageKind,
+    });
+    setStatus(`iter ${e.iteration} · corpus ${e.corpusSize} · ${liveCov || `edges ${e.coverageEdgeTotal}`}`);
     const liveKind = e.crashed ? 'crash' : e.newCoverage ? 'novel' : 'hit';
     const livePoint = {
       index: stalkLiveTimeline.length,

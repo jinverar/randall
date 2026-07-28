@@ -1,0 +1,118 @@
+name: png-structured
+description: >
+  Structured PNG — signature, IHDR (length/type/data/CRC), optional PLTE when color_type==3,
+  IDAT, IEND. Chunk CRCs cover type+data via coverFrom. Field-aware mutators target named atoms.
+blocks:
+  - type: group
+    name: png
+    children:
+      - type: hex
+        value: "89504E470D0A1A0A"
+
+      # IHDR chunk — length is data-only (13), type outside length
+      - type: uint32
+        name: ihdr_len
+        value: "13"
+        littleEndian: false
+        mutable: true
+      - type: group
+        name: ihdr_type
+        children:
+          - type: static
+            value: "IHDR"
+          - type: uint32
+            name: width
+            value: "1"
+            littleEndian: false
+          - type: uint32
+            name: height
+            value: "1"
+            littleEndian: false
+          - type: uint8
+            name: bit_depth
+            value: "8"
+          - type: enum
+            name: color_type
+            width: 1
+            enumValues: ["0", "2", "3", "4", "6"]
+            value: "2"
+          - type: uint8
+            name: compression
+            value: "0"
+          - type: uint8
+            name: filter
+            value: "0"
+          - type: uint8
+            name: interlace
+            value: "0"
+      - type: checksum
+        name: ihdr_crc
+        lengthBytes: 4
+        littleEndian: false
+        coverFrom: ihdr_type
+        mutable: true
+
+      # PLTE only for indexed color (color_type == 3)
+      - type: when
+        when: "color_type == 3"
+        children:
+          - type: uint32
+            name: plte_len
+            value: "3"
+            littleEndian: false
+            mutable: true
+          - type: group
+            name: plte_type
+            children:
+              - type: static
+                value: "PLTE"
+          - type: bytes
+            name: plte_entries
+            mutable: true
+            minSize: 3
+            maxSize: 3
+            value: "hex:FF0000"
+          - type: checksum
+            name: plte_crc
+            lengthBytes: 4
+            littleEndian: false
+            coverFrom: plte_type
+
+      # IDAT — tiny stored zlib blob (structure target; not a full compressor)
+      - type: uint32
+        name: idat_len
+        value: "11"
+        littleEndian: false
+        mutable: true
+      - type: group
+        name: idat_type
+        children:
+          - type: static
+            value: "IDAT"
+          - type: bytes
+            name: idat_zlib
+            mutable: true
+            minSize: 11
+            maxSize: 11
+            value: "hex:789C63000000010001"
+      - type: checksum
+        name: idat_crc
+        lengthBytes: 4
+        littleEndian: false
+        coverFrom: idat_type
+
+      # IEND
+      - type: uint32
+        name: iend_len
+        value: "0"
+        littleEndian: false
+      - type: group
+        name: iend_type
+        children:
+          - type: static
+            value: "IEND"
+      - type: checksum
+        name: iend_crc
+        lengthBytes: 4
+        littleEndian: false
+        coverFrom: iend_type

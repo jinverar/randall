@@ -16,7 +16,7 @@ protocols**, and **web‑application** payload classes. Each recipe carries a ma
 | **Grammar-backed** | Full recursive grammar (roadmap — do not claim yet) |
 | **Harness included** | In-process harness ships with the recipe |
 
-PNG / WAV / ZIP catalog entries ship as **Minimal valid** + chunk mutators. PDF stays **Magic-only**.
+PNG / WAV / ZIP catalog entries ship as **Structured model** (`protocols/*_structured.yaml` + chunk mutators). PDF stays **Magic-only**.
 
 > The catalog is table‑driven (`RecipeCatalog`), so it scales toward thousands of recipes without new
 > code — add rows, not plumbing. Competitive file-format depth: [FILE_FUZZING.md](FILE_FUZZING.md).

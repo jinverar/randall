@@ -1,0 +1,67 @@
+name: wav-structured
+description: >
+  Structured PCM WAV (RIFF) — RIFF/WAVE container with fmt and data chunks.
+  Chunk sizes are named length-policy targets; pcm payload is mutable.
+blocks:
+  - type: group
+    name: riff
+    children:
+      - type: static
+        value: "RIFF"
+      - type: uint32
+        name: riff_size
+        value: "44"
+        littleEndian: true
+        mutable: true
+      - type: static
+        value: "WAVE"
+      - type: group
+        name: fmt_chunk
+        children:
+          - type: static
+            value: "fmt "
+          - type: uint32
+            name: fmt_size
+            value: "16"
+            littleEndian: true
+          - type: uint16
+            name: audio_format
+            value: "1"
+            littleEndian: true
+          - type: uint16
+            name: channels
+            value: "1"
+            littleEndian: true
+          - type: uint32
+            name: sample_rate
+            value: "8000"
+            littleEndian: true
+          - type: uint32
+            name: byte_rate
+            value: "8000"
+            littleEndian: true
+          - type: uint16
+            name: block_align
+            value: "1"
+            littleEndian: true
+          - type: uint16
+            name: bits_per_sample
+            value: "8"
+            littleEndian: true
+      - type: group
+        name: data_chunk
+        children:
+          - type: static
+            value: "data"
+          - type: sized
+            lengthName: data_size
+            lengthBytes: 4
+            littleEndian: true
+            lengthMutable: true
+            child:
+              type: bytes
+              name: pcm
+              mutable: true
+              minSize: 8
+              maxSize: 4096
+              seedFile: seeds/wav_pcm_silence.bin

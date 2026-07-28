@@ -4,12 +4,16 @@ using Xunit;
 
 namespace Randall.Tests;
 
+[Collection("DebuggerEnv")]
 public class CdbProbeEngineTests
 {
     [Fact]
     public void StandardCrash_script_includes_all_markers_and_probes()
     {
-        var script = CdbScriptBuilder.BuildInline(CdbProbePlan.StandardCrash);
+        string script;
+        lock (DebuggerEnvGate.Lock)
+            script = CdbScriptBuilder.BuildInline(CdbProbePlan.StandardCrash);
+        Assert.Contains(".sympath", script, StringComparison.Ordinal);
         Assert.Contains(".symfix", script, StringComparison.Ordinal);
         Assert.Contains(".reload", script, StringComparison.Ordinal);
         Assert.Contains("!analyze -v", script, StringComparison.Ordinal);
@@ -116,22 +120,17 @@ public class CdbProbeEngineTests
     [Fact]
     public void WindowsCdbCrashAnalysisWriter_BuildScript_delegates_to_builder()
     {
-        // Capture once — DebuggerSymbolPathTests mutates _NT_SYMBOL_PATH / cache env in parallel,
-        // so two sequential FormatSympathScriptCommand() calls can disagree mid-assert.
-        var legacy = WindowsCdbCrashAnalysisWriter.BuildScript(null);
-        var direct = CdbScriptBuilder.BuildInline(
-            CdbProbePlan.StandardCrash,
-            new CdbScriptOptions { MsecDllPath = null });
-
-        static string WithoutSympath(string script)
+        string legacy;
+        string direct;
+        lock (DebuggerEnvGate.Lock)
         {
-            // Leading ".sympath \"…\"; " then the shared probe body.
-            const string sep = "; ";
-            var i = script.IndexOf(sep, StringComparison.Ordinal);
-            return i >= 0 ? script[(i + sep.Length)..] : script;
+            legacy = WindowsCdbCrashAnalysisWriter.BuildScript(null);
+            direct = CdbScriptBuilder.BuildInline(
+                CdbProbePlan.StandardCrash,
+                new CdbScriptOptions { MsecDllPath = null });
         }
 
-        Assert.Equal(WithoutSympath(direct), WithoutSympath(legacy));
+        Assert.Equal(direct, legacy);
         Assert.Contains("!analyze -v", legacy, StringComparison.Ordinal);
         Assert.Contains(CdbMarkers.Begin(CdbProbeSection.Analyze), legacy, StringComparison.Ordinal);
     }

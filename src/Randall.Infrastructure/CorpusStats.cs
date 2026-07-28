@@ -17,12 +17,23 @@ public static class CorpusStats
 
         var edgesPath = Path.Combine(corpusDir, "edges.txt");
         var edgeCount = File.Exists(edgesPath) ? File.ReadLines(edgesPath).Count(l => !string.IsNullOrWhiteSpace(l)) : 0;
+        var pathsPath = Path.Combine(corpusDir, "paths.txt");
+        var semantic = File.Exists(pathsPath)
+            ? File.ReadLines(pathsPath).Count(l => !string.IsNullOrWhiteSpace(l))
+            : 0;
+        var dynamo = DynamoRioRunner.Discover().IsAvailable;
+        var kind = edgeCount > 0 ? "bb-edges"
+            : semantic > 0 ? "path-novelty"
+            : "unavailable";
 
         return new CorpusStatsDto(
             projectName,
             tracker.SeedFileCount,
             tracker.SeenCount,
             edgeCount,
-            DynamoRioRunner.Discover().IsAvailable);
+            dynamo,
+            CoverageBlocks: edgeCount,
+            SemanticStageHits: semantic,
+            CoverageKind: kind);
     }
 }

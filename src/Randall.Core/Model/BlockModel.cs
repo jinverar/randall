@@ -16,12 +16,39 @@ public interface IBlockNode
     void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx);
 }
 
+/// <summary>Pending absolute/relative offset write after full layout.</summary>
+public sealed record OffsetPatchRequest(
+    string Name,
+    int PatchOffset,
+    int Width,
+    bool LittleEndian,
+    bool Relative,
+    string? TargetField);
+
 public sealed class RenderContext
 {
     public required IReadOnlyDictionary<string, byte[]> Seeds { get; init; }
     public Random Rng { get; } = Random.Shared;
     /// <summary>Deterministic choice index for exhaustive / choices blocks.</summary>
     public int? ChoiceIndex { get; init; }
+
+    /// <summary>Named field values rendered so far (for <c>when</c> predicates).</summary>
+    public Dictionary<string, string> FieldValues { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Absolute start offsets of named fields (for offset back-patch).</summary>
+    public Dictionary<string, int> FieldOffsets { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Offset fields to rewrite after the full message is laid out.</summary>
+    public List<OffsetPatchRequest> OffsetPatches { get; } = [];
+
+    public void NoteField(string? name, int absoluteOffset, string? value = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return;
+        FieldOffsets[name] = absoluteOffset;
+        if (value is not null)
+            FieldValues[name] = value;
+    }
 }
 
 public sealed class StaticBlock(string value, Encoding? encoding = null) : IBlockNode
@@ -69,6 +96,7 @@ public sealed class StringBlock : IBlockNode
     {
         var data = ResolveBytes(ctx);
         data.CopyTo(buffer[offset..]);
+        ctx.NoteField(Name, offset, Encoding.ASCII.GetString(data));
         return data.Length;
     }
 
@@ -103,6 +131,7 @@ public sealed class IntegerBlock : IBlockNode
     public int Render(Span<byte> buffer, int offset, RenderContext ctx)
     {
         WriteInteger(buffer[offset..], DefaultValue);
+        ctx.NoteField(Name, offset, DefaultValue.ToString());
         return Width;
     }
 
@@ -191,6 +220,7 @@ public sealed class BytesBlock : IBlockNode
     {
         var data = ResolveBytes(ctx);
         data.CopyTo(buffer[offset..]);
+        ctx.NoteField(Name, offset);
         return data.Length;
     }
 
@@ -228,6 +258,7 @@ public sealed class LengthPrefixedBlock : IBlockNode
         var payloadLen = Payload.Render(payloadBuf, 0, ctx);
         WriteLength(buffer[offset..], payloadLen);
         payloadBuf.AsSpan(0, payloadLen).CopyTo(buffer[(offset + LengthBytes)..]);
+        ctx.NoteField(LengthName, offset, payloadLen.ToString());
         return LengthBytes + payloadLen;
     }
 
@@ -262,10 +293,14 @@ public sealed class LengthPrefixedBlock : IBlockNode
     }
 }
 
-public sealed class GroupBlock(IReadOnlyList<IBlockNode> children) : IBlockNode
+public sealed class GroupBlock(IReadOnlyList<IBlockNode> children, string? name = null) : IBlockNode
 {
+    public string? Name { get; } = name;
+
     public int Render(Span<byte> buffer, int offset, RenderContext ctx)
     {
+        if (!string.IsNullOrWhiteSpace(Name))
+            ctx.NoteField(Name, offset);
         var pos = offset;
         foreach (var child in children)
             pos += child.Render(buffer, pos, ctx);
@@ -274,6 +309,8 @@ public sealed class GroupBlock(IReadOnlyList<IBlockNode> children) : IBlockNode
 
     public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx)
     {
+        if (!string.IsNullOrWhiteSpace(Name))
+            ctx.NoteField(Name, baseOffset);
         var pos = baseOffset;
         foreach (var child in children)
         {
@@ -284,8 +321,15 @@ public sealed class GroupBlock(IReadOnlyList<IBlockNode> children) : IBlockNode
 
     private static int Measure(IBlockNode node, RenderContext ctx)
     {
+        // Isolated layout so temp offsets/patches do not pollute the parent context.
+        var measureCtx = new RenderContext { Seeds = ctx.Seeds, ChoiceIndex = ctx.ChoiceIndex };
+        foreach (var kv in ctx.FieldValues)
+            measureCtx.FieldValues[kv.Key] = kv.Value;
         var buf = new byte[65536];
-        return node.Render(buf, 0, ctx);
+        var len = node.Render(buf, 0, measureCtx);
+        foreach (var kv in measureCtx.FieldValues)
+            ctx.FieldValues[kv.Key] = kv.Value;
+        return len;
     }
 }
 
@@ -295,16 +339,27 @@ public sealed class ChecksumBlock : IBlockNode
     public int LengthBytes { get; init; } = 4;
     public bool LittleEndian { get; init; } = true;
     public bool Mutable { get; init; } = true;
+    /// <summary>Optional named field: CRC covers bytes from that field start through checksum.</summary>
+    public string? CoverFrom { get; init; }
 
     public int Render(Span<byte> buffer, int offset, RenderContext ctx)
     {
         if (offset <= 0)
         {
             buffer[offset..(offset + LengthBytes)].Clear();
+            ctx.NoteField(Name, offset, "0");
             return LengthBytes;
         }
-        var crc = Crc32.Compute(buffer[..offset]);
+        var start = 0;
+        if (!string.IsNullOrWhiteSpace(CoverFrom) &&
+            ctx.FieldOffsets.TryGetValue(CoverFrom, out var coverStart) &&
+            coverStart >= 0 && coverStart < offset)
+        {
+            start = coverStart;
+        }
+        var crc = Crc32.Compute(buffer[start..offset]);
         WriteChecksum(buffer[offset..], crc);
+        ctx.NoteField(Name, offset, crc.ToString());
         return LengthBytes;
     }
 
@@ -483,7 +538,36 @@ public sealed class BlockModel : IProtocolModel
         var ctx = new RenderContext { Seeds = seeds };
         var buffer = new byte[_bufferSize];
         var len = _root.Render(buffer, 0, ctx);
+        ApplyOffsetPatches(buffer.AsSpan(0, len), ctx);
         return buffer[..len];
+    }
+
+    /// <summary>Write absolute/relative offsets after layout using named field starts.</summary>
+    public static void ApplyOffsetPatches(Span<byte> message, RenderContext ctx)
+    {
+        foreach (var p in ctx.OffsetPatches)
+        {
+            if (string.IsNullOrWhiteSpace(p.TargetField) ||
+                !ctx.FieldOffsets.TryGetValue(p.TargetField, out var target))
+                continue;
+            long value = p.Relative
+                ? target - (p.PatchOffset + p.Width)
+                : target;
+            if (value < 0)
+                value = 0;
+            WriteIntegerAt(message, p.PatchOffset, p.Width, p.LittleEndian, (ulong)value);
+        }
+    }
+
+    private static void WriteIntegerAt(Span<byte> buf, int offset, int width, bool le, ulong value)
+    {
+        if (offset < 0 || offset + width > buf.Length)
+            return;
+        for (var i = 0; i < width; i++)
+        {
+            var shift = le ? 8 * i : 8 * (width - 1 - i);
+            buf[offset + i] = (byte)(value >> shift);
+        }
     }
 
     public IReadOnlyList<FieldRegion> GetFields(IReadOnlyDictionary<string, byte[]>? seeds = null)

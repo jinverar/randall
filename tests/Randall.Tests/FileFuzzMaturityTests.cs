@@ -181,8 +181,146 @@ public class FileFuzzMaturityTests
 
         var png = RecipeCatalog.Get("file-png");
         Assert.NotNull(png);
-        Assert.Equal(RecipeCatalog.RecipeQuality.MinimalValid, png!.Entry.Quality);
+        Assert.Equal(RecipeCatalog.RecipeQuality.StructuredModel, png!.Entry.Quality);
         Assert.True(png.SeedLength > 16);
+
+        var zip = RecipeCatalog.Get("file-zip");
+        Assert.NotNull(zip);
+        Assert.Equal(RecipeCatalog.RecipeQuality.StructuredModel, zip!.Entry.Quality);
+    }
+
+    [Fact]
+    public void When_SkipsChildUnlessPredicateMatches()
+    {
+        var root = new GroupBlock([
+            new IntegerBlock { Name = "kind", Width = 1, DefaultValue = 1, Mutable = true },
+            new ConditionalBlock
+            {
+                WhenField = "kind == 2",
+                WhenEquals = "",
+                Child = new StaticBlock("YES"),
+            },
+            new ConditionalBlock
+            {
+                WhenField = "kind",
+                WhenEquals = "1",
+                Child = new StaticBlock("OK"),
+            },
+        ]);
+        var model = new BlockModel("when-t", root);
+        var bytes = model.Render();
+        Assert.Equal(new byte[] { 1, (byte)'O', (byte)'K' }, bytes);
+    }
+
+    [Fact]
+    public void Offset_BackPatchesAbsoluteAndRelativeAfterLayout()
+    {
+        var root = new GroupBlock([
+            new GroupBlock([
+                new IntegerBlock { Name = "marker", Width = 4, DefaultValue = 0x11223344, LittleEndian = true },
+            ], "target"),
+            new BytesBlock { Name = "pad", DefaultValue = [9, 9], Mutable = false },
+            new OffsetBlock
+            {
+                Name = "abs_off",
+                Width = 4,
+                LittleEndian = true,
+                Relative = false,
+                TargetField = "target",
+                DefaultValue = 0xFFFFFFFF,
+            },
+            new OffsetBlock
+            {
+                Name = "rel_off",
+                Width = 4,
+                LittleEndian = true,
+                Relative = true,
+                TargetField = "target",
+                DefaultValue = 0xFFFFFFFF,
+            },
+        ]);
+        var model = new BlockModel("off-t", root);
+        var bytes = model.Render();
+        // target @ 0, pad 2B, abs @ 6 → 0, rel @ 10 → 0 - (10+4) = negative → clamped 0
+        Assert.Equal(0, BitConverter.ToInt32(bytes, 6));
+        Assert.Equal(0, BitConverter.ToInt32(bytes, 10));
+
+        // Relative to a later field: put offset before target via second model
+        var root2 = new GroupBlock([
+            new OffsetBlock
+            {
+                Name = "ptr",
+                Width = 4,
+                LittleEndian = true,
+                Relative = false,
+                TargetField = "body",
+                DefaultValue = 0,
+            },
+            new BytesBlock { Name = "gap", DefaultValue = [1, 2, 3, 4], Mutable = false },
+            new IntegerBlock { Name = "body", Width = 2, DefaultValue = 0xABCD, LittleEndian = true },
+        ]);
+        var b2 = new BlockModel("off2", root2).Render();
+        Assert.Equal(8, BitConverter.ToInt32(b2, 0)); // body starts at 4+4=8
+    }
+
+    [Fact]
+    public void StructuredPng_GenerateRoundTrip_SignatureAndIhdr()
+    {
+        var repo = FindRepoRoot();
+        var proj = Path.Combine(repo, "projects", "file-text.yaml");
+        var model = ProtocolLoader.Load(proj, "protocols/png_structured.yaml");
+        var bytes = model.Render();
+        Assert.True(bytes.Length > 33);
+        Assert.Equal(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }, bytes[..8]);
+        // IHDR length = 13 BE
+        Assert.Equal(13, (bytes[8] << 24) | (bytes[9] << 16) | (bytes[10] << 8) | bytes[11]);
+        Assert.Equal("IHDR", System.Text.Encoding.ASCII.GetString(bytes, 12, 4));
+        // color_type default 2 → no PLTE; IDAT type present
+        Assert.True(IndexOf(bytes, "IDAT"u8) >= 0);
+        Assert.True(IndexOf(bytes, "IEND"u8) >= 0);
+        var fields = model.GetFields();
+        Assert.Contains(fields, f => f.Name == "color_type");
+        Assert.DoesNotContain(fields, f => f.Name == "plte_len");
+    }
+
+    [Fact]
+    public void StructuredZip_GenerateRoundTrip_OffsetBackPatch()
+    {
+        var repo = FindRepoRoot();
+        var proj = Path.Combine(repo, "projects", "file-text.yaml");
+        var model = ProtocolLoader.Load(proj, "protocols/zip_structured.yaml");
+        var bytes = model.Render();
+        Assert.True(bytes.Length > 60);
+        Assert.Equal(0x04034b50u, BitConverter.ToUInt32(bytes, 0));
+        var fields = model.GetFields();
+        var localOff = fields.First(f => f.Name == "local_header_offset");
+        var cdOff = fields.First(f => f.Name == "eocd_cd_offset");
+        Assert.Equal(0, BitConverter.ToInt32(bytes, localOff.Offset));
+        var cdStart = fields.First(f => f.Name == "cd_sig").Offset;
+        Assert.Equal(cdStart, BitConverter.ToInt32(bytes, cdOff.Offset));
+        Assert.Equal(0x06054b50u, BitConverter.ToUInt32(bytes, fields.First(f => f.Name == "eocd_sig").Offset));
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "Randall.sln")))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+        throw new InvalidOperationException("Repo root not found");
+    }
+
+    private static int IndexOf(byte[] haystack, ReadOnlySpan<byte> needle)
+    {
+        for (var i = 0; i <= haystack.Length - needle.Length; i++)
+        {
+            if (haystack.AsSpan(i, needle.Length).SequenceEqual(needle))
+                return i;
+        }
+        return -1;
     }
 
     [Fact]

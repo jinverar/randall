@@ -48,8 +48,9 @@ Classic **length + payload** layout — mutate the length field separately from 
 | `switch` / `choice` | Pick one child case (`cases:`) |
 | `array` / `repeat` | Repeat child N times |
 | `padding` / `align` | Align to boundary |
-| `offset` / `relativeOffset` | Offset placeholder (back-patch TODO) |
-| `when` / `conditional` | Conditional child (eval stub — always renders today) |
+| `offset` / `relativeOffset` | Absolute/relative offset; back-patched after layout via `targetField` |
+| `when` / `conditional` | Conditional child — `when: "field == N"` / `whenEquals` against prior fields |
+| `checksum` + `coverFrom` | CRC over bytes from named field start through checksum |
 | `bytes` | Mutable binary payload with optional seed file |
 | `sized` | Length prefix + nested payload (field-aware) |
 | `checksum` | CRC32 over preceding bytes (policy-controlled resync) |

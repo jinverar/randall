@@ -1,0 +1,187 @@
+name: zip-structured
+description: >
+  Structured ZIP — local file header + payload, central directory (with absolute offset
+  back-patch to local_header), and EOCD (cd_offset back-patch). Store method, one entry.
+blocks:
+  - type: group
+    name: local_header
+    children:
+      - type: uint32
+        name: local_sig
+        value: "0x04034b50"
+        littleEndian: true
+      - type: uint16
+        name: local_version
+        value: "20"
+        littleEndian: true
+      - type: uint16
+        name: local_flags
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: local_method
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: local_time
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: local_date
+        value: "0"
+        littleEndian: true
+      - type: uint32
+        name: local_crc
+        value: "0"
+        littleEndian: true
+        mutable: true
+      - type: uint32
+        name: local_comp_size
+        value: "1"
+        littleEndian: true
+        mutable: true
+      - type: uint32
+        name: local_uncomp_size
+        value: "1"
+        littleEndian: true
+        mutable: true
+      - type: uint16
+        name: local_name_len
+        value: "5"
+        littleEndian: true
+      - type: uint16
+        name: local_extra_len
+        value: "0"
+        littleEndian: true
+      - type: string
+        name: local_name
+        value: "a.txt"
+        mutable: true
+      - type: bytes
+        name: local_data
+        mutable: true
+        minSize: 1
+        maxSize: 1
+        value: "hex:78"
+
+  - type: group
+    name: central_directory
+    children:
+      - type: uint32
+        name: cd_sig
+        value: "0x02014b50"
+        littleEndian: true
+      - type: uint16
+        name: cd_ver_made
+        value: "20"
+        littleEndian: true
+      - type: uint16
+        name: cd_ver_need
+        value: "20"
+        littleEndian: true
+      - type: uint16
+        name: cd_flags
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: cd_method
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: cd_time
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: cd_date
+        value: "0"
+        littleEndian: true
+      - type: uint32
+        name: cd_crc
+        value: "0"
+        littleEndian: true
+        mutable: true
+      - type: uint32
+        name: cd_comp_size
+        value: "1"
+        littleEndian: true
+        mutable: true
+      - type: uint32
+        name: cd_uncomp_size
+        value: "1"
+        littleEndian: true
+        mutable: true
+      - type: uint16
+        name: cd_name_len
+        value: "5"
+        littleEndian: true
+      - type: uint16
+        name: cd_extra_len
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: cd_comment_len
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: cd_disk_start
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: cd_int_attr
+        value: "0"
+        littleEndian: true
+      - type: uint32
+        name: cd_ext_attr
+        value: "0"
+        littleEndian: true
+      - type: offset
+        name: local_header_offset
+        width: 4
+        littleEndian: true
+        targetField: local_header
+        relative: false
+        mutable: true
+      - type: string
+        name: cd_name
+        value: "a.txt"
+        mutable: true
+
+  - type: group
+    name: eocd
+    children:
+      - type: uint32
+        name: eocd_sig
+        value: "0x06054b50"
+        littleEndian: true
+      - type: uint16
+        name: eocd_disk
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: eocd_disk_start
+        value: "0"
+        littleEndian: true
+      - type: uint16
+        name: eocd_entries_disk
+        value: "1"
+        littleEndian: true
+      - type: uint16
+        name: eocd_entries_total
+        value: "1"
+        littleEndian: true
+      - type: uint32
+        name: eocd_cd_size
+        value: "51"
+        littleEndian: true
+        mutable: true
+      - type: offset
+        name: eocd_cd_offset
+        width: 4
+        littleEndian: true
+        targetField: central_directory
+        relative: false
+        mutable: true
+      - type: uint16
+        name: eocd_comment_len
+        value: "0"
+        littleEndian: true

@@ -14,19 +14,38 @@ coverage scoping — with **crash-research integration** as the differentiator v
 
 - Teaching + custom parsers, harness demos, ReelDeck path stalking
 - Crash research workbench (Investigation / Exploit Research / Evidence)
-- Block models with sized/checksum + expanded Peach-style types (uint/int, enum, flags, switch, array, padding, offset stubs)
+- Block models with sized/checksum + Peach-style types (uint/int, enum, flags, switch, array, padding)
+- **`when` / conditional evaluation** against prior field values (`field == N` / `!=` / `whenEquals`)
+- **`offset` / `relativeOffset` back-patch** after layout (named `targetField`)
+- Checksum `coverFrom` (CRC over type+data for PNG-style chunks)
 - Chunk-aware mutators (delete/insert/replace/clone/move/swap/zero/fill/lengthen…)
 - Explicit `lengthPolicy` / `checksumPolicy`
 - File OOP exit honesty (tool reject ≠ AV) + sanitizer stderr
 - Temp file lifecycle (unique paths, flush+close, crash inputs via CrashStore)
-- Recipe quality tiers (Magic-only → Harness included); PNG/WAV/ZIP minimal-valid seeds
+- Recipe quality tiers — PNG / ZIP / WAV at **Structured model** (`protocols/*_structured.yaml`)
 - `randall corpus minimize`
+- Live UI **Edge | Block | Semantic** counters (honest `—` when BB provider missing)
+
+## Scorecard (structure climb)
+
+| Capability | Status |
+|------------|--------|
+| Minimal-valid PNG/WAV/ZIP seeds | Done |
+| Structured model recipes (PNG/ZIP/WAV) | Done — IHDR/IDAT/IEND + ZIP local/CD/EOCD offsets + WAV chunks |
+| `when` / conditional | Done — equality / inequality on prior fields |
+| `offset` / `relativeOffset` back-patch | Done — absolute + relative after layout |
+| Length / checksum policies | Done |
+| Chunk mutators | Done |
+| Live Edge \| Block \| Semantic status | Done — Fuzz STATUS + Dashboard |
+| Grammar-backed recipes (owned formats) | Next |
+| SanCov-native Linux (no DynamoRIO) | Next |
+| Richer PDF / PE structured models | Next |
 
 ## Metrics (keep separate)
 
 | Metric | Meaning | When empty |
 |--------|---------|------------|
-| **Edge coverage** | DynamoRIO/sancov BB edges | Show **Coverage unavailable** — never imply edges=0 is measured |
+| **Edge coverage** | DynamoRIO/sancov BB edges | Show **Edge —** / Coverage unavailable — never imply edges=0 is measured |
 | **Block coverage** | Unique blocks from traces | Same as edges without a BB provider |
 | **Semantic stage coverage** | ReelDeck `REELDECK_PATHLOG` / path novelty | Valid without DynamoRIO |
 
@@ -48,7 +67,7 @@ transport:
     - name: sidecar
       placeholder: "{file2}"
       extension: .dat
-model: protocols/png_minimal.yaml
+model: protocols/png_structured.yaml
 mutators:
   - havoc
   - delete-range
@@ -66,6 +85,25 @@ fuzz:
   harnessDeterminismProbe: true
 ```
 
+### Structured model sketch (ZIP offsets + PNG when)
+
+```yaml
+# ZIP — absolute offset back-patch to local_header / central_directory
+- type: offset
+  name: eocd_cd_offset
+  targetField: central_directory
+  littleEndian: true
+
+# PNG — PLTE only when indexed color
+- type: when
+  when: "color_type == 3"
+  children:
+    - type: uint32
+      name: plte_len
+      value: "3"
+      littleEndian: false
+```
+
 ## ReelDeck
 
 ReelDeck deepens a **known container** with structural seeds + pathlog stages — it is not
@@ -76,11 +114,15 @@ See [REELDECK.md](REELDECK.md).
 
 **NEXT**
 
-- Full conditional/when evaluation + offset back-patch
-- Richer ZIP/PDF/PE structured models (not magic-only)
-- Live Edge | Block | Semantic counters in UI status strip
 - Grammar-backed recipes where we own the format
+- Richer PDF/PE structured models (not magic-only)
 - SanCov-native Linux without DynamoRIO
+
+**Shipped this climb**
+
+- Full conditional/`when` evaluation + offset back-patch
+- Structured PNG / ZIP / WAV models + recipe catalog tier bump
+- Live Edge | Block | Semantic counters in Fuzz/Dashboard status
 
 **Not claiming**
 

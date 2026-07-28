@@ -15,6 +15,7 @@ public sealed class NumberBlock : IBlockNode
     public int Render(Span<byte> buffer, int offset, RenderContext ctx)
     {
         Write(buffer[offset..], DefaultValue);
+        ctx.NoteField(Name, offset, DefaultValue.ToString());
         return Width;
     }
 
@@ -51,12 +52,17 @@ public sealed class EnumBlock : IBlockNode
 
     public int Render(Span<byte> buffer, int offset, RenderContext ctx)
     {
-        var pick = Values.Count == 0
-            ? DefaultValue
-            : Values[ctx.ChoiceIndex.HasValue
-                ? ctx.ChoiceIndex.Value % Values.Count
-                : ctx.Rng.Next(Values.Count)];
+        ulong pick;
+        if (ctx.ChoiceIndex.HasValue && Values.Count > 0)
+            pick = Values[ctx.ChoiceIndex.Value % Values.Count];
+        else if (Values.Count > 0 && Values.Contains(DefaultValue))
+            pick = DefaultValue;
+        else if (Values.Count > 0)
+            pick = Values[ctx.Rng.Next(Values.Count)];
+        else
+            pick = DefaultValue;
         Write(buffer[offset..], pick);
+        ctx.NoteField(Name, offset, pick.ToString());
         return Width;
     }
 
@@ -88,6 +94,7 @@ public sealed class FlagsBlock : IBlockNode
     public int Render(Span<byte> buffer, int offset, RenderContext ctx)
     {
         Write(buffer[offset..], DefaultValue);
+        ctx.NoteField(Name, offset, DefaultValue.ToString());
         return Width;
     }
 
@@ -192,32 +199,88 @@ public sealed class SwitchBlock : IBlockNode
 
 /// <summary>
 /// Conditional block — when predicate is unmet, emits nothing.
-/// Predicate is a simple equality on a previously rendered enum/flags field name (best-effort).
-/// TODO: full expression language (Peach when=).
+/// Supports <c>field</c> + <c>whenEquals</c>, or Peach-style <c>when: "field == 3"</c> / <c>!=</c>.
 /// </summary>
 public sealed class ConditionalBlock : IBlockNode
 {
     public required string WhenField { get; init; }
     public required string WhenEquals { get; init; }
     public required IBlockNode Child { get; init; }
-    /// <summary>When true (default), always render — stub until field-value table is threaded.</summary>
-    public bool AlwaysRenderStub { get; init; } = true;
+    /// <summary>Legacy escape hatch — force always-on (tests / migration).</summary>
+    public bool AlwaysRenderStub { get; init; }
 
     public int Render(Span<byte> buffer, int offset, RenderContext ctx)
     {
-        // TODO: evaluate WhenField against rendered so-far buffer / seed table.
-        if (AlwaysRenderStub)
-            return Child.Render(buffer, offset, ctx);
-        return 0;
+        if (!Evaluate(ctx))
+            return 0;
+        return Child.Render(buffer, offset, ctx);
     }
 
-    public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx) =>
+    public void CollectFields(int baseOffset, List<FieldRegion> fields, RenderContext ctx)
+    {
+        if (!Evaluate(ctx))
+            return;
         Child.CollectFields(baseOffset, fields, ctx);
+    }
+
+    public bool Evaluate(RenderContext ctx)
+    {
+        if (AlwaysRenderStub)
+            return true;
+        var (field, notEquals, expected) = ParsePredicate(WhenField, WhenEquals);
+        if (string.IsNullOrWhiteSpace(field))
+            return true;
+        if (!ctx.FieldValues.TryGetValue(field, out var actual))
+            return false;
+        var eq = ValuesEqual(actual, expected);
+        return notEquals ? !eq : eq;
+    }
+
+    internal static (string Field, bool NotEquals, string Expected) ParsePredicate(string whenField, string whenEquals)
+    {
+        var raw = (whenField ?? "").Trim();
+        if (!string.IsNullOrWhiteSpace(whenEquals))
+            return (raw, false, whenEquals.Trim());
+
+        foreach (var op in new[] { "!=", "==", "=" })
+        {
+            var idx = raw.IndexOf(op, StringComparison.Ordinal);
+            if (idx <= 0)
+                continue;
+            return (raw[..idx].Trim(), op == "!=", raw[(idx + op.Length)..].Trim());
+        }
+        return (raw, false, "");
+    }
+
+    private static bool ValuesEqual(string actual, string expected)
+    {
+        if (string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (TryParseNumber(actual, out var a) && TryParseNumber(expected, out var b))
+            return a == b;
+        return false;
+    }
+
+    private static bool TryParseNumber(string s, out ulong value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(s))
+            return false;
+        s = s.Trim();
+        if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            return ulong.TryParse(s.AsSpan(2), System.Globalization.NumberStyles.HexNumber, null, out value);
+        if (s.StartsWith('-') && long.TryParse(s, out var signed))
+        {
+            value = unchecked((ulong)signed);
+            return true;
+        }
+        return ulong.TryParse(s, out value);
+    }
 }
 
 /// <summary>
-/// Offset / relativeOffset placeholder — reserves space; patched in Finalize when possible.
-/// TODO: full back-patch of absolute/relative offsets after layout.
+/// Offset / relativeOffset — reserves space; back-patched after layout to a named field start.
+/// Absolute: target offset. Relative: target − (patchOffset + width).
 /// </summary>
 public sealed class OffsetBlock : IBlockNode
 {
@@ -232,6 +295,9 @@ public sealed class OffsetBlock : IBlockNode
     public int Render(Span<byte> buffer, int offset, RenderContext ctx)
     {
         Write(buffer[offset..], DefaultValue);
+        ctx.NoteField(Name, offset, DefaultValue.ToString());
+        ctx.OffsetPatches.Add(new OffsetPatchRequest(
+            Name, offset, Width, LittleEndian, Relative, TargetField));
         return Width;
     }
 
