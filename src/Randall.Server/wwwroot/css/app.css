@@ -4344,6 +4344,8 @@ html[data-scream-canisters="off"] #scream-harvest-panel .scream-canister-rack:em
   color: inherit;
   text-align: left;
   transition: border-color 0.2s ease, background 0.2s ease, transform 0.25s ease;
+  position: relative;
+  overflow: hidden; /* clip per-card floaties — never bleed into empty rack void */
 }
 
 .scream-canister:hover,
@@ -5557,9 +5559,11 @@ html[data-scream-anim="on"] .canister-floaties .floatie {
   color: #c4a574;
   font-weight: 650;
 }
+/* Floor-wide ambience disabled (DOOR/! floaters leaked into empty rack void).
+   Per-canister .canister-floaties remain when Animate is on. */
 .scream-harvest-ambience {
+  display: none !important;
   position: absolute;
-  /* Clipped to the canister rack viewport only — never float over empty dashboard void */
   inset: 0;
   pointer-events: none;
   z-index: 0;

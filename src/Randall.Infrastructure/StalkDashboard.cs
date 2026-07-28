@@ -843,34 +843,54 @@ public static class StalkDashboard
         return hints;
     }
 
+    /// <summary>
+    /// Timeline bar strip for the Dashboard (last ≤200 points). Exposed for tests —
+    /// crash markers must appear even when the journal is missing (live overlay).
+    /// </summary>
+    public static IReadOnlyList<StalkTimelinePointDto> BuildTimelineSnapshot(
+        FuzzRunManifestDto? run,
+        CrashDetailDto? latestDetail,
+        IReadOnlyList<CrashSummaryDto> crashes)
+        => BuildTimeline(run, latestDetail, crashes);
+
     private static List<StalkTimelinePointDto> BuildTimeline(
         FuzzRunManifestDto? run,
         CrashDetailDto? latestDetail,
         IReadOnlyList<CrashSummaryDto> crashes)
     {
         var runId = run?.RunId;
+        var isLiveOverlay = string.Equals(runId, "live", StringComparison.OrdinalIgnoreCase);
+
         // Prefer crashes from the active run, then newest observation for that iteration.
-        var crashByIteration = crashes
+        // Live overlay has no real runId — use the whole project crash list.
+        var scopedCrashes = crashes
+            .Where(c =>
+                isLiveOverlay
+                || string.IsNullOrWhiteSpace(runId)
+                || string.Equals(c.RunId, runId, StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(c.RunId))
+            .ToList();
+
+        var crashByIteration = scopedCrashes
             .GroupBy(c => c.Iteration)
             .ToDictionary(
                 g => g.Key,
                 g => g
                     .OrderByDescending(c =>
                         !string.IsNullOrWhiteSpace(runId)
+                        && !isLiveOverlay
                         && string.Equals(c.RunId, runId, StringComparison.OrdinalIgnoreCase))
                     .ThenByDescending(c => c.ObservedAt)
-                    .First().Id);
+                    .First());
 
         Guid? CrashIdFor(int iteration, bool crashed, string? command = null)
         {
             if (!crashed) return null;
-            if (crashByIteration.TryGetValue(iteration, out var id))
-                return id;
+            if (crashByIteration.TryGetValue(iteration, out var hit))
+                return hit.Id;
 
             // Fallback: nearest crash in the same run (iteration numbers can drift).
-            var pool = crashes.Where(c =>
-                string.IsNullOrWhiteSpace(runId)
-                || string.Equals(c.RunId, runId, StringComparison.OrdinalIgnoreCase));
+            var pool = scopedCrashes.AsEnumerable();
             if (!string.IsNullOrWhiteSpace(command))
             {
                 var cmdKey = command.Split('/')[0];
@@ -897,7 +917,20 @@ public static class StalkDashboard
         {
             for (var i = 0; i < 40; i++)
                 points.Add(new StalkTimelinePointDto(i, i % 7 == 0 ? "novel" : "hit", $"bb_{i}", i, false, i % 7 == 0 ? 1 : 0));
-            if (latestDetail is not null)
+            // Place every known crash as a distinct toxic bar (not a single trailing marker).
+            var idx = points.Count;
+            foreach (var c in scopedCrashes.OrderBy(c => c.Iteration).TakeLast(40))
+            {
+                points.Add(new StalkTimelinePointDto(
+                    idx++,
+                    "crash",
+                    c.Mutator ?? "CRASH",
+                    c.Iteration,
+                    true,
+                    0,
+                    c.Id));
+            }
+            if (points.Count == 40 && latestDetail is not null)
             {
                 points.Add(new StalkTimelinePointDto(
                     40,
@@ -908,47 +941,65 @@ public static class StalkDashboard
                     latestDetail.Sidecar?.NewEdgesAtCrash ?? 0,
                     latestDetail.Summary.Id));
             }
-            return points;
+            return points.TakeLast(200).ToList();
         }
 
-        var runDir = FindRunDirectory(run.RunId);
+        // "live" overlay has no journal dir — also try latest on-disk run for this project.
+        var runDir = isLiveOverlay ? null : FindRunDirectory(run.RunId);
+        if (runDir is null && !string.IsNullOrWhiteSpace(run.Project))
+            runDir = FindLatestRunDirectoryForProject(run.Project);
         var iterPath = runDir is null ? null : Path.Combine(runDir, "iterations.jsonl");
         if (iterPath is null || !File.Exists(iterPath))
         {
-            for (var i = 0; i < Math.Min(80, Math.Max(10, run.Iterations)); i++)
+            // Synthetic window over the last ≤200 iterations, with crash markers at real
+            // crash iterations (the old `i == run.Iterations - 1` check never fired when
+            // Iterations > window size — producing a flat blue strip during live fuzz).
+            var window = Math.Min(200, Math.Max(12, run.Iterations > 0 ? run.Iterations : 12));
+            var startIter = Math.Max(1, run.Iterations - window + 1);
+            var crashIters = crashByIteration.Keys.ToHashSet();
+            if (crashIters.Count == 0 && latestDetail is not null)
+                crashIters.Add(latestDetail.Summary.Iteration);
+            // If counters say crashes exist but catalog is empty, still mark the tip.
+            var forceTipCrash = run.CrashesFound > 0 && crashIters.Count == 0;
+
+            for (var i = 0; i < window; i++)
             {
-                var kind = i == run.Iterations - 1 && run.CrashesFound > 0 ? "crash" : i % 9 == 0 ? "novel" : "hit";
-                var crashed = kind == "crash";
-                var iteration = crashed ? (latestDetail?.Summary.Iteration ?? i) : i;
+                var iteration = startIter + i;
+                var crashed = crashIters.Contains(iteration)
+                    || (forceTipCrash && i == window - 1);
+                var novel = !crashed && iteration % 9 == 0;
+                var kind = crashed ? "crash" : novel ? "novel" : "hit";
                 points.Add(new StalkTimelinePointDto(
                     i,
                     kind,
-                    $"iter_{i}",
+                    crashed ? "CRASH" : $"iter_{iteration}",
                     iteration,
                     crashed,
-                    kind == "novel" ? 1 : 0,
+                    novel ? 1 : 0,
                     CrashIdFor(iteration, crashed)));
             }
-            return points;
+
+            return EnsureCrashMarkersPresent(points, scopedCrashes, CrashIdFor);
         }
 
         var lines = File.ReadLines(iterPath).TakeLast(200).ToList();
-        var idx = 0;
+        var idxJ = 0;
         foreach (var line in lines)
         {
             try
             {
                 var entry = JsonSerializer.Deserialize<IterationLogEntry>(line, JsonOptions);
                 if (entry is null) continue;
-                var kind = entry.Crashed ? "crash" : entry.NewEdges > 0 ? "novel" : "hit";
+                var crashed = entry.Crashed || crashByIteration.ContainsKey(entry.Iteration);
+                var kind = crashed ? "crash" : entry.NewEdges > 0 ? "novel" : "hit";
                 points.Add(new StalkTimelinePointDto(
-                    idx++,
+                    idxJ++,
                     kind,
                     entry.Command,
                     entry.Iteration,
-                    entry.Crashed,
+                    crashed,
                     entry.NewEdges,
-                    CrashIdFor(entry.Iteration, entry.Crashed, entry.Command)));
+                    CrashIdFor(entry.Iteration, crashed, entry.Command)));
             }
             catch
             {
@@ -959,7 +1010,80 @@ public static class StalkDashboard
         if (points.Count == 0)
             points.Add(new StalkTimelinePointDto(0, "hit", "seed", 0, false, 0));
 
-        return points;
+        return EnsureCrashMarkersPresent(points, scopedCrashes, CrashIdFor);
+    }
+
+    /// <summary>
+    /// Guarantee known crashes appear as red bars even when they fall outside the
+    /// journal window or were logged without Crashed=true.
+    /// </summary>
+    private static List<StalkTimelinePointDto> EnsureCrashMarkersPresent(
+        List<StalkTimelinePointDto> points,
+        IReadOnlyList<CrashSummaryDto> scopedCrashes,
+        Func<int, bool, string?, Guid?> crashIdFor)
+    {
+        if (scopedCrashes.Count == 0)
+            return points;
+
+        var byIter = points
+            .GroupBy(p => p.Iteration)
+            .ToDictionary(g => g.Key, g => g.Last());
+
+        var nextIndex = points.Count == 0 ? 0 : points.Max(p => p.Index) + 1;
+        foreach (var c in scopedCrashes.OrderBy(c => c.Iteration))
+        {
+            if (byIter.TryGetValue(c.Iteration, out var existing))
+            {
+                if (existing.Kind == "crash" && existing.Crashed)
+                    continue;
+                var upgraded = existing with
+                {
+                    Kind = "crash",
+                    Crashed = true,
+                    CrashId = existing.CrashId ?? c.Id,
+                    Label = string.IsNullOrWhiteSpace(existing.Label) || existing.Label.StartsWith("iter_", StringComparison.Ordinal)
+                        ? (c.Mutator ?? "CRASH")
+                        : existing.Label,
+                };
+                var at = points.FindIndex(p => p.Index == existing.Index && p.Iteration == existing.Iteration);
+                if (at >= 0) points[at] = upgraded;
+                byIter[c.Iteration] = upgraded;
+                continue;
+            }
+
+            // Crash outside the current window — append so the strip still shows it.
+            var marker = new StalkTimelinePointDto(
+                nextIndex++,
+                "crash",
+                c.Mutator ?? "CRASH",
+                c.Iteration,
+                true,
+                0,
+                c.Id);
+            points.Add(marker);
+            byIter[c.Iteration] = marker;
+        }
+
+        return points.TakeLast(200).ToList();
+    }
+
+    private static string? FindLatestRunDirectoryForProject(string projectName)
+    {
+        var repoRoot = CrashCatalog.FindRepoRoot();
+        if (repoRoot is null) return null;
+        var runsRoot = Path.Combine(repoRoot, "data", "runs");
+        if (!Directory.Exists(runsRoot)) return null;
+        try
+        {
+            return Directory.EnumerateDirectories(runsRoot)
+                .Where(d => Path.GetFileName(d).StartsWith(projectName + "_", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(d => Directory.GetLastWriteTimeUtc(d))
+                .FirstOrDefault();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static List<StalkCrashLogDto> BuildCrashLog(IReadOnlyList<CrashSummaryDto> crashes, string repoRoot)

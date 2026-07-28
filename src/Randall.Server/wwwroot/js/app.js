@@ -1931,7 +1931,8 @@ function renderStalkGraph(blocks, edges) {
     const label = e.label
       ? `<text class="stalk-edge-label" x="${(x1 + x2) / 2 + 10}" y="${midY}">${escapeXml(e.label)}</text>`
       : '';
-    return `<path class="stalk-edge ${cls}" d="${d}" marker-end="url(#arrow-${cls})" />${label}`;
+    // No marker-end / bubble dots on edges — stroke color alone marks the path.
+    return `<path class="stalk-edge ${cls}" d="${d}" />${label}`;
   }).join('');
 
   const caption = `<text class="stalk-path-caption" x="${spineX + nodeW / 2}" y="${Math.max(16, pad - 20)}" text-anchor="middle">Crash path ↓</text>`;
@@ -1942,7 +1943,7 @@ function renderStalkGraph(blocks, edges) {
     const title = b.label || b.id;
     const addr = b.address || '';
     const detail = b.detail || '';
-    // No skull / step-number bubble alerts — labels only.
+    // No skull / step-number / bubble alerts — labels only.
     const forkTag = !b.onCrashPath && b.kind !== 'crash'
       ? `<text class="stalk-fork-tag" x="${p.x + nodeW - 8}" y="${p.y + 14}" text-anchor="end">fork</text>`
       : '';
@@ -1957,17 +1958,6 @@ function renderStalkGraph(blocks, edges) {
   }).join('');
 
   const svgInner = `<svg viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <marker id="arrow-path" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="#3d8bfd" />
-      </marker>
-      <marker id="arrow-crash" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="#ff3b4a" />
-      </marker>
-      <marker id="arrow-miss" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-        <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280" />
-      </marker>
-    </defs>
     ${caption}${edgePaths}${nodes}
   </svg>`;
   el.innerHTML = `<div class="stalker-graph-world" id="stalker-graph-world">${svgInner}</div>`;
@@ -2226,14 +2216,54 @@ function updateTimelineFollowUi() {
   label.textContent = `Pinned #${stalkSelection.iteration} ${stalkSelection.label || ''} (${kind})${crashBit}`.trim();
 }
 
+function timelineKindRank(kind) {
+  const k = (kind || '').toLowerCase();
+  if (k === 'crash') return 3;
+  if (k === 'novel') return 2;
+  if (k === 'hit') return 1;
+  return 0;
+}
+
+function normalizeTimelinePoint(p, fallbackIndex) {
+  const kind = p.kind || (p.crashed ? 'crash' : (p.newEdges || p.newEdgeCount) > 0 ? 'novel' : 'hit');
+  const crashId = p.crashId || stalkCrashIdByIteration.get(Number(p.iteration)) || null;
+  return {
+    ...p,
+    kind,
+    crashed: !!(p.crashed || kind === 'crash'),
+    crashId,
+    index: p.index ?? fallbackIndex ?? 0,
+    newEdges: p.newEdges || p.newEdgeCount || 0,
+  };
+}
+
+/** Prefer crash > novel > hit when the same iteration appears in server + live streams. */
 function mergeTimeline(serverPoints) {
   if (Array.isArray(serverPoints))
     stalkServerTimeline = serverPoints;
   rememberTimelineCrashIds(stalkServerTimeline);
   rememberTimelineCrashIds(stalkLiveTimeline);
-  if (!stalkLiveTimeline.length)
-    return (stalkServerTimeline || []).slice(-200);
-  return [...(stalkServerTimeline || []), ...stalkLiveTimeline].slice(-200);
+
+  const byIter = new Map();
+  const upsert = (raw, i) => {
+    const p = normalizeTimelinePoint(raw, i);
+    const key = Number(p.iteration);
+    if (!Number.isFinite(key)) return;
+    const prev = byIter.get(key);
+    if (!prev || timelineKindRank(p.kind) >= timelineKindRank(prev.kind))
+      byIter.set(key, p);
+    else if (prev && p.crashId && !prev.crashId)
+      byIter.set(key, { ...prev, crashId: p.crashId });
+  };
+
+  (stalkServerTimeline || []).forEach(upsert);
+  (stalkLiveTimeline || []).forEach(upsert);
+
+  const merged = [...byIter.values()]
+    .sort((a, b) => Number(a.iteration) - Number(b.iteration) || Number(a.index) - Number(b.index))
+    .slice(-200)
+    .map((p, i) => ({ ...p, index: i }));
+  return merged;
 }
 
 function ensureTimelineClickDelegation() {
@@ -2262,11 +2292,7 @@ function renderTimeline(points) {
   const end = document.getElementById('stalk-timeline-end');
   if (!el || !end) return;
   ensureTimelineClickDelegation();
-  const list = (points || []).slice(-200).map((p, i) => {
-    const kind = p.kind || (p.crashed ? 'crash' : (p.newEdges || p.newEdgeCount) > 0 ? 'novel' : 'hit');
-    const crashId = p.crashId || stalkCrashIdByIteration.get(Number(p.iteration)) || null;
-    return { ...p, kind, crashId, index: p.index ?? i };
-  });
+  const list = (points || []).slice(-200).map((p, i) => normalizeTimelinePoint(p, i));
   stalkRenderedTimeline = list;
   rememberTimelineCrashIds(list);
   if (!list.length) {
@@ -2281,7 +2307,10 @@ function renderTimeline(points) {
     const h = kind === 'crash' ? 100 : kind === 'novel' ? 70 : kind === 'miss' ? 22 : 45;
     const key = timelinePointKey(p, i);
     const selected = selectedKey && key === selectedKey ? ' selected' : '';
-    const title = `#${p.iteration} ${p.label || ''} (${kind}) — click to inspect`;
+    const crashBit = p.crashId ? ` · crash ${String(p.crashId).slice(0, 8)}` : '';
+    const title = kind === 'crash'
+      ? `#${p.iteration} CRASH${crashBit} — click to inspect`
+      : `#${p.iteration} ${p.label || ''} (${kind})${crashBit} — click to inspect`;
     return `<button type="button" class="bar ${kind}${selected}" style="height:${h}%"
       data-index="${i}" data-iteration="${p.iteration}" data-kind="${kind}"
       data-label="${escapeXml(p.label || '')}"
@@ -5812,54 +5841,16 @@ function canisterFloatiesHtml(mood) {
 }
 
 function paintHarvestAmbience(root, floorMood, stats = {}, opts = {}) {
-  let layer = root.querySelector('.scream-harvest-ambience');
-  const rack = root.querySelector('.scream-canister-rack');
-  const animOn = document.documentElement.getAttribute('data-scream-anim') === 'on';
-  const cansOn = document.documentElement.getAttribute('data-scream-canisters') !== 'off';
-  const slotCount = Number(opts.slotCount) || (rack ? rack.querySelectorAll('.scream-canister').length : 0);
-  // Particles ONLY over visible canister cards / harvest rack — never empty dashboard void.
-  if (!animOn || !cansOn || !rack || slotCount <= 0) {
-    if (layer) layer.innerHTML = '';
-    return;
-  }
-  if (!layer) {
-    layer = document.createElement('div');
-    layer.className = 'scream-harvest-ambience';
-    layer.setAttribute('aria-hidden', 'true');
-    // Clip to rack band: insert as first child of the rack itself.
-    rack.insertBefore(layer, rack.firstChild);
-  } else if (layer.parentElement !== rack) {
-    rack.insertBefore(layer, rack.firstChild);
-  }
-  layer.dataset.mood = floorMood;
-  layer.classList.toggle('anim', animOn);
-
-  if (floorMood === 'laughter') {
-    layer.innerHTML = [
-      laughOrbSpriteHtml('a0', '--i:0', 'laughter'),
-      laughOrbSpriteHtml('a1', '--i:1', 'laughter'),
-      laughOrbSpriteHtml('a2', '--i:2', 'laughter'),
-      `<span class="amb smile a3" style="--i:3" title="Smile"></span>`,
-      laughOrbSpriteHtml('a4', '--i:4', 'laughter'),
-    ].join('');
-    return;
-  }
-  if (floorMood === 'watching') {
-    layer.innerHTML = `<span class="amb mote a0" style="--i:0" title="Watching mote"></span><span class="amb mote a1" style="--i:1" title="Watching mote"></span>`;
-    return;
-  }
-  // Toxic / virulent / EIP — stylized scare doors + pink scare orbs (Monsters Inc. floor vibe)
-  const density = floorMood === 'eip' ? 6 : floorMood === 'virulent' ? 5 : 4;
-  const parts = [];
-  for (let i = 0; i < density; i++) {
-    if (i % 3 === 1) {
-      parts.push(laughOrbSpriteHtml(`a${i} orb-pink`, `--i:${i}`, '!', 'Scare orb'));
-    } else {
-      parts.push(scareDoorSpriteHtml(`a${i}`, `--i:${i}`, 'Scare door'));
-    }
-  }
-  if (stats.ipHits) parts.push('<span class="amb seal-flare" title="EIP seal pressure"></span>');
-  layer.innerHTML = parts.join('');
+  // Floor-wide DOOR / ! / laughter floaters are disabled — they leaked into empty rack
+  // void next to sparse canisters. Per-canister floaties (canisterFloatiesHtml) stay
+  // clipped inside each card when Animate is on. Destroy any residual ambience layer.
+  void floorMood;
+  void stats;
+  void opts;
+  root.querySelectorAll('.scream-harvest-ambience').forEach((layer) => {
+    layer.innerHTML = '';
+    layer.remove();
+  });
 }
 
 function animateCanisterFills(rack) {
@@ -6563,15 +6554,25 @@ function bindHubHandlers() {
   hub.on('fuzzIteration', (e) => {
     // Rich lines come from fuzzLog; iteration only updates status / stalker timeline
     setStatus(`iter ${e.iteration} · corpus ${e.corpusSize} · edges ${e.coverageEdgeTotal}`);
-    stalkLiveTimeline.push({
+    const liveKind = e.crashed ? 'crash' : e.newCoverage ? 'novel' : 'hit';
+    const livePoint = {
       index: stalkLiveTimeline.length,
-      kind: e.crashed ? 'crash' : e.newCoverage ? 'novel' : 'hit',
+      kind: liveKind,
       label: e.mutator,
       iteration: e.iteration,
       crashed: !!e.crashed,
       newEdges: e.newEdgeCount || 0,
       crashId: stalkCrashIdByIteration.get(Number(e.iteration)) || null,
-    });
+    };
+    // Replace same-iteration live tick (prefer crash) instead of appending duplicates.
+    const liveIdx = stalkLiveTimeline.findIndex((p) => Number(p.iteration) === Number(e.iteration));
+    if (liveIdx >= 0) {
+      const prev = stalkLiveTimeline[liveIdx];
+      if (timelineKindRank(liveKind) >= timelineKindRank(prev.kind))
+        stalkLiveTimeline[liveIdx] = { ...livePoint, index: prev.index };
+    } else {
+      stalkLiveTimeline.push(livePoint);
+    }
     if (stalkLiveTimeline.length > 200) stalkLiveTimeline = stalkLiveTimeline.slice(-200);
     if (e.crashed) {
       scheduleHarvestRefresh({
