@@ -37,7 +37,7 @@ public class PrimitiveEngineTests
         Assert.Equal("Triaged", PrimitiveEngine.MaturityChipLabel(ResearchMaturity.R1));
         Assert.Equal("Root cause", PrimitiveEngine.MaturityChipLabel(ResearchMaturity.R2));
         Assert.Equal("Attributed", PrimitiveEngine.MaturityChipLabel(ResearchMaturity.R3));
-        Assert.Equal("Primitive", PrimitiveEngine.MaturityChipLabel(ResearchMaturity.R4));
+        Assert.Equal("Candidate", PrimitiveEngine.MaturityChipLabel(ResearchMaturity.R4));
         Assert.Equal("Observed", PrimitiveEngine.MaturityChipLabel(ResearchMaturity.R5));
         Assert.Equal("Confirmed", PrimitiveEngine.MaturityChipLabel(ResearchMaturity.R6));
         Assert.Equal("Research package", PrimitiveEngine.MaturityChipLabel(ResearchMaturity.R7));

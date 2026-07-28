@@ -1534,14 +1534,21 @@ public static class StalkDashboard
         }
 
         var pathPct = Math.Clamp(Math.Round(100.0 * hitPathBlocks / Math.Max(totalPathBlocks, 1), 1), 0, 100);
+        var novelty = mode.Contains("novelty", StringComparison.OrdinalIgnoreCase)
+                      || mode.Contains("Live", StringComparison.OrdinalIgnoreCase)
+                      || mode.Contains("Mutation", StringComparison.OrdinalIgnoreCase);
         var label = mode.Contains("Session", StringComparison.OrdinalIgnoreCase)
             ? "Session path"
-            : "Command path";
+            : novelty
+                ? "Corpus novelty"
+                : "Command path";
         var tip = dynamoReady
-            ? "0 BB edges yet — enable Coverage-guided fuzz to fill DynamoRIO edges"
-            : "DynamoRIO missing — showing session/command path only";
+            ? "0 BB edges yet — corpus-novelty path until Coverage-guided + free TCP port fills DynamoRIO edges"
+            : "DynamoRIO missing — corpus-novelty / session path only (not BB edges)";
+        // Novelty graphs with nodes should not leave the gauge at a dead 0 when path blocks exist.
+        var noveltyPct = hitPathBlocks > 0 && pathPct <= 0 ? 1.0 : pathPct;
         return (
-            pathPct,
+            noveltyPct,
             label,
             $"{hitPathBlocks}/{totalPathBlocks} path blocks touched · {tip}");
     }

@@ -5815,7 +5815,9 @@ html:not([data-scream-anim="on"]) .scream-bottled-toast {
   animation: none !important;
   transition: none !important;
 }
-html:not([data-scream-anim="on"]) .scream-canister-mist {
+html:not([data-scream-anim="on"]) .scream-canister-mist,
+html:not([data-scream-anim="on"]) .canister-floaties,
+html:not([data-scream-anim="on"]) .scream-harvest-ambience {
   display: none !important;
 }
 html:not([data-scream-anim="on"]) .scream-canister-liquid {

@@ -129,7 +129,8 @@ public static class CrashIntelligenceBuilder
             ResearchMaturityRationale: primitives is { Ok: true } ? primitives.MaturityRationale : null,
             PrimitiveSummary: primitives?.Summary,
             PrimitiveCount: primitives?.Primitives.Count ?? 0,
-            AdvisorSummary: advisor is { Ok: true } ? advisor.Summary : null);
+            AdvisorSummary: advisor is { Ok: true } ? advisor.Summary : null,
+            Engine: RandallBuildInfo.Current);
     }
 
     public static CrashSummaryDto WithListIntelligence(

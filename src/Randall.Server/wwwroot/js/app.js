@@ -2365,9 +2365,24 @@ async function selectTimelinePoint(point, index) {
   if (crashId) {
     await loadDashboard({ crashId, applyWidgets: true, force: true });
     highlightCrashLogRow(crashId);
+    // Any crash timeline event (incl. oracle_only / silent scream) loads Investigation.
+    openCrashInvestigation(crashId);
   } else {
     applyIterationSelectionNote(point);
     updateTimelineFollowUi();
+  }
+}
+
+/** Navigate to Crashes + load Investigation for a crash id (oracle_only included). */
+function openCrashInvestigation(crashId) {
+  if (!crashId) return;
+  crashState.pendingSelectId = crashId;
+  const onCrashes = document.getElementById('view-crashes')?.classList.contains('visible');
+  if (onCrashes) {
+    crashState.pendingSelectId = null;
+    selectCrashById(crashId, { scrollIntoView: true }).catch(() => {});
+  } else {
+    switchView('crashes');
   }
 }
 
@@ -2395,9 +2410,12 @@ function stalkDashboardPaintKey(data, selectedCrashId) {
     data.iterations ?? 0,
     data.crashes ?? 0,
     data.coverageEdges ?? 0,
+    data.coveragePercent ?? 0,
     data.currentBlocks ?? 0,
+    data.corpusSize ?? 0,
     (data.blocks || []).length,
     (data.edges || []).length,
+    (data.crashLog || []).length,
     selectedCrashId || '',
     stalkOpenedRunId || '',
     data.sessionId || '',
@@ -2405,11 +2423,66 @@ function stalkDashboardPaintKey(data, selectedCrashId) {
   ].join('|');
 }
 
+/** Cheap live counters — keep gauge / session strip honest even when paintKey is unchanged. */
+function patchLiveDashboardCounters(data) {
+  if (!data) return;
+  const live = isFuzzSessionActive(fuzzStatusCache)
+    && (!fuzzStatusCache.project || fuzzStatusCache.project === (data.project || stalkProject));
+  const iters = live
+    ? Math.max(Number(data.iterations) || 0, Number(fuzzStatusCache?.iterations) || 0)
+    : (data.iterations ?? 0);
+  const crashes = live
+    ? Math.max(Number(data.crashes) || 0, Number(fuzzStatusCache?.crashes) || 0)
+    : (data.crashes ?? 0);
+  const sessionDd = document.querySelector('#stalk-session dd:last-child');
+  // Prefer rewriting the iters/crashes row via a dedicated id if present.
+  const iterEl = document.getElementById('stalk-iters-crashes');
+  if (iterEl) iterEl.textContent = `${iters} / ${crashes}`;
+  else if (sessionDd && /\/\s*\d/.test(sessionDd.textContent || ''))
+    sessionDd.textContent = `${iters} / ${crashes}`;
+
+  const pct = data.coveragePercent ?? 0;
+  const ring = document.getElementById('stalk-coverage-ring');
+  const pctEl = document.getElementById('stalk-coverage-pct');
+  const labelEl = document.getElementById('stalk-coverage-label');
+  const detailEl = document.getElementById('stalk-coverage-detail');
+  if (ring) ring.style.setProperty('--pct', pct);
+  if (pctEl) pctEl.textContent = `${pct}%`;
+  if (labelEl && data.coverageLabel) labelEl.textContent = data.coverageLabel;
+  if (detailEl && data.coverageDetail != null) detailEl.textContent = data.coverageDetail;
+
+  const stats = document.getElementById('stalk-coverage-stats');
+  if (stats && (data.currentBlocks != null || data.coverageEdges != null || data.corpusSize != null)) {
+    stats.innerHTML = `
+    <li>Path / BB units <strong>${data.currentBlocks ?? 0}</strong></li>
+    <li>BB edges <strong>${data.coverageEdges ?? 0}</strong></li>
+    <li>Corpus size <strong>${data.corpusSize ?? 0}</strong></li>
+    <li>DynamoRIO <strong>${data.dynamoRioAvailable ? 'Ready' : 'Missing'}</strong></li>`;
+  }
+
+  const crashSum = document.getElementById('stalk-crash-summary');
+  if (crashSum && (data.crashId || crashes > 0 || data.exception)) {
+    crashSum.innerHTML = `
+    <dt>Crash ID</dt><dd>${data.crashId || '—'}</dd>
+    <dt>Hits</dt><dd>${data.crashHitCount ?? 0}</dd>
+    <dt>Distance</dt><dd>${data.crashDistance ?? '—'} blocks</dd>
+    <dt>Exception</dt><dd>${data.exception || '—'}</dd>
+    <dt>Address</dt><dd>${data.crashAddress || '—'}</dd>`;
+  }
+}
+
 function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
   if (dashboardLooksEmpty(data) && stalkLastGoodDashboard
       && (!stalkProject || stalkLastGoodDashboard.project === stalkProject)) {
     // Keep graph/corpus from last good paint, but never reuse a stale STATUS while live.
-    data = { ...stalkLastGoodDashboard, status: data?.status || stalkLastGoodDashboard.status };
+    data = {
+      ...stalkLastGoodDashboard,
+      status: data?.status || stalkLastGoodDashboard.status,
+      iterations: Math.max(Number(data?.iterations) || 0, Number(stalkLastGoodDashboard.iterations) || 0),
+      crashes: Math.max(Number(data?.crashes) || 0, Number(stalkLastGoodDashboard.crashes) || 0),
+      coverageEdges: Math.max(Number(data?.coverageEdges) || 0, Number(stalkLastGoodDashboard.coverageEdges) || 0),
+      corpusSize: Math.max(Number(data?.corpusSize) || 0, Number(stalkLastGoodDashboard.corpusSize) || 0),
+    };
   } else if (!dashboardLooksEmpty(data)) {
     stalkLastGoodDashboard = data;
   }
@@ -2424,7 +2497,12 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
     st.className = statusClass(label);
   }
   if (statusOnly) {
+    patchLiveDashboardCounters(data);
     updateNoBbBanners(data, fuzzStatusCache);
+    // Keep minimap viewport in sync if graph nodes already exist.
+    try { stalkGraphNav.syncMinimap?.(); } catch { /* ignore */ }
+    if (stalkFollowLive)
+      scheduleHarvestRefresh({ project: data.project || stalkProject, toast: false, syncCrashState: false });
     return;
   }
   stalkLastPaintKey = paintKey;
@@ -2444,18 +2522,9 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
     <dt>Exception</dt><dd>${data.exception || '—'}</dd>
     <dt>Address</dt><dd>${data.crashAddress || '—'}</dd>
     <dt>Thread</dt><dd>${data.threadId || '—'}</dd>
-    <dt>Iters / crashes</dt><dd>${data.iterations ?? 0} / ${data.crashes ?? 0}</dd>`;
+    <dt>Iters / crashes</dt><dd id="stalk-iters-crashes">${data.iterations ?? 0} / ${data.crashes ?? 0}</dd>`;
 
-  const pct = data.coveragePercent ?? 0;
-  document.getElementById('stalk-coverage-ring').style.setProperty('--pct', pct);
-  document.getElementById('stalk-coverage-pct').textContent = `${pct}%`;
-  document.getElementById('stalk-coverage-label').textContent = data.coverageLabel || 'Coverage';
-  document.getElementById('stalk-coverage-detail').textContent = data.coverageDetail || '';
-  document.getElementById('stalk-coverage-stats').innerHTML = `
-    <li>Path / BB units <strong>${data.currentBlocks}</strong></li>
-    <li>BB edges <strong>${data.coverageEdges}</strong></li>
-    <li>Corpus size <strong>${data.corpusSize}</strong></li>
-    <li>DynamoRIO <strong>${data.dynamoRioAvailable ? 'Ready' : 'Missing'}</strong></li>`;
+  patchLiveDashboardCounters(data);
 
   document.getElementById('stalk-crash-summary').innerHTML = `
     <dt>Crash ID</dt><dd>${data.crashId || '—'}</dd>
@@ -2516,6 +2585,7 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
         };
         updateTimelineFollowUi();
         loadDashboard({ crashId: id, applyWidgets: true, force: true }).catch(() => {});
+        openCrashInvestigation(id);
       });
     });
   }
@@ -3310,6 +3380,7 @@ const ACADEMY_BLURBS = {
 
 function renderEngineStaleBanner(detail) {
   const engine = detail?.exploitResearch?.engine
+    || detail?.intelligence?.engine
     || detail?.debuggerObservation?.engine
     || detail?.evidence?.engine
     || detail?.influenceMap?.engine
@@ -3326,11 +3397,25 @@ function renderEngineStaleBanner(detail) {
   return `<div class="engine-stale-banner" role="status">⚠ Investigation generated with older analysis engine (${escapeAttr(gen)}). Re-analyze.</div>`;
 }
 
-function renderExploitResearchPanel(panel) {
-  if (!panel) {
-    return `<div class="triage-box exploit-research-box">
+function exploitResearchLooksEmpty(panel, debuggerObservation) {
+  if (!panel) return true;
+  if (panel.ok && (panel.faultInstruction || (panel.registerMatrix || []).length || (panel.controlTests || []).length))
+    return false;
+  // Silent screams / oracle_only / pre-CDB: no debugger observation yet.
+  if (!debuggerObservation?.ok && !panel.faultInstruction && !(panel.registerMatrix || []).length)
+    return true;
+  return !panel.ok && !panel.faultInstruction && !(panel.registerMatrix || []).length;
+}
+
+function renderExploitResearchPanel(panel, debuggerObservation = null) {
+  if (exploitResearchLooksEmpty(panel, debuggerObservation)) {
+    const silent = !debuggerObservation?.ok;
+    return `<div class="triage-box exploit-research-box exploit-research-empty" id="exploit-research-panel">
       <h4>Exploit Research <span class="hint-inline">static reconstruction</span></h4>
-      <p class="hint">No panel yet — open a crash with debugger observation, or re-analyze after rebuild.</p>
+      <p class="empty">No debugger observation yet.</p>
+      <p class="hint">${silent
+        ? 'Re-analyze / wait for CDB (or gdb) to populate fault insn, EA, and register matrix. Silent screams / oracle-only events stay research-empty until a memory crash dump is analyzed.'
+        : 'Re-analyze / wait for CDB — dump probes have not produced a usable observation yet.'}</p>
     </div>`;
   }
   const ea = panel.effectiveAddress;
@@ -3401,7 +3486,7 @@ function renderExploitResearchPanel(panel) {
     <div class="exploit-q">
       <h5>5. Next experiment <span class="hint-inline">prove / disprove</span></h5>
       <p>${escapeAttr(panel.nextExperiment || '—')}</p>
-      ${panel.primitiveHint ? `<p class="hint"><span class="label">Primitive</span> ${escapeAttr(panel.primitiveHint)}</p>` : ''}
+      ${panel.primitiveHint ? `<p class="hint"><span class="label">${/R4|Candidate/i.test(panel.primitiveHint) ? 'Candidate' : 'Capability'}</span> ${escapeAttr(panel.primitiveHint)}</p>` : ''}
     </div>
   </div>`;
 }
@@ -3761,7 +3846,7 @@ function renderCrashDetail(detail, title) {
         ${dbg.stackHash ? `<span class="hint-inline">stack ${escapeAttr(dbg.stackHash)}</span>` : ''}
       </p>` : ''}
       ${renderEngineStaleBanner(detail)}
-      ${renderExploitResearchPanel(detail.exploitResearch)}
+      ${renderExploitResearchPanel(detail.exploitResearch, dbg)}
       ${evidenceFacts.length ? `<div class="triage-box evidence-facts-box">
         <h4>Evidence facts <span class="hint-inline">${evidenceFacts.length} atom(s)</span>${academyResearchMode() ? ' <span class="hint-inline">dense</span>' : ''}</h4>
         ${academyEduBlurb('evidence')}
@@ -3813,7 +3898,7 @@ function renderCrashDetail(detail, title) {
         ${chain.suspectedMutator ? `<p class="hint">Mutator <code>${escapeAttr(chain.suspectedMutator)}</code>${chain.suspectedMutatorStep != null ? ` (step ${chain.suspectedMutatorStep + 1})` : ''}${chain.suspectedField ? ` · field <code>${escapeAttr(chain.suspectedField)}</code>` : ''}${chain.primaryRegister ? ` · ${escapeAttr(chain.primaryRegister)}` : ''}${chain.attributionScreamBonus ? ` · +${chain.attributionScreamBonus} score` : ''}</p>` : ''}
       </div>` : ''}
       ${backwardTrace?.ok ? `<div class="triage-box backward-trace-box">
-        <h4>Backward trace <span class="hint-inline">dump-only · no TTD</span> <span class="hint-inline">[${escapeAttr(backwardTrace.confidence)}]</span></h4>
+        <h4>Backward trace <span class="hint-inline">Static reconstruction</span> <span class="hint-inline">[${escapeAttr(backwardTrace.confidence)}]</span></h4>
         <p class="hint backward-trace-story">${escapeAttr(backwardTrace.story)}</p>
         ${backwardTrace.steps?.length ? `<ol class="backward-trace-steps">${backwardTrace.steps.map((s) =>
           `<li><code>${escapeAttr(s.kind)}</code> ${escapeAttr(s.label)}${s.detail ? ` — <span class="hint-inline">${escapeAttr(s.detail)}</span>` : ''}${s.confidence && s.confidence !== 'UNKNOWN' ? ` <span class="hint-inline">(${escapeAttr(s.confidence)})</span>` : ''}</li>`
@@ -5654,21 +5739,6 @@ function renderScreamCanisters(opts = {}) {
     scoreHarvestMood({ unique, critical: criticalHits, ipCount: ipHits }),
   );
 
-  if (!compact) {
-    const harvestRoot = rack.closest('.scream-harvest');
-    if (harvestRoot) {
-      harvestRoot.dataset.floorMood = floorMood;
-      paintHarvestAmbience(harvestRoot, floorMood, { unique, ipHits, critical: criticalHits }, {
-        slotCount: slots.length,
-      });
-    }
-  } else {
-    // Compact scare-floor strip: destroy any leftover floaters when no cards.
-    const harvestRoot = rack.closest('.scream-harvest');
-    if (harvestRoot && slots.length === 0)
-      paintHarvestAmbience(harvestRoot, 'laughter', {}, { slotCount: 0 });
-  }
-
   if (status) {
     const liveNames = [...(filterContext.liveProjects || [])];
     if (filterContext.liveOnly && liveNames.length) {
@@ -5795,6 +5865,21 @@ function renderScreamCanisters(opts = {}) {
         <img src="/canisters/canister-empty.jpg" alt="" width="120" height="180" loading="lazy" decoding="async" />
         <p>Empty rack — clean tests laugh here; bottled screams turn the floor toxic.</p>
       </div>`);
+  }
+
+  // Ambience AFTER rack.innerHTML — otherwise the layer is wiped. Clip floaters to visible cards only.
+  if (!compact) {
+    const harvestRoot = rack.closest('.scream-harvest');
+    if (harvestRoot) {
+      harvestRoot.dataset.floorMood = floorMood;
+      paintHarvestAmbience(harvestRoot, floorMood, { unique, ipHits, critical: criticalHits }, {
+        slotCount: slots.length,
+      });
+    }
+  } else {
+    const harvestRoot = rack.closest('.scream-harvest');
+    if (harvestRoot && slots.length === 0)
+      paintHarvestAmbience(harvestRoot, 'laughter', {}, { slotCount: 0 });
   }
 
   animateCanisterFills(rack);

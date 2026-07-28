@@ -600,7 +600,7 @@ public static class PrimitiveEngine
         ResearchMaturity.R1 => "Triaged",
         ResearchMaturity.R2 => "Root cause",
         ResearchMaturity.R3 => "Attributed",
-        ResearchMaturity.R4 => "Primitive",
+        ResearchMaturity.R4 => "Candidate",
         ResearchMaturity.R5 => "Observed",
         ResearchMaturity.R6 => "Confirmed",
         ResearchMaturity.R7 => "Research package",
