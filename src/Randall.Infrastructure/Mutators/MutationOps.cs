@@ -255,9 +255,11 @@ internal static class MutationOps
             return ShuffleSpans(buf.ToArray(), rng);
         var mid = buf.Length / 2;
         var aLen = rng.Next(1, Math.Min(mid, 64) + 1);
-        var bStart = mid + rng.Next(0, Math.Max(1, buf.Length - mid - 1));
+        var bStart = mid + rng.Next(0, Math.Max(1, buf.Length - mid));
+        if (bStart >= buf.Length)
+            return buf;
         var bLen = Math.Min(aLen, buf.Length - bStart);
-        if (bLen <= 0)
+        if (bLen <= 0 || bStart + bLen > buf.Length)
             return buf;
         var result = buf.ToArray();
         for (var i = 0; i < bLen; i++)

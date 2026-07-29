@@ -1464,11 +1464,12 @@ public sealed class FuzzEngine
 
                 // Crash-cascade guard BEFORE journal / progress — never record a rejected
                 // TCP-dead cascade as a crash (UI/API journal must match engine truth).
-                if (result.Crashed &&
-                    ProjectKinds.IsTcpLike(project) &&
-                    !result.Connected &&
-                    result.MiniDumpPath is null &&
-                    debuggerWait?.Scream?.ExceptionInfo is null)
+                if (ShouldRejectCascadeCrash(
+                        result.Crashed,
+                        ProjectKinds.IsTcpLike(project),
+                        result.Connected,
+                        result.MiniDumpPath,
+                        debuggerWait?.Scream?.ExceptionInfo is not null))
                 {
                     FuzzAnalystLog.Warn(progress,
                         $"Rejected crash (no TCP connect — target already dead or unreachable): {result.Detail}",
@@ -2063,17 +2064,9 @@ public sealed class FuzzEngine
                     // Keep journal/timeline accounting honest: iteration was counted but produced no case.
                     try
                     {
-                        journal?.LogIteration(new IterationLogEntry(
-                            iterations, DateTimeOffset.UtcNow, "?",
-                            isBounds ? "error:bounds" : "error:exception",
-                            ["error"],
-                            null, "error", 0, "0",
-                            false, 0, coverage.TotalEdges, 0,
-                            isBounds
-                                ? $"failed (bounds): {ex.Message}"
-                                : $"failed: {ex.Message}",
-                            null, stalkBackend, null,
-                            journal?.RunId ?? "", false));
+                        journal?.LogIteration(BuildFailedIterationEntry(
+                            iterations, isBounds, ex.Message, coverage.TotalEdges,
+                            stalkBackend, journal?.RunId ?? ""));
                         FuzzProgressGuard.Try(options.Progress, p => p.OnIteration(new FuzzIterationEvent(
                             iterations, "error", 0, false, false, 0,
                             corpus.SeenCount, coverage.TotalEdges,
@@ -3056,6 +3049,40 @@ public sealed class FuzzEngine
     }
 
     /// <summary>Honest coverage mode label for live UI (bb-edges | path-novelty | unavailable).</summary>
+    /// <summary>
+    /// TCP-dead cascade: connection never established and no dump/Scream exception —
+    /// not an input-triggered crash. Must run before journal / SignalR / crashCount++.
+    /// </summary>
+    internal static bool ShouldRejectCascadeCrash(
+        bool crashed,
+        bool tcpLike,
+        bool connected,
+        string? miniDumpPath,
+        bool hasScreamException) =>
+        crashed
+        && tcpLike
+        && !connected
+        && string.IsNullOrWhiteSpace(miniDumpPath)
+        && !hasScreamException;
+
+    /// <summary>Journal/progress payload for an iteration that threw before producing a case.</summary>
+    internal static IterationLogEntry BuildFailedIterationEntry(
+        int iteration,
+        bool isBounds,
+        string message,
+        int coverageEdges,
+        string? stalkBackend,
+        string runId) =>
+        new(
+            iteration, DateTimeOffset.UtcNow, "?",
+            isBounds ? "error:bounds" : "error:exception",
+            ["error"],
+            null, "error", 0, "0",
+            false, 0, coverageEdges, 0,
+            isBounds ? $"failed (bounds): {message}" : $"failed: {message}",
+            null, stalkBackend ?? "", null,
+            runId ?? "", false);
+
     private static string DescribeCoverageKind(int edges, int semanticStages, bool coverageGuided) =>
         edges > 0 ? "bb-edges"
         : semanticStages > 0 ? "path-novelty"

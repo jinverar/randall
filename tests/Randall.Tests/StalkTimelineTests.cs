@@ -86,8 +86,9 @@ public class StalkTimelineTests
     }
 
     [Fact]
-    public void Synthetic_window_marks_tip_crash_when_catalog_empty_but_counter_positive()
+    public void Synthetic_window_does_not_fake_tip_crash_from_counter_alone()
     {
+        // Counter-only with empty catalog must not invent a red bar (prefer insufficient).
         var run = new FuzzRunManifestDto(
             "live",
             "demo",
@@ -104,8 +105,7 @@ public class StalkTimelineTests
 
         var timeline = StalkDashboard.BuildTimelineSnapshot(run, latestDetail: null, []);
 
-        Assert.Contains(timeline, p => p.Kind == "crash" && p.Crashed);
-        Assert.Equal("crash", timeline[^1].Kind);
+        Assert.DoesNotContain(timeline, p => p.Kind == "crash" && p.Crashed);
     }
 
     [Fact]

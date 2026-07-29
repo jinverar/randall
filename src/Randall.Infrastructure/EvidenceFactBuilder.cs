@@ -18,19 +18,8 @@ public static class EvidenceFactBuilder
     public static string PathFor(string crashesDir, Guid crashId) =>
         Path.Combine(crashesDir, $"{crashId:N}_evidence.json");
 
-    public static CrashEvidenceDto? TryRead(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            return null;
-        try
-        {
-            return JsonSerializer.Deserialize<CrashEvidenceDto>(File.ReadAllText(path), JsonOpts);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    public static CrashEvidenceDto? TryRead(string? path) =>
+        ResearchSidecarIO.TryRead<CrashEvidenceDto>(path, JsonOpts);
 
     public static CrashEvidenceDto? TryReadForCrash(string crashesDir, Guid crashId) =>
         TryRead(PathFor(crashesDir, crashId));
@@ -120,7 +109,7 @@ public static class EvidenceFactBuilder
             crashId, project, sidecar, triage, debugger, corruptionChain, backwardTrace,
             evolution, oracleScore, hypotheses, analysis, cdb, pageHeapEnabled, rppTag);
         var path = PathFor(crashesDir, crashId);
-        File.WriteAllText(path, JsonSerializer.Serialize(dto, JsonOpts));
+        ResearchSidecarIO.WriteAtomic(path, JsonSerializer.Serialize(dto, JsonOpts));
         return dto;
     }
 

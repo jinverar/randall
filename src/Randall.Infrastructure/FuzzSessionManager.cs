@@ -8,6 +8,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
     private Task? _task;
+    private int _lastCrashIteration = -1;
     private FuzzSessionStatusDto _status = new(false, "idle", null, 0, 0, 0, 0, null, null, null, null, null);
 
     public FuzzSessionStatusDto Status
@@ -101,6 +102,7 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
         _cts = new CancellationTokenSource();
         var token = _cts.Token;
         var dbgMode = request.DebuggerMode;
+        _lastCrashIteration = -1;
         _status = new FuzzSessionStatusDto(
             true, "starting", request.ConfigPath, 0, 0, 0, 0, request.CoverageGuided, null,
             null, dbgMode, null);
@@ -290,12 +292,21 @@ public sealed class FuzzSessionManager(FuzzLiveLogBuffer liveLog)
     {
         lock (_gate)
         {
+            // Only count a crash once per iteration — never ahead of cascade rejection
+            // (engine sends Crashed only after cascade guard) and never double on retries.
+            var crashDelta = 0;
+            if (ev.Crashed && ev.Iteration != _lastCrashIteration)
+            {
+                crashDelta = 1;
+                _lastCrashIteration = ev.Iteration;
+            }
+
             _status = _status with
             {
                 Running = true,
                 Phase = "running",
                 Iterations = ev.Iteration,
-                Crashes = _status.Crashes + (ev.Crashed ? 1 : 0),
+                Crashes = _status.Crashes + crashDelta,
                 CorpusAdded = ev.CorpusSize,
                 CoverageEdges = ev.CoverageEdgeTotal,
                 CoverageBlocks = ev.CoverageBlocks,

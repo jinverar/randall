@@ -49,19 +49,8 @@ public static partial class WindowsCdbCrashAnalysisWriter
     public static string ExploitableTextPathFor(string crashesDir, Guid crashId) =>
         Path.Combine(crashesDir, $"{crashId:N}_exploitable.txt");
 
-    public static CdbTriageSidecar? TryRead(string? triagePath)
-    {
-        if (string.IsNullOrWhiteSpace(triagePath) || !File.Exists(triagePath))
-            return null;
-        try
-        {
-            return JsonSerializer.Deserialize<CdbTriageSidecar>(File.ReadAllText(triagePath));
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    public static CdbTriageSidecar? TryRead(string? triagePath) =>
+        ResearchSidecarIO.TryRead<CdbTriageSidecar>(triagePath);
 
     /// <summary>
     /// Run cdb on a minidump; write <c>*_analyze.txt</c>, optional <c>*_exploitable.txt</c>,

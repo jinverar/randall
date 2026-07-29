@@ -24,19 +24,8 @@ public static class InfluenceEngine
     public static string PathFor(string crashesDir, Guid crashId) =>
         Path.Combine(crashesDir, $"{crashId:N}_influence.json");
 
-    public static CrashInfluenceMapDto? TryRead(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            return null;
-        try
-        {
-            return JsonSerializer.Deserialize<CrashInfluenceMapDto>(File.ReadAllText(path), JsonOptions);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    public static CrashInfluenceMapDto? TryRead(string? path) =>
+        ResearchSidecarIO.TryRead<CrashInfluenceMapDto>(path, JsonOptions);
 
     public static CrashInfluenceMapDto Build(
         Guid crashId,
@@ -107,7 +96,7 @@ public static class InfluenceEngine
     {
         Directory.CreateDirectory(crashesDir);
         var path = PathFor(crashesDir, map.CrashId);
-        File.WriteAllText(path, JsonSerializer.Serialize(map, JsonOptions));
+        ResearchSidecarIO.WriteAtomic(path, JsonSerializer.Serialize(map, JsonOptions));
         return path;
     }
 

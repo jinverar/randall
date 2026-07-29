@@ -21,19 +21,8 @@ public static class RootCauseEngine
     public static string PathFor(string crashesDir, Guid crashId) =>
         Path.Combine(crashesDir, $"{crashId:N}_root_cause.json");
 
-    public static RootCauseAnalysisDto? TryRead(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            return null;
-        try
-        {
-            return JsonSerializer.Deserialize<RootCauseAnalysisDto>(File.ReadAllText(path), JsonOpts);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    public static RootCauseAnalysisDto? TryRead(string? path) =>
+        ResearchSidecarIO.TryRead<RootCauseAnalysisDto>(path, JsonOpts);
 
     public static RootCauseAnalysisDto Build(
         Guid crashId,
@@ -100,7 +89,7 @@ public static class RootCauseEngine
     {
         Directory.CreateDirectory(crashesDir);
         var path = PathFor(crashesDir, analysis.CrashId);
-        File.WriteAllText(path, JsonSerializer.Serialize(analysis, JsonOpts));
+        ResearchSidecarIO.WriteAtomic(path, JsonSerializer.Serialize(analysis, JsonOpts));
         return path;
     }
 

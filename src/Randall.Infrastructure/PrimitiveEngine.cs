@@ -30,19 +30,8 @@ public static class PrimitiveEngine
     public static string PathFor(string crashesDir, Guid crashId) =>
         Path.Combine(crashesDir, $"{crashId:N}_primitives.json");
 
-    public static CrashPrimitiveReportDto? TryRead(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            return null;
-        try
-        {
-            return JsonSerializer.Deserialize<CrashPrimitiveReportDto>(File.ReadAllText(path), JsonOptions);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    public static CrashPrimitiveReportDto? TryRead(string? path) =>
+        ResearchSidecarIO.TryRead<CrashPrimitiveReportDto>(path, JsonOptions);
 
     public static CrashPrimitiveReportDto? TryReadForCrash(string crashesDir, Guid crashId) =>
         TryRead(PathFor(crashesDir, crashId));
@@ -140,7 +129,7 @@ public static class PrimitiveEngine
     {
         Directory.CreateDirectory(crashesDir);
         var path = PathFor(crashesDir, report.CrashId);
-        File.WriteAllText(path, JsonSerializer.Serialize(report, JsonOptions));
+        ResearchSidecarIO.WriteAtomic(path, JsonSerializer.Serialize(report, JsonOptions));
         return path;
     }
 

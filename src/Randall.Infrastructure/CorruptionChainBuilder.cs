@@ -14,19 +14,8 @@ public static class CorruptionChainBuilder
     public static string PathFor(string crashesDir, Guid crashId) =>
         Path.Combine(crashesDir, $"{crashId:N}_corruption_chain.json");
 
-    public static CrashCorruptionChainDto? TryRead(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            return null;
-        try
-        {
-            return JsonSerializer.Deserialize<CrashCorruptionChainDto>(File.ReadAllText(path));
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    public static CrashCorruptionChainDto? TryRead(string? path) =>
+        ResearchSidecarIO.TryRead<CrashCorruptionChainDto>(path);
 
     public static CrashCorruptionChainDto Build(
         Guid crashId,
@@ -150,7 +139,7 @@ public static class CorruptionChainBuilder
     {
         Directory.CreateDirectory(crashesDir);
         var path = PathFor(crashesDir, chain.CrashId);
-        File.WriteAllText(path, JsonSerializer.Serialize(chain, JsonOpts));
+        ResearchSidecarIO.WriteAtomic(path, JsonSerializer.Serialize(chain, JsonOpts));
         return path;
     }
 

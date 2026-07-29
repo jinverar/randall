@@ -964,14 +964,12 @@ public static class StalkDashboard
             var crashIters = crashByIteration.Keys.ToHashSet();
             if (crashIters.Count == 0 && latestDetail is not null)
                 crashIters.Add(latestDetail.Summary.Iteration);
-            // If counters say crashes exist but catalog is empty, still mark the tip.
-            var forceTipCrash = run.CrashesFound > 0 && crashIters.Count == 0;
+            // Prefer insufficient over fake: counter alone never invents a tip crash bar.
 
             for (var i = 0; i < window; i++)
             {
                 var iteration = startIter + i;
-                var crashed = crashIters.Contains(iteration)
-                    || (forceTipCrash && i == window - 1);
+                var crashed = crashIters.Contains(iteration);
                 var novel = !crashed && iteration % 9 == 0;
                 var kind = crashed ? "crash" : novel ? "novel" : "hit";
                 points.Add(new StalkTimelinePointDto(
@@ -1091,18 +1089,21 @@ public static class StalkDashboard
                 .ToList();
         }
 
+        // Prefer insufficient over fake: only paint a tip crash when we have a real
+        // catalog/detail crash id — never invent a red bar from a counter alone.
         if (missing.Count == 0
             && crashesFound > 0
+            && latestDetail?.Summary.Id is { } tipCrashId
             && !points.Any(p => p.Kind == "crash" && p.Crashed))
         {
-            // Counter says crashes exist but catalog empty / unmatched — mark tip.
             var tip = points[^1];
             points[^1] = tip with
             {
                 Kind = "crash",
                 Crashed = true,
-                Label = "CRASH",
-                CrashId = tip.CrashId ?? latestDetail?.Summary.Id ?? crashIdFor(tip.Iteration, true, null),
+                Label = latestDetail.Summary.Mutator ?? "CRASH",
+                CrashId = tip.CrashId ?? tipCrashId,
+                CrashIteration = latestDetail.Summary.Iteration,
             };
             return points.TakeLast(200).ToList();
         }

@@ -489,6 +489,10 @@ public static class ModelFuzzer
 
     private static ulong ReadInteger(ReadOnlySpan<byte> bytes, int width, bool littleEndian)
     {
+        if (bytes.Length < width || width <= 0)
+            return 0;
+        if (width == 1)
+            return bytes[0];
         if (width == 2)
             return littleEndian
                 ? (ulong)(bytes[0] | (bytes[1] << 8))
@@ -504,6 +508,9 @@ public static class ModelFuzzer
                     v |= (ulong)bytes[i] << (8 * (7 - i));
             return v;
         }
+        // Default: 4-byte integer fields.
+        if (bytes.Length < 4)
+            return bytes.Length > 0 ? bytes[0] : 0UL;
         return littleEndian
             ? (ulong)(bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24))
             : (ulong)((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]);
@@ -511,7 +518,14 @@ public static class ModelFuzzer
 
     private static byte[] WriteInteger(ulong value, int width, bool littleEndian)
     {
+        if (width <= 0)
+            return [];
         var buf = new byte[width];
+        if (width == 1)
+        {
+            buf[0] = (byte)value;
+            return buf;
+        }
         if (width == 2)
         {
             var v = (ushort)value;
@@ -530,6 +544,11 @@ public static class ModelFuzzer
         else
         {
             var v = (uint)value;
+            if (width < 4)
+            {
+                buf[0] = (byte)v;
+                return buf;
+            }
             if (littleEndian)
             {
                 buf[0] = (byte)v; buf[1] = (byte)(v >> 8);
@@ -580,10 +599,16 @@ public static class ModelFuzzer
 
     private static uint ReadLength(ReadOnlySpan<byte> bytes, int width, bool littleEndian)
     {
+        if (bytes.Length < width || width <= 0)
+            return 0;
+        if (width == 1)
+            return bytes[0];
         if (width == 2)
             return littleEndian
                 ? (uint)(bytes[0] | (bytes[1] << 8))
                 : (uint)((bytes[0] << 8) | bytes[1]);
+        if (bytes.Length < 4)
+            return bytes.Length > 0 ? bytes[0] : 0u;
         return littleEndian
             ? (uint)(bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24))
             : (uint)((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]);
@@ -591,7 +616,14 @@ public static class ModelFuzzer
 
     private static byte[] WriteLength(uint value, int width, bool littleEndian)
     {
+        if (width <= 0)
+            return [];
         var buf = new byte[width];
+        if (width == 1)
+        {
+            buf[0] = (byte)value;
+            return buf;
+        }
         if (width == 2)
         {
             var v = (ushort)value;
@@ -600,6 +632,11 @@ public static class ModelFuzzer
         }
         else
         {
+            if (width < 4)
+            {
+                buf[0] = (byte)value;
+                return buf;
+            }
             if (littleEndian)
             {
                 buf[0] = (byte)value; buf[1] = (byte)(value >> 8);

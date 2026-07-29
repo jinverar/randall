@@ -19,19 +19,8 @@ public static partial class ScreamInvestigator
     public static string ObservationPathFor(string crashesDir, Guid crashId) =>
         Path.Combine(crashesDir, $"{crashId:N}_debugger_observation.json");
 
-    public static DebuggerObservation? TryRead(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            return null;
-        try
-        {
-            return JsonSerializer.Deserialize<DebuggerObservation>(File.ReadAllText(path));
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    public static DebuggerObservation? TryRead(string? path) =>
+        ResearchSidecarIO.TryRead<DebuggerObservation>(path);
 
     /// <summary>
     /// Run expanded CDB probes on <paramref name="dumpPath"/> and persist observation sidecar.
@@ -388,7 +377,7 @@ public static partial class ScreamInvestigator
     }
 
     private static void Write(string path, DebuggerObservation obs) =>
-        File.WriteAllText(path, JsonSerializer.Serialize(obs with { ObservationPath = path }, JsonOptions));
+        ResearchSidecarIO.WriteAtomic(path, JsonSerializer.Serialize(obs with { ObservationPath = path }, JsonOptions));
 
     private static string? ReadOptional(string path) =>
         File.Exists(path) ? File.ReadAllText(path) : null;

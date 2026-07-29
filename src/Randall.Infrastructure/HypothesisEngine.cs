@@ -33,19 +33,8 @@ public static class HypothesisEngine
     public static string QueuePath(string project, string? repoRoot = null) =>
         Path.Combine(StalkCampaignStore.ProjectDir(project, repoRoot), QueueFileName);
 
-    public static HypothesisSetDto? TryRead(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            return null;
-        try
-        {
-            return JsonSerializer.Deserialize<HypothesisSetDto>(File.ReadAllText(path), JsonOptions);
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    public static HypothesisSetDto? TryRead(string? path) =>
+        ResearchSidecarIO.TryRead<HypothesisSetDto>(path, JsonOptions);
 
 
     public static HypothesisSetDto? TryReadForCrash(string crashesDir, Guid crashId) =>
@@ -159,7 +148,7 @@ public static class HypothesisEngine
     {
         Directory.CreateDirectory(LedgerDir(crashesDir));
         var path = PathFor(crashesDir, set.CrashId);
-        File.WriteAllText(path, JsonSerializer.Serialize(set, JsonOptions));
+        ResearchSidecarIO.WriteAtomic(path, JsonSerializer.Serialize(set, JsonOptions));
         SyncProjectLedger(set.Project, crashesDir, TryLoadQueue(set.Project)?.Iteration ?? 0);
         return path;
     }

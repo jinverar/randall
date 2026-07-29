@@ -77,7 +77,9 @@ public static class EvidenceCourt
             }
 
             // Court-confirm only with sensor evidence (not oracle scores / lineage alone).
-            if (p.State == PrimitiveState.Confirmed && skepticOk && HasClaimSupportingEvidence(factList, cited))
+            if (p.State == PrimitiveState.Confirmed
+                && skepticOk
+                && HasClaimSupportingEvidence(factList, cited, p.EvidenceRefs))
             {
                 rulings.Add(new EvidenceCourtRulingDto(
                     p.Id, statement, EvidenceCourtVerdict.Confirmed,
@@ -86,7 +88,9 @@ public static class EvidenceCourt
                 continue;
             }
 
-            if (p.State == PrimitiveState.Observed && skepticOk && HasClaimSupportingEvidence(factList, cited))
+            if (p.State == PrimitiveState.Observed
+                && skepticOk
+                && HasClaimSupportingEvidence(factList, cited, p.EvidenceRefs))
             {
                 rulings.Add(new EvidenceCourtRulingDto(
                     p.Id, statement, EvidenceCourtVerdict.Confirmed,
@@ -216,18 +220,33 @@ public static class EvidenceCourt
     internal static bool IsCourtAdmissibleFact(EvidenceFact f) =>
         !f.Name.StartsWith("primitive.", StringComparison.OrdinalIgnoreCase)
         && !f.Name.StartsWith("oracle.", StringComparison.OrdinalIgnoreCase)
-        && !string.Equals(f.Source, "oracle", StringComparison.OrdinalIgnoreCase);
+        && !f.Name.StartsWith("lineage.", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(f.Source, "oracle", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(f.Source, "lineage", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Court confirmation needs a claim citation or a debugger/influence/heap-class sensor fact —
-    /// not an unrelated lineage / oracle score atom.
+    /// Court confirmation needs claim-supporting sensor evidence.
+    /// Lineage-only citations do not unlock the bag free-pass — prefer Candidate over wrong Confirmed.
     /// </summary>
-    internal static bool HasClaimSupportingEvidence(IReadOnlyList<EvidenceFact> facts, int cited) =>
-        cited >= 1 || facts.Any(IsClaimSupportingSensorFact);
+    internal static bool HasClaimSupportingEvidence(
+        IReadOnlyList<EvidenceFact> facts,
+        int cited,
+        IReadOnlyList<string>? evidenceRefs = null)
+    {
+        if (cited >= 1)
+            return true;
+        // Claim pointed at lineage / bookkeeping only → insufficient (do not borrow unrelated sensors).
+        if (evidenceRefs is { Count: > 0 })
+            return false;
+        return facts.Any(IsClaimSupportingSensorFact);
+    }
 
     internal static bool IsClaimSupportingSensorFact(EvidenceFact f)
     {
         if (!IsCourtAdmissibleFact(f))
+            return false;
+        // Lineage adjacency is context, not write/fault proof.
+        if (f.Name.StartsWith("lineage.", StringComparison.OrdinalIgnoreCase))
             return false;
         var src = f.Source ?? "";
         if (src.Contains("debugger", StringComparison.OrdinalIgnoreCase)
@@ -254,8 +273,8 @@ public static class EvidenceCourt
         if (evidenceRefs is not { Count: > 0 })
             return 0;
 
-        var factNames = facts
-            .Where(IsCourtAdmissibleFact)
+        var supportingByName = facts
+            .Where(IsClaimSupportingSensorFact)
             .Select(f => f.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var n = 0;
@@ -263,7 +282,11 @@ public static class EvidenceCourt
         {
             if (string.IsNullOrWhiteSpace(r))
                 continue;
-            if (factNames.Contains(r))
+            // Lineage refs never Court-confirm a write/fault claim.
+            if (r.StartsWith("lineage.", StringComparison.OrdinalIgnoreCase)
+                || r.StartsWith("lineage:", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (supportingByName.Contains(r))
             {
                 n++;
                 continue;

@@ -13,19 +13,8 @@ public static class CrashSidecarWriter
         return path;
     }
 
-    public static CrashSidecarDto? TryRead(string? sidecarPath)
-    {
-        if (string.IsNullOrWhiteSpace(sidecarPath) || !File.Exists(sidecarPath))
-            return null;
-        try
-        {
-            return JsonSerializer.Deserialize<CrashSidecarDto>(File.ReadAllText(sidecarPath));
-        }
-        catch
-        {
-            return null;
-        }
-    }
+    public static CrashSidecarDto? TryRead(string? sidecarPath) =>
+        ResearchSidecarIO.TryRead<CrashSidecarDto>(sidecarPath);
 
     public static string? CopyTrace(string crashesDir, Guid crashId, string? sourceTracePath)
     {

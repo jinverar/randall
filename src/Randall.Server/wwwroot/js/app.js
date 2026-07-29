@@ -2560,8 +2560,14 @@ function patchLiveDashboardCounters(data) {
   const iters = live
     ? Math.max(Number(data.iterations) || 0, Number(fuzzStatusCache?.iterations) || 0)
     : (data.iterations ?? 0);
+  // Prefer journal/dashboard crashes once caught up — never keep a sticky live over-count
+  // (e.g. race before cascade rejection) ahead of journaled truth.
+  const journalIters = Number(data.iterations) || 0;
+  const liveIters = Number(fuzzStatusCache?.iterations) || 0;
   const crashes = live
-    ? Math.max(Number(data.crashes) || 0, Number(fuzzStatusCache?.crashes) || 0)
+    ? (journalIters >= liveIters
+        ? (Number(data.crashes) || 0)
+        : Math.max(Number(data.crashes) || 0, Number(fuzzStatusCache?.crashes) || 0))
     : (data.crashes ?? 0);
   const sessionDd = document.querySelector('#stalk-session dd:last-child');
   // Prefer rewriting the iters/crashes row via a dedicated id if present.
@@ -2617,7 +2623,8 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
       ...stalkLastGoodDashboard,
       status: data?.status || stalkLastGoodDashboard.status,
       iterations: Math.max(Number(data?.iterations) || 0, Number(stalkLastGoodDashboard.iterations) || 0),
-      crashes: Math.max(Number(data?.crashes) || 0, Number(stalkLastGoodDashboard.crashes) || 0),
+      // Crashes follow journaled truth — do not sticky-max a prior inflated count.
+      crashes: data?.crashes != null ? Number(data.crashes) || 0 : (Number(stalkLastGoodDashboard.crashes) || 0),
       coverageEdges: Math.max(Number(data?.coverageEdges) || 0, Number(stalkLastGoodDashboard.coverageEdges) || 0),
       corpusSize: Math.max(Number(data?.corpusSize) || 0, Number(stalkLastGoodDashboard.corpusSize) || 0),
     };
