@@ -386,7 +386,9 @@ public static class PrimitiveEngine
                 && l.State.Kind is InfluencedStateKind.CopyLength
                     or InfluencedStateKind.Length
                     or InfluencedStateKind.AllocationSize
-                && !l.Mechanism.Contains("correlation", StringComparison.OrdinalIgnoreCase)) == true)
+                && !l.Mechanism.Contains("correlation", StringComparison.OrdinalIgnoreCase)
+                && !l.Mechanism.Contains("Observed Association", StringComparison.OrdinalIgnoreCase)
+                && !l.Mechanism.Contains("co-occurs", StringComparison.OrdinalIgnoreCase)) == true)
             return true;
 
         var insn = debugger?.DisasmNearRip ?? "";

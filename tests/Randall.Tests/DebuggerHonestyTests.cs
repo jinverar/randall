@@ -273,7 +273,8 @@ public class DebuggerHonestyTests
 
         var map = InfluenceEngine.Build(id, "lab", sidecar, null, obs, null, payload: payload);
         Assert.Contains(map.Links, l =>
-            l.Mechanism.Contains("sentinel correlation", StringComparison.OrdinalIgnoreCase)
+            (l.Mechanism.Contains("Observed Association", StringComparison.OrdinalIgnoreCase)
+             || l.Mechanism.Contains("co-occurs", StringComparison.OrdinalIgnoreCase))
             && l.Honesty == InfluenceHonestyLabel.Unverified);
 
         var report = PrimitiveEngine.Build(id, "lab", map, null, obs);

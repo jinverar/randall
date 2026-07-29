@@ -1944,6 +1944,10 @@ function renderStalkGraph(blocks, edges) {
   const height = (maxY - minY) + nodeH + pad * 2;
   const spineX = positions[spine[0]?.id]?.x ?? pad;
 
+  const maxEdgeHits = Math.max(
+    1,
+    ...edgeList.map((e) => Number(e.hitCount) || 0),
+    ...blocks.map((b) => Number(b.hitCount) || 0));
   const edgePaths = edgeList.map((e) => {
     const a = positions[e.from];
     const b = positions[e.to];
@@ -1956,11 +1960,16 @@ function renderStalkGraph(blocks, edges) {
     const d = `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`;
     const toCrash = byId[e.to]?.kind === 'crash';
     const cls = e.onCrashPath ? (toCrash ? 'crash' : 'path') : (e.taken ? 'path' : 'miss');
-    const label = e.label
-      ? `<text class="stalk-edge-label" x="${(x1 + x2) / 2 + 10}" y="${midY}">${escapeXml(e.label)}</text>`
+    const hits = Number(e.hitCount) || 0;
+    const weight = hits > 0 ? hits / maxEdgeHits : (e.onCrashPath ? 0.55 : (e.taken ? 0.25 : 0.12));
+    const strokeW = (e.onCrashPath ? 2.2 : 1.2) + weight * (e.onCrashPath ? 3.6 : 2.4);
+    const hitBit = hits > 0 ? ` · ${hits}` : '';
+    const labelText = e.label ? `${e.label}${hitBit}` : (hits > 0 ? String(hits) : '');
+    const label = labelText
+      ? `<text class="stalk-edge-label" x="${(x1 + x2) / 2 + 10}" y="${midY}">${escapeXml(labelText)}</text>`
       : '';
-    // No marker-end / bubble dots on edges — stroke color alone marks the path.
-    return `<path class="stalk-edge ${cls}" d="${d}" />${label}`;
+    // Stroke width + optional hit count make the dominant path obvious.
+    return `<path class="stalk-edge ${cls}" d="${d}" style="stroke-width:${strokeW.toFixed(2)}" data-hits="${hits}" />${label}`;
   }).join('');
 
   const caption = `<text class="stalk-path-caption" x="${spineX + nodeW / 2}" y="${Math.max(16, pad - 20)}" text-anchor="middle">Crash path ↓</text>`;
@@ -1971,6 +1980,10 @@ function renderStalkGraph(blocks, edges) {
     const title = b.label || b.id;
     const addr = b.address || '';
     const detail = b.detail || '';
+    const hits = Number(b.hitCount) || 0;
+    const detailLine = hits > 0
+      ? `${hits} hit${hits === 1 ? '' : 's'}${detail ? ` · ${detail.length > 18 ? `${detail.slice(0, 18)}…` : detail}` : ''}`
+      : (detail.length > 30 ? `${detail.slice(0, 30)}…` : detail);
     // No skull / step-number / bubble alerts — labels only.
     const forkTag = !b.onCrashPath && b.kind !== 'crash'
       ? `<text class="stalk-fork-tag" x="${p.x + nodeW - 8}" y="${p.y + 14}" text-anchor="end">fork</text>`
@@ -1980,8 +1993,8 @@ function renderStalkGraph(blocks, edges) {
       ${forkTag}
       <text class="stalk-node-label" x="${p.x + nodeW / 2}" y="${p.y + 30}">${escapeXml(title)}</text>
       <text class="stalk-node-sub" x="${p.x + nodeW / 2}" y="${p.y + 46}">${escapeXml(addr)}</text>
-      <text class="stalk-node-detail" x="${p.x + nodeW / 2}" y="${p.y + 64}">${escapeXml(detail.length > 30 ? `${detail.slice(0, 30)}…` : detail)}</text>
-      <title>${escapeXml(`${title}\n${addr}\n${detail}\n(click to inspect · right-click for RE)`)}</title>
+      <text class="stalk-node-detail" x="${p.x + nodeW / 2}" y="${p.y + 64}">${escapeXml(detailLine)}</text>
+      <title>${escapeXml(`${title}\n${addr}\n${hits > 0 ? `Hits: ${hits}\n` : ''}${detail}\n(click to inspect · right-click for RE)`)}</title>
     </g>`;
   }).join('');
 
@@ -2139,10 +2152,12 @@ function openBlockInspector(id) {
   const sev = (block.severity || '').toLowerCase();
   title.textContent = `${block.label} · ${block.role || block.kind}`;
 
-  const inEdges = incoming.map((e) =>
-    `${e.from}${e.label ? ` (${e.label})` : ''}${e.taken ? '' : ' · miss'}`).join(', ') || '—';
-  const outEdges = outgoing.map((e) =>
-    `${e.to}${e.label ? ` (${e.label})` : ''}${e.taken ? '' : ' · miss'}`).join(', ') || '—';
+  const fmtEdge = (e, other) => {
+    const hits = Number(e.hitCount) || 0;
+    return `${other}${e.label ? ` (${e.label})` : ''}${hits > 0 ? ` ×${hits}` : ''}${e.taken ? '' : ' · miss'}`;
+  };
+  const inEdges = incoming.map((e) => fmtEdge(e, e.from)).join(', ') || '—';
+  const outEdges = outgoing.map((e) => fmtEdge(e, e.to)).join(', ') || '—';
 
   body.innerHTML = `
     <p class="stalk-insp-why">${escapeAttr(block.detail || 'No detail for this block.')}</p>
@@ -3681,15 +3696,70 @@ function exploitResearchLooksEmpty(panel, debuggerObservation) {
   return !panel.ok && !panel.faultInstruction && !(panel.registerMatrix || []).length;
 }
 
-function renderExploitResearchPanel(panel, debuggerObservation = null, evidenceFacts = null) {
+/**
+ * Classify bare UNKNOWN from real signals only — never invent readiness.
+ * Returns { label, reason } for Waiting for … / Not applicable / UNKNOWN.
+ */
+function classifyUnknown(field, detail = {}) {
+  const dbg = detail.debuggerObservation || detail.debugger;
+  const dump = detail.summary?.miniDumpPath || detail.analysis?.dumpPath || dbg?.dumpPath || '';
+  const silent = !!(detail.summary?.silentScream || detail.summary?.crashClass === 'oracle_only'
+    || detail.triage?.class === 'oracle_only');
+  const hasGhidra = !!(detail.summary?.staticFunctionSummary || detail.triage?.staticFunction
+    || detail.rootCause?.candidate?.faultingFunction);
+  const hasCf = !!(detail.exploitResearch?.controlTests || []).some((t) =>
+    /Crash|No crash|Observed/i.test(String(t.outcome || t.honesty || '')));
+  const key = String(field || '').toLowerCase();
+
+  if (silent && /fault|ea|effective|written|rip|insn|instruction|register|stack/.test(key)) {
+    return { label: 'Not applicable', reason: 'Oracle-only / silent scream — no memory-crash dump to decode' };
+  }
+  if (!dump && /fault|ea|effective|written|insn|instruction|register|stack|dump/.test(key)) {
+    return { label: 'Waiting for dump', reason: 'No minidump/core captured yet — enable Scream wait / Both debugger mode' };
+  }
+  if (dump && !dbg?.ok && /fault|ea|effective|written|insn|instruction|register|stack|debugger/.test(key)) {
+    return { label: 'Waiting for debugger', reason: 'Dump present — re-analyze / wait for CDB or gdb observation' };
+  }
+  if (!hasCf && /control|confirm|proven|counterfactual|replay/.test(key)) {
+    return { label: 'Waiting for replay', reason: 'No counterfactual Crash/No-crash delta yet' };
+  }
+  if (!hasGhidra && /ghidra|static|mapped|function map/.test(key)) {
+    return { label: 'Waiting for Ghidra', reason: 'No static function map / ghidra-analyze artifact yet' };
+  }
+  if (/ghidra|static|mapped/.test(key) && hasGhidra === false) {
+    return { label: 'Waiting for Ghidra', reason: 'No static map' };
+  }
+  return { label: 'UNKNOWN', reason: 'No stronger classification from available signals' };
+}
+
+function unknownCellHtml(field, detail, fallbackHint = '') {
+  const cls = classifyUnknown(field, detail);
+  const tip = cls.reason || fallbackHint || '';
+  return `<code class="ea-unknown" title="${escapeAttr(tip)}">${escapeAttr(cls.label)}</code>`
+    + (tip ? ` <span class="hint-inline unknown-reason">${escapeAttr(tip)}</span>` : '');
+}
+
+/** Control-matrix status: Correlated → Observed Association (co-occurs, not causation). */
+function controlStatusLabel(status) {
+  const s = String(status || 'Unknown').toUpperCase();
+  if (s === 'CORRELATED') return 'Observed Association';
+  return s;
+}
+
+function controlStatusHint(status) {
+  const s = String(status || '').toUpperCase();
+  if (s === 'CORRELATED') return 'Co-occurs with input bytes — association only, not causation';
+  return '';
+}
+
+function renderExploitResearchPanel(panel, debuggerObservation = null, evidenceFacts = null, detailCtx = null) {
+  const detail = detailCtx || { debuggerObservation, exploitResearch: panel };
   if (exploitResearchLooksEmpty(panel, debuggerObservation)) {
-    const silent = !debuggerObservation?.ok;
+    const unk = classifyUnknown('debugger', detail);
     return `<div class="triage-box exploit-research-box exploit-research-empty" id="exploit-research-panel">
       <h4>Exploit Research <span class="hint-inline">static reconstruction</span></h4>
-      <p class="empty">No debugger observation yet.</p>
-      <p class="hint">${silent
-        ? 'Re-analyze / wait for CDB (or gdb) to populate fault insn, EA, and register matrix. Silent screams / oracle-only events stay research-empty until a memory crash dump is analyzed.'
-        : 'Re-analyze / wait for CDB — dump probes have not produced a usable observation yet.'}</p>
+      <p class="empty">${escapeAttr(unk.label)}</p>
+      <p class="hint">${escapeAttr(unk.reason)}</p>
       ${renderEvidenceLedger(evidenceFacts, { limit: 8, title: 'Evidence Ledger' })}
     </div>`;
   }
@@ -3718,47 +3788,56 @@ function renderExploitResearchPanel(panel, debuggerObservation = null, evidenceF
     : '';
   const eaBlock = `<dl class="exploit-ea-dl">
         <dt>Faulting instruction</dt><dd>${insnUnknown
-          ? `<code class="ea-unknown">UNKNOWN</code> <span class="hint-inline">no parseable u @rip line (symbol-path rejected)</span>`
+          ? unknownCellHtml('fault instruction', detail, 'no parseable u @rip line (symbol-path rejected)')
           : `<code>${escapeAttr(faultInsn)}</code>
           <span class="hint-inline">${escapeAttr(ea?.reconstructionKind || 'Static')} · ${escapeAttr(ea?.honesty || '')}</span>`}</dd>
         <dt>Effective address</dt><dd>${eaHex
           ? `<code>${escapeAttr(eaHex)}</code>${matchLabel ? ` <span class="hint-inline">${escapeAttr(matchLabel)}</span>` : ''}`
-          : `<code class="ea-unknown">UNKNOWN</code>`}
+          : unknownCellHtml('effective address', detail, ea?.note || '')}
           ${breakdown ? `<div class="hint-inline ea-breakdown">${escapeAttr(breakdown)}</div>` : ''}
           ${ea?.note && !eaHex ? `<div class="hint-inline">${escapeAttr(ea.note)}</div>` : ''}</dd>
         <dt>Written value</dt><dd>${valueHex
           ? `<code>${escapeAttr(valueHex)}</code>`
-          : `<code class="ea-unknown">UNKNOWN</code>`}
+          : unknownCellHtml('written value', detail)}
           · ${escapeAttr(ea?.widthLabel || '?')} (${ea?.widthBytes ?? '?'}B)
           · access ${escapeAttr(ea?.accessKind || '—')}</dd>
       </dl>`;
 
-  const statusLabel = (s) => String(s || 'Unknown').toUpperCase();
   const matrixRows = matrix.length
     ? `<table class="exploit-reg-matrix"><thead><tr>
         <th>Register</th><th>Value</th><th>Input relationship</th><th>Status</th>
-      </tr></thead><tbody>${matrix.slice(0, 16).map((r) => `<tr>
+      </tr></thead><tbody>${matrix.slice(0, 16).map((r) => {
+        const st = String(r.status || 'Unknown');
+        const stLabel = /^unknown$/i.test(st)
+          ? classifyUnknown('register control', detail).label
+          : controlStatusLabel(st);
+        const tip = controlStatusHint(st) || r.honesty || r.note || '';
+        const rel = String(r.inputRelationship || '')
+          .replace(/sentinel correlation/gi, 'Observed Association (co-occurs)')
+          .replace(/\bcorrelation\b/gi, 'association');
+        return `<tr>
         <td><code>${escapeAttr(r.register)}</code></td>
         <td><code>${escapeAttr(r.valueHex || '—')}</code></td>
-        <td>${escapeAttr(r.inputRelationship || '')}${r.payloadOffset != null ? ` <span class="hint-inline">+${r.payloadOffset}</span>` : ''}</td>
-        <td><span class="ctrl-status ctrl-${escapeAttr(String(r.status || 'Unknown').toLowerCase())}" title="${escapeAttr(r.honesty || '')}">${escapeAttr(statusLabel(r.status))}</span></td>
-      </tr>`).join('')}</tbody></table>
-      <p class="hint">UNKNOWN · CORRELATED · INFLUENCED · CONTROLLED · CONFIRMED — zero/low-value coincidence never reaches CONFIRMED; FF…FF/−1 stays CORRELATED without counterfactual.</p>`
+        <td>${escapeAttr(rel)}${r.payloadOffset != null ? ` <span class="hint-inline">+${r.payloadOffset}</span>` : ''}</td>
+        <td><span class="ctrl-status ctrl-${escapeAttr(st.toLowerCase())}" title="${escapeAttr(tip)}">${escapeAttr(stLabel)}</span></td>
+      </tr>`;
+      }).join('')}</tbody></table>
+      <p class="hint">UNKNOWN · Observed Association (co-occurs) · INFLUENCED · CONTROLLED · CONFIRMED — coincidence never reaches CONFIRMED; FF…FF/−1 stays Observed Association without counterfactual. Association ≠ causation.</p>`
     : '<p class="hint">No register/input links yet.</p>';
 
   const writeBlock = write
     ? `<div class="exploit-write-split">
         <p class="label">Destination vs written-value control</p>
         <ul>
-          <li><span class="label">Destination control</span> ${escapeAttr(write.destinationControl)}
-            ${write.destinationStatus ? ` <span class="ctrl-status ctrl-${escapeAttr(String(write.destinationStatus).toLowerCase())}">${escapeAttr(statusLabel(write.destinationStatus))}</span>` : ''}
+          <li><span class="label">Destination control</span> ${escapeAttr(String(write.destinationControl || '').replace(/CORRELATED/g, 'Observed Association'))}
+            ${write.destinationStatus ? ` <span class="ctrl-status ctrl-${escapeAttr(String(write.destinationStatus).toLowerCase())}" title="${escapeAttr(controlStatusHint(write.destinationStatus))}">${escapeAttr(controlStatusLabel(write.destinationStatus))}</span>` : ''}
             <span class="${honestyCls(write.honesty)}">${escapeAttr(write.honesty || '')}</span></li>
-          <li><span class="label">Written value control</span> ${escapeAttr(write.valueControl)}
-            ${write.valueStatus ? ` <span class="ctrl-status ctrl-${escapeAttr(String(write.valueStatus).toLowerCase())}">${escapeAttr(statusLabel(write.valueStatus))}</span>` : ''}</li>
+          <li><span class="label">Written value control</span> ${escapeAttr(String(write.valueControl || '').replace(/CORRELATED/g, 'Observed Association'))}
+            ${write.valueStatus ? ` <span class="ctrl-status ctrl-${escapeAttr(String(write.valueStatus).toLowerCase())}" title="${escapeAttr(controlStatusHint(write.valueStatus))}">${escapeAttr(controlStatusLabel(write.valueStatus))}</span>` : ''}</li>
           <li><span class="label">Width</span> ${escapeAttr(write.widthLabel || '—')}</li>
           <li><span class="label">Repeatability</span> ${escapeAttr(write.repeatability || '—')}</li>
         </ul>
-        <p class="hint">Not a generic “Controlled write” — destination and value are separate claims.</p>
+        <p class="hint">Not a generic “Controlled write” — destination and value are separate claims. Observed Association means co-occurrence only.</p>
       </div>`
     : '';
 
@@ -3894,13 +3973,16 @@ function researchMaturityBadgeHtml(raw, label) {
   return `<span class="maturity-badge maturity-r${idx}" title="Research maturity ${level.id}: ${escapeAttr(title)}">${escapeAttr(level.id)}</span>`;
 }
 
-function renderResearchMaturityScale(intel, { compact = false } = {}) {
+function renderResearchMaturityScale(intel, { compact = false, evidenceFill = null } = {}) {
   const idx = parseResearchMaturityLevel(intel?.researchMaturity);
   const assessed = idx != null;
   const current = assessed ? idx : -1;
   const level = assessed ? RESEARCH_MATURITY_LEVELS[current] : null;
   const label = intel?.researchMaturityLabel || level?.label || '';
   const pct = assessed ? Math.round((current / 7) * 100) : 0;
+  const evFill = evidenceFill != null && Number.isFinite(evidenceFill)
+    ? Math.max(0, Math.min(100, Math.round(evidenceFill)))
+    : null;
   const learning = academyLearningMode();
   const chips = RESEARCH_MATURITY_LEVELS.map((lv, i) => {
     const state = !assessed ? 'idle' : i < current ? 'done' : i === current ? 'current' : 'todo';
@@ -3909,13 +3991,20 @@ function renderResearchMaturityScale(intel, { compact = false } = {}) {
       + `<b>${escapeAttr(lv.id)}</b> ${escapeAttr(compact ? lv.id.replace('R', '') : lv.chip)}`
       + `</span>`;
   }).join('');
-  const bar = `<div class="maturity-progress" role="progressbar" aria-valuemin="0" aria-valuemax="7" aria-valuenow="${assessed ? current : 0}" aria-label="Research maturity">`
+  const bar = `<div class="maturity-progress" role="progressbar" aria-valuemin="0" aria-valuemax="7" aria-valuenow="${assessed ? current : 0}" aria-label="Research maturity ${pct}%">`
     + `<div class="maturity-progress-fill" style="width:${pct}%"></div></div>`;
+  const evBar = evFill != null
+    ? `<div class="maturity-evidence-row"><span class="hint-inline">Evidence fill</span>`
+      + `<div class="maturity-evidence-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${evFill}" aria-label="Evidence completeness">`
+      + `<div class="maturity-evidence-fill" style="width:${evFill}%"></div></div>`
+      + `<span class="maturity-pct">${evFill}%</span></div>`
+    : '';
   if (compact) {
     return `<div class="maturity-scale maturity-compact${assessed ? '' : ' maturity-unassessed'}">${chips}</div>`;
   }
   const head = assessed
-    ? `<span class="maturity-current-label"><code>${escapeAttr(level.id)}</code> ${escapeAttr(label)}</span>`
+    ? `<span class="maturity-current-label"><code>${escapeAttr(level.id)}</code> ${escapeAttr(label)}`
+      + ` <span class="maturity-pct">${pct}%</span></span>`
     : `<span class="maturity-current-label hint">not assessed</span>`;
   const learningBody = learning
     ? `${academyEduBlurb('maturity')}${assessed ? `<p class="academy-edu-blurb maturity-level-blurb">${escapeAttr(level.blurb)}</p>` : ''}`
@@ -3931,6 +4020,7 @@ function renderResearchMaturityScale(intel, { compact = false } = {}) {
   return `<div class="maturity-scale${assessed ? '' : ' maturity-unassessed'}">`
     + `<div class="maturity-scale-head"><span class="label">Research maturity</span> ${head}</div>`
     + bar
+    + evBar
     + `<div class="maturity-chips">${chips}</div>`
     + learningBody
     + researchBody
@@ -4040,8 +4130,20 @@ function evidenceKindFromFact(f) {
   const t = String(f?.observationType || 'Observed').toLowerCase().replace(/[^a-z]/g, '');
   if (t === 'experimentallyconfirmed') return 'Confirmed';
   if (t === 'hypothesized') return 'Hypothesis';
-  if (t === 'inferred') return (f?.confidence != null && f.confidence < 0.55) ? 'Heuristic' : 'Derived';
+  if (t === 'inferred') return (f?.confidence != null && f.confidence < 0.55) ? 'Experimental' : 'Derived';
   return 'Observed';
+}
+
+function evidenceScanMarker(kind) {
+  switch (String(kind || '').toLowerCase()) {
+    case 'observed': return '●';
+    case 'experimental':
+    case 'heuristic': return '◇';
+    case 'derived': return '▸';
+    case 'hypothesis': return '?';
+    case 'confirmed': return '✓';
+    default: return '·';
+  }
 }
 
 function evidenceTypeBadge(observationType, fact) {
@@ -4054,12 +4156,14 @@ function evidenceTypeBadge(observationType, fact) {
     confirmed: 'Confirmed',
     inferred: 'Derived',
     derived: 'Derived',
-    heuristic: 'Heuristic',
+    heuristic: 'Experimental',
+    experimental: 'Experimental',
     hypothesized: 'Hypothesis',
     hypothesis: 'Hypothesis',
   };
   const label = labels[key] || kind || t;
-  return `<span class="evidence-badge evidence-badge-${key || 'observed'}" title="${escapeAttr(kind ? `Kind: ${kind} · ${t}` : t)}">${escapeAttr(label)}</span>`;
+  const marker = evidenceScanMarker(label);
+  return `<span class="evidence-badge evidence-badge-${key || 'observed'}" title="${escapeAttr(kind ? `Kind: ${label} · ${t}` : t)}"><span class="evidence-kind-mark" aria-hidden="true">${marker}</span> ${escapeAttr(label)}</span>`;
 }
 
 function renderEvidenceLedger(facts, { limit = 24, title = 'Evidence Ledger' } = {}) {
@@ -4077,8 +4181,14 @@ function renderEvidenceLedger(facts, { limit = 24, title = 'Evidence Ledger' } =
     </tr>`;
   }).join('');
   return `<div class="triage-box evidence-ledger-box">
-    <h4>${escapeAttr(title)} <span class="hint-inline">${facts.length} claim(s)</span>
-      <span class="hint-inline">Observed · Derived · Heuristic · Hypothesis · Confirmed</span></h4>
+    <h4>${escapeAttr(title)} <span class="hint-inline">${facts.length} claim(s)</span></h4>
+    <p class="evidence-kind-legend" aria-label="Evidence kinds">
+      <span><span class="evidence-kind-mark">●</span> Observed</span>
+      <span><span class="evidence-kind-mark">◇</span> Experimental</span>
+      <span><span class="evidence-kind-mark">▸</span> Derived</span>
+      <span><span class="evidence-kind-mark">?</span> Hypothesis</span>
+      <span><span class="evidence-kind-mark">✓</span> Confirmed</span>
+    </p>
     <p class="hint">Canonical claims from EvidenceFact (Court / Investigation) — Kind is display taxonomy, not a second store.</p>
     <table class="evidence-fact-table evidence-ledger-table"><thead><tr>
       <th>Kind</th><th>Claim</th><th>Value</th><th>Source</th><th>Conf</th>
@@ -4091,12 +4201,101 @@ function renderEvidenceLedger(facts, { limit = 24, title = 'Evidence Ledger' } =
 function influenceHonestyLabel(link) {
   if (link?.honesty) return String(link.honesty);
   const mech = String(link?.mechanism || '');
-  if (/correlation|sentinel/i.test(mech)) return 'Unverified';
+  if (/correlation|sentinel|observed association|co-occurs/i.test(mech)) return 'Unverified';
   const st = String(link?.status || 'Unknown');
   if (st === 'Confirmed') return 'Confirmed';
   if (st === 'Observed') return 'Observed';
   if (st === 'Candidate') return 'Hypothesized';
   return 'Unverified';
+}
+
+/** Investigation checklist from real gates/evidence — actionable next experiments. */
+function renderResearchQuestions(detail) {
+  const dbg = detail?.debuggerObservation;
+  const panel = detail?.exploitResearch;
+  const ea = panel?.effectiveAddress;
+  const intel = detail?.intelligence;
+  const rootCause = detail?.rootCause;
+  const chain = detail?.corruptionChain;
+  const matrix = panel?.registerMatrix || [];
+  const write = panel?.writeControl;
+  const dump = detail?.summary?.miniDumpPath || detail?.analysis?.dumpPath || dbg?.dumpPath || '';
+  const faultInsn = (ea?.instruction || panel?.faultInstruction || '').trim();
+  const hasFaultInsn = !!(faultInsn && !/^unknown$/i.test(faultInsn));
+  const ripCtrl = matrix.some((r) =>
+    /^(rip|eip)$/i.test(String(r.register || ''))
+    && /influenced|controlled|confirmed/i.test(String(r.status || '')));
+  const destMove = !!(write && write.destinationStatus
+    && !/unknown/i.test(String(write.destinationStatus))
+    && !/correlated/i.test(String(write.destinationStatus)));
+  const corruptionBefore = !!(chain?.ok && (chain.steps?.length > 0
+    || /before|corrupt/i.test(String(chain.summary || ''))));
+  const minimizedSame = !!(intel?.minimized || detail?.deepScream?.minimizedInputPath);
+  const hasRoot = !!(rootCause?.ok && rootCause.candidate?.category
+    && !/unknown/i.test(String(rootCause.candidate.category)));
+  const debuggerRepro = !!(dbg?.ok && dump);
+  const ghidraMapped = !!(detail?.summary?.staticFunctionSummary
+    || detail?.triage?.staticFunction
+    || (rootCause?.candidate?.faultingFunction && detail?.summary?.staticFunctionSummary));
+
+  const items = [
+    { id: 'fault-insn', label: 'Fault instruction known', ok: hasFaultInsn, next: hasFaultInsn ? null : classifyUnknown('fault instruction', detail).reason },
+    { id: 'rip-control', label: 'EIP/RIP control (influenced+)', ok: ripCtrl, next: ripCtrl ? null : 'Run cyclic / counterfactual on return address region' },
+    { id: 'dest-move', label: 'Destination move / write control', ok: destMove, next: destMove ? null : 'Prove destination vs value separately (counterfactual)' },
+    { id: 'corruption-before', label: 'Corruption before crash', ok: corruptionBefore, next: corruptionBefore ? null : 'Need corruption-chain steps from debugger / rewind' },
+    { id: 'minimized-same', label: 'Minimized input still crashes', ok: minimizedSame, next: minimizedSame ? null : 'Minimize cluster input / enable deepScreamAutoMinimize' },
+    { id: 'root-cause', label: 'Root cause assigned', ok: hasRoot, next: hasRoot ? null : 'Capture dump + triage so RootCauseEngine can classify' },
+    { id: 'debugger-repro', label: 'Debugger repro (dump + observation)', ok: debuggerRepro, next: debuggerRepro ? null : classifyUnknown('debugger', detail).reason },
+    { id: 'ghidra-mapped', label: 'Ghidra mapped', ok: ghidraMapped, next: ghidraMapped ? null : classifyUnknown('ghidra', detail).reason },
+  ];
+  const done = items.filter((i) => i.ok).length;
+  return `<div class="triage-box research-questions-box">
+    <h4>Research Questions <span class="hint-inline">${done}/${items.length} gates</span></h4>
+    <p class="hint">Checklist from real evidence — unchecked rows name the next experiment.</p>
+    <ul class="research-questions-list">${items.map((i) => `
+      <li class="${i.ok ? 'rq-done' : 'rq-open'}">
+        <span class="rq-check" aria-hidden="true">${i.ok ? '☑' : '☐'}</span>
+        <span class="rq-label">${escapeAttr(i.label)}</span>
+        ${i.ok ? '' : `<span class="hint-inline rq-next">${escapeAttr(i.next || 'open')}</span>`}
+      </li>`).join('')}
+    </ul>
+  </div>`;
+}
+
+function renderDeepScreamPanel(detail) {
+  const deepScream = detail?.deepScream;
+  const intel = detail?.intelligence;
+  const candidate = deepScream?.isCandidate || intel?.deepScreamCandidate;
+  if (!candidate) return '';
+  const score = Number(deepScream?.screamScore ?? intel?.screamScore ?? 0);
+  const seen = Number(deepScream?.seenCount ?? intel?.seenCount ?? 0);
+  const novelty = Number(intel?.novelty ?? 0);
+  const reasons = deepScream?.eligibilityReasons || [];
+  const marked = !!deepScream?.isMarked;
+  const suppressed = !!deepScream?.familySuppressed;
+  return `<div class="triage-box deep-scream-panel${marked ? ' deep-scream-marked' : ''}" role="region" aria-label="Deep Scream">
+    <div class="deep-scream-panel-head">
+      <h4>Deep Scream</h4>
+      <span class="deep-scream-badge">TTD path</span>
+      ${marked ? '<span class="hint-inline">Marked</span>' : ''}
+      ${suppressed ? '<span class="hint-inline">Family dedup</span>' : ''}
+    </div>
+    <p class="hint">${escapeAttr(intel?.deepScreamSummary || reasons.join(' · ') || 'High-value scream — expensive rewind/TTD operator path eligible')}</p>
+    <div class="deep-scream-scores" title="Honest scores only — eligibility, not exploit completion">
+      <div><span class="label">Scream</span> <strong>${Number.isFinite(score) ? score : '—'}</strong></div>
+      <div><span class="label">Novelty</span> <strong>${Number.isFinite(novelty) ? novelty : '—'}</strong>/100</div>
+      <div><span class="label">Seen</span> <strong>${seen || 1}</strong></div>
+      <div><span class="label">Repro</span> <strong>${intel?.reproducible || deepScream?.reproducible ? 'yes' : '—'}</strong></div>
+    </div>
+    ${reasons.length ? `<ul class="deep-scream-reasons">${reasons.slice(0, 6).map((r) => `<li>${escapeAttr(r)}</li>`).join('')}</ul>` : ''}
+    ${deepScream?.ttdHintPath ? `<p class="hint">TTD playbook: <code>${escapeAttr(deepScream.ttdHintPath)}</code></p>` : '<p class="hint">Enable <code>fuzz.rewindScream: true</code> to write TTD playbooks when marked.</p>'}
+    ${deepScream?.ttdToolsSummary ? `<p class="hint">TTD tools: ${escapeAttr(deepScream.ttdToolsSummary)}</p>` : ''}
+    ${deepScream?.dumpPath ? `<p class="hint">Dump: <code>${escapeAttr(deepScream.dumpPath)}</code></p>` : ''}
+    ${deepScream?.minimizedInputPath ? `<p class="hint">Minimized: <code>${escapeAttr(deepScream.minimizedInputPath)}</code></p>` : ''}
+    ${deepScream?.hypothesisPath ? `<p class="hint">Hypotheses: <code>${escapeAttr(deepScream.hypothesisPath)}</code></p>` : ''}
+    ${deepScream?.corruptionChainPath ? `<p class="hint">Corruption: <code>${escapeAttr(deepScream.corruptionChainPath)}</code></p>` : ''}
+    ${deepScream?.backwardTracePath ? `<p class="hint">Backward trace: <code>${escapeAttr(deepScream.backwardTracePath)}</code></p>` : ''}
+  </div>`;
 }
 
 function shortFault(c) {
@@ -4228,13 +4427,6 @@ function renderCrashDetail(detail, title) {
       : `priority ${intelScore}${intelBits}${evoWarm ? ` · ${evo?.momentumLabel || intel?.screamMomentumLabel || 'warming'}` : ''}`;
   }
 
-  const maturityScaleHtml = !hidePrimitives
-    ? `<div class="triage-box maturity-canonical-box">
-        <h4>Research maturity</h4>
-        ${renderResearchMaturityScale(intel || { researchMaturity: null })}
-      </div>`
-    : '';
-
   const srcLabel = faultSourceLabel(primaryFault?.source);
   const evidenceQuality = (() => {
     const facts = evidenceFacts.length;
@@ -4249,18 +4441,26 @@ function renderCrashDetail(detail, title) {
     return Math.min(100, q);
   })();
 
+  const maturityScaleHtml = !hidePrimitives
+    ? `<div class="triage-box maturity-canonical-box">
+        <h4>Research maturity</h4>
+        ${renderResearchMaturityScale(intel || { researchMaturity: null }, { evidenceFill: evidenceQuality })}
+      </div>`
+    : '';
+
   box.innerHTML = `
     <div class="crash-why${intelHot ? ' scream-hot' : ''}${deepScreamCandidate ? ' deep-scream' : ''}">
       <div class="crash-why-head">
         <span class="severity-${sev} crash-sev-pill">${sev}</span>
         <h3>${escapeAttr(title)}</h3>
-        ${deepScreamCandidate ? '<span class="deep-scream-badge" title="Deep Scream — TTD operator path eligible">⏪ Deep Scream</span>' : ''}
-        ${silentScream ? '<span class="silent-scream-badge" title="Oracle violation — no memory crash">🔇 Silent scream</span>' : ''}
+        ${deepScreamCandidate ? '<span class="deep-scream-badge" title="Deep Scream — TTD operator path eligible">Deep Scream</span>' : ''}
+        ${silentScream ? '<span class="silent-scream-badge" title="Oracle violation — no memory crash">Silent scream</span>' : ''}
         <span class="crash-score-badge" title="Research priority (triage ranking) — not evidence quality">Priority ${intelScore}</span>
         <span class="crash-score-badge evidence-quality-badge" title="Evidence quality / completeness">Evidence ${evidenceQuality}</span>
       </div>
       <p class="crash-why-line">${silentScream ? 'Why it screamed (oracle)' : 'Why it crashed'}</p>
       ${maturityScaleHtml}
+      ${renderResearchQuestions(detail)}
       ${primaryFault ? `<p class="crash-primary-fault severity-${(primaryFault.severity || sev).toLowerCase()}">
         <span class="label">Primary fault</span>
         <code>${escapeAttr(faultKindLabel(primaryFault.kind))}</code>
@@ -4278,7 +4478,8 @@ function renderCrashDetail(detail, title) {
         ${dbg.stackHash ? `<span class="hint-inline">stack ${escapeAttr(dbg.stackHash)}</span>` : ''}
       </p>` : ''}
       ${renderEngineStaleBanner(detail)}
-      ${renderExploitResearchPanel(detail.exploitResearch, dbg, evidenceFacts)}
+      ${renderDeepScreamPanel(detail)}
+      ${renderExploitResearchPanel(detail.exploitResearch, dbg, evidenceFacts, detail)}
       ${renderEvidenceLedger(evidenceFacts, { limit: evidenceLimit, title: 'Evidence Ledger' })}
       ${evidenceFacts.length && academyResearchMode() ? `<div class="triage-box evidence-facts-box">
         <h4>Evidence facts <span class="hint-inline">dense · raw ObservationType</span></h4>
@@ -4300,6 +4501,7 @@ function renderCrashDetail(detail, title) {
         ${academyEduBlurb('influence')}
         <p class="hint">${escapeAttr(influenceMap.summary)}</p>
         ${influenceMap.narrative ? `<p class="crash-attribution-narrative"><span class="label">Story</span> ${escapeAttr(influenceMap.narrative)}</p>` : ''}
+        <p class="hint">Links are associations when honesty is Unverified — co-occurrence, not causation.</p>
         <table class="influence-link-table"><thead><tr><th>Region</th><th>→</th><th>State</th><th>Mechanism</th><th>Honesty</th></tr></thead><tbody>${influenceMap.links.map((l) => {
           const r = l.region || {};
           const s = l.state || {};
@@ -4307,11 +4509,14 @@ function renderCrashDetail(detail, title) {
             ? `+${r.startOffset}..+${r.endOffset}`
             : r.widthBytes > 1 ? `+${r.startOffset} (${r.widthBytes}B)` : `+${r.startOffset}`;
           const honesty = influenceHonestyLabel(l);
+          const mech = String(l.mechanism || '')
+            .replace(/sentinel correlation/gi, 'Observed Association (co-occurs)')
+            .replace(/\bcorrelation\b/gi, 'association');
           return `<tr>
             <td><code>${escapeAttr(regionLabel)}</code>${r.fieldLabel ? `<br><span class="hint-inline">${escapeAttr(r.fieldLabel)}</span>` : ''}${r.mutator ? `<br><span class="hint-inline">via ${escapeAttr(r.mutator)}</span>` : ''}</td>
             <td>→</td>
             <td><code>${escapeAttr(s.kind || '')}</code> ${escapeAttr(s.label || '')}${s.value ? `<br><code class="hint-inline">${escapeAttr(s.value)}</code>` : ''}</td>
-            <td>${escapeAttr(l.mechanism || '')}</td>
+            <td>${escapeAttr(mech)}</td>
             <td><span class="influence-honesty-${honesty.toLowerCase()}" title="${escapeAttr(l.status || '')}">${escapeAttr(honesty)}</span>${l.suggestedExperiment ? `<br><span class="hint-inline">${escapeAttr(l.suggestedExperiment.kind || '')}</span>` : ''}</td>
           </tr>`;
         }).join('')}</tbody></table>
@@ -4405,20 +4610,6 @@ function renderCrashDetail(detail, title) {
       </p>
       ${t?.summary ? `<p class="hint">${escapeAttr(t.summary)}</p>` : ''}
       ${t?.staticFunction ? `<p class="severity-high">Static: <code>${escapeAttr(t.staticFunction.functionName)}${escapeAttr(t.staticFunction.offset)}</code> (${escapeAttr(t.staticFunction.source)})${t.staticFunction.instructionHint ? ` — ${escapeAttr(t.staticFunction.instructionHint)}` : ''}</p>` : (detail.summary.staticFunctionSummary ? `<p class="hint">Static: <code>${escapeAttr(detail.summary.staticFunctionSummary)}</code></p>` : '')}
-      ${deepScreamCandidate ? `<div class="triage-box deep-scream-box">
-        <h4>Deep Scream <span class="hint-inline">Phase D</span></h4>
-        <p class="hint">${escapeAttr(intel?.deepScreamSummary || deepScream?.eligibilityReasons?.join(' · ') || 'TTD operator path eligible')}</p>
-        ${deepScream?.isMarked ? '<p class="hint"><strong>Marked</strong> for TTD deep dive</p>' : (deepScream?.familySuppressed ? '<p class="hint">Family dedup — prior crash holds the deep dive</p>' : '')}
-        ${deepScream?.ttdHintPath ? `<p class="hint">TTD playbook: <code>${escapeAttr(deepScream.ttdHintPath)}</code></p>` : '<p class="hint">Enable <code>fuzz.rewindScream: true</code> to write TTD playbooks when marked.</p>'}
-        ${deepScream?.ttdToolsSummary ? `<p class="hint">TTD tools: ${escapeAttr(deepScream.ttdToolsSummary)}</p>` : ''}
-        ${deepScream?.dumpPath ? `<p class="hint">Dump: <code>${escapeAttr(deepScream.dumpPath)}</code></p>` : ''}
-        ${deepScream?.hypothesisPath ? `<p class="hint">Hypotheses: <code>${escapeAttr(deepScream.hypothesisPath)}</code></p>` : ''}
-        ${deepScream?.corruptionChainPath ? `<p class="hint">Corruption: <code>${escapeAttr(deepScream.corruptionChainPath)}</code></p>` : ''}
-        ${deepScream?.backwardTracePath ? `<p class="hint">Backward trace: <code>${escapeAttr(deepScream.backwardTracePath)}</code></p>` : ''}
-        ${deepScream?.evolutionPath ? `<p class="hint">Evolution: <code>${escapeAttr(deepScream.evolutionPath)}</code></p>` : ''}
-        ${deepScream?.semanticFingerprint ? `<p class="hint">Fingerprint: <code>${escapeAttr(deepScream.semanticFingerprint)}</code></p>` : ''}
-        ${deepScream?.minimizedInputPath ? `<p class="hint">Minimized: <code>${escapeAttr(deepScream.minimizedInputPath)}</code></p>` : ''}
-      </div>` : ''}
       ${intel ? `<div class="scream-intel-box${intelHot ? ' scream-hot' : ''}">
         <h4>Scream intelligence</h4>
         <dl class="scream-intel-dl">

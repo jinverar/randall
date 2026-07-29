@@ -150,5 +150,12 @@ public class ResearchMaturityGateTests
         Assert.Equal(2, rows.Count);
         Assert.Equal(EvidenceKind.Observed, rows[0].Kind);
         Assert.Equal(EvidenceKind.Hypothesis, rows[1].Kind);
+
+        Assert.Equal("Experimental", EvidenceLedger.ScanLabel(EvidenceKind.Heuristic));
+        Assert.Equal("Observed", EvidenceLedger.ScanLabel(EvidenceKind.Observed));
+        Assert.Equal("Confirmed", EvidenceLedger.ScanLabel(EvidenceKind.Confirmed));
+        Assert.Equal("●", EvidenceLedger.ScanMarker(EvidenceKind.Observed));
+        Assert.Equal("◇", EvidenceLedger.ScanMarker(EvidenceKind.Heuristic));
+        Assert.Equal("✓", EvidenceLedger.ScanMarker(EvidenceKind.Confirmed));
     }
 }

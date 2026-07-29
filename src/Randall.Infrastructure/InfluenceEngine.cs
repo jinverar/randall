@@ -191,12 +191,14 @@ public static class InfluenceEngine
 
     /// <summary>
     /// Map confirmation status → honesty display. Speculative mechanisms (Candidate length→alloc/copy,
-    /// sentinel correlation) never surface as Observed facts.
+    /// Observed Association / sentinel co-occurrence) never surface as Observed facts.
     /// </summary>
     internal static InfluenceHonestyLabel HonestyFor(InfluenceConfirmationStatus status, string? mechanism = null)
     {
         var mech = mechanism ?? "";
         if (mech.Contains("correlation", StringComparison.OrdinalIgnoreCase)
+            || mech.Contains("Observed Association", StringComparison.OrdinalIgnoreCase)
+            || mech.Contains("co-occurs", StringComparison.OrdinalIgnoreCase)
             || mech.Contains("sentinel", StringComparison.OrdinalIgnoreCase))
             return InfluenceHonestyLabel.Unverified;
 
@@ -405,7 +407,7 @@ public static class InfluenceEngine
         var offset = sentinel.PayloadOffset
                      ?? attribution.PatternDepthBytes
                      ?? 0;
-        const string mech = "sentinel correlation (−1 / 0xFF..FF) — not proven control";
+        const string mech = "Observed Association (−1 / 0xFF..FF co-occurs) — not causation / not proven control";
         links.Add(new InfluenceLinkDto(
             $"inf-sentinel-{sentinel.Register.ToLowerInvariant()}",
             new InfluenceRegionDto(
@@ -420,7 +422,7 @@ public static class InfluenceEngine
                 sentinel.Register,
                 sentinel.ValueHex,
                 boundaryHint
-                    ? "Boundary mutator + −1 correlation — experiment hint only"
+                    ? "Boundary mutator + −1 Observed Association — experiment hint only"
                     : "All-ones / −1 register value correlates with crash (not proven control)"),
             InfluenceConfirmationStatus.Unknown,
             mech,

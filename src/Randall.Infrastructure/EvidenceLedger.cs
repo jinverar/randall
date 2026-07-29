@@ -74,4 +74,29 @@ public static class EvidenceLedger
         EvidenceKind.Confirmed => "Confirmed",
         _ => "Heuristic",
     };
+
+    /// <summary>
+    /// Scan-fast UI label. Heuristic surfaces as Experimental (weaker inferred join);
+    /// Confirmed stays for ExperimentallyConfirmed atoms.
+    /// </summary>
+    public static string ScanLabel(EvidenceKind kind) => kind switch
+    {
+        EvidenceKind.Observed => "Observed",
+        EvidenceKind.Heuristic => "Experimental",
+        EvidenceKind.Derived => "Derived",
+        EvidenceKind.Hypothesis => "Hypothesis",
+        EvidenceKind.Confirmed => "Confirmed",
+        _ => "Experimental",
+    };
+
+    /// <summary>Restrained text marker for ledger rows (no emoji spam).</summary>
+    public static string ScanMarker(EvidenceKind kind) => kind switch
+    {
+        EvidenceKind.Observed => "●",
+        EvidenceKind.Heuristic => "◇",
+        EvidenceKind.Derived => "▸",
+        EvidenceKind.Hypothesis => "?",
+        EvidenceKind.Confirmed => "✓",
+        _ => "◇",
+    };
 }
