@@ -2231,6 +2231,43 @@ function rememberTimelineCrashIds(points) {
   }
 }
 
+function findSelectedTimelineIndex() {
+  if (!stalkSelection || !stalkRenderedTimeline.length) return -1;
+  const key = stalkSelection.key;
+  const byKey = stalkRenderedTimeline.findIndex((p, i) => timelinePointKey(p, i) === key);
+  if (byKey >= 0) return byKey;
+  if (stalkSelection.crashId) {
+    const byCrash = stalkRenderedTimeline.findIndex(
+      (p) => p.crashId && String(p.crashId) === String(stalkSelection.crashId));
+    if (byCrash >= 0) return byCrash;
+  }
+  const idx = Number(stalkSelection.index);
+  if (Number.isFinite(idx) && idx >= 0 && idx < stalkRenderedTimeline.length)
+    return idx;
+  return -1;
+}
+
+function updateTimelineNavButtons() {
+  const prev = document.getElementById('stalk-timeline-prev');
+  const next = document.getElementById('stalk-timeline-next');
+  if (!prev || !next) return;
+  const n = stalkRenderedTimeline.length;
+  if (n <= 0) {
+    prev.disabled = true;
+    next.disabled = true;
+    return;
+  }
+  if (stalkFollowLive || !stalkSelection) {
+    // Allow starting a scrub walk from either end.
+    prev.disabled = false;
+    next.disabled = false;
+    return;
+  }
+  const idx = findSelectedTimelineIndex();
+  prev.disabled = idx <= 0;
+  next.disabled = idx < 0 || idx >= n - 1;
+}
+
 function updateTimelineFollowUi() {
   const btn = document.getElementById('stalk-follow-live');
   const label = document.getElementById('stalk-timeline-selection');
@@ -2239,6 +2276,7 @@ function updateTimelineFollowUi() {
     btn.classList.add('hidden');
     label.classList.add('hidden');
     label.textContent = '';
+    updateTimelineNavButtons();
     return;
   }
   btn.classList.remove('hidden');
@@ -2248,6 +2286,7 @@ function updateTimelineFollowUi() {
     ? ` · ${String(stalkSelection.crashId).slice(0, 8)}…`
     : '';
   label.textContent = `Pinned #${stalkSelection.iteration} ${stalkSelection.label || ''} (${kind})${crashBit}`.trim();
+  updateTimelineNavButtons();
 }
 
 function timelineKindRank(kind) {
@@ -2411,9 +2450,9 @@ function renderTimeline(points) {
     const pinned = kind === 'crash' && crashIter != null && crashIter !== Number(p.iteration);
     const title = kind === 'crash'
       ? (pinned
-        ? `CRASH at #${crashIter} (pinned in window @ #${p.iteration})${crashBit} — click to inspect`
-        : `#${crashIter ?? p.iteration} CRASH${crashBit} — click to inspect`)
-      : `#${p.iteration} ${p.label || ''} (${kind})${crashBit} — click to inspect`;
+        ? `CRASH at #${crashIter} (pinned in window @ #${p.iteration})${crashBit} — click to scrub dashboard`
+        : `#${crashIter ?? p.iteration} CRASH${crashBit} — click to scrub dashboard`)
+      : `#${p.iteration} ${p.label || ''} (${kind})${crashBit} — click to scrub dashboard`;
     return `<button type="button" class="bar ${kind}${selected}" style="height:${h}%"
       data-index="${i}" data-iteration="${p.iteration}" data-kind="${kind}"
       data-crash-iteration="${crashIter != null ? crashIter : ''}"
@@ -2447,20 +2486,55 @@ async function resolveCrashIdForIteration(iteration) {
   }
 }
 
-function applyIterationSelectionNote(point) {
-  const notes = document.getElementById('stalk-notes');
-  if (!notes) return;
+function applyIterationPinWidgets(point) {
   const kind = point.kind || 'hit';
-  notes.innerHTML = [
-    `<li>Timeline selection: iteration <strong>#${point.iteration}</strong> (${kind}).</li>`,
-    point.label ? `<li>Label / mutator: <code>${point.label}</code></li>` : '',
-    (point.newEdges || point.newEdgeCount)
-      ? `<li>New edges this case: <strong>${point.newEdges || point.newEdgeCount}</strong></li>`
-      : '',
-    '<li>Live updates paused — click <strong>Follow live</strong> to resume.</li>',
-  ].filter(Boolean).join('');
-  document.getElementById('stalk-divergence').textContent =
-    kind === 'novel' ? (point.label || `iter #${point.iteration}`) : (document.getElementById('stalk-divergence').textContent || '—');
+  const displayIter = point.crashIteration != null ? Number(point.crashIteration) : Number(point.iteration);
+  const newEdges = Number(point.newEdges || point.newEdgeCount) || 0;
+  const st = document.getElementById('stalk-status');
+  if (st) {
+    st.textContent = `Pinned #${displayIter} (${kind})`;
+    st.className = statusClass(st.textContent);
+  }
+  const crashSum = document.getElementById('stalk-crash-summary');
+  if (crashSum) {
+    // Non-crash bars must not inherit the latest crash's detail.
+    crashSum.innerHTML = `
+    <dt>Crash ID</dt><dd>—</dd>
+    <dt>Hits</dt><dd>—</dd>
+    <dt>Distance</dt><dd>—</dd>
+    <dt>Exception</dt><dd>—</dd>
+    <dt>Address</dt><dd>—</dd>
+    <dt>Timeline</dt><dd>iter #${displayIter} · ${escapeXml(kind)}${point.label ? ` · ${escapeXml(point.label)}` : ''}</dd>
+    <dt>New edges</dt><dd>${newEdges}</dd>`;
+  }
+  const session = document.getElementById('stalk-session');
+  if (session) {
+    // Soft-update crash-ish session rows without wiping the whole session card.
+    const map = Object.fromEntries(
+      [...session.querySelectorAll('dt')].map((dt) => [dt.textContent.trim(), dt.nextElementSibling]));
+    if (map['Crash time']) map['Crash time'].textContent = '—';
+    if (map['Exception']) map['Exception'].textContent = '—';
+    if (map['Address']) map['Address'].textContent = '—';
+    if (map['Input']) map['Input'].textContent = point.label || `iter_${displayIter}`;
+  }
+  const notes = document.getElementById('stalk-notes');
+  if (notes) {
+    notes.innerHTML = [
+      `<li>Timeline scrub: iteration <strong>#${displayIter}</strong> (${kind}) — not a crash.</li>`,
+      point.label ? `<li>Label / mutator: <code>${escapeXml(point.label)}</code></li>` : '',
+      newEdges > 0
+        ? `<li>New edges this case: <strong>${newEdges}</strong></li>`
+        : '<li>No new coverage edges recorded for this bar.</li>',
+      '<li>Diagram stays on session/live graph (per-iteration BB path is only available for crash bars with coverage).</li>',
+      '<li>Live updates paused — click <strong>Follow live</strong> to resume.</li>',
+    ].filter(Boolean).join('');
+  }
+  const div = document.getElementById('stalk-divergence');
+  if (div)
+    div.textContent = kind === 'novel'
+      ? (point.label || `iter #${displayIter}`)
+      : `Pinned #${displayIter} (${kind})`;
+  highlightCrashLogRow(null);
 }
 
 function highlightCrashLogRow(crashId) {
@@ -2477,11 +2551,14 @@ async function selectTimelinePoint(point, index) {
   let crashId = point.crashId || stalkCrashIdByIteration.get(crashIter) || null;
   if ((kind === 'crash' || point.crashed) && !crashId)
     crashId = await resolveCrashIdForIteration(crashIter);
+  // Non-crash bars must not inherit a crash id from a host-iteration tip pin.
+  if (kind !== 'crash' && !point.crashed)
+    crashId = null;
 
   stalkFollowLive = false;
   stalkSelection = {
     key: timelinePointKey({ ...point, crashId, kind }, index),
-    iteration: crashIter,
+    iteration: Number.isFinite(crashIter) ? crashIter : Number(point.iteration),
     kind,
     label: point.label || '',
     crashId,
@@ -2492,14 +2569,28 @@ async function selectTimelinePoint(point, index) {
   updateTimelineFollowUi();
 
   if (crashId) {
-    await loadDashboard({ crashId, applyWidgets: true, force: true });
+    // Stay on Dashboard — scrub widgets to this crash; do not switch to Crashes nav.
+    await loadDashboard({ crashId, applyWidgets: true, force: true, scrub: true });
     highlightCrashLogRow(crashId);
-    // Any crash timeline event (incl. oracle_only / silent scream) loads Investigation.
-    openCrashInvestigation(crashId);
   } else {
-    applyIterationSelectionNote(point);
+    // Restore session/live graph (clears prior crash BB focus), then overlay honest iter stats.
+    await loadDashboard({ applyWidgets: true, force: true, scrub: true });
+    applyIterationPinWidgets({ ...point, kind, crashId: null });
     updateTimelineFollowUi();
   }
+}
+
+/** Step through rendered timeline bars (older ◀ / newer ▶). Starts a scrub if Follow live. */
+function stepTimelineSelection(delta) {
+  const list = stalkRenderedTimeline;
+  if (!list.length) return;
+  let idx = findSelectedTimelineIndex();
+  if (idx < 0)
+    idx = delta < 0 ? list.length : -1;
+  const next = Math.max(0, Math.min(list.length - 1, idx + delta));
+  selectTimelinePoint(list[next], next).catch((err) => {
+    console.error('Timeline step failed', err);
+  });
 }
 
 /** Navigate to Crashes + load Investigation for a crash id (oracle_only included). */
@@ -2731,6 +2822,13 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
     log.querySelectorAll('tr.clickable').forEach((row) => {
       row.addEventListener('click', () => {
         const id = row.dataset.id;
+        // Prefer scrubbing via the matching timeline bar when present.
+        const barIdx = stalkRenderedTimeline.findIndex(
+          (p) => p.crashId && String(p.crashId) === String(id));
+        if (barIdx >= 0) {
+          selectTimelinePoint(stalkRenderedTimeline[barIdx], barIdx).catch(() => {});
+          return;
+        }
         stalkFollowLive = false;
         stalkSelection = {
           key: `crash:${id}`,
@@ -2741,8 +2839,8 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
           index: stalkSelection?.index ?? -1,
         };
         updateTimelineFollowUi();
-        loadDashboard({ crashId: id, applyWidgets: true, force: true }).catch(() => {});
-        openCrashInvestigation(id);
+        // Stay on Dashboard — Investigation remains available via Quick actions / Open crash.
+        loadDashboard({ crashId: id, applyWidgets: true, force: true, scrub: true }).catch(() => {});
       });
     });
   }
@@ -2817,12 +2915,16 @@ async function loadDashboard(opts = {}) {
     renderTimeline(mergeTimeline(data.timeline || []));
 
     let canApply = applyWidgets;
-    if (canApply && !stalkFollowLive) {
+    if (canApply && !stalkFollowLive && !opts.scrub) {
       const pinnedId = stalkSelection?.crashId || null;
-      if (!crashId) {
-        // Live/unfocused payload after user pinned — keep widgets frozen.
+      if (pinnedId) {
+        // Crash pin: only apply matching crash-focused payloads.
+        if (!crashId || String(pinnedId) !== String(crashId))
+          canApply = false;
+      } else if (stalkSelection) {
+        // Non-crash pin: freeze live/poll overwrites (scrub applies via opts.scrub).
         canApply = false;
-      } else if (pinnedId && String(pinnedId) !== String(crashId)) {
+      } else if (!crashId) {
         canApply = false;
       }
     }
@@ -2864,6 +2966,8 @@ document.getElementById('stalk-refresh')?.addEventListener('click', () => {
   loadDashboard({ applyWidgets: true, force: true }).catch(() => {});
 });
 document.getElementById('stalk-follow-live')?.addEventListener('click', () => followStalkLive());
+document.getElementById('stalk-timeline-prev')?.addEventListener('click', () => stepTimelineSelection(-1));
+document.getElementById('stalk-timeline-next')?.addEventListener('click', () => stepTimelineSelection(1));
 document.getElementById('stalk-insp-close')?.addEventListener('click', () => closeBlockInspector());
 
 function scheduleFuzzSessionBarRefresh(force = false) {

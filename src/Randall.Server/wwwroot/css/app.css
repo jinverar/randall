@@ -3889,6 +3889,23 @@ html[data-theme="light"] .swatch.crash { background: #f5c2c7; }
   gap: 0.5rem;
   flex-wrap: wrap;
 }
+.stalk-timeline-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.stalk-timeline-step {
+  min-width: 2rem;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+  background: var(--stalk-chip-bg);
+  border-color: var(--stalk-border);
+}
+.stalk-timeline-step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 .stalk-timeline-crash-count {
   font-size: 0.78rem;
   font-variant-numeric: tabular-nums;

@@ -21,7 +21,7 @@
       }
     })();
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=ux-timeline-crashbars-2" />
+  <link rel="stylesheet" href="/css/app.css?v=ux-timeline-scrub-1" />
   <!-- Prefer vendored SignalR (LAN / offline VMs); CDN is fallback only. -->
   <script src="/js/signalr.min.js?v=8.0.7"></script>
   <script>
@@ -242,10 +242,14 @@
             <div class="stalk-timeline-tools">
               <span id="stalk-timeline-crash-count" class="stalk-timeline-crash-count is-empty" aria-live="polite">0 crashes in window</span>
               <span id="stalk-timeline-selection" class="stalk-timeline-selection hidden" aria-live="polite"></span>
+              <div class="stalk-timeline-nav" role="group" aria-label="Step timeline bars">
+                <button type="button" class="btn stalk-timeline-step" id="stalk-timeline-prev" title="Previous bar (older)" aria-label="Previous timeline bar" disabled>◀</button>
+                <button type="button" class="btn stalk-timeline-step" id="stalk-timeline-next" title="Next bar (newer)" aria-label="Next timeline bar" disabled>▶</button>
+              </div>
               <button type="button" class="btn hidden" id="stalk-follow-live" title="Resume live dashboard updates">Follow live</button>
             </div>
           </div>
-          <div id="stalk-timeline" class="stalk-timeline" role="listbox" aria-label="Execution timeline — click a bar to inspect"></div>
+          <div id="stalk-timeline" class="stalk-timeline" role="listbox" aria-label="Execution timeline — click a bar to scrub the dashboard to that moment"></div>
           <div class="stalk-timeline-axis">
             <span>−200</span>
             <span id="stalk-timeline-end">NOW</span>
@@ -1596,6 +1600,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-  <script type="module" src="/js/app.js?v=ux-timeline-crashbars-2"></script>
+  <script type="module" src="/js/app.js?v=ux-timeline-scrub-1"></script>
 </body>
 </html>
