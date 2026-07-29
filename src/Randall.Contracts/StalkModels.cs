@@ -39,7 +39,9 @@ public sealed record StalkEdgeDto(
     string To,
     string Label,
     bool Taken,
-    bool OnCrashPath = false);
+    bool OnCrashPath = false,
+    /// <summary>Dominant-path weight — hit count when known (UI stroke thickness).</summary>
+    long? HitCount = null);
 
 public sealed record StalkCrashLogDto(
     Guid Id,

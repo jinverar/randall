@@ -309,6 +309,48 @@ public static class StalkDashboard
         !string.IsNullOrWhiteSpace(a) &&
         string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Attach hit counts so the path graph can thicken dominant edges.
+    /// Prefers destination block hits, then source, then crash-path fallback.
+    /// </summary>
+    private static List<StalkEdgeDto> WithEdgeHitCounts(
+        List<StalkEdgeDto> edges,
+        IReadOnlyList<StalkBlockDto> blocks,
+        FuzzRunManifestDto? run = null,
+        long crashHitFallback = 0)
+    {
+        if (edges.Count == 0)
+            return edges;
+
+        var byId = new Dictionary<string, StalkBlockDto>(StringComparer.OrdinalIgnoreCase);
+        foreach (var b in blocks)
+            byId[b.Id] = b;
+
+        var hotMax = run?.HotEdges is { Count: > 0 } hot
+            ? hot.Max(h => h.HitCount)
+            : 0L;
+
+        return edges.Select(e =>
+        {
+            if (e.HitCount is > 0)
+                return e;
+
+            long? hits = null;
+            if (byId.TryGetValue(e.To, out var to) && to.HitCount is > 0)
+                hits = to.HitCount;
+            else if (byId.TryGetValue(e.From, out var from) && from.HitCount is > 0)
+                hits = from.HitCount;
+            else if (e.OnCrashPath && crashHitFallback > 0)
+                hits = crashHitFallback;
+            else if (e.OnCrashPath)
+                hits = Math.Max(1, hotMax > 0 ? Math.Max(1, hotMax / 4) : 1);
+            else if (e.Taken)
+                hits = 1;
+
+            return hits is null ? e : e with { HitCount = hits };
+        }).ToList();
+    }
+
     private static (List<StalkBlockDto> Blocks, List<StalkEdgeDto> Edges) BuildGraph(
         ProjectConfig project,
         SessionGraphReportDto graph,
@@ -513,7 +555,10 @@ public static class StalkDashboard
             edges.Add(new StalkEdgeDto("__entry", id, "fork", false, false));
         }
 
-        return (blocks, edges);
+        var crashHits = latestDetail?.Summary.SeenCount > 0
+            ? latestDetail.Summary.SeenCount
+            : (crashes?.FirstOrDefault()?.SeenCount ?? 0);
+        return (blocks, WithEdgeHitCounts(edges, blocks, run, crashHits));
     }
 
     private static (List<StalkBlockDto> Blocks, List<StalkEdgeDto> Edges) BuildFallbackGraph(
@@ -672,7 +717,10 @@ public static class StalkDashboard
                 edges.Add(new StalkEdgeDto(blocks[0].Id, blocks[0].Id, "loop", true, true));
         }
 
-        return (blocks, edges);
+        var crashHits = latestDetail?.Summary.SeenCount > 0
+            ? latestDetail.Summary.SeenCount
+            : (crashes?.FirstOrDefault()?.SeenCount ?? 0);
+        return (blocks, WithEdgeHitCounts(edges, blocks, run, crashHits));
     }
 
     private static string? ResolveCrashCommand(
@@ -1322,9 +1370,9 @@ public static class StalkDashboard
         var edges = new List<StalkEdgeDto>
         {
             new("__entry", "__no_cov", "missing", false, false),
-            new("__no_cov", "__crash_site", "fault", true, true),
+            new("__no_cov", "__crash_site", "fault", true, true, HitCount: 1),
         };
-        return (blocks, edges);
+        return (blocks, WithEdgeHitCounts(edges, blocks, crashHitFallback: Math.Max(1, detail.Summary.SeenCount)));
     }
 
     private static (List<StalkBlockDto> Blocks, List<StalkEdgeDto> Edges) BuildCrashCoverageGraph(
@@ -1438,8 +1486,18 @@ public static class StalkDashboard
 
         var edges = new List<StalkEdgeDto>();
         for (var i = 0; i < blocks.Count - 1; i++)
-            edges.Add(new StalkEdgeDto(blocks[i].Id, blocks[i + 1].Id, i == 0 ? "trace" : "", true, true));
-        return (blocks, edges);
+        {
+            var toHits = blocks[i + 1].HitCount;
+            edges.Add(new StalkEdgeDto(
+                blocks[i].Id,
+                blocks[i + 1].Id,
+                i == 0 ? "trace" : "",
+                true,
+                true,
+                HitCount: toHits is > 0 ? toHits : 1));
+        }
+
+        return (blocks, WithEdgeHitCounts(edges, blocks, crashHitFallback: Math.Max(1, detail.Summary.SeenCount)));
     }
 
     private static List<string> SampleCrashPathEdges(
