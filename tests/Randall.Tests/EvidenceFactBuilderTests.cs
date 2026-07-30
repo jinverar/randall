@@ -98,7 +98,12 @@ public class EvidenceFactBuilderTests
             Assert.NotNull(loaded);
             Assert.Equal(crashId, loaded!.CrashId);
             Assert.Contains(loaded.Facts, f => f.Name == "triage.ipControlled");
-            Assert.Contains(loaded.Facts, f => f.ObservationType == EvidenceObservationType.Observed);
+            Assert.Contains(loaded.Facts, f =>
+                f.Name == "triage.ipControlled" && f.ObservationType == EvidenceObservationType.Inferred);
+            // Interpretive triage atoms must not be Observed.
+            Assert.DoesNotContain(loaded.Facts, f =>
+                f.Name.StartsWith("triage.", StringComparison.Ordinal)
+                && f.ObservationType == EvidenceObservationType.Observed);
         }
         finally
         {

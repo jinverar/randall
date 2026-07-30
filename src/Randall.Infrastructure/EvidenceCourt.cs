@@ -18,8 +18,11 @@ public static class EvidenceCourt
     public static bool PassesPromotionGate(
         SkepticReportDto? skeptic,
         IReadOnlyList<EvidenceFact>? facts,
-        IReadOnlyList<string>? evidenceLines = null)
+        IReadOnlyList<string>? evidenceLines = null,
+        ArtifactValidationResult? artifactValidation = null)
     {
+        if (!CrashArtifactIdentityService.AllowsCourtConfirmation(artifactValidation, out _))
+            return false;
         if (!SkepticEngine.PassesPromotionGate(skeptic))
             return false;
         return CountEvidence(facts, evidenceLines) >= 1;
@@ -28,8 +31,11 @@ public static class EvidenceCourt
     public static string PromotionGateFailureReason(
         SkepticReportDto? skeptic,
         IReadOnlyList<EvidenceFact>? facts,
-        IReadOnlyList<string>? evidenceLines = null)
+        IReadOnlyList<string>? evidenceLines = null,
+        ArtifactValidationResult? artifactValidation = null)
     {
+        if (!CrashArtifactIdentityService.AllowsCourtConfirmation(artifactValidation, out var idReason))
+            return idReason ?? "Court gate: identity not Verified";
         if (!SkepticEngine.PassesPromotionGate(skeptic))
             return SkepticEngine.PromotionGateFailureReason(skeptic);
         if (CountEvidence(facts, evidenceLines) == 0)

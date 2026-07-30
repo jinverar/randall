@@ -216,6 +216,10 @@ public static partial class WindowsCdbCrashAnalysisWriter
 
             var backwardTrace = BackwardTraceBuilder.TryRead(
                 BackwardTraceBuilder.PathFor(crashesDir, crashId));
+
+            var validation = CrashArtifactIdentityService.ResolveForCrash(
+                crashesDir, crashId, crashSidecar, debuggerObs, dumpPath);
+
             EvidenceFactBuilder.PersistForCrash(
                 crashesDir,
                 crashId,
@@ -225,50 +229,57 @@ public static partial class WindowsCdbCrashAnalysisWriter
                 debuggerObs,
                 corruption,
                 backwardTrace,
-                oracleScore: crashSidecar?.RandallScore);
-            RootCauseEngine.PersistForCrash(
-                crashesDir,
-                crashId,
-                crashSidecar?.Project ?? "?",
-                crashSidecar,
-                triage,
-                debuggerObs,
-                corruption,
-                backwardTrace,
-                crashSidecar?.RandallScore);
+                oracleScore: crashSidecar?.RandallScore,
+                validation: validation);
 
-            var rootCauseFacts = EvidenceFactBuilder.CollectFacts(
-                crashId,
-                crashSidecar?.Project ?? "?",
-                crashSidecar,
-                triage,
-                debuggerObs,
-                corruption,
-                backwardTrace,
-                oracleScore: crashSidecar?.RandallScore);
-            var influence = InfluenceEngine.PersistForCrash(
-                crashesDir,
-                crashId,
-                crashSidecar?.Project ?? "?",
-                crashSidecar,
-                triage,
-                debuggerObs,
-                corruption,
-                backwardTrace,
-                externalFacts: rootCauseFacts,
-                payload: payload);
-            var rootCause = RootCauseEngine.TryRead(RootCauseEngine.PathFor(crashesDir, crashId));
-            var projectName = crashSidecar?.Project ?? "?";
-            var primitives = PrimitiveEngine.PersistForCrash(
-                crashesDir, crashId, projectName, influence, rootCause,
-                debuggerObs, corruption, triage, rootCauseFacts);
-            var plan = ResearchPlannerEngine.PersistForCrash(
-                crashesDir, crashId, projectName, rootCause, influence, primitives);
-            var skeptic = SkepticEngine.PersistForCrash(
-                crashesDir, crashId, projectName, plan, rootCause, influence, primitives);
-            ExploitabilityAdvisor.PersistForCrash(
-                crashesDir, crashId, projectName, rootCause, influence, primitives,
-                debuggerObs, triage, skeptic);
+            var allowStrong = CrashArtifactIdentityService.AllowsStrongPromotion(validation, out _);
+            if (allowStrong)
+            {
+                RootCauseEngine.PersistForCrash(
+                    crashesDir,
+                    crashId,
+                    crashSidecar?.Project ?? "?",
+                    crashSidecar,
+                    triage,
+                    debuggerObs,
+                    corruption,
+                    backwardTrace,
+                    crashSidecar?.RandallScore);
+
+                var rootCauseFacts = EvidenceFactBuilder.CollectFacts(
+                    crashId,
+                    crashSidecar?.Project ?? "?",
+                    crashSidecar,
+                    triage,
+                    debuggerObs,
+                    corruption,
+                    backwardTrace,
+                    oracleScore: crashSidecar?.RandallScore,
+                    validation: validation);
+                var influence = InfluenceEngine.PersistForCrash(
+                    crashesDir,
+                    crashId,
+                    crashSidecar?.Project ?? "?",
+                    crashSidecar,
+                    triage,
+                    debuggerObs,
+                    corruption,
+                    backwardTrace,
+                    externalFacts: rootCauseFacts,
+                    payload: payload);
+                var rootCause = RootCauseEngine.TryRead(RootCauseEngine.PathFor(crashesDir, crashId));
+                var projectName = crashSidecar?.Project ?? "?";
+                var primitives = PrimitiveEngine.PersistForCrash(
+                    crashesDir, crashId, projectName, influence, rootCause,
+                    debuggerObs, corruption, triage, rootCauseFacts);
+                var plan = ResearchPlannerEngine.PersistForCrash(
+                    crashesDir, crashId, projectName, rootCause, influence, primitives);
+                var skeptic = SkepticEngine.PersistForCrash(
+                    crashesDir, crashId, projectName, plan, rootCause, influence, primitives);
+                ExploitabilityAdvisor.PersistForCrash(
+                    crashesDir, crashId, projectName, rootCause, influence, primitives,
+                    debuggerObs, triage, skeptic);
+            }
         }
         catch
         {

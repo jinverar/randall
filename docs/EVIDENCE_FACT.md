@@ -90,3 +90,22 @@ See [ROADMAP_INTELLIGENCE.md](ROADMAP_INTELLIGENCE.md) and [EXPLOIT_GUIDE.md](EX
 ## Identity guardrails
 
 EvidenceFact supports **EXP-301 / SEC760-style research** — reproduce, attribute, hypothesize, confirm with deterministic experiments. It does **not** generate shellcode, weaponized exploits, or auto-exploit writers.
+
+### Observed vs Derived vs Hypothesis (honesty)
+
+Only **raw debugger / file sensor facts** may be stored as `ObservationType.Observed` (exception code, fault address, RIP, register↔payload matches when fault insn + EA + stack/reg links exist, artifact hard-failure lines).
+
+Interpretive atoms are **Inferred / Hypothesized**, never Observed:
+
+| Atom | Kind |
+|------|------|
+| `corruption.summary`, `backwardTrace.story` | Inferred (Derived in Ledger) |
+| `debugger.inputInfluence`, `debugger.diagnosis` | Inferred |
+| `triage.summary`, `triage.ipControlled`, `oracle.*` | Inferred |
+| `hypothesis.*` | Hypothesized (or ExperimentallyConfirmed) |
+
+`EvidenceFactBuilder.EnforceObservationHonesty` demotes accidental Observed labels before persist. Ledger Kind maps Inferred ≥0.55 → **Derived**.
+
+### Crash artifact identity
+
+Strong research promotion (root-cause / influence / primitives / twins / genealogy / Court Confirmed) requires a non-**Rejected** `CrashArtifactIdentity` chain (`docs/CRASH_ANALYSIS.md`). Teardown / `NtTerminateProcess` secondary exceptions block promotion without a primary fault. Unexpected managed modules (`clrjit` / `coreclr`) on a native target are **warnings** — not auto Observed narrative promotion.

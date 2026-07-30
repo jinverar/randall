@@ -38,7 +38,8 @@ public static class EvidenceFactBuilder
         CrashAnalysisDto? analysis = null,
         CdbTriageDto? cdb = null,
         bool pageHeapEnabled = false,
-        string? rppTag = null)
+        string? rppTag = null,
+        ArtifactValidationResult? validation = null)
     {
         var at = DateTimeOffset.UtcNow;
         var facts = new List<EvidenceFact>();
@@ -58,14 +59,36 @@ public static class EvidenceFactBuilder
         facts.AddRange(FromHypotheses(hypotheses, at));
         facts.AddRange(FromLineage(sidecar, at));
         facts.AddRange(FromTriage(triage, at));
+        ArtifactValidationResult? identityValidation = validation;
+        if (identityValidation is null && sidecar?.ArtifactIdentity is { } sidecarIdentity)
+        {
+            identityValidation = new ArtifactValidationResult(
+                sidecar.IntegrityStatus,
+                sidecarIdentity,
+                [],
+                [],
+                Summary: sidecar.IntegrityStatus.ToString());
+        }
+
+        facts.AddRange(FromArtifactIdentity(identityValidation, at));
+
+        // Demote interpretive atoms that adapters accidentally labeled Observed.
+        var normalized = EnforceObservationHonesty(Dedupe(facts));
+        var identity = identityValidation?.Identity ?? sidecar?.ArtifactIdentity;
+        var integrity = identityValidation?.Status
+                        ?? sidecar?.IntegrityStatus
+                        ?? ArtifactIntegrityStatus.Unverified;
 
         return new CrashEvidenceDto(
-            facts.Count > 0,
+            normalized.Count > 0,
             crashId,
             project,
-            Dedupe(facts),
+            normalized,
             at,
-            Engine: RandallBuildInfo.Current);
+            Engine: RandallBuildInfo.Current,
+            ArtifactIdentity: identity,
+            IntegrityStatus: integrity,
+            Validation: identityValidation);
     }
 
     /// <summary>Collect facts without persisting — used by RootCauseEngine and InfluenceEngine.</summary>
@@ -83,10 +106,11 @@ public static class EvidenceFactBuilder
         CrashAnalysisDto? analysis = null,
         CdbTriageDto? cdb = null,
         bool pageHeapEnabled = false,
-        string? rppTag = null) =>
+        string? rppTag = null,
+        ArtifactValidationResult? validation = null) =>
         Build(
             crashId, project, sidecar, triage, debugger, corruptionChain, backwardTrace,
-            evolution, oracleScore, hypotheses, analysis, cdb, pageHeapEnabled, rppTag).Facts;
+            evolution, oracleScore, hypotheses, analysis, cdb, pageHeapEnabled, rppTag, validation).Facts;
 
     public static CrashEvidenceDto PersistForCrash(
         string crashesDir,
@@ -103,11 +127,12 @@ public static class EvidenceFactBuilder
         CrashAnalysisDto? analysis = null,
         CdbTriageDto? cdb = null,
         bool pageHeapEnabled = false,
-        string? rppTag = null)
+        string? rppTag = null,
+        ArtifactValidationResult? validation = null)
     {
         var dto = Build(
             crashId, project, sidecar, triage, debugger, corruptionChain, backwardTrace,
-            evolution, oracleScore, hypotheses, analysis, cdb, pageHeapEnabled, rppTag);
+            evolution, oracleScore, hypotheses, analysis, cdb, pageHeapEnabled, rppTag, validation);
         var path = PathFor(crashesDir, crashId);
         ResearchSidecarIO.WriteAtomic(path, JsonSerializer.Serialize(dto, JsonOpts));
         return dto;
@@ -140,7 +165,8 @@ public static class EvidenceFactBuilder
         foreach (var fact in MapDebuggerFact("heapSignal", p.HeapSignal, artifact, at))
             yield return fact;
 
-        if (obs.SuspectedInputInfluence is "HIGH" or "MEDIUM")
+        // Influence guess is derived — never Observed.
+        if (obs.SuspectedInputInfluence is "HIGH" or "MEDIUM" or "LOW")
         {
             yield return Fact(
                 "debugger.inputInfluence",
@@ -148,10 +174,12 @@ public static class EvidenceFactBuilder
                 "debugger",
                 artifact,
                 EvidenceObservationType.Inferred,
-                obs.SuspectedInputInfluence == "HIGH" ? 0.85 : 0.65,
+                obs.SuspectedInputInfluence == "HIGH" ? 0.85 : obs.SuspectedInputInfluence == "MEDIUM" ? 0.65 : 0.45,
                 obs.At != default ? obs.At : at);
         }
 
+        // Register↔payload matches need fault insn / EA / stack / input-reg links before Observed.
+        var linksOk = HasDebuggerSensorLinks(obs);
         foreach (var match in obs.RegisterMatches ?? [])
         {
             yield return Fact(
@@ -159,7 +187,7 @@ public static class EvidenceFactBuilder
                 $"{match.ValueHex} @ input+{match.PayloadOffset} ({match.MatchKind})",
                 "debugger",
                 artifact,
-                EvidenceObservationType.Observed,
+                linksOk ? EvidenceObservationType.Observed : EvidenceObservationType.Inferred,
                 match.MatchKind == "ascii" ? 0.9 : 0.75,
                 obs.At != default ? obs.At : at,
                 ["faultAddress"]);
@@ -372,15 +400,19 @@ public static class EvidenceFactBuilder
         foreach (var signal in signals)
         {
             var name = $"fault.{SanitizeName(signal.Kind.ToString())}";
+            // Oracle interestingness is never Observed causal evidence.
+            var obsType = signal.Source switch
+            {
+                FaultSignalSource.CdbAnalyze or FaultSignalSource.MinidumpAnalysis
+                    or FaultSignalSource.DebuggerInvestigation => EvidenceObservationType.Observed,
+                _ => EvidenceObservationType.Inferred,
+            };
             yield return Fact(
                 name,
                 signal.Summary ?? signal.Detail,
                 signal.Source.ToString().ToLowerInvariant(),
                 null,
-                signal.Source is FaultSignalSource.OracleRuntime or FaultSignalSource.CdbAnalyze
-                    or FaultSignalSource.MinidumpAnalysis or FaultSignalSource.DebuggerInvestigation
-                    ? EvidenceObservationType.Observed
-                    : EvidenceObservationType.Inferred,
+                obsType,
                 signal.Confidence,
                 at,
                 signal.Detail is not null ? null : null);
@@ -400,7 +432,7 @@ public static class EvidenceFactBuilder
             var obsType = hypo.Status switch
             {
                 HypothesisStatus.Confirmed => EvidenceObservationType.ExperimentallyConfirmed,
-                HypothesisStatus.Refuted => EvidenceObservationType.Observed,
+                HypothesisStatus.Refuted => EvidenceObservationType.Inferred,
                 HypothesisStatus.Partial => EvidenceObservationType.Inferred,
                 _ => EvidenceObservationType.Hypothesized,
             };
@@ -506,7 +538,7 @@ public static class EvidenceFactBuilder
                 "Stack smash signals present",
                 "triage",
                 null,
-                EvidenceObservationType.Observed,
+                EvidenceObservationType.Inferred,
                 0.8,
                 at);
         }
@@ -518,7 +550,7 @@ public static class EvidenceFactBuilder
                 "Instruction pointer looks attacker-influenced",
                 "triage",
                 null,
-                EvidenceObservationType.Observed,
+                EvidenceObservationType.Inferred,
                 0.85,
                 at);
         }
@@ -530,7 +562,7 @@ public static class EvidenceFactBuilder
                 depth.ToString(),
                 "triage",
                 null,
-                EvidenceObservationType.Observed,
+                EvidenceObservationType.Inferred,
                 0.55,
                 at);
         }
@@ -542,10 +574,114 @@ public static class EvidenceFactBuilder
                 triage.Summary,
                 "triage",
                 null,
-                EvidenceObservationType.Observed,
+                EvidenceObservationType.Inferred,
                 0.6,
                 at);
         }
+    }
+
+    internal static IEnumerable<EvidenceFact> FromArtifactIdentity(
+        ArtifactValidationResult? validation,
+        DateTimeOffset at)
+    {
+        if (validation is null)
+            yield break;
+
+        yield return Fact(
+            "artifact.integrity",
+            validation.Status.ToString(),
+            "artifact_identity",
+            null,
+            EvidenceObservationType.Observed,
+            validation.Status is ArtifactIntegrityStatus.Verified or ArtifactIntegrityStatus.VerifiedWithWarnings
+                ? 0.95
+                : 0.5,
+            at);
+
+        if (validation.SecondaryException != SecondaryExceptionKind.None)
+        {
+            yield return Fact(
+                "artifact.secondaryException",
+                validation.SecondaryException.ToString(),
+                "artifact_identity",
+                null,
+                EvidenceObservationType.Inferred,
+                0.85,
+                at,
+                ["artifact.integrity"]);
+        }
+
+        foreach (var w in validation.Warnings.Take(4))
+        {
+            yield return Fact(
+                "artifact.warning",
+                w,
+                "artifact_identity",
+                null,
+                EvidenceObservationType.Inferred,
+                0.7,
+                at,
+                ["artifact.integrity"]);
+        }
+
+        foreach (var h in validation.HardFailures.Take(4))
+        {
+            yield return Fact(
+                "artifact.hardFailure",
+                h,
+                "artifact_identity",
+                null,
+                EvidenceObservationType.Observed,
+                0.95,
+                at,
+                ["artifact.integrity"]);
+        }
+    }
+
+    /// <summary>
+    /// Only raw debugger / file sensor facts may stay Observed.
+    /// Interpretive summaries, stories, and hypothesis outputs are demoted to Inferred/Hypothesized.
+    /// </summary>
+    internal static IReadOnlyList<EvidenceFact> EnforceObservationHonesty(IReadOnlyList<EvidenceFact> facts)
+    {
+        var interpretivePrefixes = new[]
+        {
+            "corruption.summary", "backwardTrace.story", "debugger.inputInfluence",
+            "debugger.diagnosis", "triage.summary", "triage.ipControlled", "triage.stackSmashed",
+            "oracle.", "hypothesis.", "rootCause.", "influence.", "evolution.momentum",
+        };
+
+        return facts.Select(f =>
+        {
+            if (f.ObservationType != EvidenceObservationType.Observed)
+                return f;
+            if (interpretivePrefixes.Any(p =>
+                    f.Name.Equals(p, StringComparison.OrdinalIgnoreCase)
+                    || f.Name.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
+            {
+                return f with
+                {
+                    ObservationType = f.Name.StartsWith("hypothesis.", StringComparison.OrdinalIgnoreCase)
+                        ? EvidenceObservationType.Hypothesized
+                        : EvidenceObservationType.Inferred,
+                };
+            }
+
+            return f;
+        }).ToList();
+    }
+
+    internal static bool HasDebuggerSensorLinks(DebuggerObservation obs)
+    {
+        var hasInsn = !string.IsNullOrWhiteSpace(
+            ScreamInvestigator.ExtractFaultInstructionLine(obs.DisasmNearRip, obs.Rip));
+        var hasEa = !string.IsNullOrWhiteSpace(obs.FaultAddress)
+                    && !string.Equals(obs.FaultAddress, "UNKNOWN", StringComparison.OrdinalIgnoreCase);
+        var hasStack = obs.Stack is { Count: > 0 };
+        var hasReg = obs.RegisterMatches is { Count: > 0 }
+                     || !string.IsNullOrWhiteSpace(obs.RegistersText);
+        // Observed register↔input requires fault site links (insn + EA) plus stack or regs.
+        return hasInsn && hasEa && (hasStack || hasReg);
     }
 
     private static IEnumerable<EvidenceFact> MapDebuggerFact<T>(

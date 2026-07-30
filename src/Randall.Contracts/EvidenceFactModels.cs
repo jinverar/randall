@@ -48,4 +48,10 @@ public sealed record CrashEvidenceDto(
     /// <summary>JSON schema version for persisted research artifacts (v1). Absent on legacy files → default 1.</summary>
     int SchemaVersion = 1,
     /// <summary>Randall analysis-engine identity at write time (optional on legacy files).</summary>
-    RandallBuildIdentityDto? Engine = null);
+    RandallBuildIdentityDto? Engine = null,
+    /// <summary>Crash artifact identity envelope when known.</summary>
+    CrashArtifactIdentity? ArtifactIdentity = null,
+    /// <summary>Join integrity after ValidateIdentity (Rejected blocks strong promotion).</summary>
+    ArtifactIntegrityStatus IntegrityStatus = ArtifactIntegrityStatus.Unverified,
+    /// <summary>Validation summary / secondary-exception classification.</summary>
+    ArtifactValidationResult? Validation = null);

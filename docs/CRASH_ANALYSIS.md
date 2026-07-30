@@ -13,6 +13,23 @@ Windows allows **one** debugger attach. Scream (Wait/Both) and ProcDump `-e` bot
 
 Lab targets such as **VulnDrone** call `Environment.Exit(0xC0000005)` instead of raising SEH. Scream captures those on `ExitProcess` **before** continuing the debug event (otherwise the process is already gone and you get 0-byte `tcp_*.dmp` fallbacks). Under `DebugActiveProcess` attach, `dwExitCode` sits at **DEBUG_EVENT.u+0** (not after `hProcess` in the union); mis-parsing it as zero skips the dump. Prefer `scream_<pid>_*.dmp` over empty `tcp_<pid>_*.dmp` placeholders.
 
+## Crash artifact identity
+
+Every successful target start/restart mints a **TargetGenerationId** (PID + process start time + executable SHA-256) and arms a **DumpReservation** (`Armed → Triggered → DumpMaterialized → Claimed | Expired | Rejected`). Crash save claims the reservation exactly once (flat JSON under `data/crashes/<project>/dumps/reservations/`). The immutable envelope is `CrashArtifactIdentity` (`{guid}_artifact_identity.json` + optional sidecar fields).
+
+`ValidateIdentity` yields `Verified` / `VerifiedWithWarnings` / `Unverified` / **Rejected**:
+
+| Status | Collectible | Root-cause / primitives / twins / genealogy | Court Confirmed / R5+ |
+|--------|-------------|---------------------------------------------|------------------------|
+| Verified | yes | yes | yes |
+| VerifiedWithWarnings | yes | yes (review warnings, e.g. unexpected `clrjit` on native target) | yes |
+| Unverified (legacy) | yes | yes (best-effort) | only if no envelope (legacy) / blocked when envelope is Unverified |
+| **Rejected** | yes (visible) | **blocked** | **blocked** |
+
+Teardown / secondary exceptions (`ntdll!NtTerminateProcess`, ExitProcess paths, null write AV on teardown) are classified as `SecondaryException` / `Teardown` and block the same strong promotion path unless a primary fault exists.
+
+Coverage UI honesty: corpus novelty is labeled separately from DynamoRIO BB/edge metrics; “New cov” shows `Yes (BB)` vs `Yes (novelty)`; path-node distance is not shown as BB blocks; mutation focus uses the **selected crash** command/mutator.
+
 ## Auto-analyze on crash
 
 With `fuzz.autoAnalyzeCrash: true` (default), each new crash writes:

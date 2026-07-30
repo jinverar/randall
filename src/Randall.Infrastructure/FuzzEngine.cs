@@ -306,6 +306,8 @@ public sealed class FuzzEngine
         var crashes = new List<CrashRecord>();
         TargetRuntimeBridge? runtime = null;
         Process? longLived = null;
+        TargetGenerationDto? currentGeneration = null;
+        DateTimeOffset? lastSendStartedUtc = null;
         InProcessSession? inProcess = null;
         PersistentTargetServer? persistentServer = null;
         var useInProcess = InProcessSession.IsInProcess(project);
@@ -430,6 +432,27 @@ public sealed class FuzzEngine
             if (proc is null || proc.HasExited || dryRun)
                 return;
 
+            // New target generation on every successful start/restart (prevents PID-reuse dump joins).
+            try
+            {
+                if (currentGeneration?.DumpReservationId is Guid oldRid)
+                    CrashArtifactIdentityService.ExpireIfUnclaimed(crashesDir, oldRid);
+
+                currentGeneration = CrashArtifactIdentityService.BeginGeneration(
+                    project.Name,
+                    journal?.RunId ?? runId,
+                    proc,
+                    targetExeResolved,
+                    crashesDir);
+                FuzzAnalystLog.Info(progress,
+                    $"Target generation {currentGeneration.TargetGenerationId:N} pid={proc.Id}");
+            }
+            catch (Exception genEx)
+            {
+                currentGeneration = null;
+                FuzzAnalystLog.Warn(progress, $"Target generation stamp failed: {genEx.Message}");
+            }
+
             FuzzProgressGuard.Try(options.Progress, p => p.OnTargetPid(proc.Id));
             Console.WriteLine($"Target PID: {proc.Id}");
 
@@ -474,6 +497,13 @@ public sealed class FuzzEngine
                 debuggerWait = DebuggerSession.StartWaitWatcher(proc.Id, dumpsDir, preferred: "scream");
                 if (debuggerWait?.Scream is { } scream)
                 {
+                    if (currentGeneration?.DumpReservationId is Guid rid)
+                    {
+                        CrashArtifactIdentityService.MarkTriggered(crashesDir, rid);
+                        if (!string.IsNullOrWhiteSpace(scream.DumpPath))
+                            CrashArtifactIdentityService.UpdateArmedDumpPath(crashesDir, rid, scream.DumpPath);
+                    }
+
                     var attached = await scream.WaitUntilAttachedAsync(TimeSpan.FromSeconds(5), cancellationToken);
                     Console.WriteLine(attached
                         ? $"  scream ready ({(scream.IsWow64 ? "wow64" : "x64")}) → {scream.DumpPath}"
@@ -570,6 +600,8 @@ public sealed class FuzzEngine
                     debuggerWait, Math.Max(project.Target.TimeoutMs, 5000), cancellationToken));
                 if (dump is not null)
                 {
+                    if (currentGeneration?.DumpReservationId is Guid rid)
+                        CrashArtifactIdentityService.MarkDumpMaterialized(crashesDir, rid, dump);
                     Console.WriteLine($"  debugger dump: {dump}");
                     return dump;
                 }
@@ -1085,6 +1117,7 @@ public sealed class FuzzEngine
 
                 FuzzAnalystLog.Step(progress, $"Fuzzing node '{commandName}'", iterations);
                 FuzzAnalystLog.Tx(progress, payload, iterations, verbose ? 64 : 24);
+                lastSendStartedUtc = DateTimeOffset.UtcNow;
 
                 TargetRunResult result;
                 if (inProcess is not null)
@@ -1635,6 +1668,57 @@ public sealed class FuzzEngine
                                 FuzzAnalystLog.Warn(progress, $"intel write: {intelEx.Message}", iterations);
                             }
 
+                            CrashArtifactIdentity? artifactIdentity = null;
+                            var integrity = ArtifactIntegrityStatus.Unverified;
+                            if (currentGeneration is not null)
+                            {
+                                DumpReservationDto? claimed = null;
+                                if (currentGeneration.DumpReservationId is Guid rid)
+                                {
+                                    if (!string.IsNullOrWhiteSpace(crashDump))
+                                        CrashArtifactIdentityService.MarkDumpMaterialized(crashesDir, rid, crashDump!);
+                                    var (res, claimErr) = CrashArtifactIdentityService.TryClaimOnce(
+                                        crashesDir, rid, id, iterations);
+                                    claimed = res;
+                                    if (claimErr is not null)
+                                    {
+                                        FuzzAnalystLog.Warn(progress,
+                                            $"dump claim failed: {claimErr}", iterations);
+                                    }
+                                }
+
+                                var inputSha = CrashArtifactIdentityService.BytesSha256(payload);
+                                var failureAt = DateTimeOffset.UtcNow;
+                                artifactIdentity = CrashArtifactIdentityService.BuildIdentity(
+                                    id,
+                                    journal?.RunId ?? runId,
+                                    currentGeneration,
+                                    iterations,
+                                    project.Name,
+                                    inputSha,
+                                    expectedInputPath,
+                                    crashDump,
+                                    lastSendStartedUtc,
+                                    failureAt,
+                                    failureAt,
+                                    claimed);
+                                var validation = CrashArtifactIdentityService.ValidateIdentity(
+                                    artifactIdentity, claimed, inputSha);
+                                artifactIdentity = validation.Identity;
+                                integrity = validation.Status;
+                                CrashArtifactIdentityService.PersistIdentity(crashesDir, artifactIdentity);
+                                if (integrity == ArtifactIntegrityStatus.Rejected)
+                                {
+                                    FuzzAnalystLog.Warn(progress,
+                                        $"[artifact-identity] Rejected — {validation.Summary}", iterations);
+                                }
+                                else if (integrity == ArtifactIntegrityStatus.VerifiedWithWarnings)
+                                {
+                                    FuzzAnalystLog.Info(progress,
+                                        $"[artifact-identity] {validation.Summary}", iterations);
+                                }
+                            }
+
                             return new CrashSidecarDto(
                                 id,
                                 journal?.RunId ?? "",
@@ -1665,7 +1749,9 @@ public sealed class FuzzEngine
                                 new FuzzSnapshotDto(coverageGuided, dryRun, Path.GetFullPath(yamlPath)),
                                 DateTimeOffset.UtcNow,
                                 intel,
-                                randallScore);
+                                randallScore,
+                                ArtifactIdentity: artifactIdentity,
+                                IntegrityStatus: integrity);
                         });
                     var saved = savedResult.Crash;
                     uniqueCrashThisIter = savedResult.IsNew;
@@ -2674,7 +2760,8 @@ public sealed class FuzzEngine
                 backwardTrace,
                 evolution,
                 oracleScore,
-                set);
+                set,
+                validation: ResolveArtifactValidation(crashesDir, saved.Id, sidecar, debugger));
 
             TryPersistResearchStack(
                 project, yamlPath, crashesDir, saved.Id, project.Name, sidecar, triage,
@@ -2713,6 +2800,14 @@ public sealed class FuzzEngine
     {
         try
         {
+            var validation = ResolveArtifactValidation(crashesDir, crashId, sidecar, debugger);
+            if (!CrashArtifactIdentityService.AllowsStrongPromotion(validation, out var blockReason))
+            {
+                FuzzAnalystLog.Warn(progress,
+                    $"[root-cause] blocked — {blockReason}", iterations);
+                return;
+            }
+
             var analysis = RootCauseEngine.PersistForCrash(
                 crashesDir, crashId, project, sidecar, triage, debugger, corruption, backwardTrace, oracleScore);
             if (analysis is { Ok: true })
@@ -2728,6 +2823,13 @@ public sealed class FuzzEngine
             FuzzAnalystLog.Warn(progress, $"root-cause: {ex.Message}", iterations);
         }
     }
+
+    private static ArtifactValidationResult? ResolveArtifactValidation(
+        string crashesDir,
+        Guid crashId,
+        CrashSidecarDto? sidecar,
+        DebuggerObservation? debugger) =>
+        CrashArtifactIdentityService.ResolveForCrash(crashesDir, crashId, sidecar, debugger);
 
     private void TryPersistInfluenceMap(
         string crashesDir,
@@ -2746,6 +2848,13 @@ public sealed class FuzzEngine
     {
         try
         {
+            var validation = ResolveArtifactValidation(crashesDir, crashId, sidecar, debugger);
+            if (!CrashArtifactIdentityService.AllowsStrongPromotion(validation, out var blockReason))
+            {
+                FuzzAnalystLog.Warn(progress, $"[influence] blocked — {blockReason}", iterations);
+                return;
+            }
+
             var facts = EvidenceFactBuilder.CollectFacts(
                 crashId,
                 project,
@@ -2755,7 +2864,8 @@ public sealed class FuzzEngine
                 corruption,
                 backwardTrace,
                 oracleScore: oracleScore,
-                hypotheses: hypotheses);
+                hypotheses: hypotheses,
+                validation: validation);
             var map = InfluenceEngine.PersistForCrash(
                 crashesDir, crashId, project, sidecar, triage, debugger, corruption,
                 backwardTrace, hypotheses, facts, payload);
@@ -2788,6 +2898,14 @@ public sealed class FuzzEngine
     {
         try
         {
+            var validation = ResolveArtifactValidation(crashesDir, crashId, sidecar, debugger);
+            if (!CrashArtifactIdentityService.AllowsStrongPromotion(validation, out var blockReason))
+            {
+                FuzzAnalystLog.Warn(progress,
+                    $"[research-stack] blocked — {blockReason}", iterations);
+                return;
+            }
+
             var rootCause = RootCauseEngine.TryRead(RootCauseEngine.PathFor(crashesDir, crashId));
             var influence = InfluenceEngine.TryRead(InfluenceEngine.PathFor(crashesDir, crashId));
             var facts = EvidenceFactBuilder.TryReadForCrash(crashesDir, crashId)?.Facts;

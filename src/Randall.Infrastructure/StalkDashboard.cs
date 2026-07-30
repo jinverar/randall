@@ -220,6 +220,10 @@ public static class StalkDashboard
                 $"{crashEdges.Count} edges on selected crash path · session corpus {corpus.CoverageEdges}")
             : (coveragePct, coverageLabel, coverageDetail);
 
+        var bbDistance = EstimateDistance(blocks, latestDetail);
+        var syntheticDistance = bbDistance is null ? EstimateSyntheticPathDistance(blocks) : null;
+        var crashDistance = bbDistance ?? syntheticDistance;
+
         return new StalkDashboardDto(
             project.Name,
             project.Kind,
@@ -248,7 +252,7 @@ public static class StalkDashboard
             latestCrash is null ? null : latestCrash.Id.ToString("D"),
             crashLog.FirstOrDefault(c => latestCrash is not null && c.Id == latestCrash.Id)?.Hits
                 ?? (latestCrash is null ? 0 : 1),
-            EstimateDistance(blocks, latestDetail),
+            crashDistance,
             firstDiv,
             "Last completed corpus frontier",
             baselineBlocks,
@@ -261,7 +265,10 @@ public static class StalkDashboard
             crashLog,
             notes,
             string.IsNullOrWhiteSpace(graph.Mermaid) ? null : graph.Mermaid,
-            corpus.DynamoRioAvailable);
+            corpus.DynamoRioAvailable,
+            CrashDistanceIsSynthetic: bbDistance is null && syntheticDistance is not null,
+            SelectedCrashMutator: latestDetail?.Sidecar?.Mutator ?? latestCrash?.Mutator,
+            SelectedCrashCommand: latestDetail?.Sidecar?.Command);
     }
 
     private static string ResolveStatus(
@@ -1226,8 +1233,31 @@ public static class StalkDashboard
                     ?? c.TargetExitCode
                     ?? "CRASH";
                 var address = c.FaultAddress ?? "—";
-                var newCov = (sidecar?.NewEdgesAtCrash ?? 0) > 0
-                    || HasCrashTraceHint(c, sidecar, repoRoot);
+                var newEdges = sidecar?.NewEdgesAtCrash ?? 0;
+                var stalkBackend = sidecar?.StalkBackend ?? "";
+                var isBb = newEdges > 0
+                           && !stalkBackend.Contains("novelty", StringComparison.OrdinalIgnoreCase)
+                           && !stalkBackend.Contains("semantic", StringComparison.OrdinalIgnoreCase)
+                           && !stalkBackend.Contains("path", StringComparison.OrdinalIgnoreCase);
+                string covKind;
+                bool newCov;
+                if (isBb)
+                {
+                    covKind = "bb-edges";
+                    newCov = true;
+                }
+                else if (newEdges > 0 || HasCrashTraceHint(c, sidecar, repoRoot))
+                {
+                    // Corpus / path novelty — never label as BB coverage.
+                    covKind = "corpus-novelty";
+                    newCov = true;
+                }
+                else
+                {
+                    covKind = "none";
+                    newCov = false;
+                }
+
                 return new StalkCrashLogDto(
                     c.Id,
                     ShortCrashId(c.Id),
@@ -1241,7 +1271,9 @@ public static class StalkDashboard
                     c.Mutator,
                     Path.GetFileName(c.InputPath),
                     c.Severity,
-                    c.CrashClass);
+                    c.CrashClass,
+                    covKind,
+                    sidecar?.Command);
             })
             .ToList();
     }
@@ -1576,8 +1608,19 @@ public static class StalkDashboard
             notes.Add("New path leads to crash — triage before next campaign.");
         if (corpus.CoverageEdges > 0)
             notes.Add($"Corpus frontier at {corpus.CoverageEdges} coverage edges.");
-        if (graph.HasGraph && !string.IsNullOrWhiteSpace(graph.Mutate))
+
+        // Mutation focus must match the selected crash — not a stale session-graph command (e.g. TRUN).
+        var crashCommand = latestDetail?.Sidecar?.Command;
+        var crashMutator = latestDetail?.Sidecar?.Mutator
+                           ?? latestDetail?.Summary.Mutator;
+        if (!string.IsNullOrWhiteSpace(crashCommand))
+            notes.Add($"Mutation focus on {crashCommand}"
+                      + (string.IsNullOrWhiteSpace(crashMutator) ? "." : $" / {crashMutator}."));
+        else if (!string.IsNullOrWhiteSpace(crashMutator))
+            notes.Add($"Mutation focus on mutator {crashMutator}.");
+        else if (graph.HasGraph && !string.IsNullOrWhiteSpace(graph.Mutate) && latestDetail is null)
             notes.Add($"Mutation focus on {graph.Mutate}.");
+
         if (hot.Count > 0)
             notes.Add($"Hottest block {hot[0].Address} ({hot[0].Hits} hits).");
         if (latestDetail?.Analysis?.FaultModule is { } mod)
@@ -1813,18 +1856,35 @@ public static class StalkDashboard
         var tip = dynamoReady
             ? "0 BB edges yet — corpus-novelty path until Coverage-guided + free TCP port fills DynamoRIO edges"
             : "DynamoRIO missing — corpus-novelty / session path only (not BB edges)";
-        // Novelty graphs with nodes should not leave the gauge at a dead 0 when path blocks exist.
-        var noveltyPct = hitPathBlocks > 0 && pathPct <= 0 ? 1.0 : pathPct;
+        // Never claim BB coverage % when there are no BB edges; path novelty may show path %.
+        // Soft-cap path novelty below 100% unless every path block was actually touched.
+        var noveltyPct = hitPathBlocks <= 0
+            ? 0
+            : hitPathBlocks >= totalPathBlocks && totalPathBlocks > 0
+                ? 100.0
+                : Math.Min(pathPct, 99.0);
         return (
             noveltyPct,
             label,
-            $"{hitPathBlocks}/{totalPathBlocks} path blocks touched · {tip}");
+            $"{hitPathBlocks}/{totalPathBlocks} path nodes touched · {tip}");
     }
 
     private static int? EstimateDistance(IReadOnlyList<StalkBlockDto>? blocks, CrashDetailDto? detail)
     {
-        if (detail?.Sidecar?.NewEdgesAtCrash is > 0)
-            return detail.Sidecar.NewEdgesAtCrash;
+        // Real BB novelty at crash — only when stalk backend is BB/edge based.
+        var backend = detail?.Sidecar?.StalkBackend ?? "";
+        var isBb = detail?.Sidecar?.NewEdgesAtCrash is > 0
+                   && !backend.Contains("novelty", StringComparison.OrdinalIgnoreCase)
+                   && !backend.Contains("semantic", StringComparison.OrdinalIgnoreCase);
+        if (isBb)
+            return detail!.Sidecar!.NewEdgesAtCrash;
+
+        // Synthetic path-node index is not a BB distance — callers use CrashDistanceIsSynthetic.
+        return null;
+    }
+
+    private static int? EstimateSyntheticPathDistance(IReadOnlyList<StalkBlockDto>? blocks)
+    {
         if (blocks is null)
             return null;
         var crashIdx = blocks.ToList().FindIndex(b => b.Kind == "crash");

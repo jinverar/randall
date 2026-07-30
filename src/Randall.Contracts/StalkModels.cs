@@ -56,7 +56,14 @@ public sealed record StalkCrashLogDto(
     string Mutator,
     string InputName,
     string? Severity = null,
-    string? CrashClass = null);
+    string? CrashClass = null,
+    /// <summary>
+    /// Honesty label for <see cref="NewCoverage"/>: <c>bb-edges</c>, <c>corpus-novelty</c>, or <c>none</c>.
+    /// UI must not render corpus novelty as DynamoRIO BB coverage.
+    /// </summary>
+    string NewCoverageKind = "none",
+    /// <summary>Crash command / mutator focus for notes (not a stale session-graph command).</summary>
+    string? Command = null);
 
 public sealed record StalkTimelinePointDto(
     int Index,
@@ -114,4 +121,11 @@ public sealed record StalkDashboardDto(
     IReadOnlyList<StalkCrashLogDto> CrashLog,
     IReadOnlyList<string> Notes,
     string? Mermaid,
-    bool DynamoRioAvailable);
+    bool DynamoRioAvailable,
+    /// <summary>
+    /// When true, <see cref="CrashDistance"/> is a session/path-node index — not a real BB distance.
+    /// </summary>
+    bool CrashDistanceIsSynthetic = false,
+    /// <summary>Selected crash mutator/command for mutation-focus notes (overrides stale graph mutate).</summary>
+    string? SelectedCrashMutator = null,
+    string? SelectedCrashCommand = null);

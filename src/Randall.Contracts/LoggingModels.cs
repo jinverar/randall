@@ -59,7 +59,10 @@ public sealed record CrashSidecarDto(
     bool SilentScream = false,
     string? OracleFindingId = null,
     string? OracleRuleClass = null,
-    string? OracleRuleId = null);
+    string? OracleRuleId = null,
+    /// <summary>Immutable crash↔dump↔process↔input identity envelope (P0 artifact chain).</summary>
+    CrashArtifactIdentity? ArtifactIdentity = null,
+    ArtifactIntegrityStatus IntegrityStatus = ArtifactIntegrityStatus.Unverified);
 
 /// <summary>
 /// Post-crash intelligence for analysts: what to probe next and which GDB commands to run.

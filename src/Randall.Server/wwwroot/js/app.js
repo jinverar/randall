@@ -2715,7 +2715,7 @@ function patchLiveDashboardCounters(data) {
     crashSum.innerHTML = `
     <dt>Crash ID</dt><dd>${data.crashId || '—'}</dd>
     <dt>Hits</dt><dd>${data.crashHitCount ?? 0}</dd>
-    <dt>Distance</dt><dd>${data.crashDistance ?? '—'} blocks</dd>
+    <dt>Distance</dt><dd>${data.crashDistance == null ? '—' : (data.crashDistanceIsSynthetic ? `${data.crashDistance} path nodes` : `${data.crashDistance} BB edges`)}</dd>
     <dt>Exception</dt><dd>${data.exception || '—'}</dd>
     <dt>Address</dt><dd>${data.crashAddress || '—'}</dd>`;
   }
@@ -2780,7 +2780,7 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
   document.getElementById('stalk-crash-summary').innerHTML = `
     <dt>Crash ID</dt><dd>${data.crashId || '—'}</dd>
     <dt>Hits</dt><dd>${data.crashHitCount ?? 0}</dd>
-    <dt>Distance</dt><dd>${data.crashDistance ?? '—'} blocks</dd>
+    <dt>Distance</dt><dd>${data.crashDistance == null ? '—' : (data.crashDistanceIsSynthetic ? `${data.crashDistance} path nodes` : `${data.crashDistance} BB edges`)}</dd>
     <dt>Exception</dt><dd>${data.exception || '—'}</dd>
     <dt>Address</dt><dd>${data.crashAddress || '—'}</dd>`;
 
@@ -2822,6 +2822,10 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
     </tr></thead><tbody>
       ${data.crashLog.map((c) => {
         const selected = focusId && String(c.id).toLowerCase() === String(focusId).toLowerCase();
+        const covKind = c.newCoverageKind || (c.newCoverage ? 'corpus-novelty' : 'none');
+        const covLabel = !c.newCoverage || covKind === 'none'
+          ? 'No'
+          : (covKind === 'bb-edges' ? 'Yes (BB)' : 'Yes (novelty)');
         return `<tr class="clickable crash-row${selected ? ' selected' : ''}" data-id="${c.id}">
         <td><code>${c.shortId}</code></td>
         <td class="severity-${c.severity || 'low'}">${c.severity || '—'}</td>
@@ -2829,7 +2833,7 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
         <td>${c.hits}</td>
         <td><code>${c.exception}</code></td>
         <td><code>${c.address}</code></td>
-        <td>${c.newCoverage ? 'Yes' : 'No'}</td>
+        <td>${covLabel}</td>
         <td><code>${c.inputName}</code></td>
       </tr>`;
       }).join('')}
