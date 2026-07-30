@@ -296,9 +296,12 @@ public static class DebuggerTools
         if (string.IsNullOrWhiteSpace(dumpPath) || !File.Exists(dumpPath))
             return (false, "No minidump on disk — record a TTD trace manually first");
 
-        var args = $"-z \"{dumpPath}\" {FormatSymbolCommandLineArgs()}";
-        if (!string.IsNullOrWhiteSpace(queryScriptPath) && File.Exists(queryScriptPath))
-            args += $" -cf \"{queryScriptPath}\"";
+        // -z first; never use cdb -cf with WinDbg Preview (leaves "Debuggee not connected").
+        var script = !string.IsNullOrWhiteSpace(queryScriptPath) && File.Exists(queryScriptPath)
+            ? queryScriptPath
+            : null;
+        var args = DebuggerSession.BuildOpenArgs(
+            FormatSymbolCommandLineArgs(), dumpPath, script, KindWinDbgPreview);
 
         try
         {

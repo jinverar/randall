@@ -301,7 +301,7 @@ public static class DeepScreamBuilder
     }
 
     /// <summary>
-    /// Writes record/replay .cmd launchers and a WinDbg -cf query script. Returns paths + launch note.
+    /// Writes record/replay .cmd launchers and a WinDbg <c>-c $$&gt;&lt;</c> query script. Returns paths + launch note.
     /// </summary>
     public static (string? RecordScript, string? ReplayScript, string? LaunchNote) WriteTtdLaunchArtifacts(
         string crashesDir, Guid crashId, string? dumpPath, string? inputPath, TtdToolsProbe ttd,
@@ -353,7 +353,9 @@ public static class DeepScreamBuilder
             var sb = new StringBuilder();
             sb.AppendLine("@echo off");
             sb.AppendLine("REM Randfuzz Deep Scream — TTD replay launcher (dump + backward queries)");
-            sb.AppendLine($"\"{ttd.WinDbgPreviewPath}\" -z \"{dumpPath}\" {DebuggerTools.FormatSymbolCommandLineArgs()} -cf \"{queryScript}\"");
+            var fwd = queryScript.Replace('\\', '/');
+            sb.AppendLine(
+                $"\"{ttd.WinDbgPreviewPath}\" -z \"{dumpPath}\" {DebuggerTools.FormatSymbolCommandLineArgs()} -c \"$$><{fwd}\"");
             File.WriteAllText(replayScript, sb.ToString());
             notes.Add("replay .cmd written");
         }

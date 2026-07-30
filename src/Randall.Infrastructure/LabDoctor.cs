@@ -619,6 +619,13 @@ public static class LabDoctor
                 t.Available ? (t.Path ?? t.Name) : $"{t.Name} not found");
         }
 
+        if (OperatingSystem.IsWindows() && dbg.PreferredGui is not null)
+        {
+            Add("debugger:dumpOpen", "ok",
+                "GUI dump open uses -z <dump> first; WinDbg Preview scripts via -c $$><file (not cdb -cf). " +
+                "randall debug open -d <dump.dmp> / Crashes → WinDbg Preview");
+        }
+
         if (OperatingSystem.IsWindows())
         {
             var cdb = DebuggerTools.FindCdb();

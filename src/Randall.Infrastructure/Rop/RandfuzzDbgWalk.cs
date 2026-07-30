@@ -142,7 +142,8 @@ public static class RandfuzzDbgWalk
     }
 
     /// <summary>
-    /// Write a WinDbg <c>-cf</c> script beside the crash with Randfuzz metadata (corruption chain, investigator, walk hint).
+    /// Write a WinDbg open script beside the crash with Randfuzz metadata (corruption chain, investigator, walk hint).
+    /// Launched via <c>-c "$$&gt;&lt;script"</c> (not cdb <c>-cf</c>, which breaks WinDbg Preview dump load).
     /// </summary>
     public static string? TryWriteOpenScript(Guid crashId, string? repoRoot = null)
     {

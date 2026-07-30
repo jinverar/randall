@@ -15,6 +15,52 @@ public class DebuggerSessionTests
         Assert.Equal(expected, DebuggerSession.ShouldOpenDumpOnCrash(openOnCrash));
 
     [Fact]
+    public void BuildOpenArgs_puts_z_first_and_uses_script_command_for_gui()
+    {
+        var dump = @"C:\crashes\demo.dmp";
+        var script = @"C:\crashes\open.txt";
+        var args = DebuggerSession.BuildOpenArgs(
+            "-y \"srv*C:\\Symbols*https://msdl.microsoft.com/download/symbols\" -snul",
+            dump,
+            script,
+            DebuggerTools.KindWinDbgPreview);
+
+        Assert.StartsWith($"-z \"{dump}\"", args, StringComparison.Ordinal);
+        Assert.Contains("-c \"$$><C:/crashes/open.txt\"", args, StringComparison.Ordinal);
+        Assert.DoesNotContain("-cf ", args, StringComparison.Ordinal);
+        Assert.Contains("-y \"", args, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildOpenArgs_uses_cf_only_for_cdb()
+    {
+        var args = DebuggerSession.BuildOpenArgs(
+            "",
+            @"D:\a.dmp",
+            @"D:\a.txt",
+            DebuggerTools.KindCdb);
+
+        Assert.Equal("-z \"D:\\a.dmp\" -cf \"D:\\a.txt\"", args);
+    }
+
+    [Fact]
+    public void BuildOpenArgs_without_script_is_z_and_symbols_only()
+    {
+        var args = DebuggerSession.BuildOpenArgs("-snul", @"E:\x.dmp", null);
+        Assert.Equal("-z \"E:\\x.dmp\" -snul", args);
+    }
+
+    [Fact]
+    public void OpenDump_refuses_missing_dump_with_expected_path()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), $"randall-missing-{Guid.NewGuid():N}.dmp");
+        var result = DebuggerSession.OpenDump(missing, DebuggerTools.KindWinDbg);
+        Assert.False(result.Ok);
+        Assert.Contains("No usable dump", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(Path.GetFullPath(missing), result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void TryWriteOpenScript_skips_analyze_when_headless_output_exists()
     {
         var root = CrashCatalog.FindRepoRoot() ?? Directory.GetCurrentDirectory();
@@ -24,7 +70,6 @@ public class DebuggerSessionTests
 
         try
         {
-            var id = Guid.NewGuid();
             var hash = InputHash.StackHash(new byte[] { 0x41 });
             var inputPath = Path.Combine(projectDir, $"{project}_1_{hash}.bin");
             File.WriteAllBytes(inputPath, [0x41]);
@@ -73,7 +118,6 @@ public class DebuggerSessionTests
 
         try
         {
-            var id = Guid.NewGuid();
             var hash = InputHash.StackHash(new byte[] { 0x42 });
             var inputPath = Path.Combine(projectDir, $"{project}_1_{hash}.bin");
             File.WriteAllBytes(inputPath, [0x42]);

@@ -24,9 +24,19 @@ public static class DebuggerSession
 
     public static DebuggerLaunchResultDto OpenDump(string dumpPath, string kind = DebuggerTools.KindAuto, Guid? crashId = null)
     {
-        dumpPath = Path.GetFullPath(dumpPath);
-        if (!File.Exists(dumpPath))
-            return Fail(kind, $"Dump not found: {dumpPath}");
+        var usable = CrashDumpPaths.Sanitize(dumpPath);
+        if (usable is null)
+        {
+            var expected = string.IsNullOrWhiteSpace(dumpPath)
+                ? "(no path)"
+                : Path.GetFullPath(dumpPath);
+            return Fail(kind,
+                $"No usable dump at: {expected}. " +
+                "Capture one with Debugger Mode Wait/Both (Scream), then retry " +
+                "`randall debug open -d <file.dmp>` or Crashes → WinDbg Preview.");
+        }
+
+        dumpPath = Path.GetFullPath(usable);
 
         if (TryReuseOpenDump(dumpPath, out var existing))
             return existing!;
@@ -43,19 +53,19 @@ public static class DebuggerSession
         if (exe is null)
             return Fail(resolvedKind, "No WinDbg / WinDbg Preview / cdb found. Install Debugging Tools for Windows or WinDbg Preview.");
 
-        var cfScript = crashId is { } id
+        var openScript = crashId is { } id
             ? RandfuzzDbgWalk.TryWriteOpenScript(id)
             : null;
 
         var symArgs = OperatingSystem.IsWindows() ? DebuggerTools.FormatSymbolCommandLineArgs() : "";
-        var args = BuildOpenArgs(symArgs, dumpPath, cfScript);
+        var args = BuildOpenArgs(symArgs, dumpPath, openScript, resolvedKind);
         try
         {
             // Fire-and-forget: never block the fuzz loop waiting on a debugger console/GUI.
             var proc = Process.Start(DebuggerTools.BuildDetachedStartInfo(exe, args));
             if (proc?.Id is { } pid)
                 OpenDumpProcesses[dumpPath] = pid;
-            var msg = cfScript is not null
+            var msg = openScript is not null
                 ? $"Opened dump in {resolvedKind} with Randfuzz metadata script: {dumpPath}"
                 : $"Opened dump in {resolvedKind}: {dumpPath}";
             return new DebuggerLaunchResultDto(
@@ -74,11 +84,45 @@ public static class DebuggerSession
         if (detail is null)
             return Fail(kind, $"Crash not found: {crashId}");
 
-        var dump = detail.Summary.MiniDumpPath ?? detail.Analysis?.DumpPath;
-        if (string.IsNullOrWhiteSpace(dump) || !File.Exists(dump))
-            return Fail(kind, "No minidump for this crash — replay/fuzz with dump capture first.");
+        var dump = ResolveCrashDumpPath(detail, crashId);
+        if (dump is null)
+        {
+            var expected = detail.Summary.MiniDumpPath
+                           ?? detail.Analysis?.DumpPath
+                           ?? detail.Sidecar?.MiniDumpPath
+                           ?? ExpectedDumpHint(detail);
+            return Fail(kind,
+                $"No usable minidump for crash {crashId:N}. Expected: {expected}. " +
+                "Re-fuzz with Debugger Mode Wait or Both (Scream) so a .dmp is written under data/crashes/<project>/dumps/.");
+        }
 
         return OpenDump(dump, kind, crashId);
+    }
+
+    /// <summary>
+    /// Prefer CrashArtifactIdentity dump path when present, then catalog summary/analysis/sidecar.
+    /// </summary>
+    internal static string? ResolveCrashDumpPath(CrashDetailDto detail, Guid crashId)
+    {
+        var crashesDir = Path.GetDirectoryName(detail.Summary.InputPath);
+        if (crashesDir is not null)
+        {
+            var identity = CrashArtifactIdentityService.TryReadIdentity(crashesDir, crashId);
+            var fromIdentity = CrashDumpPaths.Sanitize(identity?.DumpPath);
+            if (fromIdentity is not null)
+                return Path.GetFullPath(fromIdentity);
+        }
+
+        var fromCatalog = CrashCatalog.ResolveDumpPath(detail);
+        return fromCatalog is null ? null : Path.GetFullPath(fromCatalog);
+    }
+
+    private static string ExpectedDumpHint(CrashDetailDto detail)
+    {
+        var dir = Path.GetDirectoryName(detail.Summary.InputPath);
+        if (string.IsNullOrWhiteSpace(dir))
+            return $"data/crashes/{detail.Summary.Project}/dumps/*.dmp";
+        return Path.Combine(dir, "dumps", "*.dmp");
     }
 
     public static DebuggerLaunchResultDto Attach(int pid, string kind = DebuggerTools.KindAuto, bool go = true)
@@ -311,14 +355,32 @@ public static class DebuggerSession
         || name.Equals("WinDbgX", StringComparison.OrdinalIgnoreCase)
         || name.Equals("DbgX.Shell", StringComparison.OrdinalIgnoreCase);
 
-    private static string BuildOpenArgs(string symArgs, string dumpPath, string? cfScript)
+    /// <summary>
+    /// Build WinDbg/cdb dump-open arguments. <c>-z</c> is always first.
+    /// GUI tools must not use cdb's <c>-cf</c> — WinDbg Preview treats it as unknown and
+    /// opens an empty "Debuggee not connected" window instead of loading the dump.
+    /// Use <c>-c "$$&gt;&lt;script"</c> for WinDbg / Preview; keep <c>-cf</c> for cdb only.
+    /// </summary>
+    internal static string BuildOpenArgs(
+        string symArgs,
+        string dumpPath,
+        string? scriptPath,
+        string resolvedKind = DebuggerTools.KindWinDbgPreview)
     {
-        var parts = new List<string>();
+        var parts = new List<string> { $"-z \"{dumpPath}\"" };
         if (!string.IsNullOrEmpty(symArgs))
             parts.Add(symArgs);
-        if (!string.IsNullOrWhiteSpace(cfScript))
-            parts.Add($"-cf \"{cfScript}\"");
-        parts.Add($"-z \"{dumpPath}\"");
+        if (!string.IsNullOrWhiteSpace(scriptPath))
+        {
+            if (string.Equals(resolvedKind, DebuggerTools.KindCdb, StringComparison.OrdinalIgnoreCase))
+                parts.Add($"-cf \"{scriptPath}\"");
+            else
+            {
+                var fwd = scriptPath.Replace('\\', '/');
+                parts.Add($"-c \"$$><{fwd}\"");
+            }
+        }
+
         return string.Join(' ', parts);
     }
 }
