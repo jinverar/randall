@@ -80,6 +80,10 @@ const api = {
 };
 
 const HIDDEN_TARGETS = new Set(['cfpass']);
+/** Prefer these when soft-switching off a Linux-only engine profile on Windows. */
+const PREFERRED_CAMPAIGN_TARGETS = [
+  'vulnserver', 'harness-demo', 'file-text', 'png-demo', 'png-demo-harness',
+];
 
 function isVisibleTarget(t) {
   const name = (t.name || '').toLowerCase();
@@ -87,6 +91,35 @@ function isVisibleTarget(t) {
   if (HIDDEN_TARGETS.has(name)) return false;
   if (name.includes('cfpass') || path.includes('cfpass')) return false;
   return true;
+}
+
+/** AFL++ / honggfuzz campaigns — Linux-only (see ExternalEngineCampaign). */
+function isExternalEngineTarget(t) {
+  const eng = String(t?.engine || 'randall').trim().toLowerCase();
+  if (eng === 'aflpp' || eng === 'honggfuzz' || eng === 'afl' || eng === 'hongg')
+    return true;
+  // Older servers without engine on /api/targets — name/path heuristic.
+  const name = (t?.name || '').toLowerCase();
+  const path = (t?.configPath || '').toLowerCase();
+  return name.includes('aflpp') || name.includes('honggfuzz')
+    || path.includes('aflpp') || path.includes('honggfuzz');
+}
+
+/** Campaign Target profile list for the resolved platform (hide Linux-only engines on Windows). */
+function filterCampaignTargets(targets) {
+  // platformState is initialized in initPlatformPicker before first loadTargets().
+  if (platformState.resolved !== 'windows')
+    return targets;
+  return targets.filter((t) => !isExternalEngineTarget(t));
+}
+
+function pickPreferredCampaignTarget(targets) {
+  if (!targets?.length) return null;
+  for (const name of PREFERRED_CAMPAIGN_TARGETS) {
+    const hit = targets.find((t) => t.name === name);
+    if (hit) return hit;
+  }
+  return targets[0];
 }
 
 const logEl = document.getElementById('fuzz-log');
@@ -413,7 +446,10 @@ function applyFuzzSessionStatus(s) {
   applyAttachDbgButtonState(s);
   updateLiveLinkIndicator(liveLinkState);
 
-  if (s.configPath) {
+  // Only pin the Target profile while a session is live. After error/idle/completed,
+  // leave the user's selection alone — otherwise polls trap them on the last configPath
+  // (e.g. aflpp-harness failing on Windows).
+  if (s.configPath && active) {
     const sel = document.getElementById('fuzz-target');
     if (sel && [...sel.options].some((o) => o.value === s.configPath))
       sel.value = s.configPath;
@@ -784,6 +820,8 @@ async function selectPlatform(name) {
   setPlatformLabel();
   applyPlatformVisibility();
   applyAttachDbgButtonState(fuzzStatusCache || { phase: 'idle', running: false });
+  // Rebuild campaign Target profile list (AFL++/honggfuzz appear only when resolved=linux).
+  try { await loadTargets(); } catch { /* ignore */ }
   try { await api.put('/api/ui/prefs', { platform: sel }); } catch { /* localStorage still restores */ }
   return sel;
 }
@@ -1424,17 +1462,52 @@ let randallBuildCache = null;
 
 async function loadTargets() {
   const targets = (await api.get('/api/targets')).filter(isVisibleTarget);
+  const campaignTargets = filterCampaignTargets(targets);
   const sel = document.getElementById('fuzz-target');
   const filter = document.getElementById('crash-filter');
   const caseSel = document.getElementById('case-project');
-  sel.innerHTML = targets.map((t) =>
-    `<option value="${t.configPath}" data-name="${t.name}">${t.name} [${t.kind}] — ${t.description || ''}</option>`).join('');
+  const prevPath = sel?.value || '';
+  const prevName = sel?.selectedOptions?.[0]?.dataset?.name || '';
+
+  const optionHtml = (t, annotateEngine) => {
+    const eng = String(t.engine || 'randall').toLowerCase();
+    const engTag = annotateEngine && isExternalEngineTarget(t) ? ` · ${eng}` : '';
+    return `<option value="${t.configPath}" data-name="${t.name}" data-engine="${eng}">${t.name} [${t.kind}]${engTag} — ${t.description || ''}</option>`;
+  };
+
+  sel.innerHTML = campaignTargets.map((t) => optionHtml(t, true)).join('');
+
+  // Restore prior selection when still listed; otherwise soft-switch off Linux-only traps.
+  let softSwitched = null;
+  if (prevPath && [...sel.options].some((o) => o.value === prevPath)) {
+    sel.value = prevPath;
+  } else if (prevName && campaignTargets.some((t) => t.name === prevName)) {
+    const hit = campaignTargets.find((t) => t.name === prevName);
+    if (hit) sel.value = hit.configPath;
+  } else {
+    const pick = pickPreferredCampaignTarget(campaignTargets);
+    if (pick) {
+      sel.value = pick.configPath;
+      if (prevName || prevPath) softSwitched = prevName || projectNameFromConfigPath(prevPath);
+    }
+  }
+
   filter.innerHTML = '<option value="">All</option>' +
     targets.map((t) => `<option value="${t.name}">${t.name}</option>`).join('');
   if (caseSel) {
+    const casePrev = caseSel.value;
     caseSel.innerHTML = targets.map((t) => `<option value="${t.name}">${t.name} [${t.kind}]</option>`).join('');
+    if (casePrev && [...caseSel.options].some((o) => o.value === casePrev))
+      caseSel.value = casePrev;
   }
   await refreshFuzzTargetTip();
+  if (softSwitched) {
+    const tip = document.getElementById('fuzz-target-tip');
+    if (tip) {
+      tip.textContent =
+        `Switched from “${softSwitched}” — AFL++/honggfuzz need Linux. Pick a Randall profile (e.g. vulnserver, harness-demo, file-text).`;
+    }
+  }
   return targets;
 }
 

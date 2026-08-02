@@ -33,6 +33,17 @@ public static class ExternalEngineCampaign
     public static bool IsExternal(string? engine) =>
         Normalize(engine) is EngineAflpp or EngineHonggfuzz;
 
+    /// <summary>
+    /// External engines (AFL++ / honggfuzz) are Linux-only. Randall runs on Windows and Linux.
+    /// </summary>
+    public static bool IsRunnableOnPlatform(string? engine, string? platform)
+    {
+        var resolved = PlatformResolver.Resolve(platform);
+        if (!IsExternal(engine))
+            return true;
+        return resolved.Equals(PlatformScope.Linux, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static async Task<FuzzRunResult> RunAsync(
         ProjectConfig project,
         string yamlPath,

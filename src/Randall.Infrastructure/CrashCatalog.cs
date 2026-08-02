@@ -831,7 +831,8 @@ public static class CrashCatalog
             try
             {
                 var p = ProjectLoader.Load(path);
-                list.Add(new TargetProfileDto(p.Name, p.Kind, p.Description, path));
+                var engine = ExternalEngineCampaign.Normalize(p.Fuzz.Engine);
+                list.Add(new TargetProfileDto(p.Name, p.Kind, p.Description, path, engine));
             }
             catch { /* skip invalid project */ }
         }

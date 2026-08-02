@@ -12,7 +12,9 @@ public sealed record TargetProfileDto(
     string Name,
     string Kind,
     string Description,
-    string ConfigPath);
+    string ConfigPath,
+    /// <summary>Normalized fuzz.engine (randall | aflpp | honggfuzz). Used for platform gating in the UI.</summary>
+    string Engine = "randall");
 
 public sealed record CrashSummaryDto(
     Guid Id,
