@@ -79,7 +79,7 @@ public class ResearchArtifactPersistenceTests
             Assert.Equal(1, rootCause.SchemaVersion);
             Assert.Equal(1, influence.SchemaVersion);
             Assert.Equal(1, primitives.SchemaVersion);
-            Assert.Equal(1, hypotheses.SchemaVersion);
+            Assert.Equal(HypothesisEngine.CurrentSchemaVersion, hypotheses.SchemaVersion);
             Assert.Equal(1, plan.SchemaVersion);
             Assert.Equal(1, skeptic.SchemaVersion);
 
@@ -88,7 +88,7 @@ public class ResearchArtifactPersistenceTests
             AssertJsonHasSchemaVersion(RootCauseEngine.PathFor(dir, id));
             AssertJsonHasSchemaVersion(InfluenceEngine.PathFor(dir, id));
             AssertJsonHasSchemaVersion(PrimitiveEngine.PathFor(dir, id));
-            AssertJsonHasSchemaVersion(HypothesisEngine.PathFor(dir, id));
+            AssertJsonHasSchemaVersion(HypothesisEngine.PathFor(dir, id), HypothesisEngine.CurrentSchemaVersion);
             AssertJsonHasSchemaVersion(ResearchPlannerEngine.PathFor(dir, id));
             AssertJsonHasSchemaVersion(SkepticEngine.PathFor(dir, id));
 
@@ -110,7 +110,7 @@ public class ResearchArtifactPersistenceTests
             Assert.Equal(project, hyp2.Project);
             Assert.Equal(project, prim2.Project);
 
-            Assert.Equal(1, hyp2.SchemaVersion);
+            Assert.Equal(HypothesisEngine.CurrentSchemaVersion, hyp2.SchemaVersion);
             Assert.Equal(1, root2.SchemaVersion);
             Assert.Equal(1, inf2.SchemaVersion);
             Assert.Equal(1, ev2.SchemaVersion);
@@ -252,7 +252,7 @@ public class ResearchArtifactPersistenceTests
         }
     }
 
-    private static void AssertJsonHasSchemaVersion(string path)
+    private static void AssertJsonHasSchemaVersion(string path, int expected = 1)
     {
         Assert.True(File.Exists(path), path);
         using var doc = JsonDocument.Parse(File.ReadAllText(path));
@@ -261,6 +261,6 @@ public class ResearchArtifactPersistenceTests
             root.TryGetProperty("schemaVersion", out var camel) ||
             root.TryGetProperty("SchemaVersion", out camel),
             $"missing schemaVersion in {Path.GetFileName(path)}");
-        Assert.Equal(1, camel.GetInt32());
+        Assert.Equal(expected, camel.GetInt32());
     }
 }

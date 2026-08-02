@@ -2739,9 +2739,11 @@ public sealed class FuzzEngine
 
             var backwardTrace = BackwardTraceBuilder.TryRead(BackwardTraceBuilder.PathFor(crashesDir, saved.Id));
 
+            var artifactValidation = ResolveArtifactValidation(crashesDir, saved.Id, sidecar, debugger);
             var set = HypothesisEngine.PersistForCrash(
                 crashesDir, saved.Id, project.Name, sidecar, triage,
-                debugger, corruption, evolution, oracleScore, backwardTrace);
+                debugger, corruption, evolution, oracleScore, backwardTrace,
+                artifactValidation);
 
             TryPersistRootCause(crashesDir, saved.Id, project.Name, sidecar, triage,
                 debugger, corruption, backwardTrace, oracleScore);

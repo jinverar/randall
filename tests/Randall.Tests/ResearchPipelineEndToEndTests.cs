@@ -181,7 +181,7 @@ public class ResearchPipelineEndToEndTests
             Assert.Equal(project.Name, root2.Project);
             Assert.Equal(project.Name, prim2.Project);
 
-            Assert.Equal(1, hyp2.SchemaVersion);
+            Assert.Equal(HypothesisEngine.CurrentSchemaVersion, hyp2.SchemaVersion);
             Assert.Equal(1, root2.SchemaVersion);
             Assert.Equal(1, inf2.SchemaVersion);
             Assert.Equal(1, ev2.SchemaVersion);

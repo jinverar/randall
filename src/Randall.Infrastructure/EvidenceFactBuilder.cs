@@ -433,30 +433,53 @@ public static class EvidenceFactBuilder
             {
                 HypothesisStatus.Confirmed => EvidenceObservationType.ExperimentallyConfirmed,
                 HypothesisStatus.Refuted => EvidenceObservationType.Inferred,
-                HypothesisStatus.Partial => EvidenceObservationType.Inferred,
+                HypothesisStatus.Partial or HypothesisStatus.Supported or HypothesisStatus.Weakened
+                    => EvidenceObservationType.Inferred,
+                HypothesisStatus.LegacyUnverified or HypothesisStatus.Blocked or HypothesisStatus.Invalidated
+                    => EvidenceObservationType.Hypothesized,
                 _ => EvidenceObservationType.Hypothesized,
             };
 
+            var hypKey = hypo.TypeId ?? hypo.Id;
             yield return Fact(
-                $"hypothesis.{hypo.Id}",
+                $"hypothesis.{hypKey}",
                 hypo.Statement,
                 "hypothesis_engine",
                 artifact,
                 obsType,
-                hypo.ConfidencePercent / 100.0,
-                ts);
+                hypo.SupportScore / 100.0,
+                ts,
+                relatedFacts: hypo.EvidenceRefs?.Select(r => r.FactId).ToList());
 
-            foreach (var tag in hypo.Evidence ?? [])
+            foreach (var eref in hypo.EvidenceRefs ?? [])
             {
+                if (eref.Invalidated) continue;
                 yield return Fact(
-                    $"hypothesis.{hypo.Id}.evidence.{SanitizeName(tag)}",
-                    tag,
+                    $"hypothesis.{hypKey}.evidence.{SanitizeName(eref.FactId)}",
+                    eref.FactId,
                     "hypothesis_engine",
-                    artifact,
+                    eref.SourceArtifact ?? artifact,
                     EvidenceObservationType.Inferred,
-                    hypo.ConfidencePercent / 100.0 * 0.85,
+                    hypo.SupportScore / 100.0 * 0.85,
                     ts,
-                    [$"hypothesis.{hypo.Id}"]);
+                    [$"hypothesis.{hypKey}"]);
+            }
+
+            // Legacy string tags only when EvidenceRefs absent.
+            if (hypo.EvidenceRefs is null or { Count: 0 })
+            {
+                foreach (var tag in hypo.Evidence ?? [])
+                {
+                    yield return Fact(
+                        $"hypothesis.{hypKey}.evidence.{SanitizeName(tag)}",
+                        tag,
+                        "hypothesis_engine",
+                        artifact,
+                        EvidenceObservationType.Inferred,
+                        hypo.SupportScore / 100.0 * 0.85,
+                        ts,
+                        [$"hypothesis.{hypKey}"]);
+                }
             }
         }
     }

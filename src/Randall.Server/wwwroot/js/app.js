@@ -4590,22 +4590,24 @@ function renderCrashDetail(detail, title) {
       ${!hidePlan && hypos?.ok && hypos.hypotheses?.length ? `<div class="triage-box hypothesis-box">
         <h4>Hypotheses <span class="hint-inline">scientific loop</span></h4>
         <ol class="hypothesis-list">${hypos.hypotheses.slice(0, 5).map((h) => {
-          const status = h.status || (h.result?.status ?? 'Pending');
-          const conf = h.confidencePercent ?? 0;
-          const before = h.result?.confidenceBefore;
-          const after = h.result?.confidenceAfter ?? conf;
+          const status = h.status || (h.result?.status ?? 'Proposed');
+          const conf = h.supportScore ?? h.confidencePercent ?? 0;
+          const grade = h.supportGrade || '';
+          const typeId = h.typeId || h.id;
+          const before = h.result?.confidenceBefore ?? h.result?.supportScoreBefore;
+          const after = h.result?.confidenceAfter ?? h.result?.supportScoreAfter ?? conf;
           const delta = before != null ? after - before : null;
           const deltaLabel = delta == null ? ''
             : delta === 0 ? ''
-            : ` <span class="hint-inline">${before}%→${after}% (${delta > 0 ? '+' : ''}${delta})</span>`;
-          return `<li><code>${escapeAttr(h.id)}</code> <span class="severity-${String(status).toLowerCase()}">${escapeAttr(status)}</span> <strong>${conf}%</strong>${deltaLabel} — ${escapeAttr(h.statement)}
+            : ` <span class="hint-inline">${before}→${after} (${delta > 0 ? '+' : ''}${delta})</span>`;
+          return `<li><code title="${escapeAttr(h.id)}">${escapeAttr(typeId)}</code> <span class="severity-${String(status).toLowerCase()}">${escapeAttr(status)}</span> <strong>support ${conf}</strong>${grade ? ` <span class="hint-inline">${escapeAttr(grade)}</span>` : ''}${deltaLabel} — ${escapeAttr(h.statement)}
             <div class="hint">experiment: ${escapeAttr(h.experiment?.kind || '')} — ${escapeAttr(h.experiment?.description || '')}</div>
-            <div class="hint">expect: ${escapeAttr(h.expectedObservation || '')}${h.result ? ` · ${escapeAttr(h.result.observation || h.result.status)}` : ''}</div>
+            <div class="hint">expect: ${escapeAttr(h.expectedObservation || h.expectedPredicate?.humanSummary || '')}${h.result ? ` · ${escapeAttr(h.result.observation || h.result.status)}` : ''}</div>
           </li>`;
         }).join('')}</ol>
       </div>` : (!hidePlan && intel?.topHypothesisStatement ? `<div class="triage-box hypothesis-box">
         <h4>Top hypothesis</h4>
-        <p class="hint"><code>${escapeAttr(intel.topHypothesisId || '')}</code> <strong>${intel.topHypothesisConfidence || 0}%</strong> — ${escapeAttr(intel.topHypothesisStatement)}</p>
+        <p class="hint"><code>${escapeAttr(intel.topHypothesisId || '')}</code> <strong>support ${intel.topHypothesisConfidence || 0}</strong> — ${escapeAttr(intel.topHypothesisStatement)}</p>
       </div>` : '')}
       <p class="crash-why-detail"><code>${escapeAttr(why)}</code>
         ${a?.faultAddress ? ` @ <code>${escapeAttr(a.faultAddress)}</code>` : ''}

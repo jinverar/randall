@@ -117,7 +117,7 @@ public static class HuntPolicyEngine
 
         var summary = BuildSummary(mode, top.Candidate, huntValue, jokerChance, preferredMutator);
         if (topHypothesis is not null && needsExperiment)
-            summary += $" · hyp={topHypothesis.Id} ({topHypothesis.ConfidencePercent}%)";
+            summary += $" · hyp={topHypothesis.HypothesisTypeId}@{topHypothesis.Id} (support={topHypothesis.SupportScore})";
 
         return new HuntPolicyDecision(
             huntValue, mode, summary, jokerChance, needsExperiment, experimentHint, terms,

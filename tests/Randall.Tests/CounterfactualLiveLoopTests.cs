@@ -17,9 +17,9 @@ public class CounterfactualLiveLoopTests
             var payload = new byte[32];
             payload[8] = 0xFF;
 
-            // Seed a pending hypothesis so the live loop has something to update.
+            // Seed a TriggerSensitivity hypothesis — safe-adjacent must not leak onto other kinds.
             var hyp = new HypothesisDto(
-                "h-cf-live",
+                Guid.NewGuid().ToString("N"),
                 id,
                 "Byte at offset 8 gates the crash",
                 60,
@@ -29,8 +29,13 @@ public class CounterfactualLiveLoopTests
                     OffsetBytes: 8,
                     SweepRange: 4),
                 "Flipping the marker clears the fault",
-                HypothesisStatus.Pending);
-            HypothesisEngine.Write(dir, new HypothesisSetDto(true, id, "lab", [hyp], DateTimeOffset.UtcNow));
+                HypothesisStatus.Proposed,
+                TypeId: "h-cf-live",
+                Kind: HypothesisKind.TriggerSensitivity,
+                ExpectedPredicate: new ExpectedPredicate(HypothesisPredicateKind.TriggerSensitiveRegion));
+            HypothesisEngine.Write(dir, new HypothesisSetDto(
+                true, id, "lab", [hyp], DateTimeOffset.UtcNow,
+                SchemaVersion: HypothesisEngine.CurrentSchemaVersion));
 
             // Influence map so RefreshFromHypotheses has a target.
             InfluenceEngine.Write(dir, new CrashInfluenceMapDto(
@@ -67,14 +72,15 @@ public class CounterfactualLiveLoopTests
             Assert.Equal(result.ExperimentsExecuted, loaded.ExperimentsExecuted);
             Assert.Contains(loaded.Probes, p => p.Outcome == CounterfactualOutcome.SafeAdjacent);
 
-            // Hypothesis confidence updated and persisted.
+            // TriggerSensitivity support updated; instance id (not type id) recorded.
             var hypLoaded = HypothesisEngine.TryReadForCrash(dir, id);
             Assert.NotNull(hypLoaded);
-            var updated = hypLoaded!.Hypotheses.First(h => h.Id == "h-cf-live");
-            Assert.True(updated.ConfidencePercent > 60);
+            var updated = hypLoaded!.Hypotheses.First(h => h.TypeId == "h-cf-live" || h.Id == hyp.Id);
+            Assert.True(updated.SupportScore > 60);
+            Assert.Equal(HypothesisKind.TriggerSensitivity, updated.Kind);
             Assert.NotNull(updated.Result);
             Assert.Contains("Counterfactual live", updated.Result!.Observation ?? "", StringComparison.OrdinalIgnoreCase);
-            Assert.Contains("h-cf-live", result.Report.UpdatedHypothesisIds ?? []);
+            Assert.Contains(updated.Id, result.Report.UpdatedHypothesisIds ?? []);
         }
         finally
         {

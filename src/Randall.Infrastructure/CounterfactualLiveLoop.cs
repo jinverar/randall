@@ -171,58 +171,9 @@ public static class CounterfactualLiveLoop
     internal static HypothesisSetDto ApplyHypothesisUpdates(
         HypothesisSetDto set,
         CounterfactualReportDto report,
-        List<string> updatedIds)
-    {
-        if (set.Hypotheses.Count == 0)
-            return set;
-
-        var target = set.Hypotheses
-            .OrderByDescending(h => h.Status is HypothesisStatus.Pending or HypothesisStatus.Running)
-            .ThenByDescending(h => h.ConfidencePercent)
-            .First();
-
-        var before = target.ConfidencePercent;
-        HypothesisStatus status;
-        int after;
-        string observation;
-
-        if (report.SmallestSafeChange is not null)
-        {
-            // Boundary found: offset attribution strengthened.
-            status = HypothesisStatus.Partial;
-            after = Math.Min(95, before + 12);
-            observation =
-                $"Counterfactual live: safe-adjacent via {report.SmallestSafeChange.Description} " +
-                $"(Δ{report.SmallestSafeChange.ByteDelta})";
-        }
-        else if (report.StillCorruptCount > 0 && report.SafeAdjacentCount == 0)
-        {
-            status = HypothesisStatus.Partial;
-            after = Math.Min(90, before + 4);
-            observation =
-                $"Counterfactual live: {report.StillCorruptCount} still-corrupt — local flip did not clear bug";
-        }
-        else
-        {
-            status = HypothesisStatus.Inconclusive;
-            after = before;
-            observation = "Counterfactual live: inconclusive boundary map";
-        }
-
-        var updated = target with
-        {
-            Status = status,
-            ConfidencePercent = after,
-            Result = new HypothesisResultDto(
-                status, after, observation, null, DateTimeOffset.UtcNow, before),
-        };
-        updatedIds.Add(updated.Id);
-
-        var list = set.Hypotheses
-            .Select(h => h.Id.Equals(updated.Id, StringComparison.OrdinalIgnoreCase) ? updated : h)
-            .ToList();
-        return set with { Hypotheses = list, At = DateTimeOffset.UtcNow };
-    }
+        List<string> updatedIds) =>
+        // Registry-gated: safe-adjacent only supports TriggerSensitivity (no MutatorCorrelation leakage).
+        HypothesisEngine.ApplyCounterfactualSupport(set, report, updatedIds);
 
     internal static SkepticReportDto SettleSkepticChallenges(
         SkepticReportDto report,

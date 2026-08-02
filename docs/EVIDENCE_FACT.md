@@ -27,7 +27,7 @@ data/crashes/<project>/{guid}_evidence.json
 | **ScreamInvestigator** / `DebuggerObservationProvenance` | `EvidenceFactBuilder.FromDebuggerProvenance` | Observed (CDB transcript) / Inferred (address class) |
 | **CorruptionChainBuilder** | `FromCorruptionChain` | Inferred (attribution) / Observed (register match) |
 | **BackwardTraceBuilder** | `FromBackwardTrace` | Inferred |
-| **HypothesisEngine** | `FromHypotheses` | Hypothesized / ExperimentallyConfirmed |
+| **HypothesisEngine** | `FromHypotheses` | Hypothesized / ExperimentallyConfirmed — v2 hyps cite `evidenceRefs` (EvidenceFact ids); free-form tags are legacy-only |
 | **OracleScorer** | `FromOracle` | Observed |
 | **FaultSignalMapper** | `FromFaultSignals` | Observed or Inferred by source |
 | **Crash sidecar / triage** | `FromLineage`, `FromTriage` | Observed |
