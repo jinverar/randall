@@ -2255,7 +2255,34 @@ function showBlockContextMenu(x, y, id) {
   });
 }
 
+/** True when crash/target arch is 32-bit (x86 / WOW64). */
+function isX86Arch(arch) {
+  const a = String(arch || '').trim().toUpperCase();
+  return a === 'X86' || a === 'I386' || a === 'IA32' || a === 'WOW64';
+}
+
+/** Map internal x64-shaped register keys to UI labels for the crash architecture. */
+function regLabel(name, arch) {
+  const key = String(name || '').trim().toUpperCase();
+  if (!isX86Arch(arch)) return key;
+  const map = {
+    RIP: 'EIP', RSP: 'ESP', RBP: 'EBP',
+    RAX: 'EAX', RBX: 'EBX', RCX: 'ECX', RDX: 'EDX',
+    RSI: 'ESI', RDI: 'EDI',
+  };
+  return map[key] || key;
+}
+
+/** Prefer analysis / snapshot / debugger observation architecture. */
+function crashArchitecture(detail, regs) {
+  return detail?.analysis?.architecture
+    || regs?.architecture
+    || detail?.debuggerObservation?.architecture
+    || null;
+}
+
 function formatBlockReNotes(b) {
+  const arch = b.architecture || null;
   const lines = [
     `# ${b.label} (${b.role || b.kind})`,
     `Address: ${b.address || '—'}`,
@@ -2265,8 +2292,8 @@ function formatBlockReNotes(b) {
     b.prefix ? `Prefix: ${b.prefix}` : null,
     b.mutator ? `Mutator: ${b.mutator}` : null,
     b.exceptionHint ? `Exception: ${b.exceptionHint}` : null,
-    b.rip ? `RIP: ${b.rip}` : null,
-    b.rsp ? `RSP: ${b.rsp}` : null,
+    b.rip ? `${regLabel('RIP', arch)}: ${b.rip}` : null,
+    b.rsp ? `${regLabel('RSP', arch)}: ${b.rsp}` : null,
     b.faultModule ? `Fault module: ${b.faultModule}` : null,
     '',
     'RE hints:',
@@ -2323,9 +2350,9 @@ function openBlockInspector(id) {
       <dt>Outgoing</dt><dd><code>${escapeAttr(outEdges)}</code></dd>
     </dl>
     ${(block.rip || block.rsp || block.rbp) ? `<div class="stalk-insp-regs">
-      ${block.rip ? `<div><span>RIP</span>${escapeAttr(block.rip)}</div>` : ''}
-      ${block.rsp ? `<div><span>RSP</span>${escapeAttr(block.rsp)}</div>` : ''}
-      ${block.rbp ? `<div><span>RBP</span>${escapeAttr(block.rbp)}</div>` : ''}
+      ${block.rip ? `<div><span>${regLabel('RIP', block.architecture)}</span>${escapeAttr(block.rip)}</div>` : ''}
+      ${block.rsp ? `<div><span>${regLabel('RSP', block.architecture)}</span>${escapeAttr(block.rsp)}</div>` : ''}
+      ${block.rbp ? `<div><span>${regLabel('RBP', block.architecture)}</span>${escapeAttr(block.rbp)}</div>` : ''}
       ${block.faultModule ? `<div><span>MOD</span>${escapeAttr(block.faultModule)}</div>` : ''}
     </div>` : ''}
     ${(block.reHints || []).length ? `<ol class="stalk-insp-hints">${
@@ -3970,6 +3997,7 @@ function renderExploitResearchPanel(panel, debuggerObservation = null, evidenceF
           · access ${escapeAttr(ea?.accessKind || '—')}</dd>
       </dl>`;
 
+  const matrixArch = crashArchitecture(detail) || panel.architecture || null;
   const matrixRows = matrix.length
     ? `<table class="exploit-reg-matrix"><thead><tr>
         <th>Register</th><th>Value</th><th>Input relationship</th><th>Status</th>
@@ -3982,8 +4010,9 @@ function renderExploitResearchPanel(panel, debuggerObservation = null, evidenceF
         const rel = String(r.inputRelationship || '')
           .replace(/sentinel correlation/gi, 'Observed Association (co-occurs)')
           .replace(/\bcorrelation\b/gi, 'association');
+        const regName = regLabel(r.register, matrixArch);
         return `<tr>
-        <td><code>${escapeAttr(r.register)}</code></td>
+        <td><code>${escapeAttr(regName)}</code></td>
         <td><code>${escapeAttr(r.valueHex || '—')}</code></td>
         <td>${escapeAttr(rel)}${r.payloadOffset != null ? ` <span class="hint-inline">+${r.payloadOffset}</span>` : ''}</td>
         <td><span class="ctrl-status ctrl-${escapeAttr(st.toLowerCase())}" title="${escapeAttr(tip)}">${escapeAttr(stLabel)}</span></td>
@@ -4866,16 +4895,20 @@ function renderCrashDetail(detail, title) {
       ${s?.newEdgesAtCrash != null ? `<dt>Coverage</dt><dd>+${s.newEdgesAtCrash} new · ${s.totalEdgesAtCrash} total · <code>${escapeAttr(s.stalkBackend || '')}</code></dd>` : ''}
       <dt>Id</dt><dd><code>${detail.summary.id}</code></dd>
     </dl>
-    ${regs ? `<div class="triage-box"><h4>Registers</h4>
+    ${regs ? (() => {
+      const arch = crashArchitecture(detail, regs);
+      const archHint = arch ? ` <span class="hint-inline">${escapeAttr(String(arch).toUpperCase())}</span>` : '';
+      return `<div class="triage-box"><h4>Registers${archHint}</h4>
       <div class="reg-grid">
-        <div><span>RIP</span> <code>${regs.rip || '—'}</code></div>
-        <div><span>RSP</span> <code>${regs.rsp || '—'}</code></div>
-        <div><span>RBP</span> <code>${regs.rbp || '—'}</code></div>
-        <div><span>RAX</span> <code>${regs.rax || '—'}</code></div>
-        <div><span>RBX</span> <code>${regs.rbx || '—'}</code></div>
-        <div><span>RCX</span> <code>${regs.rcx || '—'}</code></div>
-        <div><span>RDX</span> <code>${regs.rdx || '—'}</code></div>
-      </div></div>` : ''}
+        <div><span>${regLabel('RIP', arch)}</span> <code>${regs.rip || '—'}</code></div>
+        <div><span>${regLabel('RSP', arch)}</span> <code>${regs.rsp || '—'}</code></div>
+        <div><span>${regLabel('RBP', arch)}</span> <code>${regs.rbp || '—'}</code></div>
+        <div><span>${regLabel('RAX', arch)}</span> <code>${regs.rax || '—'}</code></div>
+        <div><span>${regLabel('RBX', arch)}</span> <code>${regs.rbx || '—'}</code></div>
+        <div><span>${regLabel('RCX', arch)}</span> <code>${regs.rcx || '—'}</code></div>
+        <div><span>${regLabel('RDX', arch)}</span> <code>${regs.rdx || '—'}</code></div>
+      </div></div>`;
+    })() : ''}
     <div class="triage-box" id="crash-memory-box">
       <h4>Memory lens <span class="hint-inline" id="crash-memory-conf"></span></h4>
       <p class="hint" id="crash-memory-status">Loading…</p>

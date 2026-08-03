@@ -77,6 +77,12 @@ public static partial class LinuxCrashAnalysisWriter
         }
 
         var regs = TryParseRegisters(triage.Backtrace);
+        var arch = CpuArchitectureDetector.Resolve(
+            executablePath: exe,
+            registersText: triage.Backtrace,
+            registers: regs);
+        if (regs is not null)
+            regs = regs with { Architecture = arch };
         var fault = TryParseFaultAddress(triage.Backtrace);
         var hint = triage.Finding?.Primitive
                    ?? triage.SignalName
@@ -95,7 +101,8 @@ public static partial class LinuxCrashAnalysisWriter
             Error: error ?? (triage.Backtrace is null && LinuxToolPaths.Find(
                 new LinuxToolPaths.LinuxTool("linux:gdb", "gdb", "", "", "GDB_PATH")) is null
                 ? "gdb not found — install gdb for backtrace triage"
-                : null));
+                : null),
+            Architecture: arch);
 
         // Mark ok if we at least have signal metadata from the sidecar / exit code.
         if (!analysis.Ok && triage.Signal is not null)

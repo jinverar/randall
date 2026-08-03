@@ -87,4 +87,6 @@ public sealed record DebuggerObservation(
     /// <summary>Provenance for key facts (CDB source command + confidence).</summary>
     DebuggerObservationProvenance? Provenance = null,
     /// <summary>Randall analysis-engine identity at write time (optional on legacy files).</summary>
-    RandallBuildIdentityDto? Engine = null);
+    RandallBuildIdentityDto? Engine = null,
+    /// <summary><see cref="CpuArchitecture.X86"/> or <see cref="CpuArchitecture.X64"/> when known.</summary>
+    string? Architecture = null);

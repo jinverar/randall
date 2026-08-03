@@ -38,12 +38,12 @@ public static class MiniDumpAnalyzer
                 var hint = WindowsExceptionHints.DescribeCode(code);
 
                 RegisterSnapshotDto? regs = null;
+                string? arch = null;
                 if (exStream.ThreadContext.DataSize > 0 &&
-                    TryReadContext(bytes, exStream.ThreadContext.Rva, out var ctx))
+                    TryReadContext(bytes, exStream.ThreadContext.Rva, exStream.ThreadContext.DataSize,
+                        out regs, out arch))
                 {
-                    regs = new RegisterSnapshotDto(
-                        Hex(ctx.Rip), Hex(ctx.Rsp), Hex(ctx.Rbp),
-                        Hex(ctx.Rax), Hex(ctx.Rbx), Hex(ctx.Rcx), Hex(ctx.Rdx));
+                    // regs + arch populated
                 }
 
                 var modules = ReadModuleList(basePtr, bytes);
@@ -59,7 +59,8 @@ public static class MiniDumpAnalyzer
                     faultModule,
                     regs,
                     moduleNames,
-                    null);
+                    null,
+                    Architecture: arch);
             }
             finally
             {
@@ -74,6 +75,7 @@ public static class MiniDumpAnalyzer
     }
 
     private static string Hex(ulong value) => $"0x{value:X}";
+    private static string Hex32(uint value) => $"0x{value:X}";
 
     private static string? ResolveModule(IReadOnlyList<(ulong Base, string Name)> modules, ulong address)
     {
@@ -116,23 +118,116 @@ public static class MiniDumpAnalyzer
         return Encoding.UTF8.GetString(dump, rva, end - rva);
     }
 
-    private static bool TryReadContext(byte[] dump, uint rva, out Amd64Context ctx)
+    /// <summary>
+    /// Read AMD64 or WOW64/x86 CONTEXT from the exception stream.
+    /// Values are stored in the x64-shaped <see cref="RegisterSnapshotDto"/> fields; <c>Architecture</c> tells the UI which labels to use.
+    /// </summary>
+    internal static bool TryReadContext(
+        byte[] dump,
+        uint rva,
+        uint dataSize,
+        out RegisterSnapshotDto? regs,
+        out string? architecture)
     {
-        ctx = default;
+        regs = null;
+        architecture = null;
+        if (rva == 0 || rva + Math.Min(dataSize, 32) > dump.Length)
+            return false;
+
+        var flagsAt0 = BitConverter.ToUInt32(dump, (int)rva);
+        var flagsAt30 = rva + 0x34 <= dump.Length
+            ? BitConverter.ToUInt32(dump, (int)rva + 0x30)
+            : 0u;
+        architecture = CpuArchitectureDetector.FromContextBlob(dataSize, flagsAt0 != 0 ? flagsAt0 : flagsAt30);
+
+        var preferX86 = CpuArchitecture.IsX86(architecture)
+                        || (dataSize is > 0 and <= 800)
+                        || ((flagsAt0 & 0x00010000) != 0 && (flagsAt0 & 0x00100000) == 0);
+
+        if (preferX86 && TryReadX86Context(dump, rva, dataSize, out regs))
+        {
+            architecture = CpuArchitecture.X86;
+            return true;
+        }
+
+        if (TryReadAmd64Context(dump, rva, dataSize, out regs))
+        {
+            architecture ??= CpuArchitecture.X64;
+            return true;
+        }
+
+        // Last resort: try the other layout if the preferred path failed.
+        if (!preferX86 && TryReadX86Context(dump, rva, dataSize, out regs))
+        {
+            architecture = CpuArchitecture.X86;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryReadAmd64Context(byte[] dump, uint rva, uint dataSize, out RegisterSnapshotDto? regs)
+    {
+        regs = null;
+        // Need at least through Rip (0xF8 + 8).
         if (rva + 0x100 > dump.Length)
+            return false;
+        if (dataSize is > 0 and < 0x100)
             return false;
 
         var handle = GCHandle.Alloc(dump, GCHandleType.Pinned);
         try
         {
             var ptr = handle.AddrOfPinnedObject() + (int)rva;
-            ctx = Marshal.PtrToStructure<Amd64Context>(ptr);
-            return ctx.ContextFlags != 0;
+            var ctx = Marshal.PtrToStructure<Amd64Context>(ptr);
+            if (ctx.ContextFlags == 0 && ctx.Rip == 0 && ctx.Rsp == 0)
+                return false;
+
+            regs = new RegisterSnapshotDto(
+                Hex(ctx.Rip), Hex(ctx.Rsp), Hex(ctx.Rbp),
+                Hex(ctx.Rax), Hex(ctx.Rbx), Hex(ctx.Rcx), Hex(ctx.Rdx),
+                Architecture: CpuArchitecture.X64);
+            return true;
         }
         finally
         {
             handle.Free();
         }
+    }
+
+    private static bool TryReadX86Context(byte[] dump, uint rva, uint dataSize, out RegisterSnapshotDto? regs)
+    {
+        regs = null;
+        // WOW64/x86 CONTEXT: Eip@0xB8, Esp@0xC4 — need at least 0xC8 bytes.
+        if (rva + 0xC8 > dump.Length)
+            return false;
+        if (dataSize is > 0 and < 0xC8)
+            return false;
+
+        var off = (int)rva;
+        var contextFlags = BitConverter.ToUInt32(dump, off);
+        // Reject obvious AMD64 blobs (ContextFlags live at +0x30).
+        var amd64Flags = BitConverter.ToUInt32(dump, off + 0x30);
+        if ((amd64Flags & 0x00100000) != 0 && (contextFlags & 0x00010000) == 0 && dataSize >= 1000)
+            return false;
+
+        uint ReadU32(int at) => BitConverter.ToUInt32(dump, off + at);
+        var eip = ReadU32(0xB8);
+        var esp = ReadU32(0xC4);
+        var ebp = ReadU32(0xB4);
+        var eax = ReadU32(0xB0);
+        var ebx = ReadU32(0xA4);
+        var ecx = ReadU32(0xAC);
+        var edx = ReadU32(0xA8);
+
+        if (eip == 0 && esp == 0 && ebp == 0 && eax == 0 && contextFlags == 0)
+            return false;
+
+        regs = new RegisterSnapshotDto(
+            Hex32(eip), Hex32(esp), Hex32(ebp),
+            Hex32(eax), Hex32(ebx), Hex32(ecx), Hex32(edx),
+            Architecture: CpuArchitecture.X86);
+        return true;
     }
 
     [StructLayout(LayoutKind.Sequential)]

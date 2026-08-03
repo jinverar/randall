@@ -1880,18 +1880,40 @@ public sealed class FuzzEngine
                         else
                         {
                             var analysis = CrashAnalysisWriter.AnalyzeDump(saved.MiniDumpPath);
-                            if (!analysis.Ok && debuggerWait?.Scream?.ExceptionInfo is { } screamEx)
+                            if (debuggerWait?.Scream?.ExceptionInfo is { } screamEx)
                             {
-                                analysis = new CrashAnalysisDto(
-                                    true,
-                                    saved.MiniDumpPath,
-                                    $"0x{screamEx.ExceptionCode:X8}",
-                                    screamEx.ExceptionHint,
-                                    screamEx.FaultAddress,
-                                    null,
-                                    screamEx.Registers,
-                                    [],
-                                    null);
+                                var arch = CpuArchitectureDetector.Resolve(
+                                    explicitArch: analysis.Architecture ?? screamEx.Registers?.Architecture,
+                                    wow64: screamEx.Wow64);
+                                if (!analysis.Ok)
+                                {
+                                    var regs = screamEx.Registers is null
+                                        ? null
+                                        : screamEx.Registers with { Architecture = arch };
+                                    analysis = new CrashAnalysisDto(
+                                        true,
+                                        saved.MiniDumpPath,
+                                        $"0x{screamEx.ExceptionCode:X8}",
+                                        screamEx.ExceptionHint,
+                                        screamEx.FaultAddress,
+                                        null,
+                                        regs,
+                                        [],
+                                        null,
+                                        Architecture: arch);
+                                }
+                                else if (string.IsNullOrWhiteSpace(analysis.Architecture)
+                                         || analysis.Registers is null)
+                                {
+                                    analysis = analysis with
+                                    {
+                                        Architecture = analysis.Architecture ?? arch,
+                                        Registers = analysis.Registers
+                                                    ?? (screamEx.Registers is null
+                                                        ? null
+                                                        : screamEx.Registers with { Architecture = arch }),
+                                    };
+                                }
                             }
 
                             var analysisPath = CrashAnalysisWriter.Write(crashesDir, saved.Id, analysis);

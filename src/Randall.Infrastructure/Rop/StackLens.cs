@@ -121,13 +121,9 @@ public static class StackLens
             hints.Add("No stack memory window — classifying registers / guide CONTROL only");
             if (detail.Analysis?.Registers is { } regs)
             {
-                AddReg(words, "RIP", regs.Rip, input);
-                AddReg(words, "RSP", regs.Rsp, input);
-                AddReg(words, "RBP", regs.Rbp, input);
-                AddReg(words, "RAX", regs.Rax, input);
-                AddReg(words, "RBX", regs.Rbx, input);
-                AddReg(words, "RCX", regs.Rcx, input);
-                AddReg(words, "RDX", regs.Rdx, input);
+                var labelArch = arch == "x86" ? CpuArchitecture.X86 : CpuArchitecture.X64;
+                foreach (var (label, value) in RegisterDisplayNames.SnapshotRows(regs, labelArch))
+                    AddReg(words, label, value, input);
             }
 
             if (guideOff is int goff)
@@ -365,43 +361,14 @@ public static class StackLens
 
     private static string GuessArch(CrashDetailDto detail, string? exe)
     {
-        if (!string.IsNullOrWhiteSpace(exe) && File.Exists(exe))
-        {
-            try
-            {
-                Span<byte> hdr = stackalloc byte[5];
-                using var fs = File.OpenRead(exe);
-                if (fs.Read(hdr) >= 5)
-                {
-                    if (hdr[0] == 0x7F && hdr[1] == (byte)'E')
-                        return hdr[4] == 1 ? "x86" : "x64";
-                    if (hdr[0] == 0x4D && hdr[1] == 0x5A)
-                    {
-                        // PE: peek machine at e_lfanew — best-effort
-                        fs.Seek(0x3C, SeekOrigin.Begin);
-                        Span<byte> peOffBuf = stackalloc byte[4];
-                        if (fs.Read(peOffBuf) == 4)
-                        {
-                            var peOff = BitConverter.ToInt32(peOffBuf);
-                            fs.Seek(peOff + 4, SeekOrigin.Begin);
-                            Span<byte> mach = stackalloc byte[2];
-                            if (fs.Read(mach) == 2)
-                            {
-                                var m = BitConverter.ToUInt16(mach);
-                                if (m == 0x14C) return "x86";
-                                if (m is 0x8664 or 0xAA64) return "x64";
-                            }
-                        }
-                    }
-                }
-            }
-            catch { /* ignore */ }
-        }
-
-        var rip = detail.Analysis?.Registers?.Rip;
-        if (rip is not null && TryParseUlong(rip, out var v) && v > uint.MaxValue)
-            return "x64";
-        return "x64";
+        var resolved = CpuArchitectureDetector.Resolve(
+            explicitArch: detail.Analysis?.Architecture
+                          ?? detail.Analysis?.Registers?.Architecture
+                          ?? detail.DebuggerObservation?.Architecture,
+            executablePath: exe,
+            registersText: detail.DebuggerObservation?.RegistersText,
+            registers: detail.Analysis?.Registers);
+        return CpuArchitecture.IsX86(resolved) ? "x86" : "x64";
     }
 
     private static bool LooksLikeElfCore(string dump, string exe)

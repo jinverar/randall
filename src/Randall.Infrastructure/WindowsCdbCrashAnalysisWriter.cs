@@ -84,7 +84,8 @@ public static partial class WindowsCdbCrashAnalysisWriter
         }
 
         var msec = runExploitable ? DebuggerTools.FindMsecDll() : null;
-        var script = BuildScript(msec, CdbProbePlan.StandardCrash);
+        var arch = ResolveDumpArchitecture(dumpPath, crashSidecar);
+        var script = BuildScript(msec, CdbProbePlan.StandardCrash, arch);
         var timedOut = false;
         string text;
         try
@@ -300,8 +301,46 @@ public static partial class WindowsCdbCrashAnalysisWriter
     /// <summary>
     /// Headless CDB script: !analyze plus register/stack/disasm/memory probes for Scream Investigator.
     /// </summary>
-    internal static string BuildScript(string? msecPath, CdbProbePlan plan = CdbProbePlan.StandardCrash) =>
-        CdbScriptBuilder.BuildInline(plan, new CdbScriptOptions { MsecDllPath = msecPath });
+    internal static string BuildScript(
+        string? msecPath,
+        CdbProbePlan plan = CdbProbePlan.StandardCrash,
+        string? architecture = null) =>
+        CdbScriptBuilder.BuildInline(plan, new CdbScriptOptions
+        {
+            MsecDllPath = msecPath,
+            Architecture = architecture,
+        });
+
+    /// <summary>Best-effort arch for CDB <c>@eip</c> vs <c>@rip</c> probes.</summary>
+    internal static string? ResolveDumpArchitecture(string? dumpPath, CrashSidecarDto? sidecar = null)
+    {
+        var identity = sidecar?.ArtifactIdentity;
+        var fromExe = CpuArchitectureDetector.FromExecutable(identity?.ExecutablePath);
+        if (fromExe is not null)
+            return fromExe;
+
+        var attestationArch = identity?.TargetAttestation?.Arch ?? identity?.DumpAttestation?.Arch;
+        if (!string.IsNullOrWhiteSpace(attestationArch))
+            return CpuArchitecture.Normalize(attestationArch);
+
+        if (!LooksLikeWindowsDump(dumpPath))
+            return null;
+
+        try
+        {
+            var analysis = MiniDumpAnalyzer.Analyze(dumpPath);
+            if (!string.IsNullOrWhiteSpace(analysis.Architecture))
+                return analysis.Architecture;
+            if (!string.IsNullOrWhiteSpace(analysis.Registers?.Architecture))
+                return analysis.Registers.Architecture;
+        }
+        catch
+        {
+            /* ignore */
+        }
+
+        return null;
+    }
 
     internal static (string Text, bool TimedOut) RunCdb(string cdb, string dumpPath, string script, int timeoutMs)
     {

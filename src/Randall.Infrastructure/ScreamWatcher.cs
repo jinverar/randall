@@ -483,7 +483,8 @@ public sealed class ScreamWatcher : IDisposable
                 Hex(Marshal.ReadInt64(mem, 0x78)), // Rax
                 Hex(Marshal.ReadInt64(mem, 0x90)), // Rbx
                 Hex(Marshal.ReadInt64(mem, 0x80)), // Rcx
-                Hex(Marshal.ReadInt64(mem, 0x88))); // Rdx
+                Hex(Marshal.ReadInt64(mem, 0x88)), // Rdx
+                Architecture: CpuArchitecture.X64);
         }
         finally
         {
@@ -494,6 +495,7 @@ public sealed class ScreamWatcher : IDisposable
     private static RegisterSnapshotDto? TryReadWow64Registers(IntPtr hThread)
     {
         // WOW64_CONTEXT — ContextFlags at 0, Eip@0xB8, Esp@0xC4, Ebp@0xB4, Eax@0xB0, …
+        // Values stored in x64-shaped DTO fields; Architecture=X86 so UI labels EIP/ESP/…
         const int ctxSize = 716;
         var mem = Marshal.AllocHGlobal(ctxSize);
         try
@@ -513,7 +515,8 @@ public sealed class ScreamWatcher : IDisposable
 
             return new RegisterSnapshotDto(
                 $"0x{Eip():X}", $"0x{Esp():X}", $"0x{Ebp():X}",
-                $"0x{Eax():X}", $"0x{Ebx():X}", $"0x{Ecx():X}", $"0x{Edx():X}");
+                $"0x{Eax():X}", $"0x{Ebx():X}", $"0x{Ecx():X}", $"0x{Edx():X}",
+                Architecture: CpuArchitecture.X86);
         }
         finally
         {

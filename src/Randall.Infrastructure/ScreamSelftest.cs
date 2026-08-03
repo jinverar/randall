@@ -76,9 +76,12 @@ public static class ScreamSelftest
             var analysis = dump is not null ? CrashAnalysisWriter.AnalyzeDump(dump) : null;
             if (analysis is not { Ok: true } && watcher.ExceptionInfo is { } live)
             {
+                var arch = CpuArchitectureDetector.FromWow64(live.Wow64);
                 analysis = new CrashAnalysisDto(
                     true, dump, $"0x{live.ExceptionCode:X8}", live.ExceptionHint,
-                    live.FaultAddress, null, live.Registers, [], null);
+                    live.FaultAddress, null,
+                    live.Registers is null ? null : live.Registers with { Architecture = arch },
+                    [], null, Architecture: arch);
             }
 
             var code = watcher.ExceptionInfo?.ExceptionCode

@@ -50,13 +50,26 @@ public static class CdbScriptBuilder
         AppendSection(lines, CdbProbeSection.Analyze, "!analyze -v");
         AppendSection(lines, CdbProbeSection.Exception, ".exr -1");
         lines.Add(".ecxr");
+        var x86 = CpuArchitecture.IsX86(options.Architecture);
+        if (x86)
+            lines.Add(".effmach x86");
         AppendSection(lines, CdbProbeSection.Regs, "r");
         AppendSection(lines, CdbProbeSection.Stack, "kv");
         AppendSection(lines, CdbProbeSection.Modules, "lm");
-        AppendSection(lines, CdbProbeSection.Instruction, "u @rip L1");
-        AppendSection(lines, CdbProbeSection.Symbol, "ln @rip");
-        AppendSection(lines, CdbProbeSection.Disasm, "u @rip-20 @rip+40");
-        AppendSection(lines, CdbProbeSection.Memory, "dq @rsp L40");
+        if (x86)
+        {
+            AppendSection(lines, CdbProbeSection.Instruction, "u @eip L1");
+            AppendSection(lines, CdbProbeSection.Symbol, "ln @eip");
+            AppendSection(lines, CdbProbeSection.Disasm, "u @eip-20 @eip+40");
+            AppendSection(lines, CdbProbeSection.Memory, "dd @esp L40");
+        }
+        else
+        {
+            AppendSection(lines, CdbProbeSection.Instruction, "u @rip L1");
+            AppendSection(lines, CdbProbeSection.Symbol, "ln @rip");
+            AppendSection(lines, CdbProbeSection.Disasm, "u @rip-20 @rip+40");
+            AppendSection(lines, CdbProbeSection.Memory, "dq @rsp L40");
+        }
         AppendSection(lines, CdbProbeSection.Heap, "!heap -s");
         AppendSection(lines, CdbProbeSection.Address, "!address $exceptioninformation[1]");
 
@@ -154,6 +167,8 @@ public sealed record CdbScriptOptions
     public bool RunAnalyzeIfMissing { get; init; }
     public string? AnalyzeAlreadySavedPath { get; init; }
     public string? WalkScriptHint { get; init; }
+    /// <summary><see cref="CpuArchitecture.X86"/> selects <c>@eip</c>/<c>dd @esp</c>; default is x64 <c>@rip</c>.</summary>
+    public string? Architecture { get; init; }
 }
 
 /// <summary>RANDFUZZ_* marker names shared by script builder and transcript parser.</summary>

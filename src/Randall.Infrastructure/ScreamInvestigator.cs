@@ -74,9 +74,15 @@ public static partial class ScreamInvestigator
         }
 
         var msec = runExploitable ? DebuggerTools.FindMsecDll() : null;
+        var archHint = WindowsCdbCrashAnalysisWriter.ResolveDumpArchitecture(dumpPath, sidecar);
+        // Prefer arch already persisted on *_analysis.json when present.
+        var priorAnalysis = CrashAnalysisWriter.TryRead(
+            CrashAnalysisWriter.AnalysisPathFor(crashesDir, crashId));
+        if (!string.IsNullOrWhiteSpace(priorAnalysis?.Architecture))
+            archHint = priorAnalysis.Architecture;
         var script = CdbScriptBuilder.BuildInline(
             CdbProbePlan.StandardCrash,
-            new CdbScriptOptions { MsecDllPath = msec });
+            new CdbScriptOptions { MsecDllPath = msec, Architecture = archHint });
         string text;
         bool timedOut;
         try
@@ -259,6 +265,10 @@ public static partial class ScreamInvestigator
             ? disasm
             : string.IsNullOrWhiteSpace(disasm) ? instruction : instruction + "\n" + disasm;
 
+        var architecture = CpuArchitectureDetector.Resolve(
+            registersText: regs,
+            executablePath: sidecar?.ArtifactIdentity?.ExecutablePath);
+
         return new DebuggerObservation(
             Ok: ok,
             DumpPath: dumpPath,
@@ -295,7 +305,8 @@ public static partial class ScreamInvestigator
             RegisterMatches: registerMatches.Count > 0 ? registerMatches : null,
             PrimaryRegisterMatch: primaryRegister,
             Provenance: provenance,
-            Engine: RandallBuildInfo.Current);
+            Engine: RandallBuildInfo.Current,
+            Architecture: architecture);
     }
 
     private static DebuggerObservation Empty(string? dumpPath, string? obsPath, string error) =>

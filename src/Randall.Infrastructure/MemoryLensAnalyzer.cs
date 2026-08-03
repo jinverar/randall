@@ -59,14 +59,19 @@ public static class MemoryLensAnalyzer
                 CollectAddressPatterns(fault.FaultAddress, "fault address", patternHits);
                 if (analysis?.Registers is { } regs)
                 {
-                    CollectAddressPatterns(regs.Rip, "RIP", patternHits);
-                    CollectAddressPatterns(regs.Rsp, "RSP", patternHits);
-                    CollectAddressPatterns(regs.Rax, "RAX", patternHits);
-                    CollectAddressPatterns(regs.Rbx, "RBX", patternHits);
-                    CollectAddressPatterns(regs.Rcx, "RCX", patternHits);
-                    CollectAddressPatterns(regs.Rdx, "RDX", patternHits);
-                    MaybeLinkPair("RAX/RBX", regs.Rax, regs.Rbx, linkHints);
-                    MaybeLinkPair("RCX/RDX", regs.Rcx, regs.Rdx, linkHints);
+                    var arch = analysis.Architecture ?? regs.Architecture;
+                    CollectAddressPatterns(regs.Rip, RegisterDisplayNames.ForArch("RIP", arch), patternHits);
+                    CollectAddressPatterns(regs.Rsp, RegisterDisplayNames.ForArch("RSP", arch), patternHits);
+                    CollectAddressPatterns(regs.Rax, RegisterDisplayNames.ForArch("RAX", arch), patternHits);
+                    CollectAddressPatterns(regs.Rbx, RegisterDisplayNames.ForArch("RBX", arch), patternHits);
+                    CollectAddressPatterns(regs.Rcx, RegisterDisplayNames.ForArch("RCX", arch), patternHits);
+                    CollectAddressPatterns(regs.Rdx, RegisterDisplayNames.ForArch("RDX", arch), patternHits);
+                    MaybeLinkPair(
+                        $"{RegisterDisplayNames.ForArch("RAX", arch)}/{RegisterDisplayNames.ForArch("RBX", arch)}",
+                        regs.Rax, regs.Rbx, linkHints);
+                    MaybeLinkPair(
+                        $"{RegisterDisplayNames.ForArch("RCX", arch)}/{RegisterDisplayNames.ForArch("RDX", arch)}",
+                        regs.Rcx, regs.Rdx, linkHints);
                 }
 
                 MemoryLensNeighborhoodDto? neighborhood = null;
@@ -128,8 +133,9 @@ public static class MemoryLensAnalyzer
         CollectAddressPatterns(analysis.FaultAddress, "fault address", hits);
         if (analysis.Registers is { } regs)
         {
-            CollectAddressPatterns(regs.Rip, "RIP", hits);
-            CollectAddressPatterns(regs.Rax, "RAX", hits);
+            var arch = analysis.Architecture ?? regs.Architecture;
+            CollectAddressPatterns(regs.Rip, RegisterDisplayNames.ForArch("RIP", arch), hits);
+            CollectAddressPatterns(regs.Rax, RegisterDisplayNames.ForArch("RAX", arch), hits);
         }
 
         var summary = BuildSummary(fault, hits, [], null, []);

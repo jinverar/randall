@@ -151,7 +151,9 @@ public sealed record RegisterSnapshotDto(
     string? Rax,
     string? Rbx,
     string? Rcx,
-    string? Rdx);
+    string? Rdx,
+    /// <summary><see cref="CpuArchitecture.X86"/> or <see cref="CpuArchitecture.X64"/> when known.</summary>
+    string? Architecture = null);
 
 /// <summary>Minidump triage output (*_analysis.json).</summary>
 public sealed record CrashAnalysisDto(
@@ -163,7 +165,9 @@ public sealed record CrashAnalysisDto(
     string? FaultModule,
     RegisterSnapshotDto? Registers,
     IReadOnlyList<string> LoadedModules,
-    string? Error);
+    string? Error,
+    /// <summary><see cref="CpuArchitecture.X86"/> or <see cref="CpuArchitecture.X64"/> when known.</summary>
+    string? Architecture = null);
 
 /// <summary>Research-oriented crash taxonomy (severity / class — not exploit tooling).</summary>
 public sealed record CrashTriageDto(
