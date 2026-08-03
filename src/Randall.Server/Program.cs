@@ -550,11 +550,14 @@ app.MapGet("/api/runtime/inspect", async (int? pid, HttpRequest http, string? ag
 
 app.MapGet("/api/coverage/status", () =>
 {
-    var dr = DynamoRioRunner.Discover();
+    var dr = DynamoRioRunner.Diagnose();
     return new
     {
         dynamoRioAvailable = dr.IsAvailable,
         drrunPath = dr.DrrunPath,
+        homePath = dr.HomePath,
+        state = dr.State,
+        detail = dr.Detail,
     };
 });
 

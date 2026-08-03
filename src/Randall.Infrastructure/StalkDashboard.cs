@@ -136,8 +136,15 @@ public static class StalkDashboard
                             ? "Basic Block"
                             : graph.HasGraph ? "Session Graph" : "Mutation";
 
+        var localExe = string.IsNullOrWhiteSpace(project.Target.Executable)
+            ? null
+            : ExecutableResolver.FindExisting(ProjectLoader.ResolvePath(configPath, project.Target.Executable));
         var notes = BuildNotes(status, latestDetail, corpus, graph, hotBlocks, usedCrashCoverage, missingCrashCoverage);
-        AppendCoverageHonestyNotes(notes, corpus, fuzzStatus, run, usedCrashCoverage, missingCrashCoverage, liveForProject);
+        AppendCoverageHonestyNotes(
+            notes, corpus, fuzzStatus, run, usedCrashCoverage, missingCrashCoverage, liveForProject,
+            hasLocalExecutable: localExe is not null,
+            isNetworkTarget: ProjectKinds.IsTcpLike(project) || ProjectKinds.IsUdp(project),
+            projectKind: project.Kind);
         if (!string.IsNullOrWhiteSpace(crashListWarning))
             notes.Insert(0, crashListWarning);
         if (!string.IsNullOrWhiteSpace(effectiveRunId) && focusCrash is null)
@@ -149,10 +156,10 @@ public static class StalkDashboard
         {
             notes.Insert(0,
                 $"Inspecting crash {ShortCrashId(focusCrash.Id)} (iteration {focusCrash.Iteration}) — Follow live to resume.");
-            if (!usedCrashCoverage)
+            if (!usedCrashCoverage && localExe is not null)
             {
                 notes.Insert(1,
-                    "No BB coverage trace for this crash — diagram shows a clear empty path. Re-fuzz with coverage-guided + DynamoRIO (or import a stalk layer from this crash) to populate hit blocks.");
+                    "No BB coverage trace for this crash — diagram shows a clear empty path. Re-fuzz with coverage-guided + DynamoRIO spawn (free TCP port / local exe) or import a stalk layer to populate hit blocks.");
             }
             else
             {
@@ -1637,32 +1644,70 @@ public static class StalkDashboard
         FuzzRunManifestDto? run,
         bool usedCrashCoverage,
         bool missingCrashCoverage,
-        bool liveForProject = false)
+        bool liveForProject = false,
+        bool hasLocalExecutable = true,
+        bool isNetworkTarget = false,
+        string? projectKind = null)
     {
         if (usedCrashCoverage)
             return;
 
+        var guided = fuzzStatus?.CoverageGuided == true;
+        var kindLabel = string.IsNullOrWhiteSpace(projectKind) ? "network" : projectKind.Trim().ToUpperInvariant();
+        var remoteNoExe = isNetworkTarget && !hasLocalExecutable;
+        var dr = DynamoRioRunner.Diagnose();
+
+        if (remoteNoExe && (guided || liveForProject || missingCrashCoverage))
+        {
+            string remoteNote;
+            if (dr.IsAvailable)
+            {
+                remoteNote =
+                    $"DynamoRIO installed but not stalking: remote {kindLabel} / no local exe — spawn local exe under DR or use a file target. BB edges require instrumenting a process Randall starts (drrun cannot attach to an external listener).";
+            }
+            else if (guided || liveForProject)
+            {
+                remoteNote =
+                    $"Coverage-guided ON but remote {kindLabel} / no local exe — DynamoRIO cannot stalk an external listener. Build/spawn a local target under drrun, or leave Coverage-guided off.";
+            }
+            else
+            {
+                remoteNote =
+                    $"No local exe for {kindLabel} — DynamoRIO BB stalking needs a spawnable target (build the lab or use a file profile).";
+            }
+
+            notes.Insert(0, remoteNote);
+            if (missingCrashCoverage)
+            {
+                notes.Insert(0,
+                    "No BB coverage trace for this crash — expected without a local DynamoRIO spawn.");
+            }
+            return;
+        }
+
         if (!corpus.DynamoRioAvailable)
         {
-            notes.Insert(0, liveForProject
-                ? "Coverage unavailable — LIVE path-novelty / semantic stages only (DynamoRIO missing). edges=0 is not real BB coverage."
-                : "Coverage unavailable — DynamoRIO missing. Edge/block metrics are N/A; use corpus+ / pathlog semantic stages until BB provider is installed.");
+            var missing = dr.State == "incomplete"
+                ? $"Coverage unavailable — {dr.Detail}"
+                : liveForProject
+                    ? "Coverage unavailable — LIVE path-novelty / semantic stages only (DynamoRIO missing). edges=0 is not real BB coverage."
+                    : "Coverage unavailable — DynamoRIO missing. Edge/block metrics are N/A; use corpus+ / pathlog semantic stages until BB provider is installed.";
+            notes.Insert(0, missing);
             return;
         }
 
         if (corpus.CoverageEdges == 0 && (run?.HotEdges is null || run.HotEdges.Count == 0))
         {
-            var guided = fuzzStatus?.CoverageGuided == true;
             if (liveForProject)
             {
                 notes.Insert(0, guided
-                    ? "Coverage unavailable for BB edges (stop Labs for DynamoRIO). Semantic/session path stays live — do not treat edges=0 as measured coverage."
+                    ? "DynamoRIO installed but not stalking: existing listener / busy TCP port — stop Labs so Coverage-guided can spawn the target under drrun, or use a file target. Semantic/session path stays live."
                     : "LIVE — corpus-novelty / session path (no BB edges yet). Enable Coverage-guided with a free TCP port for DynamoRIO edges.");
             }
             else
             {
                 notes.Insert(0, guided
-                    ? "No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run."
+                    ? "DynamoRIO installed but not stalking: existing listener — stop Labs + Coverage-guided spawn (or Open a completed DR run). Remote/external listeners never produce BB edges."
                     : "No BB graph yet — enable Coverage-guided (DynamoRIO) with a free TCP port, or Open completed run. Graph shows corpus-novelty / session path until then.");
             }
         }

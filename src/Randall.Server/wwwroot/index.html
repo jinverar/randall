@@ -180,7 +180,7 @@
               </div>
               <p class="hint stalk-graph-hint">Click a block to inspect · right-click for RE actions · drag empty space to pan · Ctrl+wheel zoom</p>
               <p class="stalk-graph-banner hidden" id="stalk-graph-banner" role="status"></p>
-              <p class="stalk-graph-banner hidden" id="stalk-nobb-banner" role="status">No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.</p>
+              <p class="stalk-graph-banner hidden" id="stalk-nobb-banner" role="status">DynamoRIO installed but not stalking: remote HTTP / existing listener — spawn local exe under DR or use file target.</p>
               <div id="stalker-graph" class="stalker-graph" tabindex="0" aria-label="Control flow graph — drag to pan, click blocks to inspect"></div>
               <aside id="stalk-block-inspector" class="stalk-block-inspector hidden" aria-live="polite">
                 <div class="stalk-insp-head">
@@ -431,7 +431,7 @@
           </label>
           <label class="checkbox">
             <input type="checkbox" id="fuzz-coverage" />
-            Coverage-guided (DynamoRIO — for TCP, stop Labs first or leave unchecked while lab listens)
+            Coverage-guided (DynamoRIO BB — needs local exe spawn; for TCP stop Labs / free the port; remote-only targets cannot produce edges)
           </label>
           <fieldset class="fuzz-semantic-stack">
             <legend class="hint">Semantic stack</legend>
@@ -642,7 +642,7 @@
           <p class="live-link-warn hidden" id="live-link-warn" role="alert">
             Server is fuzzing but UI link lost — Force clear / refresh. STATUS and Live log use /api/fuzz/status + /api/fuzz/logs as backup.
           </p>
-          <p class="stalk-graph-banner hidden" id="fuzz-nobb-banner" role="status">No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.</p>
+          <p class="stalk-graph-banner hidden" id="fuzz-nobb-banner" role="status">DynamoRIO installed but not stalking: remote HTTP / existing listener — spawn local exe under DR or use file target.</p>
         </form>
         <div class="panel fuzz-log-panel">
           <div class="fuzz-log-head">

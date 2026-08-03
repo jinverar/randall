@@ -127,9 +127,32 @@ public sealed class FuzzEngine
         var useCoverage = coverageGuided && stalk.IsAvailable;
         var useCoverageFile = useCoverage &&
                               project.Kind.Equals("file", StringComparison.OrdinalIgnoreCase);
+        var declaredTargetExe = string.IsNullOrWhiteSpace(project.Target.Executable)
+            ? null
+            : ProjectLoader.ResolvePath(yamlPath, project.Target.Executable);
+        var coverageTargetExe = declaredTargetExe is null
+            ? null
+            : ExecutableResolver.FindExisting(declaredTargetExe);
         var useCoverageTcp = useCoverage && project.Fuzz.CoverageTcpSpawn &&
                              ProjectKinds.IsTcpLike(project) &&
-                             !string.IsNullOrWhiteSpace(project.Target.Executable);
+                             coverageTargetExe is not null;
+
+        if (coverageGuided && (ProjectKinds.IsTcpLike(project) || ProjectKinds.IsUdp(project))
+            && coverageTargetExe is null)
+        {
+            var dr = DynamoRioRunner.Diagnose();
+            FuzzAnalystLog.Warn(options.Progress,
+                dr.IsAvailable
+                    ? $"DynamoRIO installed but not stalking: remote {project.Kind} / no local exe — " +
+                      "spawn local exe under DR or use a file target (drrun cannot attach to an external listener)."
+                    : $"Coverage-guided ON but no local executable for {project.Kind} " +
+                      $"{project.Transport.Host}:{project.Transport.Port} — DynamoRIO cannot stalk a remote listener. " +
+                      $"Build the target or {DynamoRioRunner.InstallHint}.");
+        }
+        else if (coverageGuided && !stalk.IsAvailable)
+        {
+            FuzzAnalystLog.Warn(options.Progress, DynamoRioRunner.Diagnose().Detail);
+        }
 
         // Labs UI (or a prior Target Runtime) often already owns the listen port. Fighting that
         // with per-iteration drrun respawn + WaitUntilFree looks "stuck" (5s/iter silence) until
@@ -145,9 +168,9 @@ public sealed class FuzzEngine
                 useCoverageTcp = false;
                 fuzzExistingListener = true;
                 FuzzAnalystLog.Warn(options.Progress,
-                    $"Coverage-TCP respawn disabled — {listenHost}:{project.Transport.Port} already accepting " +
-                    "(lab/target running). Fuzzing the existing listener. Uncheck Coverage-guided or stop the lab " +
-                    "to spawn DynamoRIO-instrumented copies per case.");
+                    $"DynamoRIO installed but not stalking: {listenHost}:{project.Transport.Port} already accepting " +
+                    "(existing listener). Fuzzing without per-case drrun. Stop Labs or uncheck Coverage-guided " +
+                    "so Coverage-TCP can spawn the local exe under DynamoRIO.");
             }
         }
 

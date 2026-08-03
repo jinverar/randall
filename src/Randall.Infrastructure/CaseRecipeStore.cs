@@ -30,8 +30,11 @@ public static class CaseRecipeStore
             return null;
 
         var project = ProjectLoader.Load(target.ConfigPath);
-        var hasExe = !string.IsNullOrWhiteSpace(project.Target.Executable) &&
-                     File.Exists(ProjectLoader.ResolvePath(target.ConfigPath, project.Target.Executable));
+        var declaredExe = string.IsNullOrWhiteSpace(project.Target.Executable)
+            ? null
+            : ProjectLoader.ResolvePath(target.ConfigPath, project.Target.Executable);
+        var resolvedExe = declaredExe is null ? null : ExecutableResolver.FindExisting(declaredExe);
+        var hasExe = resolvedExe is not null;
 
         var seeds = ListSeeds(project, target.ConfigPath);
         var dictTokens = BuiltInMutators.BuildDictionaryTokens(project, target.ConfigPath)
@@ -41,8 +44,8 @@ public static class CaseRecipeStore
 
         var tip = hasExe
             ? "Local binary will be started (longLived) or spawned per case."
-            : project.Kind is "tcp" or "udp"
-                ? $"Remote service mode — fuzz {project.Transport.Host}:{project.Transport.Port} (no local exe). Start the service yourself or on another host."
+            : ProjectKinds.IsTcpLike(project) || ProjectKinds.IsUdp(project)
+                ? $"Remote service mode — fuzz {project.Transport.Host}:{project.Transport.Port} (no local exe). DynamoRIO BB stalking needs a local exe Randall can spawn under drrun — build the target or use a file profile."
                 : "Configure target.executable or transport.host/port in the project YAML.";
 
         return new CaseProjectProfileDto(
@@ -51,9 +54,7 @@ public static class CaseRecipeStore
             project.Transport.Host,
             project.Transport.Port,
             hasExe,
-            string.IsNullOrWhiteSpace(project.Target.Executable)
-                ? null
-                : ProjectLoader.ResolvePath(target.ConfigPath, project.Target.Executable),
+            resolvedExe ?? declaredExe,
             project.Target.LongLived,
             project.Mutators,
             AllMutators,

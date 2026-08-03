@@ -13,40 +13,54 @@ public sealed class DynamoRioRunner
 
     public static DynamoRioRunner Discover()
     {
+        var status = Diagnose();
+        return new DynamoRioRunner { DrrunPath = status.DrrunPath };
+    }
+
+    /// <summary>
+    /// Resolve DynamoRIO install state: Ready (<c>drrun</c> found), home-without-drrun, or missing.
+    /// Accepts <c>tools/dynamorio</c>, <c>tools/DynamoRIO</c>, and <c>tools/DynamoRIO-*</c>.
+    /// </summary>
+    public static DynamoRioStatus Diagnose(string? repoRoot = null)
+    {
         var env = Environment.GetEnvironmentVariable("DYNAMORIO_HOME");
         if (!string.IsNullOrWhiteSpace(env))
         {
             var fromEnv = FindDrrunUnder(env);
             if (fromEnv is not null)
-                return new DynamoRioRunner { DrrunPath = fromEnv };
+                return DynamoRioStatus.Ready(fromEnv, Path.GetFullPath(env));
+
+            if (Directory.Exists(env))
+                return DynamoRioStatus.Incomplete(Path.GetFullPath(env));
         }
 
-        var repoRoot = CrashCatalog.FindRepoRoot();
+        repoRoot ??= CrashCatalog.FindRepoRoot();
         if (repoRoot is not null)
         {
-            var local = FindDrrunUnder(Path.Combine(repoRoot, "tools", "dynamorio"));
-            if (local is not null)
-                return new DynamoRioRunner { DrrunPath = local };
-
-            var toolsDir = Path.Combine(repoRoot, "tools");
-            if (Directory.Exists(toolsDir))
+            foreach (var home in EnumerateLocalHomes(repoRoot))
             {
-                foreach (var dir in Directory.EnumerateDirectories(toolsDir, "DynamoRIO-*"))
-                {
-                    var candidate = FindDrrunUnder(dir);
-                    if (candidate is not null)
-                        return new DynamoRioRunner { DrrunPath = candidate };
-                }
+                var drrun = FindDrrunUnder(home);
+                if (drrun is not null)
+                    return DynamoRioStatus.Ready(drrun, home);
+            }
+
+            // Prefer reporting an incomplete local tree over "not found".
+            foreach (var home in EnumerateLocalHomes(repoRoot, requireDirectory: true))
+            {
+                if (LooksLikeDynamoRioHome(home) && FindDrrunUnder(home) is null)
+                    return DynamoRioStatus.Incomplete(home);
             }
         }
 
         if (OperatingSystem.IsWindows())
         {
-            foreach (var home in new[] { @"C:\DynamoRIO", @"C:\tools\dynamorio" })
+            foreach (var home in new[] { @"C:\DynamoRIO", @"C:\tools\dynamorio", @"C:\tools\DynamoRIO" })
             {
                 var candidate = FindDrrunUnder(home);
                 if (candidate is not null)
-                    return new DynamoRioRunner { DrrunPath = candidate };
+                    return DynamoRioStatus.Ready(candidate, home);
+                if (Directory.Exists(home) && LooksLikeDynamoRioHome(home))
+                    return DynamoRioStatus.Incomplete(Path.GetFullPath(home));
             }
         }
         else
@@ -61,11 +75,58 @@ public sealed class DynamoRioRunner
             {
                 var candidate = FindDrrunUnder(home);
                 if (candidate is not null)
-                    return new DynamoRioRunner { DrrunPath = candidate };
+                    return DynamoRioStatus.Ready(candidate, home);
+                if (Directory.Exists(home) && LooksLikeDynamoRioHome(home))
+                    return DynamoRioStatus.Incomplete(Path.GetFullPath(home));
             }
         }
 
-        return new DynamoRioRunner();
+        return DynamoRioStatus.Missing();
+    }
+
+    /// <summary>
+    /// Local candidate homes under <c>tools/</c>, including bare <c>DynamoRIO</c> / <c>dynamorio</c>
+    /// and versioned <c>DynamoRIO-*</c> folders (case-insensitive name match).
+    /// </summary>
+    internal static IEnumerable<string> EnumerateLocalHomes(string repoRoot, bool requireDirectory = false)
+    {
+        var toolsDir = Path.Combine(repoRoot, "tools");
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var name in new[] { "dynamorio", "DynamoRIO" })
+        {
+            var path = Path.Combine(toolsDir, name);
+            if (!requireDirectory || Directory.Exists(path))
+            {
+                if (seen.Add(path))
+                    yield return path;
+            }
+        }
+
+        if (!Directory.Exists(toolsDir))
+            yield break;
+
+        foreach (var dir in Directory.EnumerateDirectories(toolsDir))
+        {
+            var leaf = Path.GetFileName(dir);
+            if (leaf is null)
+                continue;
+            if (!leaf.StartsWith("dynamorio", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (seen.Add(dir))
+                yield return dir;
+        }
+    }
+
+    internal static bool LooksLikeDynamoRioHome(string home)
+    {
+        if (string.IsNullOrWhiteSpace(home) || !Directory.Exists(home))
+            return false;
+        // Full package or partial (bin64 with drconfig/drinject but no drrun).
+        return Directory.Exists(Path.Combine(home, "bin64"))
+               || Directory.Exists(Path.Combine(home, "bin32"))
+               || File.Exists(Path.Combine(home, "README"))
+               || File.Exists(Path.Combine(home, "License.txt"));
     }
 
     /// <summary>
@@ -97,8 +158,13 @@ public sealed class DynamoRioRunner
 
     public static string InstallHint =>
         OperatingSystem.IsWindows()
-            ? "run scripts/install-dynamorio.ps1 or set DYNAMORIO_HOME"
-            : "run scripts/install-dynamorio.sh or set DYNAMORIO_HOME";
+            ? "run scripts/install-dynamorio.ps1 (needs tools\\dynamorio\\bin64\\drrun.exe) or set DYNAMORIO_HOME"
+            : "run scripts/install-dynamorio.sh (needs tools/dynamorio/bin64/drrun) or set DYNAMORIO_HOME";
+
+    public static string IncompleteHint(string home) =>
+        $"DynamoRIO home at {home} but drrun missing — need bin64/drrun"
+        + (OperatingSystem.IsWindows() ? ".exe" : "")
+        + $" (full package via {InstallHint}; partial tool folders with only drconfig/drinject are not enough)";
 
     /// <param name="dumpText">
     /// When true (default), emit text BB tables for <see cref="DrcovParser"/>.
@@ -309,6 +375,24 @@ public sealed class DynamoRioRunner
 
     [DllImport("libc", EntryPoint = "kill", SetLastError = true)]
     private static extern int UnixKill(int pid, int sig);
+}
+
+public sealed record DynamoRioStatus(
+    bool IsAvailable,
+    string? DrrunPath,
+    string? HomePath,
+    string State,
+    string Detail)
+{
+    public static DynamoRioStatus Ready(string drrunPath, string home) =>
+        new(true, drrunPath, home, "ready", drrunPath);
+
+    public static DynamoRioStatus Incomplete(string home) =>
+        new(false, null, home, "incomplete", DynamoRioRunner.IncompleteHint(home));
+
+    public static DynamoRioStatus Missing() =>
+        new(false, null, null, "missing",
+            $"Not found — coverage-guided stalking disabled ({DynamoRioRunner.InstallHint})");
 }
 
 public sealed record DrcovRunResult(

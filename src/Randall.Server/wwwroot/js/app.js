@@ -328,18 +328,32 @@ function updateNoBbBanners(data, fuzzStatus) {
   const edges = Number(data?.coverageEdges ?? fuzzStatus?.coverageEdges) || 0;
   const live = isFuzzSessionActive(fuzzStatus);
   const kind = (data?.coverageKind || fuzzStatus?.coverageKind || '').toLowerCase();
-  const isFile = kind.includes('path') || /file|reeldeck|path-novelty/i.test(
-    (data?.coverageLabel || '') + ' ' + (data?.notes || []).join(' ') + ' ' + (fuzzStatus?.project || ''));
-  const providerMissing = /DynamoRIO missing|Coverage unavailable|without DynamoRIO|unavailable/i.test(
-    (data?.coverageLabel || '') + ' ' + (data?.coverageDetail || '') + ' ' + (data?.notes || []).join(' '))
+  const blob = [
+    data?.coverageLabel || '',
+    data?.coverageDetail || '',
+    (data?.notes || []).join(' '),
+    fuzzStatus?.project || '',
+    document.getElementById('fuzz-target-tip')?.textContent || '',
+  ].join(' ');
+  const isFile = kind.includes('path') || /file|reeldeck|path-novelty/i.test(blob);
+  const remoteNoExe = /remote\s+\w+|no local exe|cannot attach|cannot stalk/i.test(blob);
+  const incompleteDr = /drrun missing|incomplete install|bin64\/drrun/i.test(blob);
+  const providerMissing = /DynamoRIO missing|Coverage unavailable|without DynamoRIO|unavailable/i.test(blob)
     || kind === 'unavailable' || kind === 'path-novelty';
-  const msg = providerMissing
-    ? (isFile
+  let msg;
+  if (remoteNoExe) {
+    msg = 'DynamoRIO installed but not stalking: remote HTTP / existing listener — spawn local exe under DR or use file target.';
+  } else if (incompleteDr) {
+    msg = 'DynamoRIO folder found but drrun missing — install the full package (tools\\dynamorio\\bin64\\drrun.exe). Session path still updates.';
+  } else if (providerMissing) {
+    msg = isFile
       ? 'Coverage unavailable — no BB edge provider. Semantic path stages (pathlog) may still update; edges=0 is not real BB coverage.'
-      : 'Coverage unavailable — no BB edge provider (install DynamoRIO / free the TCP port). Session path still updates.')
-    : live
-      ? 'LIVE (no BB edges — stop Labs for DynamoRIO). Session / corpus-novelty graph stays live while Tracing.'
-      : 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.';
+      : 'Coverage unavailable — no BB edge provider (install DynamoRIO / free the TCP port). Session path still updates.';
+  } else if (live) {
+    msg = 'DynamoRIO installed but not stalking: existing listener — stop Labs so Coverage-guided can spawn under drrun. Session graph stays live.';
+  } else {
+    msg = 'DynamoRIO installed but not stalking: existing listener — stop Labs + Coverage-guided for edges, or Open completed run.';
+  }
   // Show on Fuzz + Dashboard when coverage-guided session has zero BB edges (typical: lab already on :port).
   const show = !!guided && edges <= 0 && live;
   for (const id of ['stalk-nobb-banner', 'fuzz-nobb-banner']) {
@@ -1884,17 +1898,21 @@ function updateStalkGraphBanner(data) {
   const notes = data?.notes || [];
   const live = isFuzzSessionActive(fuzzStatusCache)
     && (!fuzzStatusCache.project || fuzzStatusCache.project === (data?.project || stalkProject));
-  const covNote = notes.find((n) => /No BB graph|No basic-block coverage|DynamoRIO|existing listener|LIVE \(no BB/i.test(n));
+  const covNote = notes.find((n) => /No BB graph|No basic-block coverage|DynamoRIO|existing listener|LIVE \(no BB|not stalking|no local exe|drrun missing/i.test(n));
   const nobb = document.getElementById('stalk-nobb-banner');
   if (covNote && edges <= 0) {
-    const hard = /existing listener|without DynamoRIO|TCP port was already busy|LIVE \(no BB/i.test(covNote);
-    banner.textContent = live
-      ? (hard
-        ? 'LIVE (no BB edges — stop Labs for DynamoRIO). Session / corpus-novelty graph stays live while Tracing.'
-        : covNote)
-      : (hard
-        ? 'No BB graph: fuzzing existing listener without DynamoRIO. Stop Labs + Coverage-guided for edges, or Open completed run.'
-        : covNote);
+    const remoteNoExe = /not stalking: remote|no local exe|cannot attach|cannot stalk/i.test(covNote);
+    const hard = remoteNoExe
+      || /existing listener|without DynamoRIO|TCP port was already busy|LIVE \(no BB|not stalking/i.test(covNote);
+    banner.textContent = remoteNoExe
+      ? 'DynamoRIO installed but not stalking: remote HTTP / existing listener — spawn local exe under DR or use file target.'
+      : live
+        ? (hard
+          ? 'DynamoRIO installed but not stalking: existing listener — stop Labs so Coverage-guided can spawn under drrun. Session graph stays live.'
+          : covNote)
+        : (hard
+          ? 'DynamoRIO installed but not stalking: existing listener — stop Labs + Coverage-guided for edges, or Open completed run.'
+          : covNote);
     banner.classList.remove('hidden');
     banner.classList.toggle('info', live || !hard);
     if (nobb) {
@@ -2882,12 +2900,18 @@ function patchLiveDashboardCounters(data) {
     if (labelEl && covUnavailable) labelEl.textContent = 'Coverage unavailable';
     const edgeDisp = covUnavailable ? '—' : (data.coverageEdges ?? 0);
     const blockDisp = covUnavailable ? '—' : (data.currentBlocks ?? 0);
+    const notesBlob = (data.notes || []).join(' ');
+    const drLabel = data.dynamoRioAvailable
+      ? 'Ready'
+      : /drrun missing|incomplete/i.test(notesBlob)
+        ? 'Incomplete'
+        : 'Missing';
     stats.innerHTML = `
     <li>Edge <strong>${edgeDisp}</strong></li>
     <li>Block <strong>${blockDisp}</strong></li>
     <li>Semantic <strong>${semantic}</strong></li>
     <li>Corpus size <strong>${data.corpusSize ?? 0}</strong></li>
-    <li>DynamoRIO <strong>${data.dynamoRioAvailable ? 'Ready' : 'Missing'}</strong></li>`;
+    <li>DynamoRIO <strong>${drLabel}</strong></li>`;
   }
 
   const crashSum = document.getElementById('stalk-crash-summary');

@@ -222,11 +222,8 @@ public static class LabDoctor
             Add("dictionary", File.Exists(dictPath) ? "ok" : "fail", dictPath);
         }
 
-        var dr = DynamoRioRunner.Discover();
-        Add("dynamorio", dr.IsAvailable ? "ok" : "warn",
-            dr.IsAvailable
-                ? dr.DrrunPath!
-                : $"Not found — coverage-guided stalking disabled ({DynamoRioRunner.InstallHint})");
+        var dr = DynamoRioRunner.Diagnose();
+        Add("dynamorio", dr.IsAvailable ? "ok" : "warn", dr.Detail);
 
         var ghidra = GhidraTools.Discover(CrashCatalog.FindRepoRoot());
         Add("ghidra", ghidra.IsGhidraAvailable ? "ok" : "warn",
