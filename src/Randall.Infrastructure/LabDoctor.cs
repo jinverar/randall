@@ -392,10 +392,17 @@ public static class LabDoctor
         }
 
         var covBackend = CoverageBackendResolver.Resolve(project);
-        Add("coverage.backend", covBackend.SemanticOnly && !covBackend.PreferSancovIngest ? "ok" :
-                (covBackend.PreferDynamoRio && !DynamoRioRunner.Discover().IsAvailable &&
-                 covBackend.Requested is CoverageBackendResolver.DynamoRio ? "warn" : "ok"),
-            covBackend.Note);
+        // Green check only when a BB edge source is actually available (or semantic was chosen).
+        // Auto → path novelty because drrun is missing should warn, not look "healthy".
+        var covStatus = covBackend.Requested is CoverageBackendResolver.Semantic
+            ? "ok"
+            : covBackend.SemanticOnly && !covBackend.PreferSancovIngest
+                ? "warn"
+                : covBackend.PreferDynamoRio && !dr.IsAvailable
+                    && covBackend.Requested is CoverageBackendResolver.DynamoRio
+                    ? "warn"
+                    : "ok";
+        Add("coverage.backend", covStatus, covBackend.Note);
 
         var sancov = SanitizerCoverageBackend.Resolve(project);
         if (sancov.Requested)

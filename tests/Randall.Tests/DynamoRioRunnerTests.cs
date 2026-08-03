@@ -131,4 +131,22 @@ public class DynamoRioRunnerTests
         Assert.DoesNotContain("-dump_text", binary);
         Assert.Contains("-t drcov", binary);
     }
+
+    [Fact]
+    public void MissingHint_IncludesRepoToolsPath()
+    {
+        var repo = Path.Combine(Path.GetTempPath(), "randall-miss-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(repo);
+        try
+        {
+            var hint = DynamoRioRunner.MissingHint(repo);
+            Assert.Contains("drrun", hint, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(Path.Combine(repo, "tools"), hint, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("no BB provider", hint, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            try { Directory.Delete(repo, true); } catch { /* ignore */ }
+        }
+    }
 }

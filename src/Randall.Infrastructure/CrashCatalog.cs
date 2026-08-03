@@ -7,18 +7,39 @@ public static class CrashCatalog
 {
     public static string? FindRepoRoot()
     {
-        var starts = new[]
+        var starts = new List<string?>
         {
+            Environment.GetEnvironmentVariable("RANDALL_ROOT"),
             Directory.GetCurrentDirectory(),
             AppContext.BaseDirectory,
         };
+
+        try
+        {
+            var processPath = Environment.ProcessPath;
+            if (!string.IsNullOrWhiteSpace(processPath))
+                starts.Add(Path.GetDirectoryName(processPath));
+        }
+        catch
+        {
+            /* ignore — ProcessPath unavailable */
+        }
 
         foreach (var start in starts)
         {
             if (string.IsNullOrWhiteSpace(start))
                 continue;
 
-            var dir = new DirectoryInfo(Path.GetFullPath(start));
+            DirectoryInfo? dir;
+            try
+            {
+                dir = new DirectoryInfo(Path.GetFullPath(start));
+            }
+            catch
+            {
+                continue;
+            }
+
             while (dir is not null)
             {
                 if (File.Exists(Path.Combine(dir.FullName, "Randall.sln")))

@@ -617,7 +617,7 @@ public static class StalkDashboard
                 ReHints:
                 [
                     "Live diagram mode — corpus-novelty spine while DynamoRIO BB edges are unavailable.",
-                    "Crash sites hang off CORPUS+ as red nodes; install DynamoRIO for basic-block edges.",
+                    "Crash sites hang off CORPUS+ as red nodes; basic-block edges need drrun + a spawnable local target.",
                 ]));
             blocks.Add(new StalkBlockDto(
                 "novelty", "CORPUS+", "novelty", iters > 0 || crashCount > 0 ? "novel" : "unexplored", false, true,
@@ -1379,7 +1379,7 @@ public static class StalkDashboard
                 "unexplored",
                 false,
                 true,
-                "No BB coverage for this crash — re-fuzz with coverage-guided + DynamoRIO or import a stalk layer.",
+                "No BB coverage for this crash — re-fuzz with coverage-guided + local drrun spawn, or import a stalk layer.",
                 1,
                 true,
                 Role: "block",
@@ -1387,7 +1387,7 @@ public static class StalkDashboard
                 ReHints:
                 [
                     "Coverage edges are empty for the selected crash.",
-                    "Enable fuzz.coverageGuided and install DynamoRIO, or POST /api/stalking/layers/from-crash.",
+                    "Enable fuzz.coverageGuided with a free TCP port + drrun (`randall doctor`), or POST /api/stalking/layers/from-crash.",
                 ]),
             new(
                 "__crash_site",
@@ -1690,8 +1690,8 @@ public static class StalkDashboard
             var missing = dr.State == "incomplete"
                 ? $"Coverage unavailable — {dr.Detail}"
                 : liveForProject
-                    ? "Coverage unavailable — LIVE path-novelty / semantic stages only (DynamoRIO missing). edges=0 is not real BB coverage."
-                    : "Coverage unavailable — DynamoRIO missing. Edge/block metrics are N/A; use corpus+ / pathlog semantic stages until BB provider is installed.";
+                    ? "Coverage unavailable — LIVE path/session novelty only (drrun not found under tools\\DynamoRIO or tools\\dynamorio). edges=0 is not measured basic-block coverage."
+                    : "Coverage unavailable — drrun not found. Edge/block metrics are N/A until DynamoRIO is installed for this repo (`randall doctor` → dynamorio). Path/session novelty still works.";
             notes.Insert(0, missing);
             return;
         }

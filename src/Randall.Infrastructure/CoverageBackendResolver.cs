@@ -35,8 +35,12 @@ public static class CoverageBackendResolver
     public static Resolved Resolve(ProjectConfig project)
     {
         var requested = RequestedToken(project);
-        var dynamo = DynamoRioRunner.Discover().IsAvailable;
+        var dr = DynamoRioRunner.Diagnose();
+        var dynamo = dr.IsAvailable;
         var sancovFlag = project.Fuzz.SanitizerCoverage || requested is Sancov;
+        var noBbReason = dr.State == "incomplete"
+            ? "drrun missing from DynamoRIO home — path/session novelty only (not basic-block edges)"
+            : "drrun not found — path/session novelty only (not basic-block edges)";
 
         return requested switch
         {
@@ -47,9 +51,9 @@ public static class CoverageBackendResolver
                 PreferDynamoRio: true,
                 SemanticOnly: !dynamo && !sancovFlag,
                 Note: dynamo
-                    ? "coverage.backend=dynamorio — DynamoRIO drcov"
-                    : "coverage.backend=dynamorio but DynamoRIO missing — falling back to " +
-                      (sancovFlag ? "sancov ingest" : "semantic/path-novelty")),
+                    ? $"coverage.backend=dynamorio — DynamoRIO drcov ({dr.DrrunPath})"
+                    : "coverage.backend=dynamorio but drrun not found — falling back to " +
+                      (sancovFlag ? "sancov ingest" : "path/session novelty")),
 
             Sancov => new Resolved(
                 requested,
@@ -59,7 +63,7 @@ public static class CoverageBackendResolver
                 SemanticOnly: false,
                 Note: dynamo
                     ? "coverage.backend=sancov — ingest *.sancov; DynamoRIO also available as supplement"
-                    : "coverage.backend=sancov — ingest *.sancov from corpus/traces (no DynamoRIO)"),
+                    : "coverage.backend=sancov — ingest *.sancov from corpus/traces (drrun not found)"),
 
             Semantic => new Resolved(
                 requested,
@@ -67,7 +71,7 @@ public static class CoverageBackendResolver
                 PreferSancovIngest: false,
                 PreferDynamoRio: false,
                 SemanticOnly: true,
-                Note: "coverage.backend=semantic — path-novelty / ReelDeck stages only (no BB edges)"),
+                Note: "coverage.backend=semantic — path/session novelty only (basic-block edges off by choice)"),
 
             _ => new Resolved(
                 Auto,
@@ -76,10 +80,10 @@ public static class CoverageBackendResolver
                 PreferDynamoRio: dynamo,
                 SemanticOnly: !dynamo && !sancovFlag,
                 Note: dynamo
-                    ? "coverage.backend=auto — DynamoRIO drcov"
+                    ? $"coverage.backend=auto — DynamoRIO drcov ({dr.DrrunPath})"
                     : sancovFlag
-                        ? "coverage.backend=auto — sancov ingest (DynamoRIO absent)"
-                        : "coverage.backend=auto — semantic/path-novelty (no BB provider)"),
+                        ? "coverage.backend=auto — sancov ingest (drrun not found)"
+                        : $"coverage.backend=auto — {noBbReason}"),
         };
     }
 

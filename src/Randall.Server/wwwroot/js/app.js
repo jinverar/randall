@@ -338,21 +338,31 @@ function updateNoBbBanners(data, fuzzStatus) {
   const isFile = kind.includes('path') || /file|reeldeck|path-novelty/i.test(blob);
   const remoteNoExe = /remote\s+\w+|no local exe|cannot attach|cannot stalk/i.test(blob);
   const incompleteDr = /drrun missing|incomplete install|bin64\/drrun/i.test(blob);
-  const providerMissing = /DynamoRIO missing|Coverage unavailable|without DynamoRIO|unavailable/i.test(blob)
-    || kind === 'unavailable' || kind === 'path-novelty';
+  // Prefer live dashboard flag — never claim "install DynamoRIO" when drrun is Ready.
+  const drReady = data?.dynamoRioAvailable === true
+    || /DynamoRIO installed but not stalking/i.test(blob);
+  const drMissing = data?.dynamoRioAvailable === false
+    || (!drReady && (/drrun not found|DynamoRIO missing|without DynamoRIO/i.test(blob)
+      || kind === 'unavailable' || kind === 'path-novelty'));
   let msg;
   if (remoteNoExe) {
-    msg = 'DynamoRIO installed but not stalking: remote HTTP / existing listener — spawn local exe under DR or use file target.';
+    msg = drReady
+      ? 'DynamoRIO installed but not stalking: remote HTTP / existing listener — spawn local exe under DR or use file target.'
+      : 'Coverage-guided needs a local exe spawn — remote HTTP / external listener cannot produce basic-block edges.';
   } else if (incompleteDr) {
-    msg = 'DynamoRIO folder found but drrun missing — install the full package (tools\\dynamorio\\bin64\\drrun.exe). Session path still updates.';
-  } else if (providerMissing) {
+    msg = 'DynamoRIO folder found but drrun missing — need the full package (tools\\DynamoRIO\\bin64\\drrun.exe). Session path still updates.';
+  } else if (drReady) {
+    msg = live
+      ? 'DynamoRIO installed but not stalking this campaign: stop Labs / free the TCP port so Coverage-guided can spawn under drrun, or use a file target. Session graph stays live.'
+      : 'DynamoRIO installed but not stalking this campaign: stop Labs + Coverage-guided spawn (or Open a completed DR run).';
+  } else if (drMissing) {
     msg = isFile
-      ? 'Coverage unavailable — no BB edge provider. Semantic path stages (pathlog) may still update; edges=0 is not real BB coverage.'
-      : 'Coverage unavailable — no BB edge provider (install DynamoRIO / free the TCP port). Session path still updates.';
+      ? 'No basic-block edges yet — drrun not found for this repo (tools\\DynamoRIO\\bin64\\drrun.exe). Path/session stages may still update; edges=0 is not measured BB coverage.'
+      : 'No basic-block edges yet — drrun not found for this repo (check `randall doctor` → dynamorio), or the TCP port is held so Coverage-guided cannot spawn. Session path still updates.';
   } else if (live) {
-    msg = 'DynamoRIO installed but not stalking: existing listener — stop Labs so Coverage-guided can spawn under drrun. Session graph stays live.';
+    msg = 'No basic-block edges yet — enable Coverage-guided with a free TCP port, or confirm drrun via `randall doctor`. Session graph stays live.';
   } else {
-    msg = 'DynamoRIO installed but not stalking: existing listener — stop Labs + Coverage-guided for edges, or Open completed run.';
+    msg = 'No basic-block graph yet — enable Coverage-guided with a free TCP port, or Open a completed DR run.';
   }
   // Show on Fuzz + Dashboard when coverage-guided session has zero BB edges (typical: lab already on :port).
   const show = !!guided && edges <= 0 && live;
@@ -1898,21 +1908,29 @@ function updateStalkGraphBanner(data) {
   const notes = data?.notes || [];
   const live = isFuzzSessionActive(fuzzStatusCache)
     && (!fuzzStatusCache.project || fuzzStatusCache.project === (data?.project || stalkProject));
-  const covNote = notes.find((n) => /No BB graph|No basic-block coverage|DynamoRIO|existing listener|LIVE \(no BB|not stalking|no local exe|drrun missing/i.test(n));
+  const covNote = notes.find((n) => /No BB graph|No basic-block coverage|DynamoRIO|existing listener|LIVE \(no BB|not stalking|no local exe|drrun missing|drrun not found/i.test(n));
   const nobb = document.getElementById('stalk-nobb-banner');
+  const drReady = data?.dynamoRioAvailable === true
+    || (covNote && /DynamoRIO installed but not stalking/i.test(covNote));
   if (covNote && edges <= 0) {
     const remoteNoExe = /not stalking: remote|no local exe|cannot attach|cannot stalk/i.test(covNote);
     const hard = remoteNoExe
-      || /existing listener|without DynamoRIO|TCP port was already busy|LIVE \(no BB|not stalking/i.test(covNote);
-    banner.textContent = remoteNoExe
-      ? 'DynamoRIO installed but not stalking: remote HTTP / existing listener — spawn local exe under DR or use file target.'
-      : live
-        ? (hard
-          ? 'DynamoRIO installed but not stalking: existing listener — stop Labs so Coverage-guided can spawn under drrun. Session graph stays live.'
-          : covNote)
-        : (hard
-          ? 'DynamoRIO installed but not stalking: existing listener — stop Labs + Coverage-guided for edges, or Open completed run.'
-          : covNote);
+      || /existing listener|without DynamoRIO|TCP port was already busy|LIVE \(no BB|not stalking|drrun not found/i.test(covNote);
+    if (remoteNoExe) {
+      banner.textContent = drReady
+        ? 'DynamoRIO installed but not stalking: remote HTTP / existing listener — spawn local exe under DR or use file target.'
+        : 'Coverage-guided needs a local exe spawn — remote HTTP / external listener cannot produce basic-block edges.';
+    } else if (drReady && hard) {
+      banner.textContent = live
+        ? 'DynamoRIO installed but not stalking this campaign: stop Labs so Coverage-guided can spawn under drrun. Session graph stays live.'
+        : 'DynamoRIO installed but not stalking this campaign: stop Labs + Coverage-guided for edges, or Open completed run.';
+    } else if (!drReady && hard) {
+      banner.textContent = live
+        ? 'No basic-block edges yet — drrun not found for this repo, or TCP port held. Path/session graph stays live (`randall doctor` → dynamorio).'
+        : 'No basic-block edges yet — drrun not found for this repo, or prior run used an existing listener. Check `randall doctor`.';
+    } else {
+      banner.textContent = covNote;
+    }
     banner.classList.remove('hidden');
     banner.classList.toggle('info', live || !hard);
     if (nobb) {
@@ -1923,9 +1941,13 @@ function updateStalkGraphBanner(data) {
     return;
   }
   if (edges <= 0 && (data?.mode || '').toLowerCase().includes('mutation')) {
-    banner.textContent = live
-      ? 'Coverage unavailable — LIVE session / corpus-novelty path (no BB provider). Check DynamoRIO + free TCP port (`randall doctor`).'
-      : 'Coverage unavailable — showing session / corpus-novelty path. Check DynamoRIO + free TCP port (`randall doctor`).';
+    banner.textContent = drReady
+      ? (live
+        ? 'DynamoRIO ready but this campaign has no BB edges yet — free the TCP port / Coverage-guided spawn, or wait for edges.'
+        : 'DynamoRIO ready — Open a completed DR run or re-fuzz with Coverage-guided + free TCP port for BB edges.')
+      : (live
+        ? 'No basic-block edges yet — LIVE path/session novelty only. Check `randall doctor` → dynamorio (tools\\DynamoRIO\\bin64\\drrun.exe).'
+        : 'No basic-block edges yet — path/session novelty only. Check `randall doctor` → dynamorio.');
     banner.classList.remove('hidden');
     banner.classList.add('info');
     if (nobb) nobb.classList.add('hidden');

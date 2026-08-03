@@ -81,7 +81,7 @@ public sealed class DynamoRioRunner
             }
         }
 
-        return DynamoRioStatus.Missing();
+        return DynamoRioStatus.Missing(repoRoot);
     }
 
     /// <summary>
@@ -158,13 +158,30 @@ public sealed class DynamoRioRunner
 
     public static string InstallHint =>
         OperatingSystem.IsWindows()
-            ? "run scripts/install-dynamorio.ps1 (needs tools\\dynamorio\\bin64\\drrun.exe) or set DYNAMORIO_HOME"
-            : "run scripts/install-dynamorio.sh (needs tools/dynamorio/bin64/drrun) or set DYNAMORIO_HOME";
+            ? "run scripts/install-dynamorio.ps1 (needs tools\\DynamoRIO\\bin64\\drrun.exe or tools\\dynamorio\\…) or set DYNAMORIO_HOME"
+            : "run scripts/install-dynamorio.sh (needs tools/DynamoRIO/bin64/drrun or tools/dynamorio/…) or set DYNAMORIO_HOME";
 
     public static string IncompleteHint(string home) =>
         $"DynamoRIO home at {home} but drrun missing — need bin64/drrun"
         + (OperatingSystem.IsWindows() ? ".exe" : "")
         + $" (full package via {InstallHint}; partial tool folders with only drconfig/drinject are not enough)";
+
+    public static string MissingHint(string? repoRoot)
+    {
+        var drrunName = OperatingSystem.IsWindows() ? "drrun.exe" : "drrun";
+        if (string.IsNullOrWhiteSpace(repoRoot))
+        {
+            return "Not found — Randall could not locate the repo root (Randall.sln). " +
+                   $"Start the server/CLI from the repo, set RANDALL_ROOT, or set DYNAMORIO_HOME to a folder with bin64/{drrunName}. " +
+                   $"({InstallHint})";
+        }
+
+        var tools = Path.Combine(repoRoot, "tools");
+        return "Not found — no basic-block edge collector (drrun) under this repo. " +
+               $"Looked for {Path.Combine(tools, "DynamoRIO", "bin64", drrunName)} " +
+               $"(also tools\\dynamorio\\… and tools\\DynamoRIO-*\\…). " +
+               $"Repo root: {repoRoot}. ({InstallHint})";
+    }
 
     /// <param name="dumpText">
     /// When true (default), emit text BB tables for <see cref="DrcovParser"/>.
@@ -390,9 +407,8 @@ public sealed record DynamoRioStatus(
     public static DynamoRioStatus Incomplete(string home) =>
         new(false, null, home, "incomplete", DynamoRioRunner.IncompleteHint(home));
 
-    public static DynamoRioStatus Missing() =>
-        new(false, null, null, "missing",
-            $"Not found — coverage-guided stalking disabled ({DynamoRioRunner.InstallHint})");
+    public static DynamoRioStatus Missing(string? repoRoot = null) =>
+        new(false, null, null, "missing", DynamoRioRunner.MissingHint(repoRoot));
 }
 
 public sealed record DrcovRunResult(
