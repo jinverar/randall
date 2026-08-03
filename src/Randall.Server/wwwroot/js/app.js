@@ -1921,11 +1921,54 @@ function updateStalkGraphBanner(data) {
   updateNoBbBanners(data, fuzzStatusCache);
 }
 
-/** Vertical CFG: crash spine down the center, forks to the sides. */
-function renderStalkGraph(blocks, edges) {
+/** Remove crash terminus / crash-path emphasis for non-crash timeline pins. */
+function stripCrashFocusFromGraph(blocks, edges) {
+  const list = blocks || [];
+  const crashIds = new Set(
+    list.filter((b) => b.kind === 'crash' || b.id === '__crash_site').map((b) => b.id));
+  const nextBlocks = list
+    .filter((b) => !crashIds.has(b.id))
+    .map((b) => ({
+      ...b,
+      // Session spine may remain for layout, but this pin did not crash.
+      crashId: null,
+      exceptionHint: b.kind === 'crash' ? null : b.exceptionHint,
+    }));
+  const nextEdges = (edges || [])
+    .filter((e) => !crashIds.has(e.from) && !crashIds.has(e.to))
+    .map((e) => ({
+      ...e,
+      // Keep taken/session edges; drop crash-path stroke class.
+      onCrashPath: false,
+    }));
+  return { blocks: nextBlocks, edges: nextEdges };
+}
+
+/**
+ * Vertical CFG: crash spine down the center, forks to the sides.
+ * @param {'auto'|'crash'|'session'} [opts.view]
+ *   auto — follow payload (live/latest may include crash terminus)
+ *   crash — selected red crash bar / crashId focus
+ *   session — non-crash pin: no CRASH node / no "Crash path" title
+ */
+function renderStalkGraph(blocks, edges, opts = {}) {
   const el = document.getElementById('stalker-graph');
   const mini = document.getElementById('stalk-minimap');
-  if (!blocks?.length) {
+  const view = opts.view || 'auto';
+  let viewBlocks = blocks || [];
+  let viewEdges = edges || [];
+  if (view === 'session') {
+    const stripped = stripCrashFocusFromGraph(viewBlocks, viewEdges);
+    viewBlocks = stripped.blocks;
+    viewEdges = stripped.edges;
+  }
+
+  if (!viewBlocks?.length) {
+    if (view === 'session') {
+      el.innerHTML = '<p class="stalk-empty">No crash path for this iteration (hit / non-crash). Select a red crash bar for crash path.</p>';
+      if (mini) mini.innerHTML = '';
+      return;
+    }
     const live = isFuzzSessionActive(fuzzStatusCache);
     el.innerHTML = live
       ? '<p class="stalk-empty">LIVE session — waiting for graph nodes (corpus-novelty / session path). BB edges need DynamoRIO + a free TCP port (stop Labs if Coverage-guided). Dashboard keeps refreshing iters/crashes.</p>'
@@ -1939,18 +1982,20 @@ function renderStalkGraph(blocks, edges) {
   const gapY = 52;
   const forkX = 210;
   const pad = 56;
-  const byId = Object.fromEntries(blocks.map((b) => [b.id, b]));
-  const edgeList = edges || [];
+  const byId = Object.fromEntries(viewBlocks.map((b) => [b.id, b]));
+  const edgeList = viewEdges || [];
 
-  let spine = blocks
+  let spine = viewBlocks
     .filter((b) => b.onCrashPath)
     .sort((a, b) => (a.pathIndex ?? 99) - (b.pathIndex ?? 99));
 
   if (!spine.length) {
-    const entry = blocks.find((b) => b.id === '__entry') || blocks[0];
+    const entry = viewBlocks.find((b) => b.id === '__entry') || viewBlocks[0];
     spine = [entry];
-    const crash = blocks.find((b) => b.kind === 'crash');
-    if (crash) spine.push(crash);
+    if (view !== 'session') {
+      const crash = viewBlocks.find((b) => b.kind === 'crash');
+      if (crash) spine.push(crash);
+    }
   }
 
   const spineIds = new Set(spine.map((b) => b.id));
@@ -1991,7 +2036,7 @@ function renderStalkGraph(blocks, edges) {
   });
 
   let orphanRow = 0;
-  blocks.forEach((b) => {
+  viewBlocks.forEach((b) => {
     if (positions[b.id]) return;
     positions[b.id] = {
       x: -forkX,
@@ -2020,7 +2065,7 @@ function renderStalkGraph(blocks, edges) {
   const maxEdgeHits = Math.max(
     1,
     ...edgeList.map((e) => Number(e.hitCount) || 0),
-    ...blocks.map((b) => Number(b.hitCount) || 0));
+    ...viewBlocks.map((b) => Number(b.hitCount) || 0));
   const edgePaths = edgeList.map((e) => {
     const a = positions[e.from];
     const b = positions[e.to];
@@ -2045,9 +2090,11 @@ function renderStalkGraph(blocks, edges) {
     return `<path class="stalk-edge ${cls}" d="${d}" style="stroke-width:${strokeW.toFixed(2)}" data-hits="${hits}" />${label}`;
   }).join('');
 
-  const caption = `<text class="stalk-path-caption" x="${spineX + nodeW / 2}" y="${Math.max(16, pad - 20)}" text-anchor="middle">Crash path ↓</text>`;
+  const captionLabel = view === 'session' ? 'Session path ↓' : 'Crash path ↓';
+  const captionCls = view === 'session' ? 'stalk-path-caption side' : 'stalk-path-caption';
+  const caption = `<text class="${captionCls}" x="${spineX + nodeW / 2}" y="${Math.max(16, pad - 20)}" text-anchor="middle">${captionLabel}</text>`;
 
-  const nodes = blocks.map((b) => {
+  const nodes = viewBlocks.map((b) => {
     const p = positions[b.id];
     if (!p) return '';
     const title = b.label || b.id;
@@ -2088,7 +2135,29 @@ function renderStalkGraph(blocks, edges) {
     stalkGraphNav.fit();
     stalkGraphNav.centerOn(spineX + nodeW / 2, height / 2);
   });
-  bindStalkGraphInteractions(el, blocks, edges || []);
+  bindStalkGraphInteractions(el, viewBlocks, viewEdges || []);
+}
+
+/** Resolve graph honesty mode from pin / crash focus. */
+function resolveStalkGraphView(selectedCrashId = null) {
+  if (selectedCrashId || stalkSelection?.crashId)
+    return 'crash';
+  if (!stalkFollowLive && stalkSelection && stalkSelection.kind !== 'crash')
+    return 'session';
+  return 'auto';
+}
+
+/** Re-paint stalker graph for the current pin (uses last dashboard / inspect payload). */
+function renderPinnedStalkGraph(view = 'session') {
+  const mode = (stalkLastGoodDashboard?.mode || '').toLowerCase();
+  // Stale crash-focused BB payload must not masquerade as this non-crash iteration.
+  if (view === 'session' && /crash bb|no crash coverage/.test(mode)) {
+    renderStalkGraph([], [], { view: 'session' });
+    return;
+  }
+  const blocks = stalkLastGoodDashboard?.blocks || stalkInspect.blocks || [];
+  const edges = stalkLastGoodDashboard?.edges || stalkInspect.edges || [];
+  renderStalkGraph(blocks, edges, { view });
 }
 
 let stalkInspect = { blocks: [], edges: [], selectedId: null };
@@ -2583,6 +2652,9 @@ function applyIterationPinWidgets(point) {
     st.textContent = `Pinned #${displayIter} (${kind})`;
     st.className = statusClass(st.textContent);
   }
+  const modeEl = document.getElementById('stalk-mode');
+  if (modeEl && /crash/i.test(modeEl.textContent || ''))
+    modeEl.textContent = 'Session Graph';
   const crashSum = document.getElementById('stalk-crash-summary');
   if (crashSum) {
     // Non-crash bars must not inherit the latest crash's detail.
@@ -2605,6 +2677,14 @@ function applyIterationPinWidgets(point) {
     if (map['Address']) map['Address'].textContent = '—';
     if (map['Input']) map['Input'].textContent = point.label || `iter_${displayIter}`;
   }
+  // Honest center graph: never keep a crash terminus / "Crash path" title on a blue-bar pin.
+  renderPinnedStalkGraph('session');
+  const banner = document.getElementById('stalk-graph-banner');
+  if (banner) {
+    banner.textContent = 'No crash path for this iteration (hit / non-crash). Showing session / novelty graph — select a red crash bar for crash path.';
+    banner.classList.remove('hidden');
+    banner.classList.add('info');
+  }
   const notes = document.getElementById('stalk-notes');
   if (notes) {
     notes.innerHTML = [
@@ -2613,7 +2693,7 @@ function applyIterationPinWidgets(point) {
       newEdges > 0
         ? `<li>New edges this case: <strong>${newEdges}</strong></li>`
         : '<li>No new coverage edges recorded for this bar.</li>',
-      '<li>Diagram stays on session/live graph (per-iteration BB path is only available for crash bars with coverage).</li>',
+      '<li>Diagram shows session / novelty graph without a crash terminus (per-iteration BB path is only available for crash bars with coverage).</li>',
       '<li>Live updates paused — click <strong>Follow live</strong> to resume.</li>',
     ].filter(Boolean).join('');
   }
@@ -2862,8 +2942,18 @@ function applyDashboardWidgets(data, { selectedCrashId = null } = {}) {
     ? data.topNewBlocks.map((b) => `<li>${b.address} <span style="color:var(--muted)">×${b.hits}</span></li>`).join('')
     : '<li style="color:var(--muted);list-style:none">No hot blocks yet</li>';
 
-  renderStalkGraph(data.blocks, data.edges);
-  updateStalkGraphBanner(data);
+  const graphView = resolveStalkGraphView(selectedCrashId);
+  renderStalkGraph(data.blocks, data.edges, { view: graphView });
+  if (graphView === 'session') {
+    const banner = document.getElementById('stalk-graph-banner');
+    if (banner) {
+      banner.textContent = 'No crash path for this iteration (hit / non-crash). Showing session / novelty graph — select a red crash bar for crash path.';
+      banner.classList.remove('hidden');
+      banner.classList.add('info');
+    }
+  } else {
+    updateStalkGraphBanner(data);
+  }
 
   {
     const edges = Number(data.coverageEdges) || 0;
